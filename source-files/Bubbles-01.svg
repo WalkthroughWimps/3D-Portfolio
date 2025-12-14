@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="202.7304" height="201.3491" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 202.7304 201.3491">
+  <!-- Generator: Adobe Illustrator 29.7.1, SVG Export Plug-In . SVG Version: 2.1.1 Build 8)  -->
+  <defs>
+    <radialGradient id="radial-gradient" cx="100.675" cy="100.6746" fx="100.675" fy="100.6746" r="100.6748" gradientTransform="translate(192.6586 -7.9989) rotate(85.2454)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#df001a"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient" x1="100.0115" y1="4.4693" x2="100.0115" y2="130.9832" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="gray"/>
+      <stop offset=".2516" stop-color="#585858"/>
+      <stop offset=".5917" stop-color="#282828"/>
+      <stop offset=".8522" stop-color="#0b0b0b"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <mask id="mask" x="13.4917" y="2.2143" width="173.5357" height="153.3779" maskUnits="userSpaceOnUse">
+      <path d="M100.0127,2.7915C52.2349,2.7915,13.4917,36.997,13.4917,79.1875s38.7432,76.4047,86.521,76.4047,86.5186-34.205,86.5186-76.4047S147.7989,2.7915,100.0127,2.7915Z" fill="url(#linear-gradient)"/>
+    </mask>
+    <radialGradient id="radial-gradient1" cx="388.0343" cy="532.0269" fx="388.0343" fy="532.0269" r="54.4137" gradientTransform="translate(293.9345 -462.6218) rotate(59.7461) scale(.9718 .7044)" gradientUnits="userSpaceOnUse">
+      <stop offset=".0303" stop-color="#fff"/>
+      <stop offset=".0998" stop-color="#cbcbcb"/>
+      <stop offset=".1905" stop-color="#8e8e8e"/>
+      <stop offset=".2777" stop-color="#5b5b5b"/>
+      <stop offset=".3591" stop-color="#333"/>
+      <stop offset=".4332" stop-color="#171717"/>
+      <stop offset=".4978" stop-color="#060606"/>
+      <stop offset=".5455" stop-color="#000"/>
+    </radialGradient>
+    <mask id="mask-1" x="117.7295" y="2.3607" width="85.0008" height="99.2075" maskUnits="userSpaceOnUse">
+      <path d="M186.8697,97.6435c-18.2764,10.6631-45.0244-1.1504-59.7466-26.3716-14.7183-25.2177-11.8237-54.3217,6.46-64.9824,18.2861-10.6655,45.0419,1.1304,59.7461,26.3496,14.725,25.2324,11.8388,54.3237-6.4595,65.0044Z" fill="url(#radial-gradient1)"/>
+    </mask>
+    <linearGradient id="Linear_Gradient" data-name="Linear Gradient" x1="-286.3338" y1="-135.1464" x2="-266.7451" y2="-109.436" gradientTransform="translate(285.3386 201.314) rotate(5.2442)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="Linear_Gradient1" data-name="Linear Gradient" x1="-253.9485" y1="-159.8196" x2="-234.362" y2="-134.1121" xlink:href="#Linear_Gradient"/>
+    <linearGradient id="Linear_Gradient2" data-name="Linear Gradient" x1="-285.591" y1="-135.708" x2="-266.0038" y2="-109.9998" xlink:href="#Linear_Gradient"/>
+    <linearGradient id="Linear_Gradient3" data-name="Linear Gradient" x1="-260.8249" y1="-154.5842" x2="-241.2329" y2="-128.8695" xlink:href="#Linear_Gradient"/>
+    <mask id="mask-2" x="23.3198" y="14.1987" width="48.8057" height="68.3198" maskUnits="userSpaceOnUse">
+      <g>
+        <path d="M32.7334,49.083c-5.7675,9.6767-8.5917,21.0337-8.0712,32.1328-.2276.4267-.4463.8633-.6641,1.3027-1.7725-10.9531-.2271-24.228,6.4922-36.6699.7275,1.1006,1.4751,2.1792,2.2431,3.2344Z" fill="url(#Linear_Gradient)"/>
+        <path d="M61.314,24.7202c-10.2339,3.9697-19.4458,11.1333-25.9512,20.3217-.6132-1.4418-1.185-2.9228-1.7099-4.4296,8.0263-12.0083,21.3349-22.4073,38.4726-26.4136-4.2485,3.2026-7.8452,6.7666-10.8115,10.5215Z" fill="url(#Linear_Gradient1)"/>
+        <path d="M35.4522,52.6167c-4.9727,6.7451-9.064,15.9702-10.0015,27.146-.2353.4169-.4658.8393-.6924,1.268-.3383-11.1118,2.6534-22.2021,8.3096-31.4956.772,1.0503,1.5694,2.0752,2.3843,3.0816Z" fill="url(#Linear_Gradient2)"/>
+        <path d="M53.5464,38.103c-4.896,1.9331-10.687,5.6465-15.9087,11.7588-.7114-1.3653-1.3794-2.7696-2.0083-4.2027,6.3179-8.7954,15.0332-15.5122,24.4498-19.3178-2.7872,3.8071-4.9522,7.7763-6.5328,11.7617Z" fill="url(#Linear_Gradient3)"/>
+      </g>
+    </mask>
+  </defs>
+  <g isolation="isolate">
+    <g id="Objects">
+      <g>
+        <circle cx="100.6752" cy="100.6747" r="100.6744" transform="translate(-7.9979 192.6586) rotate(-85.2454)" fill="url(#radial-gradient)" mix-blend-mode="hue"/>
+        <g mask="url(#mask)">
+          <path d="M100.5069,2.2143C52.7203,2.2143,13.9878,36.4199,13.9878,78.6103s38.7325,76.4033,86.5191,76.4033,86.5205-34.2036,86.5205-76.4033S148.2881,2.2143,100.5069,2.2143Z" fill="#fff"/>
+        </g>
+        <g>
+          <g mask="url(#mask-1)">
+            <path id="sun" d="M186.8697,97.6435c-18.2764,10.6631-45.0244-1.1504-59.7466-26.3716-14.7183-25.2177-11.8237-54.3217,6.46-64.9824,18.2861-10.6655,45.0419,1.1304,59.7461,26.3496,14.725,25.2324,11.8388,54.3237-6.4595,65.0044Z" fill="#f7eeda"/>
+          </g>
+          <path d="M165.271,56.1616c-1.269,1.73-5.1093,1.0664-8.5761-1.48-3.4634-2.543-5.2451-6.0098-3.9771-7.7363,1.2681-1.7281,5.1094-1.0669,8.5728,1.4765,3.4682,2.5464,5.2505,6.0127,3.9804,7.7398Z" fill="#f7eeda"/>
+        </g>
+        <g mask="url(#mask-2)">
+          <g>
+            <path d="M32.7334,49.083c-5.7675,9.6767-8.5917,21.0337-8.0712,32.1328-.2276.4267-.4463.8633-.6641,1.3027-1.7725-10.9531-.2271-24.228,6.4922-36.6699.7275,1.1006,1.4751,2.1792,2.2431,3.2344Z" fill="#fff"/>
+            <path d="M61.314,24.7202c-10.2339,3.9697-19.4458,11.1333-25.9512,20.3217-.6132-1.4418-1.185-2.9228-1.7099-4.4296,8.0263-12.0083,21.3349-22.4073,38.4726-26.4136-4.2485,3.2026-7.8452,6.7666-10.8115,10.5215Z" fill="#fff"/>
+            <path d="M35.4522,52.6167c-4.9727,6.7451-9.064,15.9702-10.0015,27.146-.2353.4169-.4658.8393-.6924,1.268-.3383-11.1118,2.6534-22.2021,8.3096-31.4956.772,1.0503,1.5694,2.0752,2.3843,3.0816Z" fill="#fff"/>
+            <path d="M53.5464,38.103c-4.896,1.9331-10.687,5.6465-15.9087,11.7588-.7114-1.3653-1.3794-2.7696-2.0083-4.2027,6.3179-8.7954,15.0332-15.5122,24.4498-19.3178-2.7872,3.8071-4.9522,7.7763-6.5328,11.7617Z" fill="#fff"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

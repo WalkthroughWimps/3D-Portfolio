@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #ec008c;
+      }
+
+      .cls-2 {
+        fill: #bfbfbf;
+        fill-rule: evenodd;
+      }
+    </style>
+  </defs>
+  <g id="Layer_1">
+    <circle class="cls-1" cx="50" cy="50" r="50"/>
+  </g>
+  <g id="Layer_2">
+    <g>
+      <path class="cls-2" d="M28.09,79.75V20.25h21.91v18.37h21.91v41.13H28.09ZM55.26,22.44l10.96,10.94h-10.96v-10.94h0ZM55.26,15H22.83v70h54.35v-50.75l-21.91-19.25h0Z"/>
+      <polygon class="cls-2" points="33.29 47.34 66.7 47.34 66.7 50.89 33.29 50.89 33.29 47.34 33.29 47.34"/>
+      <polygon class="cls-2" points="33.29 40.47 44.65 40.47 44.65 43.8 33.29 43.8 33.29 40.47 33.29 40.47"/>
+      <polygon class="cls-2" points="33.29 54.43 66.7 54.43 66.7 57.97 33.29 57.97 33.29 54.43 33.29 54.43"/>
+      <polygon class="cls-2" points="33.29 61.3 66.7 61.3 66.7 64.84 33.29 64.84 33.29 61.3 33.29 61.3"/>
+      <polygon class="cls-2" points="33.29 68.39 66.7 68.39 66.7 71.93 33.29 71.93 33.29 68.39 33.29 68.39"/>
+    </g>
+  </g>
+</svg>

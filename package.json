@@ -1,0 +1,24 @@
+{
+  "dependencies": {
+    "swup": "^4.7.0"
+  },
+  "name": "resume-website",
+  "version": "1.0.0",
+  "description": "",
+  "main": "a11y.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "globals": "^16.5.0"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

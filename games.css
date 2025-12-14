@@ -1,0 +1,31 @@
+/* Body Styling */
+body {
+    --dark-color: var(--purple-dark);
+    --primary-color: var(--purple-primary);
+    --secondary-color: var(--purple-secondary);
+    --tertiary-color: var(--purple-tertiary);
+    --text-color: var(--purple-text-color);
+    --panel-color: var(--primary-color);
+    --grey-color: var(--purple-grey);
+    --hl-primary-color: var(--green-primary);
+    --hl-secondary-color: var(--green-secondary);
+    --hl-tertiary-color: var(--green-tertiary);
+    --hl-dark-color: var(--green-dark);
+    --hl-text-color: var(--green-text-color);
+}
+
+/* Page background overlay */
+body {
+    background-image: url('assets/overlays/overlay-games-dark.png');
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+}
+
+
+
+
+/* Content panel uses template.css unified styles */
+
+
+
+

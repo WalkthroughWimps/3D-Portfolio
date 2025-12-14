@@ -1,0 +1,210 @@
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Global content frame stroke width (override per page if desired) */
+
+    --red-dark: #100101;
+    --red-grey: #3f3434;
+    --red-primary: #310303;
+    --red-secondary: #7e0909fc;
+    --red-tertiary: #f7e0f3;
+    --red-text-color: #f9d7f2;
+
+    --blue-dark: #03010f;
+    --blue-grey: #312d41;
+    --blue-primary: #0b032d;
+    --blue-secondary: #11416e;
+    --blue-tertiary: #caeefc;
+    --blue-text-color: #cbf0ff;
+
+    --orange-dark: #0d0400;
+    --orange-grey: #3e3632;
+    --orange-primary: #2c1204;
+    --orange-secondary: #6b3a0d;
+    --orange-tertiary: #fedbcc;
+    --orange-text-color: #f8ece2;
+    --orange-button: #451c02;
+
+    --purple-dark: #0a010e;
+    --purple-grey: #3e2e44;
+    --purple-primary: #1d0229;
+    --purple-secondary: #46086d;
+    --purple-tertiary: #e5cafc;
+    --purple-text-color: #edd8fd;
+
+    --green-dark: #000800;
+    --green-grey: #323932;
+    --green-primary: #021b02;
+    --green-secondary: #0d5023;
+    --green-tertiary: #8be78f;
+    --green-text-color: #daf6dc;
+
+    --black-dark: rgb(5, 5, 5);
+    --black-grey: rgb(77, 75, 75);
+    --black-primary: rgb(31, 30, 30);
+    --black-secondary: rgb(81, 81, 84);
+    --black-tertiary: rgb(174, 175, 168);
+    --black-text-color: rgb(207, 208, 203);
+
+    --yellow-dark: #150f00;
+    --yellow-grey: #211700;
+    --yellow-primary: #211700;
+    --yellow-secondary: #746702;
+    --yellow-tertiary: #fcf7cd;
+    --yellow-text-color: #faf7d9;
+    --yellow-button: #222222;
+
+    --head-fill-color: rgb(165, 164, 164);
+    --text-color: rgb(221, 220, 220);
+    --head-inner-color: #640707;
+
+    /* About page background pattern colors */
+    --about-pattern-1: #f5f5f5;
+    --about-pattern-2: #e2e2e2;
+
+    /* Other page pattern colors (placeholders; adjust later) */
+    --videos-pattern-1: var(--blue-tertiary);
+    --videos-pattern-2: var(--blue-primary);
+    --graphics-pattern-1: var(--orange-tertiary);
+    --graphics-pattern-2: var(--orange-primary);
+    --games-pattern-1: var(--purple-tertiary);
+    --games-pattern-2: var(--purple-primary);
+    --music-pattern-1: var(--green-tertiary);
+    --music-pattern-2: var(--green-primary);
+    --docs-pattern-1: var(--black-tertiary);
+    --docs-pattern-2: var(--black-primary);
+
+    /* Give each icon a themed button background on the container */
+    .about-icon {
+      background-color: var(--red-secondary);
+    }
+
+    .videos-icon {
+      background-color: var(--blue-secondary);
+    }
+
+    .graphics-icon {
+      background-color: var(--orange-secondary);
+    }
+
+    .games-icon {
+      background-color: var(--purple-secondary);
+    }
+
+    .music-icon {
+      background-color: var(--green-secondary);
+    }
+
+    .docs-icon {
+      background-color: var(--black-secondary);
+    }
+
+    .about-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--red-tertiary));
+    }
+
+    .videos-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--blue-tertiary));
+    }
+
+    .graphics-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--orange-tertiary));
+    }
+
+    .games-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--purple-tertiary));
+    }
+
+    .music-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--green-tertiary));
+    }
+
+    .docs-icon:hover svg {
+      filter: drop-shadow(0 0 8px var(--black-tertiary));
+    }
+
+    .head-bg {
+      fill: var(--head-fill-color);
+    }
+
+    .head-fill {
+      fill: var(--primary-color);
+    }
+  }
+
+
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --red-dark: #fce0e0;
+    --red-grey: #f5d3d3;
+    --red-primary: #f2b0b0;
+    --red-secondary: #e17a7a;
+    --red-tertiary: #170202;
+    --red-text-color: #310303;
+
+    --blue-dark: #e5f3ff;
+    --blue-grey: #d1dbf0;
+    --blue-primary: #b8c6e0;
+    --blue-secondary: #749ab8;
+    --blue-tertiary: #03010f;
+    --blue-text-color: #0b032d;
+
+    --orange-dark: #ffede2;
+    --orange-grey: #f3ddd3;
+    --orange-primary: #e0b998;
+    --orange-secondary: #b37a46;
+    --orange-tertiary: #130701;
+    --orange-text-color: #2c1204;
+    --orange-button: #f1c696;
+
+    --purple-dark: #fbefff;
+    --purple-grey: #eedaf5;
+    --purple-primary: #d8b2f9;
+    --purple-secondary: #8a57b3;
+    --purple-tertiary: #0a010e;
+    --purple-text-color: #1d0229;
+
+    --green-dark: #e9f8eb;
+    --green-grey: #d9ebdb;
+    --green-primary: #b8e1bc;
+    --green-secondary: #57a06e;
+    --green-tertiary: #000800;
+    --green-text-color: #021b02;
+
+    --black-dark: rgb(243, 243, 243);
+    --black-grey: rgb(206, 206, 206);
+    --black-primary: rgb(180, 180, 180);
+    --black-secondary: rgb(130, 130, 127);
+    --black-tertiary: rgb(81, 81, 84);
+    --black-text-color: rgb(31, 30, 30);
+
+    --yellow-dark: #fdf8e3;
+    --yellow-grey: #f9f1c4;
+    --yellow-primary: #f7e7a1;
+    --yellow-secondary: #d1b34b;
+    --yellow-tertiary: #211700;
+    --yellow-text-color: #746702;
+    --yellow-button: #faf7d9;
+
+    --head-fill-color: rgb(90, 90, 90);
+    --text-color: rgb(50, 50, 50);
+    --head-inner-color: #f1c6c6;
+
+    /* About page background pattern colors */
+    --about-pattern-1: #f5f5f5;
+    --about-pattern-2: #e2e2e2;
+
+    /* Other page pattern colors (placeholders; adjust later) */
+    --videos-pattern-1: var(--blue-tertiary);
+    --videos-pattern-2: var(--blue-primary);
+    --graphics-pattern-1: var(--orange-tertiary);
+    --graphics-pattern-2: var(--orange-primary);
+    --games-pattern-1: var(--purple-tertiary);
+    --games-pattern-2: var(--purple-primary);
+    --music-pattern-1: var(--green-tertiary);
+    --music-pattern-2: var(--green-primary);
+    --docs-pattern-1: var(--black-tertiary);
+    --docs-pattern-2: var(--black-primary);
+  }
+}

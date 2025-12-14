@@ -1,0 +1,150 @@
+/* Body Styling */
+body {
+    --dark-color: var(--green-dark);
+    --primary-color: var(--green-primary);
+    --secondary-color: var(--green-secondary);
+    --tertiary-color: var(--green-tertiary);
+    --text-color: var(--green-text-color);
+    --grey-color: var(--green-grey);
+    --hl-primary-color: var(--red-primary);
+    --hl-secondary-color: var(--red-secondary);
+    --hl-tertiary-color: var(--red-tertiary);
+    --hl-dark-color: var(--red-dark);
+    --hl-text-color: var(--red-text-color);     
+    background-image: url("assets/overlays/overlay-music-dark.png");
+    background-repeat: repeat;    
+    overflow-y: hidden;
+}
+
+/* Page background overlay (music page only; base pattern comes from template.css) */
+.content {
+    inline-size: 100vw;
+
+    /* Start just below the fixed header */
+    margin: calc(10rem + 1.5rem) 0 0;
+
+    /* Take up the remaining viewport height */
+    min-height: calc(100vh - (10rem + 1.5rem));
+
+    padding: 0;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+
+    background: none;
+    box-shadow: none;
+}
+
+
+
+/* Keyframes for horizontal movement */
+@keyframes moveRight {
+    0% {
+    transform: translateX(var(--xPos, 0px)) translateY(calc(var(--baseY) + var(--yOffset, 0px) + 0px)) scale(var(--scale-factor)) rotate(0deg);
+    }
+    25% {
+    transform: translateX(var(--xPos, 0px)) translateY(calc(var(--baseY) + var(--yOffset, 0px) - 6px)) scale(var(--scale-factor)) rotate(var(--wiggle-angle));
+    }
+    50% {
+    transform: translateX(var(--xPos, 0px)) translateY(calc(var(--baseY) + var(--yOffset, 0px) + 0px)) scale(var(--scale-factor)) rotate(calc(var(--wiggle-angle) * -1));
+    }
+    75% {
+    transform: translateX(var(--xPos, 0px)) translateY(calc(var(--baseY) + var(--yOffset, 0px) + 6px)) scale(var(--scale-factor)) rotate(var(--wiggle-angle));
+    }
+    100% {
+    transform: translateX(var(--xPos, 0px)) translateY(calc(var(--baseY) + var(--yOffset, 0px) + 0px)) scale(var(--scale-factor)) rotate(0deg);
+    }
+}
+
+:root {
+    --note-offset: 1s; /* Delay between note starts */
+    --scale-factor: 1.1; /* Base scale factor (overridden per note) */
+    --startX: -90px; /* Start further left */
+    --stopX: 90px;  /* End further right */
+    --wiggle-angle: 6deg; /* Wiggle amount */
+    --baseY: -46px; /* Lift notes into the middle of the circle */
+}
+
+/* Horizontal animation already defined above as moveRight */
+
+/* Class for notes */
+.note {
+    animation-name: moveRight;
+    animation-timing-function: cubic-bezier(0.6, 0.2, 0.1, 1);
+    animation-iteration-count: infinite;
+    animation-fill-mode: forwards;
+    animation-duration: 9.5s; /* default, overridden below */
+    transform-origin: center center;
+    transform-box: fill-box; /* Ensure SVG transforms behave predictably */
+    opacity: 1;
+    fill: var(--tertiary-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .note {
+        animation: none !important;
+        opacity: 1;
+    }
+}
+
+#clippath {
+    fill: var(--green-secondary);
+}
+
+/* 3D piano preview area */
+.piano-stage {
+    max-width: 100;
+    padding: 0;
+}
+.piano-canvas-wrap {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+#pianoCanvas {
+    width: 100%;
+    height: 100%;
+}
+.piano-play {
+    position: absolute;
+    top: 50%;
+    right: 24px; /* Move button to right side of the content window */
+    transform: translateY(-50%); /* Vertically center only */
+    background: linear-gradient(180deg,var(--purple-secondary),var(--purple-primary));
+    filter: brightness(1.5);
+    color: #fff;
+    border: none;
+    padding: 0.8rem 1.2rem;
+    border-radius: 999px;
+    font: 600 18px/.5 "Source Sans 3", system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    letter-spacing: .02rem;
+    box-shadow: 0 8px 18px rgba(126, 63, 224, 0.45);
+    cursor: pointer;
+}
+.piano-play:hover { filter: brightness(2); }
+.piano-play:active { transform: translateY(-50%) scale(0.98); }
+.sync-offset-wrap {
+    position:absolute;
+    right:24px;
+    top:calc(50% + 70px);
+    width:220px;
+    background:rgba(30,30,34,0.7);
+    backdrop-filter: blur(4px);
+    padding:10px 14px 12px;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.35);
+    font:500 12px/1.3 "Source Sans 3", system-ui;
+    color:#cfd5e8;
+}
+.sync-label { display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:12px; }
+#syncOffset { width:100%; accent-color:#7b3fe0; }
+.sync-value { font-weight:600; font-size:12px; color:#fff; }
+.sync-hint { display:block; margin-top:6px; font-size:11px; opacity:0.6; }
+@media (max-width: 800px){
+    .sync-offset-wrap { position:static; margin:8px auto 0; top:auto; right:auto; transform:none; }
+    .piano-play { right:50%; transform:translate(50%, -50%); }
+}
+.piano-notes { margin-top: 0.5rem; color: #c9c9d4; font: 500 12px/1.4 "Source Sans 3", system-ui; text-align: center; }

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="202.7298" height="201.3496" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 202.7298 201.3496">
+  <!-- Generator: Adobe Illustrator 29.7.1, SVG Export Plug-In . SVG Version: 2.1.1 Build 8)  -->
+  <defs>
+    <radialGradient id="radial-gradient" cx="100.6748" cy="100.6748" fx="100.6748" fy="100.6748" r="100.6748" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#803586"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient" x1="100.0112" y1="4.4688" x2="100.0112" y2="130.9828" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="gray"/>
+      <stop offset=".2516" stop-color="#585858"/>
+      <stop offset=".5917" stop-color="#282828"/>
+      <stop offset=".8522" stop-color="#0b0b0b"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <mask id="mask" x="13.4912" y="2.2148" width="173.5361" height="153.377" maskUnits="userSpaceOnUse">
+      <path d="M100.0122,2.791C52.2348,2.791,13.4912,36.997,13.4912,79.1875s38.7436,76.4043,86.521,76.4043,86.519-34.2041,86.519-76.4043S147.7988,2.791,100.0122,2.791Z" fill="url(#linear-gradient)"/>
+    </mask>
+    <radialGradient id="radial-gradient1" cx="513.477" cy="166.6634" fx="513.477" fy="166.6634" r="54.4143" gradientTransform="translate(10.2306 -438.215) rotate(59.7461) scale(.9718 .7044)" gradientUnits="userSpaceOnUse">
+      <stop offset=".0303" stop-color="#fff"/>
+      <stop offset=".0998" stop-color="#cbcbcb"/>
+      <stop offset=".1905" stop-color="#8e8e8e"/>
+      <stop offset=".2777" stop-color="#5b5b5b"/>
+      <stop offset=".3591" stop-color="#333"/>
+      <stop offset=".4332" stop-color="#171717"/>
+      <stop offset=".4978" stop-color="#060606"/>
+      <stop offset=".5455" stop-color="#000"/>
+    </radialGradient>
+    <mask id="mask-1" x="117.729" y="2.3604" width="85.0008" height="99.2077" maskUnits="userSpaceOnUse">
+      <path d="M186.8691,97.6435c-18.2773,10.6631-45.0234-1.1504-59.7461-26.3711-14.7187-25.2177-11.8242-54.3222,6.459-64.9834,18.2871-10.665,45.043,1.1309,59.748,26.3496,14.7227,25.2325,11.8379,54.3243-6.4609,65.0049Z" fill="url(#radial-gradient1)"/>
+    </mask>
+    <linearGradient id="Linear_Gradient" data-name="Linear Gradient" x1="-262.7563" y1="-157.797" x2="-243.1682" y2="-132.0874" gradientTransform="translate(259.7898 221.7147) rotate(5.2442)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <linearGradient id="Linear_Gradient1" data-name="Linear Gradient" x1="-230.3714" y1="-182.4707" x2="-210.7842" y2="-156.7624" xlink:href="#Linear_Gradient"/>
+    <linearGradient id="Linear_Gradient2" data-name="Linear Gradient" x1="-262.0142" y1="-158.3591" x2="-242.4267" y2="-132.6503" xlink:href="#Linear_Gradient"/>
+    <linearGradient id="Linear_Gradient3" data-name="Linear Gradient" x1="-237.2471" y1="-177.2343" x2="-217.6564" y2="-151.5214" xlink:href="#Linear_Gradient"/>
+    <mask id="mask-2" x="23.3193" y="14.1982" width="48.8057" height="68.3193" maskUnits="userSpaceOnUse">
+      <g>
+        <path d="M32.7329,49.083c-5.7671,9.6767-8.5918,21.0332-8.0713,32.1318-.2276.4277-.4463.8643-.6641,1.3027-1.7724-10.9521-.227-24.2265,6.4922-36.6689.7275,1.1006,1.4751,2.1787,2.2432,3.2344Z" fill="url(#Linear_Gradient)"/>
+        <path d="M61.3134,24.7197c-10.2339,3.9697-19.4453,11.1338-25.9507,20.3223-.6137-1.4414-1.185-2.9229-1.7104-4.4297,8.0269-12.0088,21.3354-22.4073,38.4727-26.4141-4.2486,3.2022-7.8453,6.7676-10.8116,10.5215Z" fill="url(#Linear_Gradient1)"/>
+        <path d="M35.4516,52.6162c-4.9726,6.7451-9.064,15.9707-10.0015,27.1455-.2353.418-.4653.8398-.6923,1.2695-.3384-11.1123,2.6538-22.2031,8.3095-31.4961.7725,1.0498,1.5694,2.0752,2.3843,3.0811Z" fill="url(#Linear_Gradient2)"/>
+        <path d="M53.5459,38.1025c-4.896,1.9336-10.6871,5.6465-15.9087,11.7588-.711-1.3652-1.3794-2.7686-2.0083-4.2022,6.3183-8.7949,15.0332-15.5117,24.4497-19.3183-2.7871,3.8066-4.9522,7.7764-6.5327,11.7617Z" fill="url(#Linear_Gradient3)"/>
+      </g>
+    </mask>
+  </defs>
+  <g isolation="isolate">
+    <g id="Objects">
+      <g>
+        <circle cx="100.675" cy="100.6748" r="100.6749" fill="url(#radial-gradient)" mix-blend-mode="hue"/>
+        <g mask="url(#mask)">
+          <path d="M100.5063,2.2148C52.7197,2.2148,13.9877,36.4199,13.9877,78.6113s38.732,76.4023,86.5186,76.4023,86.521-34.2031,86.521-76.4023S148.289,2.2148,100.5063,2.2148Z" fill="#fff"/>
+        </g>
+        <g>
+          <g mask="url(#mask-1)">
+            <path id="sun" d="M186.8691,97.6435c-18.2773,10.6631-45.0234-1.1504-59.7461-26.3711-14.7187-25.2177-11.8242-54.3222,6.459-64.9834,18.2871-10.665,45.043,1.1309,59.748,26.3496,14.7227,25.2325,11.8379,54.3243-6.4609,65.0049Z" fill="#f7eeda"/>
+          </g>
+          <path d="M165.2714,56.1621c-1.2695,1.7295-5.1093,1.0654-8.5781-1.4805-3.4629-2.543-5.2441-6.0098-3.9765-7.7373,1.2695-1.7275,5.1113-1.0664,8.5742,1.4775,3.4668,2.5459,5.25,6.0127,3.9804,7.7403Z" fill="#f7eeda"/>
+        </g>
+        <g mask="url(#mask-2)">
+          <g>
+            <path d="M32.7329,49.083c-5.7671,9.6767-8.5918,21.0332-8.0713,32.1318-.2276.4277-.4463.8643-.6641,1.3027-1.7724-10.9521-.227-24.2265,6.4922-36.6689.7275,1.1006,1.4751,2.1787,2.2432,3.2344Z" fill="#fff"/>
+            <path d="M61.3134,24.7197c-10.2339,3.9697-19.4453,11.1338-25.9507,20.3223-.6137-1.4414-1.185-2.9229-1.7104-4.4297,8.0269-12.0088,21.3354-22.4073,38.4727-26.4141-4.2486,3.2022-7.8453,6.7676-10.8116,10.5215Z" fill="#fff"/>
+            <path d="M35.4516,52.6162c-4.9726,6.7451-9.064,15.9707-10.0015,27.1455-.2353.418-.4653.8398-.6923,1.2695-.3384-11.1123,2.6538-22.2031,8.3095-31.4961.7725,1.0498,1.5694,2.0752,2.3843,3.0811Z" fill="#fff"/>
+            <path d="M53.5459,38.1025c-4.896,1.9336-10.6871,5.6465-15.9087,11.7588-.711-1.3652-1.3794-2.7686-2.0083-4.2022,6.3183-8.7949,15.0332-15.5117,24.4497-19.3183-2.7871,3.8066-4.9522,7.7764-6.5327,11.7617Z" fill="#fff"/>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

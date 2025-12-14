@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="a" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" width="451.41" height="201.41" viewBox="0 0 451.41 201.41">
+  <g id="b" data-name="up">
+    <polygon points="375.71 150.71 325.71 200.71 425.71 200.71 375.71 150.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 150.71 225.71 200.71 325.71 200.71 275.71 150.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 150.71 125.71 200.71 225.71 200.71 175.71 150.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 150.71 25.71 200.71 125.71 200.71 75.71 150.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 100.71 325.71 150.71 425.71 150.71 375.71 100.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 100.71 225.71 150.71 325.71 150.71 275.71 100.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 100.71 125.71 150.71 225.71 150.71 175.71 100.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 100.71 25.71 150.71 125.71 150.71 75.71 100.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 50.71 325.71 100.71 425.71 100.71 375.71 50.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 50.71 225.71 100.71 325.71 100.71 275.71 50.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 50.71 125.71 100.71 225.71 100.71 175.71 50.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 50.71 25.71 100.71 125.71 100.71 75.71 50.71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 .71 325.71 50.71 425.71 50.71 375.71 .71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 .71 225.71 50.71 325.71 50.71 275.71 .71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 .71 125.71 50.71 225.71 50.71 175.71 .71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 .71 25.71 50.71 125.71 50.71 75.71 .71" fill="#2b3990" stroke="#fff" stroke-miterlimit="10"/>
+  </g>
+  <g id="c" data-name="down">
+    <polygon points="375.71 200.71 425.71 150.71 325.71 150.71 375.71 200.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 200.71 325.71 150.71 225.71 150.71 275.71 200.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 200.71 225.71 150.71 125.71 150.71 175.71 200.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 200.71 125.71 150.71 25.71 150.71 75.71 200.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 150.71 425.71 100.71 325.71 100.71 375.71 150.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 150.71 325.71 100.71 225.71 100.71 275.71 150.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 150.71 225.71 100.71 125.71 100.71 175.71 150.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 150.71 125.71 100.71 25.71 100.71 75.71 150.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 100.71 425.71 50.71 325.71 50.71 375.71 100.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 100.71 325.71 50.71 225.71 50.71 275.71 100.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 100.71 225.71 50.71 125.71 50.71 175.71 100.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 100.71 125.71 50.71 25.71 50.71 75.71 100.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="375.71 50.71 425.71 .71 325.71 .71 375.71 50.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="275.71 50.71 325.71 .71 225.71 .71 275.71 50.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="175.71 50.71 225.71 .71 125.71 .71 175.71 50.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+    <polygon points="75.71 50.71 125.71 .71 25.71 .71 75.71 50.71" fill="#fff200" stroke="#fff" stroke-miterlimit="10"/>
+  </g>
+  <g id="d" data-name="frame">
+    <polyline points="425.71 .71 450.71 25.71 425.71 50.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="425.71 50.71 450.71 75.71 425.71 100.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="425.71 100.71 450.71 125.71 425.71 150.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="425.71 150.71 450.71 175.71 425.71 200.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="25.71 .71 .71 25.71 25.71 50.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="25.71 50.71 .71 75.71 25.71 100.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="25.71 100.71 .71 125.71 25.71 150.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+    <polyline points="25.71 150.71 .71 175.71 25.71 200.71" fill="none" stroke="#fff" stroke-miterlimit="10"/>
+  </g>
+</svg>

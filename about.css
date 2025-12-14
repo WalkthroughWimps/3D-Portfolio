@@ -1,0 +1,185 @@
+/* Body Styling */
+body {
+    --dark-color: var(--black-primary);
+    --primary-color: var(--red-primary);
+    --secondary-color: var(--red-secondary);
+    --tertiary-color: var(--red-tertiary);
+    --text-color: var(--red-text-color);
+    --panel-color: var(--primary-color);
+    --grey-color: var(--red-grey);
+    --hl-primary-color: var(--blue-primary);
+    --hl-secondary-color: var(--blue-secondary);
+    --hl-tertiary-color: var(--blue-tertiary);
+    --hl-dark-color: var(--blue-dark);
+    --hl-text-color: var(--blue-text-color);
+
+    background-image: url('assets/overlays/overlay-about-dark.png');
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+}
+
+/* Page content tweaks; panel layout comes from template.css .content */
+.content > section { margin: 2.5rem 0; }
+.content h2 { margin: 0 0 0.9rem; font: 800 2rem/1.1 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--blue-tertiary); letter-spacing: 0.2px; }
+.content p { color: var(--text-color); line-height: 1.6; }
+
+/* References grid */
+.refs-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; justify-items: center; }
+.ref-card { display: grid; grid-template-columns: 1fr; gap: 10px; align-items: start; text-align: center; background: color-mix(in oklab, var(--blue-tertiary), transparent 70%); border-radius: 10px; padding: 14px; max-width: 28ch; }
+.ref-avatar-wrap { width: 96px; aspect-ratio: 1; border-radius: 50%; background: var(--blue-tertiary); border: 3px solid #000; display: grid; place-items: center; box-shadow: 0 0 0 2px rgba(0,0,0,.2) inset; justify-self: center; }
+.ref-avatar { width: 86px; aspect-ratio: 1; object-fit: cover; object-position: 50% 40%; border-radius: 50%; display: block; }
+.ref-card blockquote { margin: 0; color: var(--text-color); }
+.ref-card footer { opacity: 0.8; font-size: 0.9em; }
+
+/* Skills */
+.skill-cols { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+.skill-cols ul { margin: 0; padding-left: 18px; }
+.skill-cols li { margin: 6px 0; color: var(--text-color); }
+
+/* Side gear rails removed */
+
+/* Ensure main content stays centered and not under the rails on wide monitors */
+@media (min-width: 1200px) {
+    .resume { margin-left: auto; margin-right: auto; }
+}
+
+/* Responsive tweaks */
+@media (max-width: 900px) {
+    .refs-grid { grid-template-columns: 1fr; }
+    .skill-cols { grid-template-columns: repeat(2, minmax(0,1fr)); }
+        /* rails removed */
+}
+@media (max-width: 620px) {
+    .skill-cols { grid-template-columns: 1fr; }
+        /* rails removed */
+}
+
+.head-fill { fill: var(--red-primary); z-index: 2; }
+
+.gear-large { fill: var(--red-tertiary); }
+.gear-small { fill: var(--blue-tertiary); }
+
+/* Keep header/nav stuck to top when scrolling */
+.navigation-bg { position: sticky; top: 0; z-index: 1000; }
+
+/* Section divider (double zigzag) */
+.section-divider { margin: 1.5rem 0 2rem; }
+.section-divider svg { display: block; inline-size: 100%; block-size: 8px; }
+.section-divider path { fill: var(--red-tertiary); }
+
+/* Ensure centered layout and override old float for the profile image inside resume */
+.about-me { display: block; }
+.about-me h2 { margin-bottom: 0.75rem; }
+.about-row { display: grid; grid-template-columns: 1fr 148px; gap: 18px; align-items: start; }
+.about-text p { margin: 0 0 0.75rem; }
+.content .profile-pic-container { float: none; margin: 0 0 0 auto; width: 148px; aspect-ratio: 1; max-width: none; padding: 5px; background: var(--secondary-color); border-radius: 50%; }
+.content .profile-pic { inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 40%; border-radius: 50%; display: block; }
+
+.button {
+    cursor: pointer;
+}
+
+.profile-pic-container {
+    position: relative;
+    width: 15%;
+    height: auto;
+    /* Allow height to adjust automatically based on aspect ratio */
+    max-width: 180px;
+    /* Set a max width */
+    background-color: var(--secondary-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    margin: 10vw 8vw 2vw 3vw;
+    /* Adjust the margin to move it down and left slightly */
+    float: right;
+    shape-outside: circle(50% at 50% 50%);
+    clip-path: circle(50% at 50% 50%);
+    overflow: hidden;
+    padding: 15px;
+    /* Add padding for the border effect */
+
+}
+
+.profile-pic {
+    width: 100%;
+    height: auto;
+    /* Maintain aspect ratio */
+    border-radius: 50%;
+}
+
+
+
+/* Media Query for smaller screens */
+/* Media Query for general smaller screens (e.g., tablets) */
+@media screen and (max-width: 1024px) {
+    /* Adjust content layout for medium-sized screens */
+
+    .profile-pic-container {
+        position: relative;
+        width: 15%;
+        height: auto;
+        /* Allow height to adjust automatically based on aspect ratio */
+        max-width: 180px;
+        /* Set a max width */
+        background-color: var(--secondary-color);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 50%;
+        margin: 10vw 8vw 2vw 3vw;
+        /* Adjust the margin to move it down and left slightly */
+        float: right;
+        shape-outside: circle(50% at 50% 50%);
+        clip-path: circle(50% at 50% 50%);
+        overflow: hidden;
+        padding: 6px;
+        /* Add padding for the border effect */
+
+    }
+
+    .profile-pic {
+        width: 90%;
+        height: 90%;
+        border-radius: 50%;
+    }
+}
+
+/* Media Query for smartphones (e.g., iPhone or Android) */
+@media only screen and (max-width: 768px),
+only screen and (min-device-pixel-ratio: 2) {
+    /* Adjust layout for mobile devices */
+
+    .profile-pic-container {
+        position: relative;
+        width: 25%;
+        height: auto;
+        /* Allow height to adjust automatically based on aspect ratio */
+        max-width: 150px;
+        /* Set a max width */
+        background-color: var(--secondary-color);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 50%;
+        margin: 10vw 8vw 2vw 3vw;
+        /* Adjust the margin to move it down and left slightly */
+        float: right;
+        shape-outside: circle(50% at 50% 50%);
+        clip-path: circle(50% at 50% 50%);
+        overflow: hidden;
+        padding: 8px;
+        /* Add padding for the border effect */
+
+    }
+
+    .profile-pic {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+    }
+}
+
+/* Footer tweaks */
+.footer { text-align: center; opacity: .65; font-size: .9rem; }

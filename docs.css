@@ -1,0 +1,24 @@
+/* Body Styling */
+body {
+    --dark-color: var(--black-dark);
+    --primary-color: var(--black-primary);
+    --secondary-color: var(--black-secondary);
+    --tertiary-color: var(--black-tertiary);
+    --text-color: var(--black-text-color);
+    --panel-color: var(--primary-color);
+    --grey-color: var(--black-grey);
+}
+
+/* Page background overlay */
+body {
+    background-image: url('assets/overlays/overlay-docs-dark.png');
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+}
+
+
+.gear-small {
+    fill: var(--red-tertiary);
+}
+
+/* Content panel uses template.css unified styles */

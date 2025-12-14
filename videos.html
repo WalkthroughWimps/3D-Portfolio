@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Videos</title>
+    <link rel="stylesheet" href="colors.css">
+    <link rel="stylesheet" href="template.css">
+    <link rel="stylesheet" href="videos.css">
+    <!-- Material Symbols Rounded icon font for YouTube-like controls -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,-50..200" />
+    <!-- Info text font (thicker humanist) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Heading font: Fascinate Inline -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.capis.com/css2?family=Fascinate+Inline&display=swap" rel="stylesheet">
+        <!-- No model-viewer on this page; custom three.js renderer used for exported camera -->
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.159.0/build/three.module.js"
+                }
+            }
+        </script>
+    <!-- Global non-a11y site configuration -->
+    <script src="site-config.js"></script>
+</head>
+
+<body>
+    <div class="header" id="patterned-background">
+        <div class="background-shape" id="patterned-background-shape">
+            <div class="head-pic-container" id="head-pic-container">
+                <?xml version="1.0" encoding="UTF-8"?>
+                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink"
+                    viewBox="0 0 100 100">
+                    <defs>
+                        <style>
+                            .head-inner { fill: none; }
+                            .cls-3, .cls-4, .head-inner { isolation: isolate; }
+                            .cls-4 { fill: url(#radial-gradient); mix-blend-mode: multiply; }
+                            /* Pseudo-3D head styling */
+                            .head-extrude-layer { fill: #341b21; opacity: 0.55; }
+                            .head-extrude-layer.mid { fill: #3d1f26; opacity:0.65; }
+                            .head-extrude-layer.light { fill:#45252c; opacity:0.5; }
+                            .head-face { fill: url(#head-face-gradient); filter:url(#headBevel); }
+                            .reels-depth { filter:url(#reelsDepth); }
+                            .rim-layer { fill:#0c2a44; opacity:0.25; }
+                        </style>
+                        <clipPath id="clippath">
+                            <circle class="head-inner" id="clipCircle" cx="45.7" cy="35.5" r="23.1" />
+                        </clipPath>
+                        <!-- Hard mask to prevent any spill outside circular window -->
+                        <mask id="circleMask" maskUnits="userSpaceOnUse">
+                            <rect x="0" y="0" width="100" height="100" fill="#000"/>
+                            <circle cx="45.7" cy="35.5" r="23.1" fill="#fff" id="maskCircle"/>
+                        </mask>
+                        <radialGradient id="radial-gradient" cx="45.7" cy="6421.5" fx="45.7" fy="6421.5" r="23.1"
+                            gradientTransform="translate(0 -6386)" gradientUnits="userSpaceOnUse">
+                            <stop offset=".7" stop-color="#ccc" stop-opacity="0" />
+                            <stop offset="1" stop-color="#53272d" />
+                        </radialGradient>
+                        <!-- Height gradient for pseudo thickness: darker outer rim thicker -->
+                        <radialGradient id="head-face-gradient" cx="50" cy="50" r="50" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#874d58" />
+                            <stop offset="55%" stop-color="#65313a" />
+                            <stop offset="85%" stop-color="#3c1d23" />
+                            <stop offset="100%" stop-color="#2a1317" />
+                        </radialGradient>
+                        <!-- Bevel / lighting filter -->
+                        <filter id="headBevel" x="-10%" y="-10%" width="120%" height="120%" filterUnits="objectBoundingBox">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="1.5" result="blur" />
+                            <feSpecularLighting in="blur" surfaceScale="5" specularConstant="0.4" specularExponent="25" result="spec" lighting-color="#ffffff">
+                                <fePointLight x="30" y="20" z="60" />
+                            </feSpecularLighting>
+                            <feComposite in="spec" in2="SourceGraphic" operator="in" result="specMask" />
+                            <feMerge>
+                                <feMergeNode in="SourceGraphic" />
+                                <feMergeNode in="specMask" />
+                            </feMerge>
+                        </filter>
+                        <!-- Inner shadow + subtle depth for reels -->
+                        <!-- Inner shadow only (no external spill) for reels; confines effect within their bounds -->
+                        <filter id="reelsDepth" x="-5%" y="-5%" width="110%" height="110%" filterUnits="objectBoundingBox">
+                            <feGaussianBlur in="SourceAlpha" stdDeviation="1.2" result="blur" />
+                            <feOffset in="blur" dx="0" dy="1" result="off" />
+                            <feComposite in="off" in2="SourceAlpha" operator="arithmetic" k2="-1" k3="1" result="inner" />
+                            <feColorMatrix in="inner" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.02  0 0 0 0 0.04  0 0 0 0.55 0" result="shade" />
+                            <feMerge>
+                                <feMergeNode in="shade" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                        <!-- Rim extrusion shadow stack -->
+                        <filter id="extrudeShadow" x="-10%" y="-10%" width="130%" height="130%">
+                            <feOffset in="SourceAlpha" dx="0" dy="2" result="off" />
+                            <feGaussianBlur in="off" stdDeviation="2" result="blur2" />
+                            <feColorMatrix in="blur2" type="matrix" values="0 0 0 0 0.05  0 0 0 0 0.02  0 0 0 0 0.03  0 0 0 0.4 0" />
+                            <feMerge>
+                                <feMergeNode in="blur2" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+
+                    <g class="cls-3">
+                        <g id="Layer_1">
+                            <!-- Pseudo 3D extrusion stack: darker outer rim appears thicker -->
+                            <g id="head-extrude" filter="url(#extrudeShadow)">
+                                <!-- Depth = ~5% of container: use small y offsets to fake Z -->
+                                <path class="head-extrude-layer" transform="translate(0,3.2)" d="M3,59.7C-2.4,33.3,14.7,8.2,40.3,3c18.7-3.8,38.3,3.7,49.5,20.2,16.9,25,6.7,59.3-21.2,71-28,11.9-59.8-5.2-65.7-34.6h0Z" />
+                                <path class="head-extrude-layer mid" transform="translate(0,2.4)" d="M3,59.7C-2.4,33.3,14.7,8.2,40.3,3c18.7-3.8,38.3,3.7,49.5,20.2,16.9,25,6.7,59.3-21.2,71-28,11.9-59.8-5.2-65.7-34.6h0Z" />
+                                <path class="head-extrude-layer light" transform="translate(0,1.6)" d="M3,59.7C-2.4,33.3,14.7,8.2,40.3,3c18.7-3.8,38.3,3.7,49.5,20.2,16.9,25,6.7,59.3-21.2,71-28,11.9-59.8-5.2-65.7-34.6h0Z" />
+                            </g>
+                            <!-- Faux rim thickness around clip circle; shifted slightly by JS for side view -->
+                            <g id="head-rim">
+                                <circle class="rim-layer" cx="45.7" cy="35.5" r="23.1" />
+                                <circle class="rim-layer" cx="45.7" cy="35.5" r="22.6" />
+                                <circle class="rim-layer" cx="45.7" cy="35.5" r="22.1" />
+                                <circle class="rim-layer" cx="45.7" cy="35.5" r="21.6" />
+                                <circle class="rim-layer" cx="45.7" cy="35.5" r="21.1" />
+                            </g>
+                            <path id="head-bg" class="head-face" transform="translate(0,0.6)" d="M3,59.7C-2.4,33.3,14.7,8.2,40.3,3c18.7-3.8,38.3,3.7,49.5,20.2,16.9,25,6.7,59.3-21.2,71-28,11.9-59.8-5.2-65.7-34.6h0Z" />
+                            <path class="head-inner"
+                                d="M83.9,16.1C75.2,7.3,63.1,2,50,2s-6.5.4-9.7,1C10.9,9-6.1,40.6,5.7,68.7c2.8,6.6,6.8,12.1,11.7,16.6,1.7-1.1,3.7-2.1,5.5-2.4h.3c.6-1.6,2.8-3.8,4.2-6.1,2.4-4.2,1.7-8,1.6-10.6h-1.2c-.2,0-1.1-.3-1.7-.5-2.8-1-1.8-3.4-1.6-5.6.4-3.6-1-5-2.5-7.9-4.3-8.6-6-19.3-.9-27.5.7-1.2,1.7-2.3,2.9-3.1-.6-1.4,0-3.1,1-4.4,5.9-8.4,21-8.8,28.2-7s9.9-3.8,18-1.8c4.1,1.1,6.8,4.4,7.3,7.7.9.4,1.6,1.4,1.9,2.3.2.8-.2,3.4-1.3,4.7h0c-1.1,1.4-2.7,2.4-4.5,2.7.8,1.1,1.5,2.7,1.6,4.8.2,2-.2,3.4-.2,3.4,0,0,0,.2-.3.2s-.2,0-.2-.2c0-.9,0-2.1-.5-3.2-.3-.9-.8-1.7-1.6-2.3-.6-.5-1.8-.8-2.6-1,.5.7.9,1.5,1.1,2.1,0,.4.3,1.2.5,2.1,0,.8,1.3,5.9,1.2,6.6,0,.9-.7,1.5-1,2.4v1c0,1,.2,1.7.7,2.6,1.2,2.1,3.7,4.4,3.6,4.3,2.3,2.2,3,2.9,2.7,4.5,0,.3-.2.6-.4.9-.8,1.2-2.6,1.9-4.1,2,0,.5-.2.9-.3,1,0,.5,2.7,2.6-.5,4.1.2.2.3.5.4.7v.4c0,.6,0,1.3-.3,1.6-.3.3-1,.2-1.2.4-.8.8-.3,1.5-.2,2.4v1.5c-.4,3.5-3.4,5.8-6.1,5.9-1.2,0-2.3-.3-3.4-.7-.8-.3-1.7-.6-2.5-.9h-.6c-2.4,1.2-4.6,3.8-5,6.5-.2,1.5,0,2.2-.2,3.9,0,.5-.2,1.1-.5,1.6s-.6.9-.8,1c0,0-.2,0-.3.2,0,0-.4.4-.4.5,0,.2-.3.8-.4,1.1-1.1,2.8-2.8,3.2-2.5,4.9.2.9.8,1.7,1,2.3,1.5,1,2.6,2,3.5,3.6,7.6-.7,15.2-3.3,22.1-8,25-16.9,28.5-52.3,7.1-73.7h0v-.2h0Z" />
+                            <path class="head-fill"
+                                d="M50,0C22.4,0,0,22.4,0,50s22.4,50,50,50,50-22.4,50-50S77.6,0,50,0ZM76.8,89.8c-6.9,4.7-14.5,7.2-22,8-.9-1.4-2.3-2.9-3.6-3.8-.2-.6-.7-1.3-.9-2.1-.3-1.7,1.4-2.1,2.5-4.9,0-.3.3-.9.4-1.1l.4-.5c0-.2.2-.2.3-.2.2,0,.5-.5.8-1,.3-.5.5-1.1.5-1.6.2-1.7,0-2.4.2-3.9.4-2.7,2.6-5.3,5-6.5h.6c.8.3,1.7.6,2.5.9,1.1.4,2.2.7,3.4.7,2.7,0,5.7-2.4,6.1-5.9v-1.5c0-.9-.6-1.6.2-2.4.8-.8.8,0,1.2-.4.4-.4.3-1,.3-1.6v-.4c0-.2-.2-.5-.4-.7,3.2-1.5.5-3.6.5-4.1,0,0,.3-.5.3-1,1.5,0,3.3-.8,4.1-2,.2-.3.4-.6.4-.9.3-1.6-.4-2.3-2.7-4.5,0,0-2.4-2.2-3.6-4.3-.5-.9-.7-1.6-.7-2.6v-1c.3-.9,1-1.5,1-2.4s-1.2-5.8-1.2-6.6c-.2-.9-.4-1.7-.5-2.1-.2-.6-.6-1.4-1.1-2.1.8.2,2,.5,2.6,1,.8.6,1.3,1.4,1.6,2.3.4,1.1.5,2.3.5,3.2s0,.2.2.2.3,0,.3-.2c0,0,.4-1.4.2-3.4,0-2.1-.8-3.7-1.6-4.8,1.8-.3,3.4-1.3,4.5-2.6,1.1-1.4,1.5-4,1.3-4.8-.3-.9-1-1.9-1.9-2.3-.5-3.3-3.2-6.6-7.3-7.7-8.1-2-12,3.3-18,1.8s-22.3-1.4-28.2,7c-.9,1.3-1.6,3-1,4.4-1.2.8-2.2,1.9-2.9,3.1-5.1,8.2-3.4,18.9.9,27.5,1.5,2.9,2.9,4.3,2.5,7.9-.2,2.2-1.2,4.6,1.6,5.6.6.2,1.5.5,1.7.5h1.2c0,2.6.8,6.4-1.6,10.6-1.4,2.3-3.6,4.5-4.2,6.1h-.3c-1.6.3-3.8,1.5-5.4,2.6-4.9-4.5-8.9-10.1-11.7-16.6C-6.1,40.6,10.9,9,40.3,3c3.2-.6,6.4-1,9.7-1,13.1,0,25.2,5.3,33.9,14.1,21.4,21.4,17.9,56.8-7.1,73.7Z" />
+                            <circle id="head-inner" class="head-inner" cx="45.7" cy="35.5" r="23.1" />
+
+                            <!-- Reels Group with Clipping Mask -->
+                            <g clip-path="url(#clippath)" mask="url(#circleMask)" class="reels-depth" id="reelsGroup">
+                                <path class="camera"
+                                    d="M64.4,32.2c-1.3.6-2.5,1.2-3.8,1.8v.5h-.8v-.4h-1.6v.5h-.9c0,0-.1.2-.1.2v-.2h.1s-.1-.1-.1-.1v-1.5h0c0,0-1.5-.3-1.5-.3v-2.2h-27.7v16h9.3v1.1h1.4v2.5h.5l-8.9,16.8h-1.3v.9h2.9v-.9h-.7l8.9-16.8h1.3v20.8h-1.3v1h5.1v-1h-1.3v-20.8h1.4l8.9,16.8h-.5v.9h3v-.9h-1.5l-8.9-16.8h.5v-2.5h1.5v-1.1h7.5v-3.9l1.5-.2h0v-1.7c.1,0,0,0,0,0v-.2.2c.1,0,1.1,0,1.1,0v.5h1.6v-.4h.8v.5l3.8,1.8c-.1-1.7-.2-3.5-.2-5.4,0-1.8,0-3.5.2-5.1ZM43.1,67c0,.2-.2.4-.4.4-.2,0-.4-.2-.4-.4,0,0,0,0,0,0h0v-17.1h.8v17.1ZM40.5,43.7c-.9,0-1.6-.7-1.6-1.6,0-.9.7-1.6,1.6-1.6.9,0,1.6.7,1.6,1.6,0,.9-.7,1.6-1.6,1.6ZM33.7,33.2h7.7c.3,0,.5.2.5.5,0,.3-.2.5-.5.6h-7.7c-.3,0-.5-.2-.5-.5,0-.3.2-.5.5-.6ZM32.5,35.2s0,0,0,0h0s8.8,0,8.8,0c.3,0,.5.2.6.5,0,.3-.2.5-.5.6,0,0,0,0,0,0h0s-8.8,0-8.8,0c-.3,0-.5-.2-.6-.5,0-.3.2-.5.5-.6ZM31.3,37.2h10.3c.3,0,.5.2.5.5,0,.3-.2.5-.5.6h-10.3c-.3,0-.5-.2-.5-.5,0-.3.2-.5.5-.6ZM32.3,43.7c-.9,0-1.6-.7-1.6-1.6,0-.9.7-1.6,1.6-1.6.9,0,1.6.7,1.6,1.6,0,.9-.7,1.6-1.6,1.6ZM34.8,42.1c0-.9.7-1.6,1.6-1.6.9,0,1.6.7,1.6,1.6,0,.9-.7,1.6-1.6,1.6-.9,0-1.6-.7-1.6-1.6Z" />
+                                <!-- Left Reel -->
+                                <g class="reels">
+                                    <path class="reel-left"
+                                        d="M34.9,21.8c0-.1-.1-.3-.2-.4,0,0,0,0,0,0-1.5-3.2-4.6-5.5-8.3-6-.2,0-.4,0-.6,0-.2,0-.5,0-.7,0-3.5,0-6.6,1.7-8.6,4.3,0,0,0,0,0,0,0,.1-.2.3-.3.4,0,0,0,0,0,0-1.2,1.7-1.8,3.8-1.8,6s.3,2.9.9,4.2c0,.1.1.3.2.4,0,0,0,0,0,0,1.5,3.2,4.6,5.5,8.3,6,.2,0,.4,0,.6,0,.2,0,.5,0,.7,0,3.5,0,6.6-1.7,8.5-4.3.1-.1.2-.3.3-.4,0,0,0,0,0,0,1.2-1.7,1.8-3.8,1.8-6s-.3-2.9-.9-4.2ZM24.5,17.5c1.1-.6,2.6-.2,3.2.9.6,1.1.2,2.6-.9,3.2-1.1.6-2.6.2-3.2-.9-.6-1.1-.2-2.6.9-3.2ZM19.8,19.9c1.3,0,2.3,1.1,2.3,2.4,0,1.3-1.1,2.3-2.4,2.3-1.3,0-2.3-1.1-2.3-2.4,0-1.3,1.1-2.3,2.4-2.3ZM21.1,29.9c-.7,1.1-2.1,1.5-3.2.8-1.1-.7-1.5-2.1-.8-3.2.7-1.1,2.1-1.5,3.2-.8,1.1.7,1.5,2.1.8,3.2ZM25.5,34.6c-1.1.6-2.6.2-3.2-.9s-.2-2.6.9-3.2c1.1-.6,2.6-.2,3.2.9.6,1.1.2,2.6-.9,3.2ZM26.2,28.7c-.9-.4-1.9-.5-2.9-.3,0-1-.5-1.9-1.2-2.7.8-.6,1.4-1.4,1.7-2.4.9.4,1.9.6,2.9.3,0,1,.5,1.9,1.2,2.7-.8.6-1.4,1.4-1.7,2.4ZM30.3,32.2c-1.3,0-2.3-1.1-2.3-2.4,0-1.3,1.1-2.3,2.4-2.3,1.3,0,2.3,1.1,2.3,2.4,0,1.3-1.1,2.3-2.4,2.3ZM32.9,24.6c-.7,1.1-2.1,1.5-3.2.8-1.1-.7-1.5-2.1-.8-3.2.7-1.1,2.1-1.5,3.2-.8,1.1.7,1.5,2.1.8,3.2Z" />
+                                    <animateTransform attributeName="transform" attributeType="XML" type="rotate"
+                                        from="0 25.05 26.05" to="360 25.05 26.05" dur="2s" repeatCount="indefinite" />
+                                </g>
+
+                                <!-- Right Reel -->
+                                <g class="reels">
+                                    <path class="reel-right"
+                                        d="M57.9,23.4c0-.1,0-.3,0-.4,0,0,0,0,0,0,.4-3.5-.9-7.2-3.8-9.5-.2-.1-.3-.2-.5-.4-.2-.1-.4-.3-.6-.4-3-1.9-6.5-2.2-9.5-1,0,0,0,0,0,0-.1,0-.3.1-.4.2,0,0,0,0,0,0-1.9.8-3.6,2.2-4.8,4.1s-1.3,2.6-1.5,4c0,.1,0,.3,0,.4,0,0,0,0,0,0-.4,3.5.9,7.2,3.8,9.5.2.1.3.2.5.4.2.1.4.3.6.4,2.9,1.9,6.5,2.2,9.5,1,.2,0,.3-.1.5-.2,0,0,0,0,0,0,1.9-.8,3.6-2.2,4.8-4.1s1.3-2.6,1.6-4ZM51.5,14.2c1.3,0,2.3,1.2,2.2,2.5,0,1.3-1.2,2.3-2.5,2.2-1.3,0-2.3-1.2-2.2-2.5,0-1.3,1.2-2.3,2.5-2.2ZM46.3,13.7c1.1.7,1.4,2.2.6,3.3-.7,1.1-2.2,1.4-3.3.6-1.1-.7-1.4-2.2-.6-3.3.7-1.1,2.2-1.4,3.3-.6ZM42,22.8c-1.2.6-2.6,0-3.1-1.1-.6-1.2,0-2.6,1.1-3.1,1.2-.6,2.6,0,3.1,1.1.6,1.2,0,2.6-1.1,3.1ZM43.2,29.1c-1.3,0-2.3-1.2-2.2-2.5s1.2-2.3,2.5-2.2c1.3,0,2.3,1.2,2.2,2.5,0,1.3-1.2,2.3-2.5,2.2ZM46.9,24.5c-.5-.8-1.3-1.5-2.3-1.8.5-.9.6-1.9.4-2.9,1,0,2-.4,2.7-1.1.5.9,1.3,1.5,2.3,1.8-.5.9-.6,1.9-.4,2.9-1,0-2,.4-2.7,1.1ZM48.5,29.6c-1.1-.7-1.4-2.2-.6-3.3.7-1.1,2.2-1.4,3.3-.6,1.1.7,1.4,2.2.6,3.3-.7,1.1-2.2,1.4-3.3.6ZM54.8,24.7c-1.2.6-2.6,0-3.1-1.1-.6-1.2,0-2.6,1.1-3.1,1.2-.6,2.6,0,3.1,1.1.6,1.2,0,2.6-1.1,3.1Z" />
+                                    <animateTransform attributeName="transform" attributeType="XML" type="rotate"
+                                        from="0 47.4146 21.7" to="360 47.4146 21.7" dur="2s" repeatCount="indefinite" />
+                                </g>
+                            </g>
+                            <circle id="gradient-circle" class="cls-4" cx="45.7" cy="35.5" r="23.1" />
+                        </g>
+                    </g>
+                </svg>
+            </div>
+        </div>
+
+        <div class="title">
+            <h1>Matt Hall</h1>
+            <h2>Videographer</h2>
+        </div>
+
+        <div id="header-placeholder"></div> <!-- Placeholder for header -->
+    </div>
+
+            <!-- Edge reveal overlays -->
+            <div class="edge-reveal left" aria-hidden="true"></div>
+            <div class="edge-reveal right" aria-hidden="true"></div>
+
+                                <!-- Tablet intro video overlayed on the 3D model; swaps to GLB when finished -->
+            <div class="tablet-stage" aria-label="Tablet stage">
+                <div class="viewer-wrap">
+                    <canvas id="glCanvas" class="gl-canvas" aria-label="3D tablet canvas"></canvas>
+                </div>
+            </div>
+
+        <script>
+            // Load the shared header
+            document.addEventListener('DOMContentLoaded', function () {
+                    fetch('header.html')
+                        .then(r => r.text())
+                        .then(html => { const el = document.getElementById('header-placeholder'); if (el) el.innerHTML = html; })
+                        .catch(() => {});
+            });
+        </script>
+        <script type="module" src="videos.js"></script>
+</body>
+
+</html>

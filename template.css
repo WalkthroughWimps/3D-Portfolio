@@ -1,0 +1,411 @@
+:root {
+    --frame-stroke-width: 1px;
+    --head-pic-border-radius: 1vw;
+    --nav-icon-size: 3.2vw;
+    --overlay-size: 650px;
+    /* default tile size for page overlays */
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    /* Use a consistent site-wide body background */
+    background-size: var(--overlay-size);
+    color: var(--text-color);
+    max-width: 100vw;
+    overflow-x: hidden;
+    z-index: 3;
+}
+
+/* Page-level scroll snapping only on videos page */
+body.videos-page {
+    scroll-snap-type: y mandatory;
+}
+
+#patterned-background,
+#patterned-background-shape {
+    background-image: url("assets/overlays/rough-pattern.png");
+    background-repeat: repeat;
+    background-size: 9px;
+    /* Adjust as needed */
+    background-blend-mode: multiply;
+    /* Overlay to enhance pattern visibility */
+    z-index: 3;
+}
+
+/* Header Section */
+.header {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 0;
+    display: flex;
+    align-items: center;
+    transition: transform 0.3s ease-in-out;
+    padding: 2vh 1vw;
+    background-color: var(--secondary-color);
+    height: auto;
+    width: 100%;
+    z-index: 100;
+    box-sizing: border-box;
+}
+
+
+.background-shape,
+.head-wrapper {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 10rem;
+    height: 10rem;
+    background-color: var(--secondary-color);
+    border-radius: 0 0 50% 0;
+    z-index: -1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.head-pic-container {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 90%;
+    height: auto;
+    transform: translate(-50%, -50%);
+    background-color: var(--secondary-color);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    z-index: 2;
+}
+
+.head-pic {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+.head-inner {
+    fill: var(--secondary-color);
+}
+
+/* Header Content Styling */
+.header-content {
+    position: relative;
+    z-index: 2;
+    color: rgb(41, 50, 178);
+    padding-left: 18vw;
+    padding-top: 1vh;
+}
+
+.title {
+    margin-left: 10rem;
+}
+
+.title h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-family: "Rubik", sans-serif;
+    font-optical-sizing: auto;
+    font-style: normal;
+    color: var(--text-color);
+    text-shadow: 1px 1px 2px var(--hl-secondary-color);
+}
+
+.title h2 {
+    margin: 0.5rem 0 0 0;
+    font-size: 1.2rem;
+    color: #ddd;
+    font-family: "Rubik", sans-serif;
+    font-optical-sizing: auto;
+    font-style: italic;
+    text-shadow: 1px 1px 2px var(--hl-dark-color);
+}
+
+/* Navigation Bar */
+.navigation-bg {
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 1vh 1vw;
+    /* background-color: #4b4848;*/
+    background-color: var(--grey-color);
+    z-index: 0;
+    border-radius: 0 0 0 3.2vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: auto;
+    width: auto;
+}
+
+.navigation {
+    display: flex;
+    gap: 1.75vw;
+    padding-right: 1vw;
+    justify-content: center;
+    align-items: center;
+}
+
+.nav-icon {
+    width: var(--nav-icon-size);
+    height: var(--nav-icon-size);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background-color: var(--grey-color);
+    border: 2px solid transparent;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
+    transition: background-color .2s ease, box-shadow .2s ease, transform .1s ease;
+    text-decoration: none;
+}
+
+.nav-icon img {
+    width: 100%;
+    height: 100%;
+}
+
+/* Default state - no glow */
+.nav-icon svg {
+    display: inline-block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    filter: none;
+    transition: filter 0.3s ease;
+    border-radius: 50%;
+    background-color: transparent !important;
+    /* ensure container color shows */
+}
+
+/* Button-like interaction states */
+.nav-icon:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .35);
+    transform: translateY(-1px);
+}
+
+.nav-icon:active {
+    transform: translateY(0) scale(0.98);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .3) inset;
+}
+
+.nav-icon:focus-visible {
+    outline: 3px solid var(--hl-tertiary-color);
+    outline-offset: 2px;
+}
+
+
+.nav-separator {
+    height: var(--nav-icon-size);
+    width: .3vw;
+    background-color: var(--hl-tertiary-color);
+}
+
+/* Content Section */
+
+/* Unified content frame: matches About's panel but themed by variables */
+.content {
+    position: relative;
+    inline-size: min(90vw, clamp(540px, 100vh, 980px));
+    margin: calc(10rem + 1.5rem) auto 6rem;
+    padding: 24px;
+    line-height: 1.6;
+    font-size: 1.05rem;
+    text-wrap: wrap;
+    background: color-mix(in oklab, var(--primary-color), transparent 40%);
+    border: none;
+    /* outline is drawn via ::after */
+    border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .25), 0 2px 8px rgba(0, 0, 0, .15);
+    z-index: 1;
+}
+
+/* Thin stroke around the content frame */
+.content::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    /* aligns to the panel edges */
+    border: var(--frame-stroke-width, 2px) solid var(--secondary-color);
+    border-radius: inherit;
+    pointer-events: none;
+    box-sizing: border-box;
+    opacity: 0.9;
+}
+
+/* Remove any leftover per-page divider lines now that the frame has a stroke */
+.section-divider {
+    display: none !important;
+}
+
+.content p {
+    margin: 0 0 1rem;
+}
+
+/* Head Outline */
+
+/* page-level snap anchors (used by videos page) */
+#lane-snap-upper, #lane-snap-lower { height: 1px; scroll-snap-align: start; }
+/* reserve space for fixed header during snap alignment */
+body.videos-page { scroll-padding-top: calc(10rem + 1.5rem); }
+
+
+@media screen and (max-width: 1024px) {
+
+    /* Adjust content layout for medium-sized screens */
+    .header-content {
+        padding-left: 5vw;
+        /* Reduce padding */
+    }
+
+    .title h1 {
+        font-size: 1.2rem;
+        /* Adjust title size */
+    }
+
+    .title h2 {
+        font-size: .75rem;
+    }
+
+    .title {
+        margin-left: 10vw;
+    }
+
+    .title h1 {
+        margin: 0;
+        font-size: 1.3rem;
+    }
+
+    .title h2 {
+        margin: 0.5rem 0 0 0;
+        font-size: .9rem;
+        color: #ddd;
+    }
+
+    .navigation-bg {
+        width: calc(38vw + 3vw);
+        /* Adjust navigation width */
+        height: 7vh;
+        padding: 1.5vh 3vw;
+    }
+
+    .navigation {
+        gap: 1.5vw;
+    }
+
+    .nav-icon {
+        width: 4.5vw;
+        height: 4.5vw;
+    }
+
+    .nav-separator {
+        height: 6vh;
+        width: .3vw;
+    }
+
+    .content {
+        font-size: 1.2rem;
+        padding-right: 5vw;
+        padding-left: 5vw
+    }
+
+    .content p {
+        padding: 10vw 5vw;
+        text-align: justify;
+    }
+}
+
+/* Media Query for smartphones (e.g., iPhone or Android) */
+@media only screen and (max-width: 768px),
+only screen and (min-device-pixel-ratio: 2) {
+
+    /* Adjust layout for mobile devices */
+    .header {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: auto;
+        z-index: 100;
+    }
+
+    .header-content {
+        padding-left: 5vw;
+        height: auto;
+    }
+
+    .background-shape,
+    .head-wrapper {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 20vw;
+        height: 20vw;
+        background-color: var(--secondary-color);
+        border-radius: 0 0 50% 0;
+        z-index: -1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+
+    .head-pic-container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 90%;
+        height: auto;
+        transform: translate(-50%, -50%);
+        background-color: var(--secondary-color);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        border-radius: 50%;
+        z-index: 2;
+    }
+
+    .title h1 {
+        font-size: 1rem;
+        padding-left: 3rem;
+    }
+
+    .title h2 {
+        font-size: .8rem;
+        padding-left: 3rem;
+    }
+
+    .navigation-bg {
+        position: absolute;
+        width: 100%;
+        height: 4vh;
+        padding: 1.5vh 3vw;
+        border-radius: 0;
+        top: 100%
+    }
+
+    .navigation {
+        position: relative;
+        gap: 1vw;
+        left: 50px;
+    }
+
+    .nav-icon {
+        width: 7vw;
+        height: 7vw;
+    }
+
+    .nav-separator {
+        height: 5vh;
+        width: .5vw;
+    }
+
+    .content {
+        font-size: 1rem;
+        padding-right: 5vw;
+    }
+}

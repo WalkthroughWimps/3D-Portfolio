@@ -1,0 +1,32 @@
+/* Body Styling */
+body {
+    --dark-color: var(--orange-dark);
+    --primary-color: var(--orange-primary);
+    --secondary-color: var(--orange-secondary);
+    --tertiary-color: var(--orange-tertiary);
+    --text-color: var(--orange-text-color);
+    --panel-color: var(--primary-color);
+    --grey-color: var(--orange-grey);
+    --hl-primary-color: var(--purple-primary);
+    --hl-secondary-color: var(--purple-secondary);
+    --hl-tertiary-color: var(--purple-tertiary);
+    --hl-dark-color: var(--purple-dark);
+    --hl-text-color: var(--purple-text-color);
+}
+
+/* Page background overlay */
+body {
+    background-image: url('assets/overlays/overlay-graphics-dark.png');
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+}
+
+.gear-large {
+    fill: var(--purple-tertiary);
+}
+
+.gear-small {
+    fill: var(--orange-tertiary);
+}
+
+/* Content panel uses template.css unified styles */

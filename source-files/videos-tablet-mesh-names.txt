@@ -1,0 +1,17 @@
+index,name,uuid,hasUV,materialName
+0,Plane631,25c69fff-0fa8-4e3a-bc40-142de96ba5e8,true,Holes_Backing_Blue
+1,Plane631_1,692a04e2-33b0-498b-ae2e-24de39ea2077,true,Holes_Backing.Orange
+2,Plane631_2,00cd7bda-6036-4887-ae61-e42c51a50619,true,
+3,screenOverlay,a3aa9de5-f6ac-4fcc-a0fc-17b73c3b5660,true,
+4,Plane631_3,1d3fd410-86c3-48ef-ba1c-ae2c57fd485a,true,Holes_Backing.Light_Gold
+5,Plane631_4,6a642a7f-bd88-48c0-945b-f00c8392feaa,true,Material_Shiny_Black
+6,Plane631_5,58ff8410-01ac-448b-ab0c-1ae78613045b,true,Textured plastic
+7,Plane631_6,5d0df737-b79c-4f83-8a50-019e3e212a54,true,Material_Circles
+8,Plane631_7,9da5f87b-b8fa-4b5b-92c3-638fa7c08813,true,Material_Teal
+9,Plane631_8,ee7939d6-0506-43a0-a340-b1d7fbc4ac37,true,Material_ Black
+10,Plane631_9,cf12ccbd-20d0-4d53-824c-387edc5ffe1a,true,cables_brown
+11,Plane631_10,578d1c68-5abc-4924-b8bb-7a07f4253593,true,EE Anodized Red Matte
+12,Plane631_11,020554cb-1a26-4a53-898f-2e0c11e2cea8,true,Material_Clear
+13,Plane631_12,d50e1a1a-d38d-4214-b3a6-4a6863cd2c4a,true,Holes_BackingRed
+14,Plane631_13,6d8fae39-edbd-4a8a-b0b0-c7aa17b0d1f8,true,Holes_Backing_Black
+15,tablet_screen003,7b9c1c7a-bd4d-41e2-9e50-8a265bcdf322,true,

@@ -129,7 +129,7 @@ onReady(() => {
     animId = requestAnimationFrame(animate);
   }
 
-  const primaryPath = 'glb/video-tablet.glb';
+  const primaryPath = (window && window.mediaUrl) ? window.mediaUrl('glb/video-tablet.glb') : 'glb/video-tablet.glb';
   const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || localStorage.getItem('allowSound') === 'true';
 
   // load GLB and init
@@ -335,8 +335,28 @@ onReady(() => {
     }, undefined, (err) => { console.warn('Failed to load GLB', err); });
   };
 
-  // start
-  doLoadGlb();
+  // start: lazy-load GLB only when the relevant container becomes visible.
+  let __videos_glb_loaded = false;
+  const __startGlbLoad = () => { if (__videos_glb_loaded) return; __videos_glb_loaded = true; try { doLoadGlb(); } catch (e) { console.warn('doLoadGlb failed', e); } };
+  try {
+    const container = document.querySelector('.tablet-stage') || document.querySelector('.viewer-wrap') || null;
+    if (container && 'IntersectionObserver' in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((en) => { if (en.isIntersecting) { __startGlbLoad(); io.disconnect(); } });
+      }, { threshold: 0.01 });
+      io.observe(container);
+      // Also ensure if the page is already visible and container intersects immediately we load.
+      // If IntersectionObserver fails to trigger within a few seconds, fall back to immediate load.
+      setTimeout(() => { if (!__videos_glb_loaded) { try { const rect = container.getBoundingClientRect(); if (rect && rect.bottom > 0) __startGlbLoad(); } catch (e) {} } }, 2500);
+    } else if (document.visibilityState === 'visible') {
+      __startGlbLoad();
+    } else {
+      // No container found — preserve previous behavior and load immediately
+      __startGlbLoad();
+    }
+  } catch (e) {
+    try { __startGlbLoad(); } catch (ee) { /* ignore */ }
+  }
 
   // reset helper
   window.resetGridInteraction = function resetGridInteraction() {

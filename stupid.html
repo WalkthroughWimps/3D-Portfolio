@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width,initial-scale=1" />
+		<title>Stupid — Tablet Viewer</title>
+		<link rel="stylesheet" href="stupid.css" />
+	</head>
+	<body>
+		<div id="viewer"></div>
+		<div id="ui-overlay" class="ui-overlay">
+			<button id="frame-btn" class="ui-btn" title="Frame model">Frame Model</button>
+			<button id="toggle-helpers-btn" class="ui-btn" title="Toggle helpers">Toggle Helpers</button>
+			<button id="reset-btn" class="ui-btn" title="Reset camera">Reset View</button>
+		</div>
+
+		<!-- Use ESM modules (served from jsDelivr) to avoid MIME issues -->
+		<!-- Import map to resolve bare "three" specifier used by example modules -->
+		<script type="importmap">
+		{
+		  "imports": {
+		    "three": "https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js"
+		  }
+		}
+		</script>
+		<script type="module" src="stupid.js"></script>
+
+		<!--
+			Place `video_tablet.glb` in the same folder as this HTML file.
+			The script will use the GLB's camera if the file contains one.
+		-->
+	</body>
+</html>

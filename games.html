@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Games</title>
+    <link rel="stylesheet" href="template.css">
+    <link rel="stylesheet" href="games.css">
+</head>
+
+<body>
+    <div class="header" id="patterned-background">
+        <div class="background-shape" id="patterned-background-shape">
+                            <div class="head-pic-container game-window">
+                            <object data="assets/svg/games-head.svg" type="image/svg+xml"></object>
+                        </div>
+        </div>
+
+        <div class="title">
+            <h1>Matt Hall</h1>
+            <h2>Game Designer</h2>
+        </div>
+
+        <div id="header-placeholder"></div> <!-- Placeholder for header -->
+    </div>
+
+    <div class="content">
+            <div class="main-text">
+                <p> Lorem
+                    Ipsum "Neque porro quisquam est qui dolorem ipsum quia dolor sit amet, consectetur, adipisci
+                    velit..."
+                    "There is no one who loves pain itself, who seeks after it and wants to have it, simply because it
+                    is
+                    pain..." freestar freestar Lorem ipsum dolor sit amet, consectetur adipiscing elit. Duis dignissim
+                    tincidunt est, id placerat nunc vehicula eu. Vivamus placerat bibendum enim sed vulputate. Nulla
+                    elementum
+                    et velit nec blandit. Etiam justo mauris, venenatis eu lorem sed, placerat cursus nunc. Aenean
+                    laoreet
+                    justo
+                    ut nunc aliquam lacinia. Proin et tincidunt risus. Suspendisse potenti. Integer feugiat lectus in
+                    tincidunt
+                </p>
+            </div>
+    </div>
+
+    <script>
+          document.addEventListener('DOMContentLoaded', function () {
+              // Load the header
+              fetch('header.html')
+                  .then(response => response.text())
+                  .then(data => {
+                      document.getElementById('header-placeholder').innerHTML = data;
+                  });
+      
+              // Load the animated SVG
+              fetch('assets/svg/games-head.svg')
+                  .then(response => response.text())
+                  .then(data => {
+                      document.getElementById('head-graphic').innerHTML = data;
+                  });
+      
+              // Load another file (example)
+              fetch('footer.html')
+                  .then(response => response.text())
+                  .then(data => {
+                      document.getElementById('footer-placeholder').innerHTML = data;
+                  });
+          });
+      </script>
+</body>
+
+</html>
