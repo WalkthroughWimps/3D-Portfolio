@@ -636,8 +636,15 @@ document.addEventListener('DOMContentLoaded', () => {
         seedInitialTinyBubbles();
         scheduleNextSpawn();
         scheduleTinyDrizzle();
-        const timer = setInterval(integrateAndCollide, TICK_MS);
-        document.addEventListener('visibilitychange', () => { if (document.hidden) clearInterval(timer); });
+        let timer = setInterval(integrateAndCollide, TICK_MS);
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                if (timer) { clearInterval(timer); timer = null; }
+            } else {
+                // Resume integration loop when tab becomes visible again
+                if (!timer) timer = setInterval(integrateAndCollide, TICK_MS);
+            }
+        });
     })();
 });
 

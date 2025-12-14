@@ -89,39 +89,43 @@
     <div id="header-placeholder"></div> <!-- Placeholder for header -->
   </div>
 
+  <!-- Controls moved below header to avoid navbar overlap -->
+  <div class="music-info-panels">
+    <div class="piano-controls">
+      <div class="track-select">
+        <button id="trackBaby" data-track="baby" title="Play Baby track">Baby</button>
+        <button id="trackRaisins" data-track="raisins" title="Play Raisins track">Raisins</button>
+      </div>
+      <div class="track-select" style="margin-left:8px;">
+        <button id="trackForests" data-track="forests" title="Play Forests track">Forests</button>
+      </div>
+      <button id="restartPlayback" title="Restart from beginning">Restart</button>
+      <label for="playbackRate" style="display:flex; align-items:center; gap:6px; color:#e8fff4; font:12px monospace; margin-left:8px;">
+        Speed
+        <select id="playbackRate" aria-label="Playback speed">
+          <option value="0.75">0.75×</option>
+          <option value="0.85">0.85×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.2">1.2×</option>
+          <option value="1.6">1.6×</option>
+          <option value="2">2×</option>
+        </select>
+      </label>
+    </div>
+    <div class="sync-offset-wrap">
+      <label for="syncOffset" class="sync-label">Audio Sync Offset:
+        <input id="syncOffset" type="range" min="-3000" max="3000" step="10" value="0" aria-label="Audio sync offset slider (-3000ms to +3000ms)">
+        <span id="syncOffsetValue" class="sync-value">0 ms</span>
+      </label>
+      <small class="sync-hint">(-3s leads MIDI → +3s lags)</small>
+    </div>
+  </div>
+
   
     <section aria-label="3D Toy Piano" class="piano-stage">
-      <div class="piano-canvas-wrap">
+        <div class="piano-canvas-wrap">
         <canvas id="pianoCanvas" aria-label="3D toy piano"></canvas>
         <button id="playPerformance" class="piano-play">Play / Pause</button>
-        <div class="piano-controls" style="position:absolute; right:8px; top:56px; display:flex; gap:8px; align-items:center; background:rgba(0,0,0,0.4); padding:6px 8px; border-radius:6px;">
-          <div class="track-select" style="display:flex; gap:4px;">
-            <button id="trackBaby" data-track="baby" title="Play Baby track">Baby</button>
-            <button id="trackRaisins" data-track="raisins" title="Play Raisins track">Raisins</button>
-          </div>
-          <div class="track-select" style="display:flex; gap:4px; margin-left:8px;">
-            <button id="trackForests" data-track="forests" title="Play Forests track">Forests</button>
-          </div>
-          <button id="restartPlayback" title="Restart from beginning">Restart</button>
-          <label for="playbackRate" style="display:flex; align-items:center; gap:6px; color:#e8fff4; font:12px monospace;">
-            Speed
-            <select id="playbackRate" aria-label="Playback speed">
-              <option value="0.75">0.75×</option>
-              <option value="0.85">0.85×</option>
-              <option value="1" selected>1×</option>
-              <option value="1.2">1.2×</option>
-              <option value="1.6">1.6×</option>
-              <option value="2">2×</option>
-            </select>
-          </label>
-        </div>
-        <div class="sync-offset-wrap">
-          <label for="syncOffset" class="sync-label">Audio Sync Offset:
-            <input id="syncOffset" type="range" min="-3000" max="3000" step="10" value="0" aria-label="Audio sync offset slider (-3000ms to +3000ms)">
-            <span id="syncOffsetValue" class="sync-value">0 ms</span>
-          </label>
-          <small class="sync-hint">(-3s leads MIDI &rarr; +3s lags)</small>
-        </div>
       </div>
       <div class="piano-notes" aria-live="polite" aria-atomic="true"></div>
     </section>
