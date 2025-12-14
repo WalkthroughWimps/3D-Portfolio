@@ -164,9 +164,12 @@ body {
 .piano-play { z-index:1101; }
 
 @media (min-width: 801px) {
-    /* Nudge panels upward to sit visually near the play button when space allows */
-    .music-info-panels { margin-top: -56px; }
+    /* Place panels below the fixed header so they're never covered */
+    .music-info-panels { margin-top: calc(10rem + 0.75rem); }
 }
+
+/* Ensure small screens also clear the header */
+.music-info-panels { margin-top: calc(10rem + 0.75rem); }
 .sync-label { display:flex; flex-direction:column; gap:4px; font-weight:600; font-size:12px; }
 #syncOffset { width:100%; accent-color:#7b3fe0; }
 .sync-value { font-weight:600; font-size:12px; color:#fff; }
