@@ -17,7 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build image sources (encode space in folder name)
     const sources = Array.from({ length: 48 }, (_, i) => {
         const n = (i + 1).toString().padStart(2, '0');
-        return `assets/images/Note-Bubbles/Note_${n}.png`;
+        return `assets/images/note-bubbles/Note-${n}.png`;
     });
 
     // Classification metadata for each source: { src, color, shapeId }
