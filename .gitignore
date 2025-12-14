@@ -20,3 +20,29 @@ __pycache__/
 # Ignore editor tidy folder for repo cleanup
 unused/
 unused/*
+
+# Large media and intermediate render outputs (host externally)
+/Renders/
+/Videos/
+Videos/videos-page/Old-uns/
+Videos/videos-page/Staging-Zone/
+
+# Staging and export helpers
+/Renders/**/webm_alpha_out/
+
+# Common large media file types (ignore across repo)
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.avi
+*.flac
+*.wav
+
+# ffmpeg/ffprobe outputs
+ffmpeg_extracted_frame*.png
+ffprobe*.json
+
+# Rename / dryrun artifacts
+rename-*.txt
+rename-*.log
