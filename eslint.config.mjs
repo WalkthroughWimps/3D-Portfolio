@@ -13,10 +13,10 @@ export default defineConfig([
       "eslint.config.mjs",
       // Legacy duplicate files created during earlier iterations — ignore to
       // focus linting on canonical modules.
-      "videos2.js",
+      // "videos2.js", // will be linted next
       "videos3.js",
-      "videos copy.js",
-      "videos-copy.js",
+      // "videos copy.js",
+      // "videos-copy.js",
       "videos.js.bak",
       "videos.original.moved.js",
       "stupid.js",
