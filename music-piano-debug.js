@@ -14,24 +14,34 @@ if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
+try{ renderer.outputColorSpace = THREE.SRGBColorSpace; }catch(e){}
+// Match videos page renderer defaults for tone/shadows
+try{ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; }catch(e){}
+try{ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }catch(e){}
+try{ renderer.physicallyCorrectLights = true; }catch(e){}
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
-// Debug axes helper removed per user request
-scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+// Lighting rig — mirror videos page for consistent look
 const cam = new THREE.PerspectiveCamera(45, canvas.clientWidth/canvas.clientHeight, 0.001, 500);
 // Initial camera; final framing is driven by fit()/intro tween after GLB load
 cam.position.set(1.4, 6, 2.8);
 cam.lookAt(0,0,0);
-const hemi = new THREE.HemisphereLight(0xffffff, 0x222244, 0.6); scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(3,5,4); scene.add(dir);
+// Hemisphere + key + fill + rim + under + subtle ambient (videos.js style)
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85); scene.add(hemi);
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.25); keyLight.position.set(4,6,8); keyLight.castShadow = true;
+try{ keyLight.shadow.mapSize.set(2048,2048); keyLight.shadow.camera.near = 0.5; keyLight.shadow.camera.far = 30; }catch(e){}
+scene.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0xffffff, 0.55); fillLight.position.set(-6,3,-4); scene.add(fillLight);
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.7); rimLight.position.set(0,5,-8); scene.add(rimLight);
+const underLight = new THREE.DirectionalLight(0xffffff, 0.35); underLight.position.set(0,-3,2); scene.add(underLight); scene.add(underLight.target);
+const subtleAmbient = new THREE.AmbientLight(0xffffff, 0.15); scene.add(subtleAmbient);
 const loader = new GLTFLoader();
 const draco = new DRACOLoader(); draco.setDecoderPath('https://unpkg.com/three@0.159.0/examples/jsm/libs/draco/');
 loader.setDRACOLoader(draco); loader.setMeshoptDecoder(MeshoptDecoder);
 const HUD = document.createElement('div');
-HUD.style.cssText='position:absolute;left:8px;top:8px;padding:6px 10px;background:rgba(0,0,0,.6);color:#d0ffe4;font:12px monospace;z-index:10;border-radius:6px;white-space:pre;';
-canvas.parentElement?.appendChild(HUD);
-let root=null; let keyMeshes=[];
+HUD.style.cssText='position:fixed;left:8px;top:calc(var(--header-height, 6rem) + 8px);padding:6px 10px;background:rgba(0,0,0,.6);color:#d0ffe4;font:12px monospace;z-index:100;border-radius:6px;white-space:pre;';
+document.body.appendChild(HUD);
+let root=null; let keyMeshes=[]; let stickerMeshes=[]; let userStickersGroup = null;
 let selectedKey=null; // middle key chosen for demo animation
 const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
@@ -83,9 +93,16 @@ const PRESS_ATTACK_MS = 55;   // ramp press
 const RELEASE_DECAY_MS = 110; // ramp release
 const VELOCITY_MIN = 20;      // floor for depth scaling
 const VELOCITY_MAX = 127;     // MIDI max
+const FADE_SEC = 0.03; // default release fade (seconds)
 // Per-note animation state: noteNumber -> { mesh, phase, startMs, fromAngle, targetAngle }
 const keyAnimState = new Map();
+// Audio context and sampler state
 let audioCtx=null, audioBuffer=null, audioSource=null; let audioReady=false, audioPlaying=false; let audioError=false; let midiError=false;
+let masterGain = null;
+// Sampler (SoundFont) support
+let instrumentPlayer = null; // Soundfont player instance for current instrument
+let currentInstrumentName = null;
+const activeSampleNodes = new Map(); // midiNum -> node returned by instrumentPlayer.play()
 let audioTrimMs = 0; // detected leading silence trim
 const TRIM_THRESHOLD = 0.0025; // RMS amplitude threshold
 const TRIM_WINDOW_SAMPLES = 2048; // window size for scanning
@@ -98,6 +115,76 @@ const LOCK_FRAME = 140; // target frame to freeze at
 const LOCK_FPS = 30;    // assumed export FPS (adjust if different)
 let animationMixer = null;
 let tabletStandMesh = null; // auto-rotated display stand
+let tabletStandTargetAngle = 0; // computed each frame
+let tabletStandCurrentAngle = 0; // smoothed applied angle
+const TABLET_ROTATION_LERP_SPEED = 8.0; // larger = snappier, smaller = looser
+// Backboard screen canvas (note display)
+let backboardMesh = null;
+let backboardCanvas = null;
+let backboardCtx = null;
+let backboardTexture = null;
+let keyByNote = new Map();
+let jsonKeymapLoaded = false;
+let keymapULeft = 0;
+let keymapURight = 1;
+let RAYCAST_KEYMAP_READY = false;
+const activeNotes = new Map(); // note -> { velocity, tOn }
+const activeNoteSet = new Set(); // stores MIDI note numbers currently held down
+const codeToMidiDown = new Map(); // ev.code -> latched midi number
+
+const BLACK_PCS = new Set([1,3,6,8,10]);
+function isBlackNoteByNumber(n){ return BLACK_PCS.has(n % 12); }
+
+function noteToGlowColor(note, velocity=1){
+  const pc = note % 12; const hue = Math.round((pc/12)*360);
+  const a = 0.35 + 0.45 * Math.min(1, velocity);
+  return `hsla(${hue},90%,60%,${a})`;
+}
+
+// Draw a left->right UV gradient (red@0, green@0.5, blue@1) for debugging UV mapping
+function drawUGradient(canvas){
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const grad = ctx.createLinearGradient(0,0,W,0);
+  grad.addColorStop(0.0, '#ff0000');
+  grad.addColorStop(0.5, '#00ff00');
+  grad.addColorStop(1.0, '#0000ff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+}
+
+// Draw a bottom->top V gradient (v=0 bottom red, v=0.5 middle green, v=1 top blue)
+function drawVGradient(canvas){
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  // Create gradient from bottom (y=H) to top (y=0) so v increases upward
+  const grad = ctx.createLinearGradient(0, H, 0, 0);
+  grad.addColorStop(0.0, '#ff0000');
+  grad.addColorStop(0.5, '#00ff00');
+  grad.addColorStop(1.0, '#0000ff');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+}
+// Diagnostic helpers for note names and on-screen debug text
+const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+function midiToName(n) {
+  const pc = ((n % 12) + 12) % 12;
+  const octave = Math.floor(n / 12) - 1;
+  return `${NOTE_NAMES[pc]}${octave}`;
+}
+function drawDebugText(ctx, lines){
+  ctx.save();
+  ctx.font = "16px sans-serif";
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(8, 8, 420, 24 * lines.length + 12);
+  ctx.fillStyle = "white";
+  lines.forEach((s, i) => ctx.fillText(s, 16, 32 + i * 24));
+  ctx.restore();
+}
+const TABLET_HYSTERESIS = 0.0025; // radians: small threshold before target updates (~0.14deg)
+const TABLET_MAX_ROT_SPEED = 3.0; // radians per second maximum applied change
 let animActionsA = [];
 let animActionsB = [];
 // ---- Glow materials for active notes ----
@@ -160,6 +247,142 @@ function clearAllKeyGlow(){
         if(m.material) m.material.needsUpdate = true;
       }
     });
+  }
+}
+
+// Load an instrument by name (SoundFont player preferred, WebAudioFont as fallback).
+async function loadInstrument(name){
+  // Backend selection: check user preference
+  const preferred = (window.PREFERRED_INSTRUMENT_BACKEND || 'auto').toString().toLowerCase();
+  const trySoundfontFirst = (preferred === 'auto' || preferred === 'soundfont');
+  const tryWebAudioFont = (preferred === 'auto' || preferred === 'webaudiofont' || preferred === 'webaudiofont-local');
+  // Try Soundfont-player first if allowed
+  const SF = window.Soundfont || window.SoundFont || window.SoundfontPlayer || window.SoundfontPlayer || window.Soundfont || window.SoundfontPlayer;
+  if(trySoundfontFirst){
+    if(SF){
+      try{
+        if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+        const opts = { soundfont: 'MusyngKite', format: 'mp3', url: 'https://gleitz.github.io/midi-js-soundfonts/MusyngKite/' };
+        const inst = await SF.instrument(audioCtx, name, opts);
+        instrumentPlayer = inst;
+        currentInstrumentName = name + ' (SoundFont)';
+        console.log('Loaded instrument (SoundFont)', name, inst);
+        if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+        return inst;
+      }catch(e){
+        console.warn('SoundFont.instrument failed', e);
+        if(preferred === 'soundfont'){
+          if(HUD) HUD.textContent = `soundfont load failed`;
+          return null;
+        }
+      }
+    } else {
+      console.warn('Soundfont-player not found (no global SF)');
+      if(preferred === 'soundfont'){
+        if(HUD) HUD.textContent = `soundfont missing`;
+        return null;
+      }
+    }
+  }
+
+  // WebAudioFont fallback
+  try{
+    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    // WebAudioFont script source selection based on preference
+    let wafScript = 'https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js';
+    if(window.PREFERRED_INSTRUMENT_BACKEND === 'webaudiofont-local'){
+      wafScript = '/assets/vendor/WebAudioFontPlayer.js';
+    }
+    // Load WebAudioFontPlayer script if not present
+    if(!window.WebAudioFontPlayer){
+      await new Promise((resolve, reject)=>{
+        const s = document.createElement('script');
+        s.src = wafScript;
+        s.async = true;
+        s.onload = ()=>{ console.log('WebAudioFontPlayer loaded from', wafScript); resolve(); };
+        s.onerror = (e)=>{ console.warn('Failed to load WebAudioFontPlayer script', wafScript, e); reject(e); };
+        document.head.appendChild(s);
+      });
+    }
+    // create player instance if needed
+    if(!window._WAF_player){
+      window._WAF_player = new WebAudioFontPlayer();
+    }
+    const player = window._WAF_player;
+
+    // Friendly name -> General MIDI program mapping (subset)
+    const nameToProgram = {
+      'acoustic_grand_piano': 1,
+      'bright_acoustic_piano': 2,
+      'electric_piano_1': 5,
+      'electric_piano_2': 6,
+      'honkytonk': 4,
+      'harpsichord': 7,
+      'vibraphone': 12,
+      'church_organ': 20,
+      'accordion': 21,
+      'string_ensemble_1': 49,
+      'pad_1': 89,
+      'choir_aahs': 52
+    };
+    const program = nameToProgram[name] || 1;
+    // find instrument index and info
+    const idx = player.loader.findInstrument(program);
+    const info = player.loader.instrumentInfo(idx);
+    if(!info || !info.url || !info.variable){
+      console.warn('WebAudioFont info missing for program', program, info);
+      if(HUD) HUD.textContent = `webaudiofont: missing info`;
+      return null;
+    }
+    // start loading preset script
+    player.loader.startLoad(audioCtx, info.url, info.variable);
+    // wait until preset variable becomes available
+    await new Promise((resolve, reject)=>{
+      const timeout = setTimeout(()=>reject(new Error('WAF preset load timeout')), 10000);
+      const check = ()=>{
+        if(window[info.variable]){ clearTimeout(timeout); resolve(); }
+        else setTimeout(check, 120);
+      };
+      check();
+    });
+    // Create a thin adapter exposing .play(midiNum, when, opts) returning an object with .stop()
+    const preset = window[info.variable];
+    const adapter = {
+      _player: player,
+      _preset: preset,
+      play: function(midiNum, whenSec, opts){
+        const dur = (opts && opts.duration) ? opts.duration : 1.8; // default short note
+        const vol = (opts && typeof opts.gain === 'number') ? opts.gain : 1;
+        // allow an external gainNode to be supplied so we can control fades without touching library internals
+        const dest = (opts && opts.gainNode) ? opts.gainNode : audioCtx.destination;
+        const env = this._player.queueWaveTable(audioCtx, dest, this._preset, whenSec || audioCtx.currentTime, midiNum, dur, vol);
+        // envelope contains audioBufferSourceNode for stopping
+        const wrapper = {
+          _env: env,
+          stop: function(stopWhenSec){ try{ if(env && env.audioBufferSourceNode){ env.audioBufferSourceNode.stop(stopWhenSec||audioCtx.currentTime); } }catch(e){} }
+        };
+        return wrapper;
+      }
+    };
+    instrumentPlayer = adapter;
+    currentInstrumentName = name + ' (WebAudioFont)';
+    console.log('Loaded instrument (WebAudioFont)', name, info.url, info.variable);
+    if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+    return adapter;
+  }catch(e){
+    console.warn('WebAudioFont fallback failed', e);
+    if(HUD) HUD.textContent = `instrument load error: ${name}`;
+    return null;
+  }
+}
+window.loadInstrument = loadInstrument;
+window.getCurrentInstrumentName = () => currentInstrumentName;
+function ensureAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(!masterGain){
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.22; // lower overall level to reduce clipping
+    masterGain.connect(audioCtx.destination);
   }
 }
 function applyKeyGlow(mesh, noteNumber, on){
@@ -312,12 +535,14 @@ function animate(){
   HUD.textContent = `children:${root.children.length}\nsize:${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}\nkeys:${keyMeshes.length}\n${midiLine}\n${audioLine}${trimInfo}${driftLine}\ntempos:${tempoMap.length} sentinels:${sentinelFilteredCount}\ncam:${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}`;
     // Demo animation for selected key or fallback
     // Always update view-driven transforms (e.g., tablet stand)
-    updateViewDrivenTransforms();
+    updateViewDrivenTransforms(dt);
     if(playingMIDI){
       const elapsedMidiSec = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) : 0;
       if(elapsedMidiSec >= 0) advanceMIDI(elapsedMidiSec * 1000);
     }
     updateKeyAnimations();
+      // update backboard overlay each frame
+      try{ renderBackboardOverlay(); }catch(e){ /* ignore */ }
   }
 }
 animate();
@@ -332,11 +557,72 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
     try { setupMusicTabletScreen(root); } catch (e) { console.warn('setupMusicTabletScreen failed', e); }
     // brightening + double side
     root.traverse(o=>{ 
-      if(/note_stickers|noteSticker|noteAccidental|noteText/i.test(o.name)) { o.visible = false; }
+      if(/note_stickers|noteSticker|noteAccidental|noteText/i.test(o.name)) { stickerMeshes.push(o); o.visible = true; }
       if(!sustainPedalMesh && /(sustain|damper|right.*pedal|pedal.*right)/i.test(o.name)){
         sustainPedalMesh = o;
       }
-      if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; }
+      if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
+      // Backboard screen for note info: look for mesh named SK_backboard_screen
+      if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
+        backboardMesh = o;
+        try{
+          // Create overlay canvas (wider than tall for good resolution)
+          const W = 1024, H = 256;
+          backboardCanvas = document.createElement('canvas'); backboardCanvas.width = W; backboardCanvas.height = H;
+          // Fill opaque black background to match piano backboard
+          backboardCtx = backboardCanvas.getContext('2d');
+          // Create texture and apply to mesh material
+          backboardTexture = new THREE.CanvasTexture(backboardCanvas);
+          try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){}
+          // Ensure texture Y orientation matches canvas coordinate expectations for our overlay
+          try{ backboardTexture.flipY = false; }catch(e){}
+          try{ backboardTexture.needsUpdate = true; }catch(e){}
+          backboardTexture.wrapS = THREE.ClampToEdgeWrapping; backboardTexture.wrapT = THREE.ClampToEdgeWrapping;
+          backboardTexture.minFilter = THREE.LinearFilter; backboardTexture.magFilter = THREE.LinearFilter;
+          backboardTexture.needsUpdate = true;
+          const applyMap = (mat)=>{
+            if(!mat) return;
+            mat.map = backboardTexture;
+            // Ensure opaque appearance: keep black background and opaque material
+            mat.transparent = false;
+            mat.opacity = 1.0;
+            mat.needsUpdate = true;
+            mat.transparent = false;
+            mat.opacity = 1.0;
+            mat.needsUpdate = true;
+          };
+          if(Array.isArray(o.material)) o.material.forEach(applyMap); else applyMap(o.material);
+          console.log('Attached overlay canvas texture to', o.name);
+          // Ensure texture uses no repeat/offset and log canvas/texture for diagnostics
+          try{
+            backboardTexture.repeat.set(1,1);
+            backboardTexture.offset.set(0,0);
+            console.log('backboard canvas', backboardCanvas.width, backboardCanvas.height, 'texture repeat', backboardTexture.repeat.toArray(), 'offset', backboardTexture.offset.toArray());
+          }catch(e){ console.warn('texture repeat/offset set failed', e); }
+          // Attempt to load precomputed keymap.json and use it preferentially
+          (async ()=>{
+            try{
+              const resp = await fetch('keymap.json');
+              if(!resp.ok) throw new Error('HTTP '+resp.status);
+              const keymap = await resp.json();
+              if(keymap && Array.isArray(keymap.keys)){
+                keyByNote.clear();
+                for(const k of keymap.keys){
+                  // enforce numeric keys
+                  keyByNote.set(Number(k.note), { u0: k.u0, u1: k.u1, name: k.name || String(k.note) });
+                }
+                keymapULeft = Number(keymap.uLeft) || keymapULeft;
+                keymapURight = Number(keymap.uRight) || keymapURight;
+                jsonKeymapLoaded = true;
+                RAYCAST_KEYMAP_READY = keyByNote.size > 0;
+                console.log('Loaded keymap.json: uLeft/uRight', keymapULeft, keymapURight);
+                console.log('k28', keyByNote.get(28), 'k60', keyByNote.get(60), 'k108', keyByNote.get(108));
+              }
+            }catch(e){ console.warn('Loading keymap.json failed or not present', e); }
+          })();
+          // Note: keymap.json loading disabled — runtime raycast will generate authoritative keymap
+        }catch(e){ console.warn('Backboard overlay setup failed', e); }
+      }
       if(o.isMesh && o.material && o.material.color){ 
         if(o.material.color.getHex()===0x000000) o.material.color.set(0x333333); 
         o.material.side=THREE.DoubleSide; 
@@ -372,6 +658,102 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
     }
     fit(box);
     collectKeys(root);
+    // Create our own sticker sprites (do not use mesh stickers). Hide original sticker meshes.
+    try{
+      // Build reverse map from CODE_TO_MIDI (midi -> display key char)
+      const midiToKey = new Map();
+      if(typeof CODE_TO_MIDI !== 'undefined'){
+        const displayFromCode = (code)=>{
+          if(!code) return '';
+          if(code.startsWith('Key')) return code.slice(3).toLowerCase();
+          if(code.startsWith('Digit')) return code.slice(5);
+          switch(code){
+            case 'Comma': return ',';
+            case 'Period': return '.';
+            case 'Slash': return '/';
+            case 'Semicolon': return ';';
+            case 'BracketLeft': return '[';
+            case 'BracketRight': return ']';
+            case 'Minus': return '-';
+            default: return code;
+          }
+        };
+        CODE_TO_MIDI.forEach((v,k)=> midiToKey.set(Number(v), displayFromCode(k)));
+      }
+      // helper: find nearest key mesh to a sticker mesh
+      const findNearestMidiForMesh = (mesh)=>{
+        const p = new THREE.Vector3(); mesh.getWorldPosition(p);
+        let best = null; let bestDist = Infinity;
+        midiKeyMap.forEach((mMesh, mNum)=>{
+          try{
+            const q = new THREE.Vector3(); mMesh.getWorldPosition(q);
+            const d = p.distanceTo(q);
+            if(d < bestDist){ bestDist = d; best = Number(mNum); }
+          }catch(e){}
+        });
+        return (bestDist < 0.12) ? best : null; // threshold in world units
+      };
+
+      // Remove any previously created user stickers
+      if(userStickersGroup){ safeRun(()=> root.remove(userStickersGroup)); userStickersGroup = null; }
+      userStickersGroup = new THREE.Group(); userStickersGroup.name = 'user_stickers_group';
+      root.add(userStickersGroup);
+
+      stickerMeshes.forEach(sm=>{
+        try{
+          // hide original mesh so we can control clipping/appearance ourselves
+          sm.visible = false;
+          const midi = findNearestMidiForMesh(sm);
+          if(midi == null) return; // no nearby key
+          const keyChar = midiToKey.get(midi);
+          if(!keyChar) return; // skip notes not mapped to keyboard
+
+          // world position and slight offset toward camera to avoid z-fighting/clipping
+          const pos = new THREE.Vector3(); sm.getWorldPosition(pos);
+          const camPos = new THREE.Vector3(); cam.getWorldPosition(camPos);
+          const towardCam = camPos.sub(pos).normalize();
+          pos.add(towardCam.multiplyScalar(0.03));
+
+          // size hint from sticker mesh bbox
+          const bbox = new THREE.Box3().setFromObject(sm);
+          const boxSize = bbox.getSize(new THREE.Vector3());
+          const baseScale = Math.max(boxSize.x, boxSize.y, boxSize.z) * 1.8 || 0.12;
+
+          // draw canvas texture for the key label (ASDF key char)
+          const W = 256, H = 160;
+          const c = document.createElement('canvas'); c.width = W; c.height = H;
+          const ctx = c.getContext('2d');
+          // rounded rect background (white) with subtle border
+          ctx.clearRect(0,0,W,H);
+          ctx.fillStyle = 'rgba(255,255,255,0.98)';
+          const r = 12;
+          ctx.beginPath(); ctx.moveTo(r,0); ctx.lineTo(W-r,0); ctx.quadraticCurveTo(W,0,W,r); ctx.lineTo(W,H-r); ctx.quadraticCurveTo(W,H,W-r,H); ctx.lineTo(r,H); ctx.quadraticCurveTo(0,H,0,H-r); ctx.lineTo(0,r); ctx.quadraticCurveTo(0,0,r,0); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 2; ctx.stroke();
+          // key character
+          ctx.fillStyle = '#000'; ctx.font = 'bold 92px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(String(keyChar).toUpperCase(), W/2, H/2 + 6);
+
+          const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+          tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
+
+          // Use sprite so it always faces camera and avoids complex UV/clipping
+          const mat = new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false });
+          const sprite = new THREE.Sprite(mat);
+          sprite.position.copy(pos);
+          sprite.scale.set(baseScale, baseScale * (H / W), 1);
+          sprite.userData = { midi, key: keyChar };
+          userStickersGroup.add(sprite);
+        }catch(e){ console.warn('user sticker create failed', e); }
+      });
+    }catch(e){ console.warn('user sticker generation failed', e); }
+    // After keys are collected and backboard identified, generate runtime keymap via raycasting
+    try{ if(backboardMesh && keyMeshes && keyMeshes.length){
+      if(!jsonKeymapLoaded){
+        generateRuntimeKeymap(backboardMesh, keyMeshes);
+      } else {
+        console.log('Skipping raycast keymap generation because keymap.json loaded');
+      }
+    } }catch(e){ console.warn('generateRuntimeKeymap failed', e); }
     // Ensure all individual keys have scale 1
     safeRun(() => keyMeshes.forEach(k => { if (k && k.scale) k.scale.setScalar(1); }), 'key scale normalize');
     // Recenter origin after potential scaling
@@ -636,6 +1018,11 @@ function startMIDIPlayback(){
   const firstNoteSec = (midiFirstNoteMs||0)/1000;
   const lead = 0.2; // schedule slightly in the future for stability
   const now = audioCtx.currentTime;
+  // If no sampled instrument is loaded, provide only visual feedback and do not run oscillator fallback
+  if(!instrumentPlayer){
+    if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
+    return;
+  }
   const t0 = now + lead;
   const tAudio = t0 + Math.max(userOffsetSec, 0);
   const tMidiZero = t0 + Math.max(-userOffsetSec, 0);
@@ -666,10 +1053,18 @@ function advanceMIDI(elapsedMs){
         state.phase='press'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=target;
         // Apply glow while the note is active
         applyKeyGlow(mesh, ev.note, true);
+        // Mark active note for backboard overlay
+        const nnum = Number(ev.note);
+        activeNotes.set(nnum, { velocity: Math.max(0, Math.min(1, ev.velocity/127)), tOn: performance.now() });
+        activeNoteSet.add(nnum);
       } else {
         state.phase='release'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=0;
         // Remove glow when the note-off occurs (respect overlapping notes via counter)
         applyKeyGlow(mesh, ev.note, false);
+        // Remove from overlay
+        const deln = Number(ev.note);
+        activeNotes.delete(deln);
+        activeNoteSet.delete(deln);
       }
     } else if(ev.type==='cc64'){
       if(!sustainPedalMesh) continue;
@@ -736,9 +1131,51 @@ function updateKeyAnimations(){
     }
   }
 }
+
+// --- Backboard overlay rendering (note bars) ---
+function renderBackboardOverlay(){
+  if(!backboardCanvas || !backboardCtx || !backboardTexture) return;
+  const ctx = backboardCtx; const W = backboardCanvas.width; const H = backboardCanvas.height;
+  // Clear canvas and draw a neutral black background for the overlay
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+
+  // Build a reverse map midi -> QWERTY label (e.g., 'a','s','d','f',',', '.')
+  const midiToKey = new Map();
+  const displayFromCode = (code)=>{
+    if(!code) return '';
+    if(code.startsWith('Key')) return code.slice(3).toLowerCase();
+    if(code.startsWith('Digit')) return code.slice(5);
+    switch(code){
+      case 'Comma': return ',';
+      case 'Period': return '.';
+      case 'Slash': return '/';
+      case 'Semicolon': return ';';
+      case 'BracketLeft': return '[';
+      case 'BracketRight': return ']';
+      case 'Minus': return '-';
+      default: return code;
+    }
+  };
+  if(typeof CODE_TO_MIDI !== 'undefined'){
+    try{
+      if(typeof CODE_TO_MIDI.forEach === 'function'){
+        CODE_TO_MIDI.forEach((v,k)=> midiToKey.set(Number(v), displayFromCode(k)));
+      } else {
+        for(const k in CODE_TO_MIDI){ if(Object.prototype.hasOwnProperty.call(CODE_TO_MIDI,k)){ midiToKey.set(Number(CODE_TO_MIDI[k]), displayFromCode(k)); } }
+      }
+    }catch(e){ /* ignore mapping build errors */ }
+  }
+
+  // Draw vertical color map for v (use helper that maps v->canvas Y as y=(1.0-v)*H)
+  drawVGradient(backboardCanvas);
+  backboardTexture.needsUpdate = true;
+}
 // Update camera-dependent transforms (runs every frame)
-function updateViewDrivenTransforms(){
+function updateViewDrivenTransforms(dt){
   if(!tabletStandMesh || !root) return;
+  // ensure dt is defined (fallback to small step)
+  dt = (typeof dt === 'number' && isFinite(dt) && dt>0) ? dt : Math.min(Math.max(clock.getDelta(), 0.001), 0.1);
   const center = new THREE.Vector3();
   new THREE.Box3().setFromObject(root).getCenter(center);
   const toCam = new THREE.Vector3().subVectors(cam.position, center).normalize();
@@ -754,7 +1191,136 @@ function updateViewDrivenTransforms(){
     const tWeight = wFront/denom; // 0 top/back -> 0deg, 1 front -> 90deg
     angle = THREE.MathUtils.degToRad(90 * tWeight);
   }
-  tabletStandMesh.rotation.x = angle;
+  // set target and smoothly interpolate current applied angle
+  tabletStandTargetAngle = angle;
+  // frame-rate independent smoothing using exponential lerp
+  const alpha = 1 - Math.exp(-TABLET_ROTATION_LERP_SPEED * dt);
+  tabletStandCurrentAngle += (tabletStandTargetAngle - tabletStandCurrentAngle) * alpha;
+  // Dead-zone snapping to avoid micro-oscillation when camera damping causes tiny target jitter
+  const EPSILON = 0.0025; // ~0.14 degrees
+  if (Math.abs(tabletStandTargetAngle - tabletStandCurrentAngle) < EPSILON) {
+    tabletStandCurrentAngle = tabletStandTargetAngle;
+  }
+  // Hysteresis: only update target if camera movement produces a noticeable change
+  // (helps when controls damping slightly toggles the desired angle back/forth)
+  // Compute desired angle again for hysteresis check (re-evaluate from center/cam)
+  // (Note: 'angle' variable above is the freshly computed desired angle assigned to tabletStandTargetAngle)
+  // Cap rate of change per frame to avoid overshoot/jitter
+  const maxDelta = TABLET_MAX_ROT_SPEED * dt;
+  const delta = tabletStandCurrentAngle - tabletStandTargetAngle;
+  // enforce max rate on current->target convergence (prevent sudden micro oscillation)
+  if (Math.abs(delta) > maxDelta) {
+    const sign = delta > 0 ? 1 : -1;
+    tabletStandCurrentAngle = tabletStandTargetAngle + sign * maxDelta;
+  }
+  tabletStandMesh.rotation.x = tabletStandCurrentAngle;
+}
+
+// Generate authoritative keymap by raycasting key edge midpoints to the screen mesh
+function generateRuntimeKeymap(screenMesh, keys){
+  if(!screenMesh || !keys || !keys.length) return;
+  const ray = new THREE.Raycaster();
+  ray.near = 0;
+  ray.far = 10000;
+  // ensure world matrices are current
+  screenMesh.updateWorldMatrix(true, false);
+  const screenBox = new THREE.Box3().setFromObject(screenMesh);
+  const screenCenter = screenBox.getCenter(new THREE.Vector3());
+  // compute a stable world-space normal from the mesh geometry
+  function computeWorldNormalFromFirstTriangle(mesh){
+    try{
+      const geom = mesh.geometry;
+      if(!geom || !geom.attributes || !geom.attributes.position) return null;
+      const pos = geom.attributes.position;
+      if(pos.count < 3) return null;
+      const a = new THREE.Vector3(); const b = new THREE.Vector3(); const c = new THREE.Vector3();
+      const aw = new THREE.Vector3(); const bw = new THREE.Vector3(); const cw = new THREE.Vector3();
+      a.fromBufferAttribute(pos, 0); b.fromBufferAttribute(pos, 1); c.fromBufferAttribute(pos, 2);
+      aw.copy(a).applyMatrix4(mesh.matrixWorld);
+      bw.copy(b).applyMatrix4(mesh.matrixWorld);
+      cw.copy(c).applyMatrix4(mesh.matrixWorld);
+      const n = new THREE.Vector3();
+      n.subVectors(bw, aw).cross(new THREE.Vector3().subVectors(cw, aw)).normalize();
+      if(n.length() === 0) return null;
+      return n;
+    }catch(e){ return null; }
+  }
+  // Prefer a reliable screen normal computed from the mesh world quaternion.
+  // Try common local axes in order: +Z, -Z, +Y, -Y transformed to world space.
+  const q = new THREE.Quaternion(); screenMesh.getWorldQuaternion(q);
+  const candidates = [
+    new THREE.Vector3(0,0,1).applyQuaternion(q),
+    new THREE.Vector3(0,0,-1).applyQuaternion(q),
+    new THREE.Vector3(0,1,0).applyQuaternion(q),
+    new THREE.Vector3(0,-1,0).applyQuaternion(q)
+  ];
+  let screenNormal = null;
+  // We'll pick the first candidate that yields hits for a sample key; fallback to camera->center direction
+  const sampleMesh = keys[0];
+  for(const cand of candidates){
+    if(!cand) continue;
+    const dirTest = cand.clone().normalize();
+    // choose a sample origin from sampleMesh bounds
+    const bbTest = new THREE.Box3().setFromObject(sampleMesh);
+    const midYt = (bbTest.min.y + bbTest.max.y) * 0.5; const midZt = (bbTest.min.z + bbTest.max.z) * 0.5;
+    const centerTest = bbTest.getCenter(new THREE.Vector3());
+    const leftTest = new THREE.Vector3(bbTest.min.x, midYt, midZt).addScaledVector(dirTest, -0.01);
+    ray.set(leftTest, dirTest);
+    const hits = ray.intersectObject(screenMesh, true);
+    if(hits && hits.length) { screenNormal = dirTest; break; }
+  }
+  if(!screenNormal){ screenNormal = new THREE.Vector3().subVectors(cam.position, screenCenter).normalize(); }
+  keyByNote.clear();
+  for(const mesh of keys){
+    if(!mesh) continue;
+    try{
+      const bb = new THREE.Box3().setFromObject(mesh);
+      const min = bb.min; const max = bb.max;
+      const midY = (min.y + max.y) * 0.5; const midZ = (min.z + max.z) * 0.5;
+      const leftWorld = new THREE.Vector3(min.x, midY, midZ);
+      const rightWorld = new THREE.Vector3(max.x, midY, midZ);
+      const keyCenter = bb.getCenter(new THREE.Vector3());
+      // Use the precomputed screen normal as the ray direction for stable horizontal mapping
+      const toScreen = new THREE.Vector3().subVectors(screenCenter, keyCenter);
+      let dir = screenNormal.clone();
+      if(dir.dot(toScreen) < 0) dir.negate();
+      // Nudge origins slightly toward the screen to avoid starting behind the plane
+      const EPS = 0.01;
+      const originL = leftWorld.clone().addScaledVector(dir, -EPS);
+      const originR = rightWorld.clone().addScaledVector(dir, -EPS);
+      // cast from left
+      ray.set(originL, dir);
+      let iL = ray.intersectObject(screenMesh, true);
+      // cast from right
+      ray.set(originR, dir);
+      let iR = ray.intersectObject(screenMesh, true);
+      // Log hit counts for diagnostics
+      try{ console.log('NOTE', mesh.name, 'note?', midiNameToNumber(mesh.name), 'hitsL', (iL?iL.length:0), 'hitsR', (iR?iR.length:0), 'screenMesh.type', screenMesh.type); }catch(e){}
+      let uL = null, uR = null;
+      if(iL && iL.length && iL[0].uv) uL = iL[0].uv.x;
+      if(iR && iR.length && iR[0].uv) uR = iR[0].uv.x;
+      // fallback: try casting from center if edges missed
+      if(uL==null || uR==null){
+        ray.set(keyCenter, dir);
+        const ic = ray.intersectObject(screenMesh, true);
+        if(ic && ic.length && ic[0].uv){ const uc = ic[0].uv.x; if(uL==null) uL = uc; if(uR==null) uR = uc; }
+      }
+      if(uL==null || uR==null) {
+        // nothing hit — skip
+        continue;
+      }
+      // clamp
+      uL = Math.min(1, Math.max(0, uL));
+      uR = Math.min(1, Math.max(0, uR));
+      const u0 = Math.min(uL, uR), u1 = Math.max(uL, uR);
+      const note = midiNameToNumber(mesh.name);
+      if(Number.isInteger(note)){
+          keyByNote.set(Number(note), { u0, u1, name: mesh.name });
+      }
+    }catch(e){ console.warn('raycast keymap fail for', mesh.name, e); }
+  }
+  RAYCAST_KEYMAP_READY = keyByNote.size > 0;
+  console.log('Runtime keymap generated, keys:', keyByNote.size, 'ready=', RAYCAST_KEYMAP_READY);
 }
 // Hook play button if exists
 const playBtn = document.getElementById('playPerformance');
@@ -1071,51 +1637,219 @@ function playAnimRange(which){
 // ---- Key picking & basic synth note playback ----
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+// pointer tracking to distinguish click vs drag for playing notes
+let pointerDownInfo = null; // { startX, startY, moved, midiNum, mesh, played, playedAt, glowApplied }
+let pendingPlayTimer = null;
+const MIN_USER_NOTE_MS = 250;
 function midiNameToNumber(name){ const m = name.match(/^(\d{3})_/); return m? parseInt(m[1],10) : null; }
 // Simple polyphonic piano-like synth with sustain support
 const activeVoices = new Map(); // midiNum -> {osc, gain, stopTime, mesh}
 function playUserNote(midiNum, mesh){
-  if(midiNum==null) return;
+  midiNum = Number(midiNum);
+  if(Number.isNaN(midiNum) || midiNum==null) return;
   if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state !== 'running'){ safeRun(() => audioCtx.resume(), 'audioCtx resume'); }
   const now = audioCtx.currentTime;
-  // If voice already active, retrigger
-  const existing = activeVoices.get(midiNum);
-  if(existing){
-    safeRun(() => existing.osc.stop(), 'existing osc stop');
-    activeVoices.delete(midiNum);
+  // If a sampled instrument is loaded, prefer it
+  if(instrumentPlayer){
+    try{
+      // If a previous sample node exists for this midi, gracefully fade it out
+      const existing = activeSampleNodes.get(midiNum);
+      const fadeShort = 0.06;
+      if(existing && !existing.stopped){
+        existing.stopped = true;
+        try{
+          if(existing.gainNode){
+            const t = audioCtx.currentTime;
+            existing.gainNode.gain.cancelScheduledValues(t);
+            existing.gainNode.gain.setValueAtTime(existing.gainNode.gain.value, t);
+            existing.gainNode.gain.exponentialRampToValueAtTime(0.0001, t + fadeShort);
+            if(existing.node && existing.node.stop) existing.node.stop(t + fadeShort + 0.02);
+          } else if(existing.node && existing.node.stop){
+            existing.node.stop(audioCtx.currentTime + fadeShort);
+          }
+        }catch(e){ /* ignore */ }
+      }
+
+      // Create a gain node so we can fade notes out cleanly (prevents clicks)
+      ensureAudio();
+      const gainNode = audioCtx.createGain();
+      // start near-zero and apply a short linear attack to avoid clicks
+      gainNode.gain.setValueAtTime(0.0001, now);
+      gainNode.gain.linearRampToValueAtTime(1.0, now + 0.01);
+      gainNode.connect(masterGain);
+      // Many players accept a gainNode option; WebAudioFont adapter we supply will honor it.
+      const node = instrumentPlayer.play(midiNum, now, { gain: 1, gainNode });
+      activeSampleNodes.set(midiNum, { node: node, gainNode: gainNode, startedAt: now, stopped: false });
+      // defensive cleanup in case stop isn't called later (keep a long timeout)
+      setTimeout(()=>{ const e = activeSampleNodes.get(midiNum); if(e && e.stopped) activeSampleNodes.delete(midiNum); }, 12000);
+    }catch(e){ console.warn('Instrument play failed, falling back to synth', e); }
+    if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
+    // Update picker status if present (debug HUD handled separately)
+    try{
+      const status = document.querySelector('#instrumentPicker > div');
+      if(status) status.textContent = 'Playing: ' + (currentInstrumentName || '') + ' ' + midiNum;
+      setTimeout(()=>{ if(status) status.textContent = 'Loaded: ' + (currentInstrumentName || ''); }, 120);
+    }catch(e){}
+    // Mark active note for overlay
+    const mn = Number(midiNum);
+    activeNotes.set(mn, { velocity: 1, tOn: performance.now() });
+    activeNoteSet.add(mn);
+    return;
   }
-  const freq = 440 * Math.pow(2,(midiNum-69)/12);
-  // Create 3 slight detuned oscillators for warmth
-  const gain = audioCtx.createGain();
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.34, now+0.015);
-  // Sustain will hold level until pedal off; otherwise decay
-  const baseRelease = 1.1;
-  const releaseTime = baseRelease; // will shape later on stop
-  const oscA = audioCtx.createOscillator(); oscA.type='sine'; oscA.frequency.setValueAtTime(freq*0.997, now);
-  const oscB = audioCtx.createOscillator(); oscB.type='triangle'; oscB.frequency.setValueAtTime(freq, now);
-  const oscC = audioCtx.createOscillator(); oscC.type='sine'; oscC.frequency.setValueAtTime(freq*1.003, now);
-  // Gentle low-pass for softer tone
-  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(4800, now); lp.Q.value=0.6;
-  oscA.connect(gain); oscB.connect(gain); oscC.connect(gain);
-  gain.connect(lp).connect(audioCtx.destination);
-  oscA.start(now); oscB.start(now); oscC.start(now);
-  const voice = {osc:oscA, oscB, oscC, gain, mesh, startTime:now, releaseTime, stopping:false};
-  activeVoices.set(midiNum, voice);
-  // Schedule natural decay if no sustain pedal engaged
-  if(!(sustainAnim.phase==='press' || sustainAnim.phase==='held')){
-    gain.gain.linearRampToValueAtTime(0.0001, now+releaseTime);
-    setTimeout(()=>{
-      safeRun(() => { oscA.stop(); oscB.stop(); oscC.stop(); }, 'voice release stops');
-      activeVoices.delete(midiNum);
-    }, (releaseTime+0.05)*1000);
-  }
+  // No sampled instrument loaded: only provide visual feedback (no oscillator fallback)
   if(mesh){
     const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
     mesh.rotation.x = base * 0.6;
-    setTimeout(()=>{ if(mesh && !(sustainAnim.phase==='press'||sustainAnim.phase==='held')) mesh.rotation.x = 0; }, 300);
   }
+  // Register active note so highlights appear even without a sampled instrument
+  const mn2 = Number(midiNum);
+  activeNotes.set(mn2, { velocity: 1, tOn: performance.now() });
+  activeNoteSet.add(mn2);
+  return;
+}
+
+// Stop a user-triggered note quickly and remove glow
+function stopUserNote(midiNum){
+  midiNum = Number(midiNum);
+  if(Number.isNaN(midiNum)) return;
+  // Ensure cleanup always runs, even if audio operations throw
+  const nowSec = (audioCtx ? audioCtx.currentTime : 0);
+  try{
+    // First handle sample nodes if present
+    const sampleEntry = activeSampleNodes.get(midiNum);
+    if(sampleEntry){
+      // Determine elapsed time since this note started so a short tap still respects MIN_USER_NOTE_MS
+      const started = sampleEntry.startedAt || nowSec;
+      const elapsed = Math.max(0, nowSec - started);
+      const minSec = MIN_USER_NOTE_MS / 1000;
+      let stopAt = nowSec + FADE_SEC;
+      if(elapsed < minSec){ stopAt = started + minSec + FADE_SEC; }
+
+      // Mark stopped to avoid double-stops
+      sampleEntry.stopped = true;
+      // If we control a gainNode, ramp it down for a smooth release
+      if(sampleEntry.gainNode){
+        try{
+          sampleEntry.gainNode.gain.cancelScheduledValues(nowSec);
+          const currentGain = sampleEntry.gainNode.gain.value || 1.0;
+          sampleEntry.gainNode.gain.setValueAtTime(currentGain, nowSec);
+          sampleEntry.gainNode.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+        }catch(e){ /* ignore */ }
+      }
+      // Finally stop underlying node if we have a stop API
+      if(sampleEntry.node && sampleEntry.node.stop){
+        try{ sampleEntry.node.stop(stopAt + 0.02); }catch(e){ /* ignore */ }
+      }
+      // remove mapping after a safe delay
+      setTimeout(()=>{ activeSampleNodes.delete(midiNum); }, Math.round((Math.max(0, ( (sampleEntry.startedAt||nowSec) + (MIN_USER_NOTE_MS/1000) ) - nowSec) + FADE_SEC + 50) ));
+    }
+
+    // Then handle oscillator voices if any
+    const v = activeVoices.get(midiNum);
+    if(v && !v.stopping){
+      v.stopping = true;
+      try{
+        const now = nowSec;
+        v.gain.gain.cancelScheduledValues(now);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, now);
+        // ensure minimum duration before fading
+        const playedAtMs = (v.playedAt !== undefined) ? v.playedAt : (v.startTime * 1000);
+        const elapsed = (now * 1000) - playedAtMs;
+        const remain = Math.max(0, MIN_USER_NOTE_MS - elapsed) / 1000;
+        const when = now + remain;
+        v.gain.gain.exponentialRampToValueAtTime(0.0001, when + FADE_SEC);
+        setTimeout(()=>{ safeRun(()=>{ v.osc.stop(); v.oscB.stop(); v.oscC.stop(); }, 'user stop'); activeVoices.delete(midiNum); }, Math.round((remain + FADE_SEC + 0.05)*1000));
+      }catch(e){ /* ignore */ }
+    }
+  }catch(err){
+    console.warn('stopUserNote audio path failed', err);
+  } finally {
+    // ALWAYS run visual/material cleanup
+    const mesh = midiKeyMap.get(midiNum);
+    try{
+      keyActiveCount.set(Number(midiNum), 0);
+      const orig = mesh && mesh.userData ? mesh.userData._origMaterial : null;
+      if(orig && mesh){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
+    }catch(e){ /* ignore */ }
+    // Remove overlay active note
+    try{ activeNotes.delete(Number(midiNum)); }catch(e){}
+    try{ activeNoteSet.delete(Number(midiNum)); }catch(e){}
+    // restore key rotation and mark animation release state
+    try{
+      const v = activeVoices.get(midiNum);
+      const m = mesh || (v && v.mesh);
+      if(m) m.rotation.x = 0;
+      const st = keyAnimState.get(midiNum);
+      if(st){ st.phase = 'release'; st.startMs = (audioCtx ? (audioCtx.currentTime - (midiStartCtxTime||0)) * 1000 : 0); st.fromAngle = m ? m.rotation.x : 0; st.targetAngle = 0; }
+    }catch(e){ /* ignore */ }
+  }
+}
+
+function onGlobalPointerMove(e){
+  // Safety: if we think pointer is down but no buttons are pressed (lost release), treat as pointer up
+  if(pointerDownInfo && typeof e.buttons === 'number' && e.buttons === 0){
+    const pid = pointerDownInfo.pointerId;
+    onGlobalPointerUp();
+    try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+    return;
+  }
+  if(!pointerDownInfo) return;
+  const dx = e.clientX - pointerDownInfo.startX;
+  const dy = e.clientY - pointerDownInfo.startY;
+  const dist2 = dx*dx + dy*dy;
+  if(!pointerDownInfo.moved && dist2 > (8*8)){
+    pointerDownInfo.moved = true;
+    if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
+    if(pointerDownInfo.played){ stopUserNote(pointerDownInfo.midiNum); pointerDownInfo.played = false; }
+    // If we applied immediate visual glow but are now moving, clear it
+    if(pointerDownInfo.glowApplied){ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); pointerDownInfo.glowApplied = false; }
+    // do not re-enable rotate here if the pointer started on a key; rotation remains disabled until release
+  }
+  // Glissando: when pointer moved while down on a key, play notes encountered under pointer
+  if(pointerDownInfo && pointerDownInfo.moved){
+    // Only allow glissando playback while the primary button is held.
+    if(typeof e.buttons === 'number' && ((e.buttons & 1) === 0)) return;
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
+    pointer.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
+    raycaster.setFromCamera(pointer, cam);
+    const intersects = root ? raycaster.intersectObject(root, true) : [];
+    if(intersects.length){
+      const hit = intersects[0].object;
+      const res = findKeyFromObject(hit);
+      if(res && res.midiNum !== pointerDownInfo.lastMidi){
+        const prev = pointerDownInfo.lastMidi;
+        if(prev != null){
+          try{ stopUserNote(prev); }catch(e){}
+        }
+        pointerDownInfo.lastMidi = res.midiNum;
+        playUserNote(res.midiNum, res.mesh);
+        applyKeyGlow(res.mesh, res.midiNum, true);
+        setTimeout(()=>{ try{ stopUserNote(res.midiNum); }catch(e){} }, MIN_USER_NOTE_MS + 20);
+      }
+    }
+  }
+}
+
+function onGlobalPointerUp(e){
+  if(!pointerDownInfo) return;
+  if(!pointerDownInfo.moved){
+    // If we haven't played yet, play briefly then stop
+    if(!pointerDownInfo.played){
+      playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+      pointerDownInfo.played = true;
+      const v = activeVoices.get(pointerDownInfo.midiNum);
+      if(v) v.playedAt = performance.now();
+    }
+    if(pointerDownInfo.played){ stopUserNote(pointerDownInfo.midiNum); }
+  }
+  if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
+  // Ensure any last glissando note is stopped
+  try{
+    if(pointerDownInfo && pointerDownInfo.lastMidi != null){ stopUserNote(pointerDownInfo.lastMidi); }
+  }catch(e){}
+  pointerDownInfo = null;
 }
 // Handle pedal release affecting sustained voices
 function applySustainState(){
@@ -1149,6 +1883,8 @@ function findKeyFromObject(obj){
 }
 let suppressRotate = false;
 function onPointerDown(e){
+  // Ignore right-clicks
+  if(e.button === 2) return;
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
   pointer.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
@@ -1158,13 +1894,123 @@ function onPointerDown(e){
     const hit = intersects[0].object;
     const res = findKeyFromObject(hit);
     if(res){
-      playUserNote(res.midiNum, res.mesh);
-      if(e.button===0){ controls.enableRotate=false; suppressRotate=true; }
+      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId };
+      // capture the pointer so we reliably receive pointerup even if the cursor leaves the canvas
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      // immediate visual feedback so quick taps show highlight
+      applyKeyGlow(res.mesh, res.midiNum, true);
+      pointerDownInfo.glowApplied = true;
+      // disable rotate while pointer is down on a key
+      controls.enableRotate = false; suppressRotate = true;
+      pendingPlayTimer = setTimeout(()=>{
+        if(pointerDownInfo && !pointerDownInfo.moved){
+          playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+          pointerDownInfo.played = true;
+          pointerDownInfo.playedAt = performance.now();
+        }
+        pendingPlayTimer = null;
+      }, 40);
       e.preventDefault();
       return;
     }
   }
 }
-function onPointerUp(){ if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; } }
+
+function onPointerUp(){
+  // Release pointer capture if we had one
+  const pid = pointerDownInfo && pointerDownInfo.pointerId;
+  onGlobalPointerUp();
+  try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+  if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; }
+}
 canvas.addEventListener('pointerdown', onPointerDown);
 window.addEventListener('pointerup', onPointerUp);
+// Also handle pointercancel to avoid sticky state on unexpected cancels
+canvas.addEventListener('pointercancel', onPointerUp);
+window.addEventListener('pointercancel', onPointerUp);
+window.addEventListener('pointermove', onGlobalPointerMove);
+// prevent context menu on canvas
+canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
+
+// QWERTY piano mapping by `event.code` -> MIDI
+const CODE_TO_MIDI = new Map(Object.entries({
+  // Bottom whites
+  "KeyZ":48, "KeyX":50, "KeyC":52, "KeyV":53, "KeyB":55, "KeyN":57, "KeyM":59,
+  "Comma":60, "Period":62, "Slash":64,
+
+  // Bottom accidentals
+  "KeyS":49, "KeyD":51, "KeyG":54, "KeyH":56, "KeyJ":58, "KeyL":61, "Semicolon":63,
+
+  // Top whites (F4 -> C6)
+  "KeyQ":65, "KeyW":67, "KeyE":69, "KeyR":71, "KeyT":72, "KeyY":74, "KeyU":76,
+  "KeyI":77, "KeyO":79, "KeyP":81, "BracketLeft":83, "BracketRight":84,
+
+  // Top accidentals (skip where no black key exists)
+  "Digit2":66, "Digit3":68, "Digit4":70, "Digit6":73, "Digit7":75, "Digit9":78, "Digit0":80, "Minus":82
+}));
+
+const downCodes = new Set();
+
+function noteOn(midi){
+  try{
+    const mesh = midiKeyMap.get(Number(midi));
+    // Visual feedback: apply glow for keyboard-triggered notes
+    if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch(e){}
+    playUserNote(Number(midi), mesh);
+  }catch(e){ console.warn('noteOn failed', e); }
+}
+function noteOff(midi){
+  try{ stopUserNote(Number(midi)); }catch(e){ console.warn('noteOff failed', e); }
+}
+
+function handleKeyDown(ev){
+  // Allow modifier shortcuts to pass through
+  if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  const code = ev.code;
+  const midi = CODE_TO_MIDI.get(code);
+  if(midi == null) return;
+
+  // Prevent default browser action for slash but allow note handling
+  if(code === 'Slash') ev.preventDefault();
+
+  // Avoid repeats and track by code
+  if(ev.repeat) return;
+  if(downCodes.has(code)) return;
+  downCodes.add(code);
+
+  // IMPORTANT: latch MIDI by `code` so keyup releases the same note regardless of layout/modifiers
+  const m = Number(midi);
+  codeToMidiDown.set(code, m);
+
+  // Track active MIDI notes by number
+  activeNoteSet.add(m);
+  noteOn(m);
+}
+
+function handleKeyUp(ev){
+  const code = ev.code;
+  // ALWAYS release by the latched value, not by recomputing from key/code
+  const m = codeToMidiDown.get(code);
+  if(m == null) return;
+
+  ev.preventDefault();
+
+  downCodes.delete(code);
+  codeToMidiDown.delete(code);
+  activeNoteSet.delete(m);
+  noteOff(m);
+}
+
+function allNotesOff(){
+  for(const m of Array.from(activeNoteSet)){
+    try{ noteOff(m); }catch(e){}
+  }
+  activeNoteSet.clear();
+  downCodes.clear();
+  codeToMidiDown.clear();
+}
+
+window.addEventListener('keydown', handleKeyDown, { capture:true, passive:false });
+window.addEventListener('keyup', handleKeyUp, { capture:true, passive:false });
+window.addEventListener('blur', allNotesOff);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) allNotesOff(); });

@@ -22,6 +22,35 @@
   <!-- Demo-only: no MIDI for now; load our viewer module -->
   <!-- Swap to isolated debug script to diagnose invisibility -->
   <script type="module" src="global-sync.js"></script>
+  <!-- SoundFont player for sampled instruments: try multiple CDNs if one fails -->
+  <script>
+    (function tryLoadSoundfont(){
+      const urls = [
+        'https://cdn.jsdelivr.net/npm/soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://unpkg.com/soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://ga.jspm.io/npm:soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://cdn.skypack.dev/soundfont-player@0.15.0',
+        'https://esm.sh/soundfont-player@0.15.0',
+        '/assets/vendor/soundfont-player.js' // local fallback - place file here if CDNs are blocked
+      ];
+      window.SOUNDFONT_LOADED = null;
+      let i = 0;
+      function tryOne(){
+        if(i >= urls.length){ window.SOUNDFONT_LOADED = false; console.error('soundfont-player: all CDN attempts failed'); return; }
+        const src = urls[i++];
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.onload = function(){ window.SOUNDFONT_LOADED = true; console.log('soundfont-player loaded from', src); };
+        s.onerror = function(){ console.warn('soundfont-player failed to load from', src); // try next
+          // remove element and try next
+          s.remove(); setTimeout(tryOne, 100);
+        };
+        document.head.appendChild(s);
+      }
+      tryOne();
+    })();
+  </script>
   <script type="module" src="music-piano-debug.js"></script>
 
     <!--<img src="assets/svg/Note1.svg" id="Note1" class="note">
@@ -132,15 +161,139 @@
       </div>
       <button id="playPerformance" class="piano-play">Play / Pause</button>
     </div>
+    <!-- Left-side backend picker (choose library) -->
+    <div class="instrument-backend-picker" id="instrumentBackendPicker" aria-hidden="false" role="toolbar" aria-label="Instrument backend picker"></div>
+    <!-- Left-side instrument picker -->
+    <div class="instrument-picker" id="instrumentPicker" aria-hidden="false" role="toolbar" aria-label="Instrument picker"></div>
+
+    <script>
+      // Build backend picker UI and expose preference on window.PREFERRED_INSTRUMENT_BACKEND
+      (function(){
+        const backends = [
+          ['auto','Auto (SoundFont → WebAudioFont)'],
+          ['soundfont','soundfont-player'],
+          ['webaudiofont','WebAudioFont (CDN)'],
+          ['webaudiofont-local','WebAudioFont (local)']
+        ];
+        const wrap = document.getElementById('instrumentBackendPicker');
+        if(!wrap) return;
+        const status = document.createElement('div');
+        status.style.cssText = 'color:#cfe8d8;font:12px/1.2 "Source Sans 3", system-ui; margin-bottom:6px;';
+        status.textContent = 'backend: auto';
+        wrap.appendChild(status);
+        backends.forEach(([key,label])=>{
+          const b = document.createElement('button');
+          b.textContent = label;
+          b.dataset.backend = key;
+          b.addEventListener('click', ()=>{
+            window.PREFERRED_INSTRUMENT_BACKEND = key;
+            document.querySelectorAll('#instrumentBackendPicker button').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+            status.textContent = 'backend: ' + label;
+            console.log('Instrument backend set to', key);
+          });
+          wrap.appendChild(b);
+        });
+        // default to auto
+        setTimeout(()=>{ const btn = wrap.querySelector('button[data-backend="auto"]'); if(btn) btn.click(); }, 60);
+      })();
+    </script>
   
 
   <script>
+        // Build instrument picker buttons and hook to sampler
+        (function(){
+          const list = [
+            ['acoustic_grand_piano','Acoustic Piano'],
+            ['bright_acoustic_piano','Bright Piano'],
+            ['electric_piano_1','Electric Piano 1'],
+            ['electric_piano_2','Electric Piano 2'],
+            ['honkytonk','Honky-Tonk'],
+            ['harpsichord','Harpsichord'],
+            ['vibraphone','Vibraphone'],
+            ['church_organ','Organ'],
+            ['accordion','Accordion'],
+            ['string_ensemble_1','Strings'],
+            ['pad_1','Pad'],
+            ['choir_aahs','Choir']
+          ];
+          const wrap = document.getElementById('instrumentPicker');
+          if(!wrap) return;
+          const status = document.createElement('div');
+          status.style.cssText = 'color:#cfe8d8;font:12px/1.2 "Source Sans 3", system-ui; margin-bottom:6px;';
+          status.textContent = 'No instrument loaded';
+          wrap.appendChild(status);
+          // Reflect soundfont loader state in the status text while attempting CDN loads
+          if(window.SOUNDFONT_LOADED === null){ status.textContent = 'Loading soundfont-player...'; }
+          if(window.SOUNDFONT_LOADED === false){ status.textContent = 'Soundfont script failed to load (check console)'; }
+          const sfCheck = setInterval(()=>{
+            if(window.SOUNDFONT_LOADED === true){
+              status.textContent = 'No instrument loaded';
+              clearInterval(sfCheck);
+            } else if(window.SOUNDFONT_LOADED === false){
+              status.textContent = 'Soundfont script failed to load (check console)';
+              clearInterval(sfCheck);
+            } else {
+              status.textContent = 'Loading soundfont-player...';
+            }
+          }, 250);
+          list.forEach(([name,label])=>{
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.dataset.instrument = name;
+            b.addEventListener('click', async (ev)=>{
+              const btn = ev.currentTarget;
+              btn.disabled = true; btn.classList.add('loading');
+              try{
+                const inst = await window.loadInstrument(name);
+                if(inst){
+                  document.querySelectorAll('.instrument-picker button').forEach(x=>x.classList.remove('active'));
+                  btn.classList.add('active');
+                  status.textContent = 'Loaded: ' + label;
+                } else {
+                  status.textContent = 'Load failed';
+                }
+              }catch(e){ alert('Failed to load instrument: '+name); }
+              btn.disabled = false; btn.classList.remove('loading');
+            });
+            // extra debug: log pointer events so we can see clicks in the console
+            b.addEventListener('pointerenter', ()=>{ console.log('picker hover', name); });
+            b.addEventListener('pointerdown', ()=>{ console.log('picker down', name); });
+            b.addEventListener('click', ()=>{ console.log('picker click', name); });
+            wrap.appendChild(b);
+          });
+          // Try to preload the first instrument
+          setTimeout(()=>{ const first = wrap.querySelector('button'); if(first) first.click(); }, 600);
+        })();
             // Load the header
             document.addEventListener('DOMContentLoaded', function () {
                 fetch('header.html')
                     .then(response => response.text())
                     .then(data => {
-                        document.getElementById('header-placeholder').innerHTML = data;
+                      document.getElementById('header-placeholder').innerHTML = data;
+                      // After header content is inserted, compute its height and expose to CSS
+                      const updateHeaderHeight = () => {
+                        const hdr = document.querySelector('.header');
+                        if(hdr){
+                          const h = hdr.getBoundingClientRect().height || 0;
+                          document.documentElement.style.setProperty('--header-height', Math.ceil(h) + 'px');
+                          // Also reposition the instrument picker to avoid overlap with header/HUD
+                          try{
+                            const picker = document.getElementById('instrumentPicker');
+                            if(picker){
+                              const rect = hdr.getBoundingClientRect();
+                              const top = Math.ceil(rect.bottom + 12); // 12px below header
+                              picker.style.top = top + 'px';
+                              picker.style.maxHeight = 'calc(100vh - ' + (top + 24) + 'px)';
+                            }
+                          }catch(e){ console.warn('picker reposition failed', e); }
+                        }
+                      };
+                      // Initial set and on resize
+                      updateHeaderHeight();
+                      window.addEventListener('resize', updateHeaderHeight);
+                      // also re-run after a short delay in case fonts/images changed layout
+                      setTimeout(updateHeaderHeight, 250);
                     });
             });
 

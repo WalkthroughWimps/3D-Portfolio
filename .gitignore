@@ -25,6 +25,8 @@ unused/
 unused/*
 
 # Large media and intermediate render outputs (host externally)
+/music/
+/glb/
 /Renders/
 /Videos/
 Videos/videos-page/Old-uns/
@@ -34,7 +36,9 @@ Videos/videos-page/Staging-Zone/
 /Renders/**/webm_alpha_out/
 
 # Common large media file types (ignore across repo)
+*.mp3
 *.mp4
+*.aiff
 *.mov
 *.webm
 *.mkv

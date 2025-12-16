@@ -83,6 +83,10 @@ const VELOCITY_MAX = 127;     // MIDI max
 // Per-note animation state: noteNumber -> { mesh, phase, startMs, fromAngle, targetAngle }
 const keyAnimState = new Map();
 let audioCtx=null, audioBuffer=null, audioSource=null; let audioReady=false, audioPlaying=false; let audioError=false; let midiError=false;
+// Sampler (SoundFont) support
+let instrumentPlayer = null;
+let currentInstrumentName = null;
+const activeSampleNodes = new Map(); // midiNum -> node
 let audioTrimMs = 0; // detected leading silence trim
 const TRIM_THRESHOLD = 0.0025; // RMS amplitude threshold
 const TRIM_WINDOW_SAMPLES = 2048; // window size for scanning
@@ -159,6 +163,26 @@ function clearAllKeyGlow(){
     });
   }
 }
+
+// Load a SoundFont instrument by name (returns a promise). Exposed on window for UI.
+async function loadInstrument(name){
+  // detect Soundfont global under several possible names
+  const SF = window.Soundfont || window.SoundFont || window.SoundfontPlayer || window.SoundfontPlayer || window.Soundfont || window.Soundfontplayer;
+  if(!SF){ console.warn('Soundfont-player not found'); return null; }
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  try{
+    const opts = { soundfont: 'MusyngKite', format: 'mp3', url: 'https://gleitz.github.io/midi-js-soundfonts/MusyngKite/' };
+    const inst = await SF.instrument(audioCtx, name, opts);
+    instrumentPlayer = inst;
+    currentInstrumentName = name;
+    console.log('Loaded instrument', name, inst);
+    // update any picker UI active state (if present)
+    try{ document.querySelectorAll('.instrument-picker button').forEach(b=>b.classList.toggle('active', b.dataset.instrument===name)); }catch(e){}
+    return inst;
+  }catch(e){ console.warn('Failed to load instrument', name, e); throw e; }
+}
+window.loadInstrument = loadInstrument;
+window.getCurrentInstrumentName = () => currentInstrumentName;
 function applyKeyGlow(mesh, noteNumber, on){
   if(!mesh) return;
   const cur = (keyActiveCount.get(noteNumber) || 0) + (on? 1 : -1);
@@ -1142,51 +1166,125 @@ function playAnimRange(which){
 // ---- Key picking & basic synth note playback ----
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
+// Track pointer-down state to distinguish click vs drag
+let pointerDownInfo = null; // { startX, startY, moved, midiNum, mesh, played, playedAt, glowApplied }
+let pendingPlayTimer = null;
+const MIN_USER_NOTE_MS = 250;
 function midiNameToNumber(name){ const m = name.match(/^(\d{3})_/); return m? parseInt(m[1],10) : null; }
 // Simple polyphonic piano-like synth with sustain support
 const activeVoices = new Map(); // midiNum -> {osc, gain, stopTime, mesh}
 function playUserNote(midiNum, mesh){
   if(midiNum==null) return;
+  // Require a loaded sampled instrument; otherwise do nothing (no oscillator fallback)
+  if(!instrumentPlayer){
+    // still provide immediate visual feedback only
+    if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
+    return;
+  }
   if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
   if(audioCtx.state !== 'running'){ safeRun(() => audioCtx.resume(), 'audioCtx resume'); }
   const now = audioCtx.currentTime;
-  // If voice already active, retrigger
-  const existing = activeVoices.get(midiNum);
-  if(existing){
-    safeRun(() => existing.osc.stop(), 'existing osc stop');
-    activeVoices.delete(midiNum);
+  const existingNode = activeSampleNodes.get(midiNum);
+  if(existingNode && existingNode.stop){ try{ existingNode.stop(); }catch(e){} }
+  try{
+    console.log('playing sample', currentInstrumentName, midiNum);
+    const node = instrumentPlayer.play(midiNum, now, {gain:1});
+    activeSampleNodes.set(midiNum, node);
+    setTimeout(()=>{ activeSampleNodes.delete(midiNum); }, 6000);
+  }catch(e){ console.warn('Instrument play failed', e); }
+  // Update instrument picker status if present
+  try{
+    const status = document.querySelector('#instrumentPicker > div');
+    if(status) status.textContent = 'Playing: ' + (currentInstrumentName || '') + ' ' + midiNum;
+    setTimeout(()=>{ if(status) status.textContent = 'Loaded: ' + (currentInstrumentName || ''); }, 120);
+  }catch(e){}
+  if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
+}
+
+// Stop a user-triggered note quickly and remove glow
+function stopUserNote(midiNum){
+  // Audio: only stop sample nodes if an instrument is loaded; no oscillator fallback
+  const nowSec = (audioCtx ? audioCtx.currentTime : 0);
+  if(instrumentPlayer){
+    const sampleNode = activeSampleNodes.get(midiNum);
+    if(sampleNode){
+      try{
+        const fadeSec = 0.18;
+        const when = nowSec + (MIN_USER_NOTE_MS/1000) + fadeSec;
+        if(sampleNode.stop) sampleNode.stop(when);
+      }catch(e){ console.warn('sample stop failed', e); }
+      activeSampleNodes.delete(midiNum);
+    }
   }
-  const freq = 440 * Math.pow(2,(midiNum-69)/12);
-  // Create 3 slight detuned oscillators for warmth
-  const gain = audioCtx.createGain();
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.34, now+0.015);
-  // Sustain will hold level until pedal off; otherwise decay
-  const baseRelease = 1.1;
-  const releaseTime = baseRelease; // will shape later on stop
-  const oscA = audioCtx.createOscillator(); oscA.type='sine'; oscA.frequency.setValueAtTime(freq*0.997, now);
-  const oscB = audioCtx.createOscillator(); oscB.type='triangle'; oscB.frequency.setValueAtTime(freq, now);
-  const oscC = audioCtx.createOscillator(); oscC.type='sine'; oscC.frequency.setValueAtTime(freq*1.003, now);
-  // Gentle low-pass for softer tone
-  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.setValueAtTime(4800, now); lp.Q.value=0.6;
-  oscA.connect(gain); oscB.connect(gain); oscC.connect(gain);
-  gain.connect(lp).connect(audioCtx.destination);
-  oscA.start(now); oscB.start(now); oscC.start(now);
-  const voice = {osc:oscA, oscB, oscC, gain, mesh, startTime:now, releaseTime, stopping:false};
-  activeVoices.set(midiNum, voice);
-  // Schedule natural decay if no sustain pedal engaged
-  if(!(sustainAnim.phase==='press' || sustainAnim.phase==='held')){
-    gain.gain.linearRampToValueAtTime(0.0001, now+releaseTime);
-    setTimeout(()=>{
-      safeRun(() => { oscA.stop(); oscB.stop(); oscC.stop(); }, 'voice release stops');
-      activeVoices.delete(midiNum);
-    }, (releaseTime+0.05)*1000);
+  // remove glow immediately
+  const mesh = midiKeyMap.get(midiNum);
+  if(mesh) applyKeyGlow(mesh, midiNum, false);
+  // restore visual key rotation when safe (unless MIDI is controlling it)
+  try{
+    const st = keyAnimState.get(midiNum);
+    if(!st || st.phase === 'idle'){
+      const m = mesh || (v && v.mesh);
+      if(m) m.rotation.x = 0;
+    }
+  }catch(e){ /* ignore */ }
+}
+
+function onGlobalPointerMove(e){
+  if(!pointerDownInfo) return;
+  const dx = e.clientX - pointerDownInfo.startX;
+  const dy = e.clientY - pointerDownInfo.startY;
+  const dist2 = dx*dx + dy*dy;
+  if(!pointerDownInfo.moved && dist2 > (8*8)){
+    pointerDownInfo.moved = true;
+    // cancel any pending play
+    if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
+    // if we already played a note because of timeout, stop it quickly (respect min duration)
+    if(pointerDownInfo.played){ stopUserNote(pointerDownInfo.midiNum); pointerDownInfo.played = false; }
+    // If we applied immediate visual glow but are now moving, remove it
+    if(pointerDownInfo.glowApplied){ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); pointerDownInfo.glowApplied = false; }
+    // If pointer started on a key, keep rotate disabled until release; do not enable rotate here
+    // (dragging that started outside keys continues to rotate normally)
   }
-  if(mesh){
-    const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
-    mesh.rotation.x = base * 0.6;
-    setTimeout(()=>{ if(mesh && !(sustainAnim.phase==='press'||sustainAnim.phase==='held')) mesh.rotation.x = 0; }, 300);
+  // If pointer is down on a key and moved, perform glissando: play notes under pointer as it crosses
+  if(pointerDownInfo && pointerDownInfo.moved){
+    // compute normalized pointer coords relative to canvas
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
+    pointer.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
+    raycaster.setFromCamera(pointer, cam);
+    const intersects = root ? raycaster.intersectObject(root, true) : [];
+    if(intersects.length){
+      const hit = intersects[0].object;
+      const res = findKeyFromObject(hit);
+      if(res && res.midiNum !== pointerDownInfo.lastMidi){
+        pointerDownInfo.lastMidi = res.midiNum;
+        // play the note and apply glow
+        playUserNote(res.midiNum, res.mesh);
+        applyKeyGlow(res.mesh, res.midiNum, true);
+        // schedule a stop after minimum duration to avoid long-held gliss notes
+        setTimeout(()=>{ stopUserNote(res.midiNum); }, MIN_USER_NOTE_MS + 20);
+      }
+    }
   }
+}
+
+function onGlobalPointerUp(e){
+  if(!pointerDownInfo) return;
+  // If pointer up without significant move, ensure we played the note (if not yet)
+  if(!pointerDownInfo.moved){
+    if(!pointerDownInfo.played){
+      // Play now if it wasn't played yet
+      playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+      pointerDownInfo.played = true;
+    }
+    // User released: stop note, but stopUserNote enforces minimum duration
+    if(pointerDownInfo.played){
+      stopUserNote(pointerDownInfo.midiNum);
+    }
+  }
+  // cleanup
+  if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
+  pointerDownInfo = null;
 }
 // Handle pedal release affecting sustained voices
 function applySustainState(){
@@ -1220,6 +1318,8 @@ function findKeyFromObject(obj){
 }
 let suppressRotate = false;
 function onPointerDown(e){
+  // Ignore right-clicks for note playing
+  if(e.button === 2) return;
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
   pointer.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
@@ -1229,13 +1329,36 @@ function onPointerDown(e){
     const hit = intersects[0].object;
     const res = findKeyFromObject(hit);
     if(res){
-      playUserNote(res.midiNum, res.mesh);
-      if(e.button===0){ controls.enableRotate=false; suppressRotate=true; }
+      // Start tracking to detect drag vs click. Apply immediate visual feedback so quick taps highlight.
+      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false };
+      // Immediately apply visual glow so quick taps show highlight even before audio starts
+      applyKeyGlow(res.mesh, res.midiNum, true);
+      pointerDownInfo.glowApplied = true;
+      // Disable rotation while pointer is down on a key to prevent accidental rotate
+      controls.enableRotate = false; suppressRotate = true;
+      // Start audio shortly after (small debounce helps avoid accidental touch-drag triggers)
+      pendingPlayTimer = setTimeout(()=>{
+        if(pointerDownInfo && !pointerDownInfo.moved){
+          playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+          pointerDownInfo.played = true;
+          pointerDownInfo.playedAt = performance.now();
+        }
+        pendingPlayTimer = null;
+      }, 40);
       e.preventDefault();
       return;
     }
   }
 }
-function onPointerUp(){ if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; } }
+
+function onPointerUp(){
+  // If we had a tracked press, handle play/stop logic
+  onGlobalPointerUp();
+  if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; }
+}
 canvas.addEventListener('pointerdown', onPointerDown);
 window.addEventListener('pointerup', onPointerUp);
+// Global move listener for drag detection
+window.addEventListener('pointermove', onGlobalPointerMove);
+// Prevent context menu from right-clicking the canvas
+canvas.addEventListener('contextmenu', (ev)=>{ ev.preventDefault(); });
