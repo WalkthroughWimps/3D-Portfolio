@@ -668,6 +668,7 @@ class PlayerState {
         replaceScreenMaterial: !!options.replaceScreenMaterial,
         disableGrid: !!options.disableGrid,
         externalControls: !!options.externalControls,
+        layout: options.layout || 'grid6',
         canvasWidth: 2048,
         canvasHeight: 1280,
         zoomDuration: 420,
@@ -686,6 +687,8 @@ class PlayerState {
           setPreservePitch() {},
           applyToMesh() { return false; },
           applyToMeshById() { return false; },
+          isScreenPointInteractive() { return false; },
+          isPlayingFull() { return false; },
           restoreOriginalMaterial() {}
         };
       }
@@ -695,7 +698,7 @@ class PlayerState {
         return null;
       }
 
-      const entries = [
+      const DEFAULT_ENTRIES_6 = [
         { id: 'online-classes', title: 'Online Classes', description: 'Remote learning cuts and overlays.', order: 0 },
         { id: 'a-list-videos', title: 'A-List Videos', description: 'Promo edits and highlights.', order: 1 },
         { id: 'news-broadcast', title: 'News Broadcast', description: 'Broadcast-style segments.', order: 2 },
@@ -703,9 +706,8 @@ class PlayerState {
         { id: 'music-videos', title: 'Music Videos', description: 'Music-driven visuals and edits.', order: 4 },
         { id: 'random-vids', title: 'Random Vids', description: 'Favorite mixes and experiments.', order: 5 }
       ];
+      const entries = (Array.isArray(opts.entries) && opts.entries.length) ? opts.entries : DEFAULT_ENTRIES_6;
 
-      const rows = 2;
-      const cols = 3;
       const gridCanvas = document.createElement('canvas');
       const controlsCanvas = document.createElement('canvas'); // separate layer for bars/icons
 
@@ -733,12 +735,33 @@ class PlayerState {
 
       const contentSurfaceRect = computeContentSurfaceRect();
 
-      const layout = (() => {
-        // Pull the thumbnail rows closer to the top/bottom edges while
-        // increasing the middle band for the explainer text.
+      function buildLayout(layoutMode) {
+        if (layoutMode === 'split2-right') {
+          const gap = Math.max(12, Math.round(contentSurfaceRect.w * 0.03));
+          const margin = Math.max(12, Math.round(contentSurfaceRect.w * 0.03));
+          const inner = {
+            x: contentSurfaceRect.x + margin,
+            y: contentSurfaceRect.y + margin,
+            w: contentSurfaceRect.w - margin * 2,
+            h: contentSurfaceRect.h - margin * 2
+          };
+          const rightColW = Math.round(inner.w * 0.35);
+          const leftW = inner.w - rightColW - gap;
+          const thumbW = rightColW;
+          const thumbH = Math.floor((inner.h - gap) / 2);
+          const cells = [
+            { x: inner.x + leftW + gap, y: inner.y, w: thumbW, h: thumbH },
+            { x: inner.x + leftW + gap, y: inner.y + thumbH + gap, w: thumbW, h: thumbH }
+          ];
+          const descBand = { x: inner.x, y: inner.y, w: leftW, h: inner.h };
+          return { gap, margin, descBand, cells, contentSurfaceRect };
+        }
+
+        // Default 2x3 grid layout (legacy videos page)
+        const rows = 2;
+        const cols = 3;
         const gap = Math.max(12, Math.round(contentSurfaceRect.w * 0.028));
         const margin = Math.max(12, Math.round(gap * 0.55));
-        // Increase middle band so the info area is larger without changing outer margins
         const centerGap = Math.max(Math.round(contentSurfaceRect.h * 0.30), gap * 2);
         const totalW = contentSurfaceRect.w - margin * 2;
         const slotW = Math.floor((totalW - gap * (cols - 1)) / cols);
@@ -746,8 +769,7 @@ class PlayerState {
         const ar = 16 / 9;
         const cells = [];
         const rowYs = [contentSurfaceRect.y + margin, contentSurfaceRect.y + contentSurfaceRect.h - margin - slotH];
-        // Vertical bias within slots: push top row items upward and bottom row items downward
-        const vBiasTop = 0.12;   // 0 = align to top of slot, 0.5 = center, 1 = bottom
+        const vBiasTop = 0.12;
         const vBiasBottom = 0.88;
         for (let r = 0; r < rows; r++) {
           const rowY = rowYs[r];
@@ -771,7 +793,9 @@ class PlayerState {
           h: rowYs[1] - (rowYs[0] + slotH)
         };
         return { gap, margin, descBand, cells, contentSurfaceRect };
-      })();
+      }
+
+      const layout = buildLayout(opts.layout);
 
       const baseBarHeight = Math.min(120, Math.round(gridCanvas.height * 0.11));
       const barOverhang = Math.max(8, Math.round(layout.margin * 0.35));
@@ -856,11 +880,24 @@ class PlayerState {
       let gridCanvasWasInOverlay = false;
 
       const base = 'Videos/videos-page/';
+      const media = opts.media || {};
+      const mediaHq = media.hq || {};
+      const mediaLq = media.lq || {};
+      const mediaThumbs = media.thumbs || {};
+
+      function resolveMediaUrl(path) {
+        if (!path) return null;
+        if (/^https?:\/\//i.test(path) || path.startsWith('/') || path.startsWith('data:')) return path;
+        const srcPath = base + path;
+        return encodeURI((window && window.mediaUrl) ? window.mediaUrl(srcPath) : srcPath);
+      }
+
       const thumbs = entries.map((entry) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
-        const imgPath = base + entry.id + '.jpg';
-        img.src = encodeURI((window && window.mediaUrl) ? window.mediaUrl(imgPath) : imgPath);
+        const imgPath = mediaThumbs[entry.id] || `${entry.id}.jpg`;
+        const resolved = resolveMediaUrl(imgPath);
+        if (resolved) img.src = resolved;
         return img;
       });
 
@@ -1097,8 +1134,9 @@ class PlayerState {
         const tryNext = () => {
           if (i >= list.length) return;
           const current = list[i++];
-          const srcPath = base + current;
-          v.src = encodeURI((window && window.mediaUrl) ? window.mediaUrl(srcPath) : srcPath);
+          const srcPath = resolveMediaUrl(current);
+          if (!srcPath) { tryNext(); return; }
+          v.src = srcPath;
           v.load();
         };
         const onAbortLike = () => tryNext();
@@ -1116,8 +1154,16 @@ class PlayerState {
         return v;
       }
 
-      const previewVideos = entries.map((entry) => createVideo([`${entry.id}-lq.webm`, `${entry.id}.mp4`], true));
-      const fullVideos = entries.map((entry) => createVideo([`${entry.id}-hq.webm`, `${entry.id}.mp4`], !opts.allowSound));
+      const previewVideos = entries.map((entry) => {
+        const lqUrl = mediaLq[entry.id];
+        const sources = lqUrl ? [lqUrl] : [`${entry.id}-lq.webm`, `${entry.id}.mp4`];
+        return createVideo(sources, true);
+      });
+      const fullVideos = entries.map((entry) => {
+        const hqUrl = mediaHq[entry.id];
+        const sources = hqUrl ? [hqUrl] : [`${entry.id}-hq.webm`, `${entry.id}.mp4`];
+        return createVideo(sources, !opts.allowSound);
+      });
       // expose preview/full video element arrays so external player instances can reuse them
       try { window.__videoGridPreviewVideos = previewVideos; window.__videoGridFullVideos = fullVideos; } catch (e) { /* ignore */ }
 
@@ -2699,6 +2745,12 @@ class PlayerState {
         return applyToMesh(found);
       }
 
+      function isScreenPointInteractive(clientX, clientY) {
+        if (!playingFull && opts.layout !== 'split2-right') return false;
+        const pt = pointFromEvent({ clientX, clientY });
+        return !!pt;
+      }
+
       const api = {
         canvas: gridCanvas,
         texture,
@@ -2707,6 +2759,8 @@ class PlayerState {
         reset() { description = 'Hover a thumbnail to preview a random snippet.'; },
         applyToMesh,
         applyToMeshById,
+        isScreenPointInteractive,
+        isPlayingFull() { return !!playingFull; },
         restoreOriginalMaterial,
         destroy() {
           dom.removeEventListener('pointermove', handlePointerMove);
