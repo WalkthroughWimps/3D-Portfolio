@@ -30,6 +30,32 @@ import { getSyncOffsetMs } from './global-sync.js';
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
+window.addEventListener('DOMContentLoaded', ()=>{
+  instrumentPickerEl = document.getElementById('instrumentPicker');
+  if(instrumentPickerEl){
+    instrumentPickerEl.classList.add('instrument-picker--backboard');
+    instrumentPickerEl.style.display = 'none';
+  }
+  // Hide original DOM label and rely on backboard UI
+  try{
+    const status = instrumentPickerEl.querySelector('div');
+    if(status) status.style.display = 'none';
+  }catch(e){}
+  // Backboard click debug panel
+  backboardClickPanel = document.createElement('div');
+  backboardClickPanel.style.cssText = 'position:fixed;left:10px;bottom:10px;padding:8px 10px;background:rgba(0,0,0,0.7);color:#d0ffe4;font:12px monospace;z-index:2000;pointer-events:none;border-radius:6px;white-space:pre;';
+  backboardClickPanel.textContent = 'backboard: none';
+  document.body.appendChild(backboardClickPanel);
+
+  document.addEventListener('keydown', (e)=>{
+    if(e.code === 'F10'){
+      const dbg = document.getElementById('uiDebugCanvas');
+      if(dbg){
+        dbg.style.display = (dbg.style.display === 'none') ? 'block' : 'none';
+      }
+    }
+  });
+});
 const canvas = document.getElementById('pianoCanvas');
 if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
@@ -45,7 +71,7 @@ const scene = new THREE.Scene();
 // Lighting rig — mirror videos page for consistent look
 const cam = new THREE.PerspectiveCamera(45, canvas.clientWidth/canvas.clientHeight, 0.001, 500);
 // Initial camera; final framing is driven by fit()/intro tween after GLB load
-cam.position.set(1.4, 6, 2.8);
+cam.position.set(-2.32, 2.14, 10.58);
 cam.lookAt(0,0,0);
 // Hemisphere + key + fill + rim + under + subtle ambient (videos.js style)
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85); scene.add(hemi);
@@ -157,9 +183,39 @@ function requestBackboardRedraw(){ backboardDirty = true; }
 // circles/text look visually correct when mapped to the mesh UVs.
 let backboardSurfaceAspect = 1;
 let backboardUvDebugLogged = false;
-// logical CSS-pixel drawing size for the backboard canvas (set at creation)
+// logical CSS-pixel drawing size for the backboard canvas (set once at creation)
 let backboardCssW = 2048;
 let backboardCssH = 512;
+const BACKBOARD_BASE_HEIGHT = 512;
+// Instrument picker overlay targeting the backboard
+let instrumentPickerEl = null;
+let lastInstrumentPickerRect = { x: 0, y: 0, w: 0, h: 0 };
+let screenPlane = null;
+let screenPlaneNormal = new THREE.Vector3(0,0,1);
+let uvDebugMode = true; // draw UV test card
+const INSTRUMENT_BUTTONS = [
+  { id: 'acoustic_grand_piano', label: 'Acoustic Piano' },
+  { id: 'bright_acoustic_piano', label: 'Bright Piano' },
+  { id: 'electric_piano_1', label: 'Electric Piano 1' },
+  { id: 'electric_piano_2', label: 'Electric Piano 2' },
+  { id: 'honkytonk', label: 'Honky-Tonk' },
+  { id: 'harpsichord', label: 'Harpsichord' },
+  { id: 'vibraphone', label: 'Vibraphone' },
+  { id: 'church_organ', label: 'Organ' },
+  { id: 'accordion', label: 'Accordion' },
+  { id: 'string_ensemble_1', label: 'Strings' },
+  { id: 'pad_1', label: 'Pad' },
+  { id: 'choir_aahs', label: 'Choir' }
+];
+const panelState = {
+  left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id },
+  right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id }
+};
+let panelHitRects = [];
+let panelHover = null;
+let backboardClickPanel = null;
+let backboardPointerDown = false;
+let backboardDebugPreview = null;
 // Backboard UV orientation correction (detect if UV island is rotated/flipped)
 // backboardUVCorrection: per-axis correction detected at load time
 // { swap:bool, mirrorU:bool, mirrorV:bool }
@@ -178,6 +234,7 @@ let RAYCAST_KEYMAP_READY = false;
 const activeNotes = new Map(); // note -> { velocity, tOn }
 const activeNoteSet = new Set(); // stores MIDI note numbers currently held down
 const codeToMidiDown = new Map(); // ev.code -> latched midi number
+const PERSISTENT_HIGHLIGHTS = [36]; // C2
 
 // Debug lane guide toggle
 const DEBUG_LANES = true;
@@ -210,6 +267,71 @@ const V_MIN = 0.442326;
 const V_MAX = 0.557674;
 const V_RANGE = V_MAX - V_MIN; // 0.115348
 
+// Map backboard mesh to screen-space rect for DOM overlays (instrument picker)
+function getBackboardScreenRect(){
+  const target = backboardMesh;
+  if(!target || !renderer || !cam) return null;
+  const geom = target.geometry;
+  if(!geom) return null;
+  try{ if(!geom.boundingBox) geom.computeBoundingBox(); }catch(e){}
+  const bb = geom.boundingBox;
+  if(!bb) return null;
+  const min = bb.min, max = bb.max;
+  const corners = [
+    new THREE.Vector3(min.x, min.y, min.z),
+    new THREE.Vector3(min.x, min.y, max.z),
+    new THREE.Vector3(min.x, max.y, min.z),
+    new THREE.Vector3(min.x, max.y, max.z),
+    new THREE.Vector3(max.x, min.y, min.z),
+    new THREE.Vector3(max.x, min.y, max.z),
+    new THREE.Vector3(max.x, max.y, min.z),
+    new THREE.Vector3(max.x, max.y, max.z)
+  ];
+  const domRect = renderer.domElement.getBoundingClientRect();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for(const c of corners){
+    const v = c.clone();
+    try{ v.applyMatrix4(target.matrixWorld); }catch(e){}
+    try{ v.project(cam); }catch(e){}
+    const x = (v.x * 0.5 + 0.5) * domRect.width + domRect.left;
+    const y = (-v.y * 0.5 + 0.5) * domRect.height + domRect.top;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if(!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
+  return { x:minX, y:minY, w: Math.max(0, maxX-minX), h: Math.max(0, maxY-minY) };
+}
+
+function updateInstrumentPickerPosition(){
+  if(!instrumentPickerEl) return;
+  const rect = getBackboardScreenRect();
+  if(!rect){
+    instrumentPickerEl.style.opacity = '0';
+    return;
+  }
+  instrumentPickerEl.style.opacity = '1';
+  instrumentPickerEl.style.position = 'fixed';
+  instrumentPickerEl.style.left = `${rect.x}px`;
+  instrumentPickerEl.style.top = `${rect.y}px`;
+  instrumentPickerEl.style.width = `${rect.w}px`;
+  instrumentPickerEl.style.maxWidth = `${rect.w}px`;
+  instrumentPickerEl.style.transform = 'translateY(0)';
+  instrumentPickerEl.style.flexDirection = 'row';
+  instrumentPickerEl.style.flexWrap = 'wrap';
+  instrumentPickerEl.style.justifyContent = 'center';
+  instrumentPickerEl.style.alignItems = 'center';
+  // Avoid thrashing layout if unchanged
+  const eps = 0.5;
+  if(Math.abs(lastInstrumentPickerRect.x - rect.x) > eps ||
+     Math.abs(lastInstrumentPickerRect.y - rect.y) > eps ||
+     Math.abs(lastInstrumentPickerRect.w - rect.w) > eps ||
+     Math.abs(lastInstrumentPickerRect.h - rect.h) > eps){
+    lastInstrumentPickerRect = rect;
+  }
+}
+
 // Convert a local v (0..1 within the backboard island) into canvas Y pixels
 function vLocalToYPx(vLocal, H){
   const vAbs = V_MIN + (vLocal * V_RANGE); // absolute UV v
@@ -219,6 +341,139 @@ function vLocalToYPx(vLocal, H){
 // Convert an absolute UV v (0..1) into canvas Y pixels
 function vAbsToYPx(vAbs, H){
   return (1.0 - vAbs) * H; // y = (1 - v) * H
+}
+
+// Simple UV test card
+function drawUvTestCard(ctx, W, H){
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 1;
+  const steps = 10;
+  for(let i=0;i<=steps;i++){
+    const x = (i/steps)*W;
+    const y = (i/steps)*H;
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+  ctx.fillStyle = '#0f0';
+  ctx.font = `${Math.max(16, Math.round(H*0.05))}px monospace`;
+  ctx.fillText('TOP', W*0.45, H*0.08);
+  ctx.fillText('BOTTOM', W*0.38, H*0.95);
+  ctx.fillText('(0,0)', 8, H-8);
+  ctx.fillText('(1,1)', W-70, 20);
+}
+
+function createBackboardCanvas(aspect){
+  if(backboardCanvas) return; // already created; do not resize
+  const baseH = BACKBOARD_BASE_HEIGHT;
+  const targetW = Math.round((baseH * aspect) / 64) * 64;
+  backboardCssW = Math.max(64, targetW);
+  backboardCssH = baseH;
+  backboardCanvas = document.createElement('canvas');
+  backboardCanvas.width = backboardCssW;
+  backboardCanvas.height = backboardCssH;
+  backboardCanvas.id = 'uiDebugCanvas';
+  backboardCanvas.style.position = 'fixed';
+  backboardCanvas.style.left = '8px';
+  backboardCanvas.style.bottom = '8px';
+  backboardCanvas.style.width = '320px';
+  backboardCanvas.style.height = 'auto';
+  backboardCanvas.style.zIndex = '9999';
+  backboardCanvas.style.border = '2px solid magenta';
+  backboardCanvas.style.pointerEvents = 'none';
+  document.body.appendChild(backboardCanvas);
+  backboardDebugPreview = backboardCanvas;
+
+  backboardCtx = backboardCanvas.getContext('2d');
+  backboardTexture = new THREE.CanvasTexture(backboardCanvas);
+  try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
+  try{ backboardTexture.flipY = false; }catch(e){}
+  backboardTexture.needsUpdate = true;
+
+  // Aggressive debug draw
+  const ctx = backboardCtx;
+  ctx.fillStyle = '#ff00ff';
+  ctx.fillRect(0,0,backboardCssW, backboardCssH);
+  ctx.strokeStyle = '#0ff';
+  ctx.lineWidth = 20;
+  ctx.strokeRect(10,10, backboardCssW-20, backboardCssH-20);
+  ctx.fillStyle = '#000';
+  ctx.font = '72px Arial Black, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('TOP', backboardCssW/2, 90);
+  ctx.fillText('BOTTOM', backboardCssW/2, backboardCssH - 60);
+  backboardTexture.needsUpdate = true;
+}
+
+function uvToCanvasPx(uv){
+  if(!backboardUVBounds || !backboardCanvas) return null;
+  const uSpan = backboardUVBounds.uSpan || (backboardUVBounds.uMax - backboardUVBounds.uMin) || 1;
+  const vSpan = backboardUVBounds.vSpan || (backboardUVBounds.vMax - backboardUVBounds.vMin) || 1;
+  const uNorm = (uv.x - backboardUVBounds.uMin) / uSpan;
+  const vNorm = (uv.y - backboardUVBounds.vMin) / vSpan;
+  if(!isFinite(uNorm) || !isFinite(vNorm)) return null;
+  const px = uNorm * backboardCssW;
+  const py = (1 - vNorm) * backboardCssH;
+  return { px, py };
+}
+
+function raycastBackboardForUv(clientX, clientY){
+  if(!backboardMesh) return null;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left)/rect.width)*2 - 1;
+  const ny = -((clientY - rect.top)/rect.height)*2 + 1;
+  pointer.set(nx, ny);
+  raycaster.setFromCamera(pointer, cam);
+  const hits = raycaster.intersectObject(backboardMesh, true);
+  if(!hits.length) return null;
+  const h = hits[0];
+  if(!h.uv) return null;
+  return h.uv;
+}
+
+function setBackboardDebug(uv){
+  if(!backboardClickPanel) return;
+  if(!uv){
+    backboardClickPanel.textContent = 'backboard: none';
+    return;
+  }
+  const pt = uvToCanvasPx(uv);
+  const px = pt ? pt.px.toFixed(1) : 'n/a';
+  const py = pt ? pt.py.toFixed(1) : 'n/a';
+  backboardClickPanel.textContent = `backboard hit\nu:${uv.x.toFixed(4)} v:${uv.y.toFixed(4)}\npx:${px} py:${py}`;
+}
+
+function hitTestPanelUI(uv){
+  const pt = uvToCanvasPx(uv);
+  if(!pt) return null;
+  for(const hit of panelHitRects){
+    const r = hit.rect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      return hit;
+    }
+  }
+  return null;
+}
+
+function updateInstrumentHover(clientX, clientY){
+  const uv = raycastBackboardForUv(clientX, clientY);
+  const hit = uv ? hitTestPanelUI(uv) : null;
+  const nextHover = hit ? hit.id : null;
+  if(nextHover !== panelHover){
+    panelHover = nextHover;
+    requestBackboardRedraw();
+  }
+}
+
+async function triggerInstrumentButton(id){
+  // keep selection per panel; caller sets desired panel before calling
+  requestBackboardRedraw();
+  try{
+    await loadInstrument(id);
+  }catch(e){
+    console.warn('Instrument load via backboard UI failed', id, e);
+  }
 }
 
 // Backboard UV map mode: 'none' | 'u' | 'v'
@@ -231,6 +486,7 @@ function setBackboardUVMapMode(mode){
   if(!mode) mode = 'none';
   mode = String(mode).toLowerCase();
   if(!['none','u','v','checker'].includes(mode)) mode = 'none';
+  console.log('UV mode ->', mode);
   backboardUVMapMode = mode;
   try{ window.backboardUVMapMode = backboardUVMapMode; }catch(e){}
   // trigger a redraw/update of the texture if canvas exists
@@ -688,6 +944,12 @@ function applyKeyGlow(mesh, noteNumber, on){
   // Request backboard redraw when visual key glow changes
   try{ requestBackboardRedraw(); }catch(e){}
 }
+function applyPersistentHighlights(){
+  PERSISTENT_HIGHLIGHTS.forEach((note)=>{
+    const mesh = midiKeyMap.get(note);
+    if(mesh) applyKeyGlow(mesh, note, true);
+  });
+}
 // ---- Track Metadata (moved earlier to avoid TDZ issues) ----
 // Track metadata (adjust paths if actual filenames differ)
 const TRACKS = {
@@ -773,6 +1035,7 @@ function collectKeys(node){
   midiKeyMap.forEach((mesh, note)=>{
     keyAnimState.set(note, { mesh, phase:'idle', startMs:0, fromAngle:0, targetAngle:0 });
   });
+  applyPersistentHighlights();
 }
 function chooseMiddleKey(){
   // Sort keys by world X position to find median (approx middle C)
@@ -864,6 +1127,7 @@ function animate(){
         }
       }catch(e){ /* ignore */ }
   }
+  updateInstrumentPickerPosition();
 }
 animate();
 // Proper signature: (url, onLoad, onProgress, onError)
@@ -942,37 +1206,19 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
           try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
           backboardTexture.wrapS = THREE.ClampToEdgeWrapping; backboardTexture.wrapT = THREE.ClampToEdgeWrapping;
           backboardTexture.needsUpdate = true;
-          const applyMap = (mat, idx)=>{
-            if(!mat) return;
-            // Replace with unlit material so overlay is not darkened by lighting/tone mapping
-            const basic = new THREE.MeshBasicMaterial({
-              map: backboardTexture,
-              toneMapped: false,
-              transparent: true,
-              opacity: 1.0,
-              depthWrite: false
-            });
-            basic.name = (mat.name || 'backboard_map') + '_basic';
-            return basic;
-          };
-          if(Array.isArray(o.material)){
-            o.material = o.material.map(applyMap);
-          } else {
-            o.material = applyMap(o.material);
-          }
-          console.log('Applied backboard canvas texture to', o.name);
-          // Ensure texture is cropped to the backboard UV island so drawings are not stretched
-          try{
-            backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan);
-            backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin);
-            console.log('backboard canvas', backboardCanvas.width, backboardCanvas.height, 'texture repeat', backboardTexture.repeat.toArray(), 'offset', backboardTexture.offset.toArray(), 'uvBounds', backboardUVBounds);
-            try{
-              if(!backboardUvDebugLogged){
-                console.log('Backboard UV', 'flipY:', backboardTexture.flipY, 'repeat:', backboardTexture.repeat.x, backboardTexture.repeat.y, 'offset:', backboardTexture.offset.x, backboardTexture.offset.y);
-                backboardUvDebugLogged = true;
-              }
-            }catch(e){}
-          }catch(e){ console.warn('texture repeat/offset set failed', e); }
+
+          // Log mesh found
+          console.log('Backboard mesh found:', backboardMesh?.name, backboardMesh?.type);
+          // Force a basic material with the texture for visibility
+          backboardMesh.material = new THREE.MeshBasicMaterial({
+            map: backboardTexture,
+            transparent: false,
+            toneMapped: false,
+            side: THREE.DoubleSide
+          });
+          backboardMesh.material.needsUpdate = true;
+          // Debug canvas size
+          console.log('Backboard canvas:', backboardCanvas.width, backboardCanvas.height, 'css:', backboardCssW, backboardCssH);
 
           // Note: do NOT alter the original backboard mesh material here —
           // we want to preserve the imported GLB appearance. The overlay
@@ -1050,32 +1296,8 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
                     uMin=0; uMax=1; vMin=0; vMax=1; uSpan=1; vSpan=1;
                   }
                   backboardUVBounds = { uMin, uMax, vMin, vMax, uSpan, vSpan };
-                  // If the canvas already exists, resize it to the UV aspect and reapply texture repeat/offset
-                  try{
-                    const dpr = Math.min(2, window.devicePixelRatio || 1);
-                    const BASE_W = 4096;
-                    const screenAspect = backboardUVBounds.uSpan / Math.max(1e-6, backboardUVBounds.vSpan);
-                    backboardCssW = Math.round(BASE_W);
-                    backboardCssH = Math.max(64, Math.round(BASE_W / Math.max(1e-6, screenAspect)));
-                    if(backboardCanvas){
-                      backboardCanvas.width = Math.round(backboardCssW * dpr);
-                      backboardCanvas.height = Math.round(backboardCssH * dpr);
-                      backboardCanvas.style.width = backboardCssW + 'px';
-                      backboardCanvas.style.height = backboardCssH + 'px';
-                      backboardCtx = backboardCanvas.getContext('2d');
-                      try{ backboardCtx.setTransform(dpr,0,0,dpr,0,0); }catch(e){}
-                      try{ backboardCtx.imageSmoothingEnabled = true; }catch(e){}
-                    }
-                    if(backboardTexture){
-                      backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan);
-                      backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin);
-                      try{ backboardTexture.generateMipmaps = true; }catch(e){}
-                      try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch(e){ backboardTexture.minFilter = THREE.LinearFilter; }
-                      try{ backboardTexture.magFilter = THREE.LinearFilter; }catch(e){}
-                      try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
-                      backboardTexture.needsUpdate = true;
-                    }
-                  }catch(e){ console.warn('Failed to resize backboard canvas after keymap.json', e); }
+          // Do not resize backboard canvas after creation; only update bounds
+          try{ backboardTexture.repeat.set(1,1); backboardTexture.offset.set(0,0); backboardTexture.needsUpdate = true; }catch(e){}
                 }catch(e){ console.warn('Error parsing keymap.json UV bounds', e); }
                 try{ requestBackboardRedraw(); }catch(e){}
               }
@@ -1303,6 +1525,7 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
       } else {
         console.log('Skipping raycast keymap generation because keymap.json loaded');
       }
+      applyPersistentHighlights();
     } }catch(e){ console.warn('generateRuntimeKeymap failed', e); }
     // Ensure all individual keys have scale 1
     safeRun(() => keyMeshes.forEach(k => { if (k && k.scale) k.scale.setScalar(1); }), 'key scale normalize');
@@ -1691,25 +1914,16 @@ function renderBackboardOverlay(){
   try{ ctx.imageSmoothingEnabled = true; }catch(e){}
   // Use canvas-derived aspect (width/height) for visual compensation
   try{ backboardSurfaceAspect = (W / Math.max(1, H)); }catch(e){}
-  // Helper to compensate for mesh surface aspect so drawn circles/text look round on the mesh
-  function withAspectComp(ctxLocal, cx, cy, fn){
-    const a = (backboardSurfaceAspect && isFinite(backboardSurfaceAspect)) ? backboardSurfaceAspect : 1;
-    ctxLocal.save();
-    ctxLocal.translate(cx, cy);
-    // If surface is wider than tall, X is stretched on mesh, so pre-squash X when drawing
-    ctxLocal.scale(1 / a, 1);
-    try{ fn(); }catch(e){}
-    ctxLocal.restore();
-  }
-  // Clear canvas and draw orange background to confirm the overlay is visible
+  // Clear canvas and draw bright background first
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#d96b00'; ctx.fillRect(0,0,W,H);
-  // watermark to confirm overlay is active
-  try{
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.font = '24px system-ui, Arial, sans-serif';
-    ctx.fillText('overlay', 12, Math.max(26, Math.round(H * 0.08)));
-  }catch(e){}
+  ctx.fillStyle = '#ff00ff';
+  ctx.fillRect(0,0,W,H);
+  if(uvDebugMode){
+    drawUvTestCard(ctx, W, H);
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+  }
 
   // Draw selected UV map mode if enabled
   if(backboardUVMapMode === 'u'){
@@ -1722,86 +1936,91 @@ function renderBackboardOverlay(){
     // none: keep solid black background (already filled above)
   }
 
+  // Instrument buttons UI (spread horizontally across the screen)
+  // Draw panels
   try{
-    // Use explicit V band math (do not use canvas.width/height here)
-    const V_MIN_LOCAL = V_MIN; const V_MAX_LOCAL = V_MAX;
-    const yMin = (1 - V_MIN_LOCAL) * H; // bottom of band (larger y)
-    const yMax = (1 - V_MAX_LOCAL) * H; // top of band (smaller y)
-    const bandH = Math.max(1, yMin - yMax);
-    // circle/legend debugging removed for cleanliness
-  }catch(e){ /* ignore debug draw errors */ }
-
-  // QWERTY lane labels on the backboard (white keys only)
-  try{
-    // Helper: build lane list from keyByNote if available, otherwise derive evenly across U span from midiKeyMap
-    const buildWhiteLanes = ()=>{
-      const lanes = [];
-      if(keyByNote && keyByNote.size){
-        Array.from(keyByNote.entries())
-          .filter(([note]) => !isBlackNoteByNumber(Number(note)))
-          .sort((a,b)=> Number(a[0]) - Number(b[0])) // preserve musical order
-          .forEach(([note, info])=>{
-            const n = Number(note);
-            const laneAbs = keyLanesAbs.get(n);
-            const u0 = (laneAbs && isFinite(laneAbs.u0)) ? laneAbs.u0
-                      : (isFinite(info.u0_abs) ? info.u0_abs
-                        : (isFinite(info.u0) ? info.u0 : null));
-            const u1 = (laneAbs && isFinite(laneAbs.u1)) ? laneAbs.u1
-                      : (isFinite(info.u1_abs) ? info.u1_abs
-                        : (isFinite(info.u1) ? info.u1 : null));
-            if(u0 == null || u1 == null) return;
-            lanes.push({ note:n, u0, u1 });
-          });
+    panelHitRects = [];
+    const panelW = W * 0.42;
+    const panelH = H * 0.8;
+    const panelY = (H - panelH) / 2;
+    const leftX = W * 0.04;
+    const rightX = W - panelW - leftX;
+    const pad = panelW * 0.04;
+    const btnH = (panelH - pad * 2) / 8; // 6 buttons + 2 arrows
+    const fontSize = Math.max(14, Math.round(btnH * 0.38));
+    const drawPanel = (panelId, x0)=>{
+      const state = panelState[panelId];
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.strokeStyle = '#8df7d4';
+      ctx.lineWidth = Math.max(2, W * 0.0018);
+      const radius = 12;
+      if(typeof ctx.roundRect === 'function'){
+        ctx.beginPath(); ctx.roundRect(x0, panelY, panelW, panelH, radius); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(x0, panelY, panelW, panelH); ctx.strokeRect(x0, panelY, panelW, panelH);
       }
-      // Fallback evenly-spaced only if no keymap present
-      if(!lanes.length && keyLanesAbs && keyLanesAbs.size){
-        Array.from(keyLanesAbs.entries())
-          .filter(([note]) => !isBlackNoteByNumber(Number(note)))
-          .sort((a,b)=>Number(a[0]) - Number(b[0]))
-          .forEach(([note, lane])=>{
-            if(lane && isFinite(lane.u0) && isFinite(lane.u1)){
-              lanes.push({ note:Number(note), u0:lane.u0, u1:lane.u1 });
-            }
-          });
-      }
-      if(!lanes.length && midiKeyMap && midiKeyMap.size){
-        console.warn('Keymap lanes fallback: keymap.json not loaded; using evenly spaced U');
-        const whites = Array.from(midiKeyMap.keys()).filter(n=>!isBlackNoteByNumber(Number(n))).sort((a,b)=>a-b);
-        if(whites.length){
-          const span = Math.max(1e-6, Number(keymapURight||1) - Number(keymapULeft||0));
-          const startU = Number(keymapULeft||0);
-          const laneW = span / whites.length;
-          whites.forEach((n,i)=>{
-            lanes.push({ note:Number(n), u0: startU + i*laneW, u1: startU + (i+1)*laneW });
-          });
+      ctx.fillStyle = '#fff';
+      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // Arrow up
+      const upRect = { x: x0 + pad, y: panelY + pad, w: panelW - pad*2, h: btnH };
+      ctx.fillStyle = panelHover === `${panelId}-up` ? '#1c9' : '#222';
+      ctx.fillRect(upRect.x, upRect.y, upRect.w, upRect.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('▲', upRect.x + upRect.w/2, upRect.y + upRect.h/2);
+      panelHitRects.push({ panel: panelId, type: 'arrow-up', id: `${panelId}-up`, rect: upRect });
+      // Buttons (6 visible)
+      const startIdx = Math.max(0, Math.min(INSTRUMENT_BUTTONS.length - 6, state.offset));
+      for(let i=0;i<6;i++){
+        const idx = startIdx + i;
+        const btn = INSTRUMENT_BUTTONS[idx];
+        const y = panelY + pad + btnH * (i+1);
+        const rect = { x: x0 + pad, y, w: panelW - pad*2, h: btnH };
+        const selected = state.selected === btn.id;
+        const hover = panelHover === `${panelId}-${btn.id}`;
+        ctx.fillStyle = selected ? '#ffb347' : (hover ? '#244' : '#111');
+        ctx.strokeStyle = selected ? '#ffda8c' : '#0f9';
+        if(typeof ctx.roundRect === 'function'){
+          ctx.beginPath(); ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 8); ctx.fill(); ctx.stroke();
+        } else {
+          ctx.fillRect(rect.x, rect.y, rect.w, rect.h); ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
         }
+        ctx.fillStyle = '#fff';
+        ctx.fillText(btn.label, rect.x + rect.w/2, rect.y + rect.h/2);
+        panelHitRects.push({ panel: panelId, type: 'button', id: btn.id, rect });
       }
-      return lanes;
+      // Arrow down
+      const downRect = { x: x0 + pad, y: panelY + panelH - pad - btnH, w: panelW - pad*2, h: btnH };
+      ctx.fillStyle = panelHover === `${panelId}-down` ? '#1c9' : '#222';
+      ctx.fillRect(downRect.x, downRect.y, downRect.w, downRect.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillText('▼', downRect.x + downRect.w/2, downRect.y + downRect.h/2);
+      panelHitRects.push({ panel: panelId, type: 'arrow-down', id: `${panelId}-down`, rect: downRect });
+      ctx.restore();
     };
-    const lanes = buildWhiteLanes();
-    if(lanes && lanes.length){
-      // (Lane fills disabled to avoid masking markers)
-      // Draw solid black circles in the C3..C6 white-key lanes to verify alignment
-      const laneY = Math.round(yMax + bandH * 0.5);
-      lanes.sort((a,b)=> (a.u0||0) - (b.u0||0));
-      lanes.forEach(({note,u0,u1})=>{
-        // Only show markers for white keys C3..C6
-        if(note < 48 || note > 84 || isBlackNoteByNumber(Number(note))) return;
-        if(!isFinite(u0) || !isFinite(u1) || u1 <= u0) return;
-        const x0 = absUToBackboardX(u0, W);
-        const x1 = absUToBackboardX(u1, W);
-        const cx = (x0 + x1) * 0.5;
-        const rad = Math.max(10, Math.min(24, Math.round((x1 - x0) * 0.32)));
-        ctx.save();
-        ctx.fillStyle = '#000000';
-        ctx.strokeStyle = '#000000';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(cx, laneY, rad, 0, Math.PI*2); ctx.closePath();
-        ctx.fill(); ctx.stroke();
-        ctx.restore();
-      });
+    drawPanel('left', leftX);
+    drawPanel('right', rightX);
+  }catch(e){ /* ignore draw panel errors */ }
+  // Draw 12 circles horizontally centered
+  try{
+    const n = 12;
+    const radius = Math.max(6, Math.min(W, H) * 0.03);
+    const left = W * 0.05;
+    const right = W * 0.95;
+    const span = right - left;
+    const y = H * 0.5;
+    ctx.strokeStyle = '#ff6';
+    ctx.lineWidth = Math.max(2, W * 0.002);
+    for(let i=0;i<n;i++){
+      const t = n>1 ? i/(n-1) : 0.5;
+      const x = left + span * t;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI*2);
+      ctx.stroke();
     }
-  }catch(e){ /* ignore qwerty overlay errors */ }
+  }catch(e){ /* ignore */ }
 
   // Ensure texture is updated for three.js
   backboardTexture.needsUpdate = true;
@@ -2554,6 +2773,42 @@ let suppressRotate = false;
 function onPointerDown(e){
   // Ignore right-clicks
   if(e.button === 2) return;
+  // Check backboard instrument UI first
+  const uiUv = raycastBackboardForUv(e.clientX, e.clientY);
+  const uiHit = uiUv ? hitTestPanelUI(uiUv) : null;
+  if(uiUv) setBackboardDebug(uiUv);
+  if(uiHit){
+    if(uiHit.type === 'button'){
+      panelState[uiHit.panel].selected = uiHit.id;
+      triggerInstrumentButton(uiHit.id);
+    } else if(uiHit.type === 'arrow-up'){
+      const ps = panelState[uiHit.panel];
+      ps.offset = Math.max(0, ps.offset - 1);
+      requestBackboardRedraw();
+    } else if(uiHit.type === 'arrow-down'){
+      const ps = panelState[uiHit.panel];
+      const maxOffset = Math.max(0, INSTRUMENT_BUTTONS.length - 6);
+      ps.offset = Math.min(maxOffset, ps.offset + 1);
+      requestBackboardRedraw();
+    }
+    updateInstrumentHover(e.clientX, e.clientY);
+    // prevent camera rotation while down on backboard
+    backboardPointerDown = true;
+    controls.enableRotate = false;
+    suppressRotate = true;
+    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+    e.preventDefault();
+    return;
+  }
+  // If we hit the backboard plane but not UI (e.g., empty space), still suppress rotate like keys
+  if(uiUv){
+    backboardPointerDown = true;
+    controls.enableRotate = false;
+    suppressRotate = true;
+    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+    e.preventDefault();
+    return;
+  }
   const rect = canvas.getBoundingClientRect();
   pointer.x = ((e.clientX - rect.left)/rect.width)*2 - 1;
   pointer.y = -((e.clientY - rect.top)/rect.height)*2 + 1;
@@ -2591,6 +2846,11 @@ function onPointerUp(){
   onGlobalPointerUp();
   try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
   if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; }
+  if(backboardPointerDown){
+    backboardPointerDown = false;
+    controls.enableRotate = true;
+  }
+  setBackboardDebug(null);
 }
 canvas.addEventListener('pointerdown', onPointerDown);
 window.addEventListener('pointerup', onPointerUp);
@@ -2598,8 +2858,10 @@ window.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
+canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
 // Ensure pointer leaving the canvas also ends any active press
 canvas.addEventListener('pointerleave', onPointerUp);
+canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); }});
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
