@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import VideoPlayer from './video-player-controls.js';
-import { GAME_LIST, VIDEO_LIST, getMenuAction, getMenuRects } from './games-layout.js';
+import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
 
 const STAGE_ID = 'model-stage';
 const GLB_URL = './glb/Arcade-Console.glb';
@@ -18,16 +18,52 @@ const GAME_FRAME_HEIGHT = 720;
 const GAME_FRAME_ASPECT = GAME_FRAME_WIDTH / GAME_FRAME_HEIGHT;
 const DEBUG_SHOW_CSS3D_FRAME = true;
 const GAME_SPLASH_DURATION_MS = 3000;
+const GAME_SPLASH_DURATIONS_MS = {
+  battleship: 8000,
+  'train-mania': 10000,
+  plinko: 7000,
+  'pick-a-square': 15000,
+  'big-bomb-blast': 7000
+};
+const GAME_SPLASH_IMAGES = {
+  battleship: 'games/battleship.png',
+  'train-mania': 'games/train-mania.png',
+  plinko: 'games/plinko.png',
+  'pick-a-square': 'games/pick-a-square.png',
+  'big-bomb-blast': 'games/big-bomb-blast.png'
+};
+const GAME_THUMBS = {
+  battleship: 'games/images/battleship.png',
+  plinko: 'games/images/plinko.png',
+  'pick-a-square': 'games/images/pick-a-square.png',
+  'train-mania': 'games/images/train-mania.png',
+  'big-bomb-blast': 'games/images/big-bomb-blast.png'
+};
+const GAME_LABEL_SVGS = {
+  battleship: null,
+  plinko: null,
+  'train-mania': null,
+  'pick-a-square': null,
+  'big-bomb-blast': null
+};
+const VIDEO_THUMBS = {
+  reel: './Videos/games-page/video-games-reel.png',
+  christmas: './Videos/games-page/christmas-games.png'
+};
+const VIDEO_LQ = {
+  reel: './Videos/games-page/video-games-reel_lq.webm',
+  christmas: './Videos/games-page/christmas-games_lq.webm'
+};
 const GAME_SPLASH_FAST_PORTION = 0.78; // progress quickly then slow near the end
 const DEFAULT_CAMERA = {
-  pos: new THREE.Vector3(2.522, 3.349, -1.264),
+  pos: new THREE.Vector3(3.073, 1.579, 1.875),
   rot: new THREE.Euler(
-    THREE.MathUtils.degToRad(-120.8),
-    THREE.MathUtils.degToRad(45.2),
-    THREE.MathUtils.degToRad(130.0),
+    THREE.MathUtils.degToRad(-27.5),
+    THREE.MathUtils.degToRad(55.9),
+    THREE.MathUtils.degToRad(23.3),
     'XYZ'
   ),
-  quat: new THREE.Quaternion(-0.167, 0.808, 0.272, 0.496),
+  quat: new THREE.Quaternion(-0.114, 0.488, 0.064, 0.863),
   fov: 22.9
 };
 const START_CAMERA = {
@@ -106,6 +142,16 @@ let splashStart = 0;
 let splashReady = false;
 let splashPlayRect = null;
 let splashImage = null;
+let splashImages = new Map();
+let splashDurationMs = GAME_SPLASH_DURATION_MS;
+let currentGameId = null;
+let userReturnTransform = null;
+
+const videoThumbImages = new Map();
+const videoPreviewVideos = new Map();
+let hoveredVideoId = null;
+const gameThumbImages = new Map();
+const gameLabelImages = new Map();
 
 let contentRect = null;
 let contentMode = 'menu';
@@ -209,16 +255,19 @@ function init() {
   letterboxColor = getCssVar('--secondary-color', letterboxColor);
 
   initStageBounds();
-
   initCameraPanel();
+
   updateControlsForContent(contentMode);
 
   renderer.domElement.addEventListener('pointermove', handlePointerMove, { capture: true });
   renderer.domElement.addEventListener('pointerdown', handlePointerDown, { capture: true });
   renderer.domElement.addEventListener('pointerup', handlePointerUp, { capture: true });
   renderer.domElement.addEventListener('pointercancel', handlePointerUp, { capture: true });
+  renderer.domElement.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+  renderer.domElement.addEventListener('contextmenu', handleContextMenu, { capture: true });
   window.addEventListener('resize', onResize);
   window.addEventListener('keydown', handleKeyDown, { capture: true });
+  introActive = false;
 }
 
 function initStageBounds() {
@@ -429,7 +478,7 @@ function applyDefaultCameraTransform() {
 
 function applyAlternateCameraTransform() {
   if (!activeCamera) return;
-  activeCamera.position.set(1.092, 0.821, 0.001);
+  activeCamera.position.set(1.152, 0.832, 0.001);
   activeCamera.rotation.set(
     THREE.MathUtils.degToRad(-89.7),
     THREE.MathUtils.degToRad(79.2),
@@ -450,20 +499,32 @@ function applyCameraMode(altView) {
   } else {
     applyDefaultCameraTransform();
   }
+  setExitControlVisible(contentMode !== 'menu');
+  updateControlsForContent(contentMode);
 }
 
 function startIntroAnimation() {
-  if (!activeCamera) return;
-  introStart = performance.now();
-  introActive = true;
-  introFromPos.copy(START_CAMERA.pos);
-  introToPos.copy(DEFAULT_CAMERA.pos);
-  introFromQuat.copy(START_CAMERA.rot ? new THREE.Quaternion().setFromEuler(START_CAMERA.rot) : START_CAMERA.quat);
-  introToQuat.copy(DEFAULT_CAMERA.rot ? new THREE.Quaternion().setFromEuler(DEFAULT_CAMERA.rot) : DEFAULT_CAMERA.quat);
-  activeCamera.position.copy(introFromPos);
-  activeCamera.quaternion.copy(introFromQuat);
-  if (activeCamera.isPerspectiveCamera && typeof START_CAMERA.fov === 'number') {
-    activeCamera.fov = START_CAMERA.fov;
+  // Start immediately at the default transform (intro animation disabled).
+  introActive = false;
+  applyDefaultCameraTransform();
+}
+
+function captureCameraSnapshot() {
+  if (!activeCamera) return null;
+  return {
+    position: activeCamera.position.clone(),
+    quaternion: activeCamera.quaternion.clone(),
+    fov: activeCamera.isPerspectiveCamera ? activeCamera.fov : null
+  };
+}
+
+function applyCameraSnapshot(snapshot) {
+  if (!snapshot || !activeCamera) return;
+  activeCamera.position.copy(snapshot.position);
+  activeCamera.quaternion.copy(snapshot.quaternion);
+  activeCamera.rotation.setFromQuaternion(snapshot.quaternion, 'XYZ');
+  if (activeCamera.isPerspectiveCamera && typeof snapshot.fov === 'number') {
+    activeCamera.fov = snapshot.fov;
     activeCamera.updateProjectionMatrix();
   }
 }
@@ -509,15 +570,23 @@ function setupMenu() {
 function startGame(url, renderMode = GAME_RENDER_MODE) {
   stopVideoReel();
   destroyGameIframe();
+  setHoveredVideo(null);
   gameReady = false;
   gameCanvas = null;
   lastGameCanvas = null;
   lastGameCanvasSize = '';
   loggedCanvasAttach = false;
+  const gameMeta = GAME_LIST.find((g) => g.url === url);
   loggedCanvasLoss = false;
   loggedDrawError = false;
   loggedDrawSuccess = false;
+  currentGameId = gameMeta ? gameMeta.id : null;
   contentMode = 'game';
+  if (gameMeta && gameMeta.id && GAME_SPLASH_DURATIONS_MS[gameMeta.id]) {
+    splashDurationMs = GAME_SPLASH_DURATIONS_MS[gameMeta.id];
+  } else {
+    splashDurationMs = GAME_SPLASH_DURATION_MS;
+  }
   enterContentView();
   overlayActive = false;
   cssGameActive = renderMode === 'css3d';
@@ -668,7 +737,7 @@ function showGameSplash() {
   splashReady = false;
   splashPlayRect = null;
   splashStart = performance.now();
-  ensureSplashImage();
+  ensureSplashImage(currentGameId);
   needsRedraw = true;
 }
 
@@ -680,17 +749,88 @@ function hideGameSplash() {
   needsRedraw = true;
 }
 
-function ensureSplashImage() {
-  if (splashImage) return;
-  splashImage = new Image();
-  splashImage.decoding = 'async';
-  splashImage.src = 'games/game-splash-screen.png';
+function ensureSplashImage(gameId) {
+  const key = (gameId && GAME_SPLASH_IMAGES[gameId]) ? gameId : 'default';
+  if (splashImages.has(key)) {
+    splashImage = splashImages.get(key);
+    return;
+  }
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = GAME_SPLASH_IMAGES[gameId] || 'games/game-splash-screen.png';
+  splashImages.set(key, img);
+  splashImage = img;
+}
+
+function ensureVideoThumb(videoId) {
+  if (videoThumbImages.has(videoId)) return videoThumbImages.get(videoId);
+  const src = VIDEO_THUMBS[videoId];
+  if (!src) return null;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+  img.onload = () => { needsRedraw = true; };
+  videoThumbImages.set(videoId, img);
+  return img;
+}
+
+function ensurePreviewVideo(videoId) {
+  if (videoPreviewVideos.has(videoId)) return videoPreviewVideos.get(videoId);
+  const src = VIDEO_LQ[videoId];
+  if (!src) return null;
+  const v = document.createElement('video');
+  v.src = src;
+  v.muted = true;
+  v.loop = true;
+  v.playsInline = true;
+  v.setAttribute('playsinline', '');
+  videoPreviewVideos.set(videoId, v);
+  return v;
+}
+
+function startPreviewSnippet(video) {
+  if (!video || !isFinite(video.duration) || video.duration <= 0) return;
+  const t = Math.random() * Math.max(0, video.duration - 1);
+  try {
+    video.currentTime = t;
+    video.play().catch(() => {});
+  } catch (e) {
+    /* ignore */
+  }
+}
+
+function ensureGameThumb(gameId) {
+  if (gameThumbImages.has(gameId)) return gameThumbImages.get(gameId);
+  const src = GAME_THUMBS[gameId];
+  if (!src) return null;
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+  img.onload = () => { needsRedraw = true; };
+  gameThumbImages.set(gameId, img);
+  return img;
+}
+
+function ensureGameLabel(gameId) {
+  if (gameLabelImages.has(gameId)) return gameLabelImages.get(gameId);
+  const src = GAME_LABEL_SVGS[gameId];
+  if (!src) {
+    gameLabelImages.set(gameId, null);
+    return null;
+  }
+  const img = new Image();
+  img.decoding = 'async';
+  img.src = src;
+  img.onload = () => { needsRedraw = true; };
+  gameLabelImages.set(gameId, img);
+  return img;
 }
 
 function getSplashProgress(nowMs) {
   if (!splashActive) return 1;
   const elapsed = Math.max(0, nowMs - splashStart);
-  const t = Math.min(1, elapsed / GAME_SPLASH_DURATION_MS);
+  const duration = splashDurationMs || GAME_SPLASH_DURATION_MS;
+  const t = Math.min(1, elapsed / duration);
   let eased;
   if (t < GAME_SPLASH_FAST_PORTION) {
     const nt = t / GAME_SPLASH_FAST_PORTION;
@@ -754,6 +894,7 @@ function destroyGameIframe() {
   cssRenderer.domElement.style.pointerEvents = 'none';
   renderer.domElement.style.pointerEvents = 'auto';
   gameInputEnabled = false;
+  currentGameId = null;
   if (cameraPanelInputBtn) cameraPanelInputBtn.textContent = 'Game input: off';
   setOverlayActive(false);
   clearSplashAnimation();
@@ -775,6 +916,7 @@ function exitGameImmediate() {
 function startVideoReel(src) {
   if (!screenCanvas) return;
   stopVideoReel();
+  setHoveredVideo(null);
   contentMode = 'video';
   reelSource = src;
   enterContentView();
@@ -818,23 +960,12 @@ function animate() {
     controls.target.copy(screenCenter);
   }
   if (controls) controls.update();
+  updateCameraPanel();
 
-  if (introActive && introStart !== null && activeCamera) {
-    const now = performance.now();
-    const t = Math.min(1, (now - introStart) / INTRO_DURATION_MS);
-    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-    activeCamera.position.lerpVectors(introFromPos, introToPos, eased);
-    activeCamera.quaternion.slerpQuaternions(introFromQuat, introToQuat, eased);
-    if (activeCamera.isPerspectiveCamera) {
-      const fov = START_CAMERA.fov + (DEFAULT_CAMERA.fov - START_CAMERA.fov) * eased;
-      activeCamera.fov = fov;
-      activeCamera.updateProjectionMatrix();
-    }
-    if (t >= 1) {
-      introActive = false;
-      applyDefaultCameraTransform();
-    }
+  if (contentMode === 'menu' && hoveredVideoId) {
+    needsRedraw = true;
   }
+
   if (contentMode === 'game') {
     drawScreen();
   } else if (contentMode === 'video' && reelVideo && !reelVideo.paused && !reelVideo.ended) {
@@ -852,8 +983,7 @@ function animate() {
     cssRenderer.render(cssScene, activeCamera);
   }
 
-  updateCameraPanel();
-  setExitControlVisible(contentMode !== 'menu');
+  setExitControlVisible(cameraZoomAlt && (contentMode === 'game' || contentMode === 'video'));
 }
 
 function drawScreen() {
@@ -1028,53 +1158,110 @@ function drawMenu(ctx, rect) {
   ctx.font = `${Math.max(18, Math.round(layout.itemHeight * 0.42))}px "Segoe UI", Arial, sans-serif`;
   ctx.textAlign = 'left';
 
-  layout.games.forEach((slot) => {
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.002));
-    ctx.beginPath();
-    const radius = Math.max(12, Math.round(slot.rect.h * 0.2));
-    if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h, radius);
-    } else {
-      ctx.rect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
-    }
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(slot.label, slot.rect.x + slot.rect.w * 0.06, slot.rect.y + slot.rect.h / 2);
-  });
-
   layout.videos.forEach((slot) => {
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    const thumb = ensureVideoThumb(slot.id);
+    const preview = videoPreviewVideos.get(slot.id);
+    const source = (hoveredVideoId === slot.id && preview && !preview.paused) ? preview : thumb;
+    if (source) {
+      ctx.drawImage(source, slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+    } else {
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+    }
     ctx.strokeStyle = 'rgba(255,255,255,0.45)';
     ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.002));
-    ctx.beginPath();
-    ctx.arc(slot.cx, slot.cy, slot.r, 0, Math.PI * 2);
+    ctx.strokeRect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+  });
+
+  layout.games.forEach((slot) => {
+    const thumb = ensureGameThumb(slot.id);
+    const thumbRadius = slot.thumb ? slot.thumb.r : Math.min(slot.pill.h * 0.5, slot.pill.w * 0.2);
+    const thumbCx = slot.thumb ? slot.thumb.cx : slot.pill.x;
+    const thumbCy = slot.thumb ? slot.thumb.cy : (slot.pill.y + slot.pill.h / 2);
+
+    // Pill behind the circle (angled end)
+    const drawAngledPill = () => {
+      const p = slot.pill;
+      const angle = p.h * 0.45;
+      ctx.beginPath();
+      if (p.angleSide === 'left') {
+        ctx.moveTo(p.x + angle, p.y);
+        ctx.lineTo(p.x + p.w, p.y);
+        ctx.lineTo(p.x + p.w, p.y + p.h);
+        ctx.lineTo(p.x + angle, p.y + p.h);
+        ctx.lineTo(p.x, p.y + p.h * 0.5);
+      } else {
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x + p.w - angle, p.y);
+        ctx.lineTo(p.x + p.w, p.y + p.h * 0.5);
+        ctx.lineTo(p.x + p.w - angle, p.y + p.h);
+        ctx.lineTo(p.x, p.y + p.h);
+      }
+      ctx.closePath();
+    };
+
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+    ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
+    drawAngledPill();
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.font = `${Math.max(16, Math.round(slot.r * 0.4))}px "Segoe UI", Arial, sans-serif`;
-    ctx.fillText(slot.label, slot.cx, slot.cy);
-    ctx.textAlign = 'left';
-    ctx.font = `${Math.max(18, Math.round(layout.itemHeight * 0.42))}px "Segoe UI", Arial, sans-serif`;
+    // Circle on top
+    if (thumb) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(thumb, thumbCx - thumbRadius, thumbCy - thumbRadius, thumbRadius * 2, thumbRadius * 2);
+      ctx.restore();
+    }
+    ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+    ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
+    ctx.beginPath();
+    ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Text as fixed graphic (or fallback text)
+    const tr = slot.textRect;
+    ctx.save();
+    drawAngledPill();
+    ctx.clip();
+    const labelImg = ensureGameLabel(slot.id);
+    if (labelImg && labelImg.complete) {
+      ctx.drawImage(labelImg, tr.x, tr.y, tr.w, tr.h);
+    } else {
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.font = `64px "Arvo", "Times New Roman", serif`;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(slot.label, tr.cx, tr.cy);
+    }
+    ctx.restore();
   });
+
+  if (layout.dividerX) {
+    const dividerW = Math.max(4, Math.round(rect.w * MENU_LAYOUT.dividerWidth));
+    ctx.fillStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+    ctx.fillRect(layout.dividerX - dividerW / 2, rect.y, dividerW, rect.h);
+  }
 
   ctx.restore();
 }
 
 function ensureExitControl() {
   if (exitControl) return exitControl;
-  const nav = document.querySelector('.navigation');
-  if (!nav) return null;
   exitControl = document.createElement('button');
   exitControl.type = 'button';
   exitControl.className = 'nav-icon nav-exit nav-exit--hidden';
   exitControl.title = 'Exit';
   exitControl.setAttribute('aria-label', 'Exit game or video');
+  exitControl.style.position = 'fixed';
+  exitControl.style.left = '96px';
+  exitControl.style.top = '50%';
+  exitControl.style.transform = 'translateY(-50%)';
+  exitControl.style.zIndex = '30';
   const img = document.createElement('img');
   img.src = 'assets/images/exit%20icon.png';
   img.alt = 'Exit';
@@ -1086,14 +1273,15 @@ function ensureExitControl() {
       stopVideoReel();
     }
   });
-  nav.prepend(exitControl);
+  document.body.appendChild(exitControl);
   return exitControl;
 }
 
 function setExitControlVisible(visible) {
   const control = ensureExitControl();
   if (!control) return;
-  control.classList.toggle('nav-exit--hidden', !visible);
+  const shouldShow = visible && cameraZoomAlt && (contentMode === 'game' || contentMode === 'video');
+  control.classList.toggle('nav-exit--hidden', !shouldShow);
 }
 
 function updateCameraPanel() {
@@ -1120,7 +1308,10 @@ function handlePointerMove(ev) {
   const hit = raycastScreen(ev);
   if (!hit) return;
   lastScreenHit = hit;
-  if (contentMode === 'menu') return;
+  if (contentMode === 'menu') {
+    updateHoveredVideo(hit.x, hit.y);
+    return;
+  }
   if (isGameActive()) {
     dispatchGameMouseMove(hit);
     return;
@@ -1202,6 +1393,61 @@ function handlePointerDown(ev) {
   }
 }
 
+function handleWheel(ev) {
+  if (!isGameActive()) return;
+  const hit = raycastScreen(ev);
+  if (!hit) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+  const mapped = mapHitToClient(hit);
+  if (!mapped) return;
+  dispatchSyntheticWheel(mapped.clientX, mapped.clientY, ev.deltaX, ev.deltaY, ev.deltaMode);
+}
+
+function handleContextMenu(ev) {
+  if (!isGameActive()) return;
+  const hit = raycastScreen(ev);
+  if (!hit) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+}
+
+function updateHoveredVideo(xCanvas, yCanvas) {
+  if (!contentRect) return;
+  const action = getMenuAction(xCanvas, yCanvas, contentRect);
+  if (action && action.type === 'video') {
+    setHoveredVideo(VIDEO_LIST[action.index]?.id || null);
+  } else {
+    setHoveredVideo(null);
+  }
+}
+
+function setHoveredVideo(id) {
+  if (hoveredVideoId === id) return;
+  const prev = hoveredVideoId ? videoPreviewVideos.get(hoveredVideoId) : null;
+  if (prev) {
+    try { prev.pause(); } catch (e) {}
+  }
+  hoveredVideoId = id;
+  if (!hoveredVideoId) {
+    needsRedraw = true;
+    return;
+  }
+  const vid = ensurePreviewVideo(hoveredVideoId);
+  if (vid) {
+    if (vid.readyState >= 1 && isFinite(vid.duration) && vid.duration > 0) {
+      startPreviewSnippet(vid);
+    } else {
+      vid.addEventListener('loadedmetadata', function handle() {
+        vid.removeEventListener('loadedmetadata', handle);
+        startPreviewSnippet(vid);
+      });
+    }
+  }
+  needsRedraw = true;
+}
+
 function handlePointerUp(ev) {
   if (pointerCaptured) {
     ev.preventDefault();
@@ -1234,6 +1480,7 @@ function enterContentView() {
   } else {
     autoZoomActive = false;
   }
+  userReturnTransform = captureCameraSnapshot();
   if (!cameraZoomAlt) {
     applyCameraMode(true);
   }
@@ -1243,14 +1490,18 @@ function enterContentView() {
 function restoreViewAfterContent() {
   if (!cameraZoomUserEnabled && autoZoomActive) {
     applyCameraMode(previousCameraZoomAlt);
+    if (userReturnTransform) {
+      applyCameraSnapshot(userReturnTransform);
+    }
   }
   autoZoomActive = false;
+  userReturnTransform = null;
   updateControlsForContent('menu');
 }
 
 function updateControlsForContent(mode) {
   if (!controls) return;
-  const allowTransform = true;
+  const allowTransform = !cameraZoomAlt;
   controls.enablePan = false;
   controls.enableRotate = allowTransform;
   controls.enableZoom = allowTransform;
@@ -1534,6 +1785,25 @@ function dispatchSyntheticMouseClick(clientX, clientY) {
   };
   const click = new MouseEventCtor('click', { ...eventInit, button: 0, buttons: 0 });
   dispatchToTargets(click);
+}
+
+function dispatchSyntheticWheel(clientX, clientY, deltaX, deltaY, deltaMode = 0) {
+  const eventWindow = getEventWindow();
+  const WheelEventCtor = eventWindow.WheelEvent || WheelEvent;
+  if (!WheelEventCtor) return;
+  const eventInit = {
+    bubbles: true,
+    cancelable: true,
+    clientX,
+    clientY,
+    view: gameIframe?.contentWindow || null,
+    deltaX,
+    deltaY,
+    deltaZ: 0,
+    deltaMode
+  };
+  const wheel = new WheelEventCtor('wheel', eventInit);
+  dispatchToTargets(wheel);
 }
 
 function dispatchSyntheticPointerDown(clientX, clientY, button = 0) {
