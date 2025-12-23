@@ -17,6 +17,8 @@ const GAME_FRAME_WIDTH = 1280;
 const GAME_FRAME_HEIGHT = 720;
 const GAME_FRAME_ASPECT = GAME_FRAME_WIDTH / GAME_FRAME_HEIGHT;
 const DEBUG_SHOW_CSS3D_FRAME = true;
+const GAME_SPLASH_DURATION_MS = 3000;
+const GAME_SPLASH_FAST_PORTION = 0.78; // progress quickly then slow near the end
 const DEFAULT_CAMERA = {
   pos: new THREE.Vector3(2.522, 3.349, -1.264),
   rot: new THREE.Euler(
@@ -92,10 +94,18 @@ let lastGameCanvasByUrl = new Map();
 let overlayContainer = null;
 let overlayActive = false;
 let overlayRect = null;
+let splashRafId = null;
+let splashPlayBtn = null;
+let splashProgressFill = null;
 let screenMeshWasVisible = true;
 let cameraPanelInputBtn = null;
 let gameInputEnabled = true;
 const DEBUG_ALLOW_CONTROLS_WITH_GAMES = true;
+let splashActive = false;
+let splashStart = 0;
+let splashReady = false;
+let splashPlayRect = null;
+let splashImage = null;
 
 let contentRect = null;
 let contentMode = 'menu';
@@ -140,8 +150,18 @@ function init() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(stage.clientWidth, stage.clientHeight, false);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.setClearColor(0x000000, 1);
+  renderer.setClearColor(0x000000, 0); // transparent background behind cabinet
   renderer.domElement.tabIndex = 0;
+  renderer.domElement.style.background = 'transparent';
+  const glCanvas = renderer.domElement;
+  glCanvas.id = 'glCanvas';
+  glCanvas.style.position = 'absolute';
+  glCanvas.style.top = '0';
+  glCanvas.style.left = '0';
+  glCanvas.style.width = '100%';
+  glCanvas.style.height = '100%';
+  glCanvas.style.zIndex = '5';
+  glCanvas.style.pointerEvents = 'auto';
   stage.appendChild(renderer.domElement);
 
   ensureOverlayContainer();
@@ -149,11 +169,15 @@ function init() {
   cssScene = new THREE.Scene();
   cssRenderer = new CSS3DRenderer();
   cssRenderer.setSize(stage.clientWidth, stage.clientHeight);
+  cssRenderer.domElement.id = 'css3dLayer';
   cssRenderer.domElement.style.position = 'absolute';
-  cssRenderer.domElement.style.left = '0';
   cssRenderer.domElement.style.top = '0';
-  cssRenderer.domElement.style.pointerEvents = 'none';
+  cssRenderer.domElement.style.left = '0';
+  cssRenderer.domElement.style.width = '100%';
+  cssRenderer.domElement.style.height = '100%';
   cssRenderer.domElement.style.zIndex = '10';
+  cssRenderer.domElement.style.pointerEvents = 'auto'; // allow iframe clicks when needed
+  cssRenderer.domElement.style.background = 'transparent';
   cssRenderer.domElement.style.overflow = 'visible';
   cssRenderer.domElement.style.transformStyle = 'preserve-3d';
   stage.appendChild(cssRenderer.domElement);
@@ -211,12 +235,16 @@ function updateStageBounds() {
   if (!header || !stage) return;
   const rect = header.getBoundingClientRect();
   const top = Math.max(0, Math.round(rect.bottom));
+  stage.style.position = 'fixed';
   stage.style.top = `${top}px`;
   stage.style.left = '0';
   stage.style.right = '0';
   stage.style.bottom = '0';
+  stage.style.width = '100%';
   stage.style.height = `calc(100vh - ${top}px)`;
-  stage.style.width = '100vw';
+  stage.style.maxWidth = '100vw';
+  stage.style.maxHeight = `calc(100vh - ${top}px)`;
+  stage.style.overflow = 'visible';
   onResize();
 }
 
@@ -523,9 +551,9 @@ function startGame(url, renderMode = GAME_RENDER_MODE) {
   }
   gameFocusPending = true;
   setGameInputEnabled(cssGameActive ? !DEBUG_ALLOW_CONTROLS_WITH_GAMES : false);
-  setOverlayActive(false);
   setScreenMeshHidden(false);
   setExitControlVisible(true);
+  showGameSplash();
 }
 
 function ensureGameContainer() {
@@ -537,9 +565,9 @@ function ensureGameContainer() {
   gameContainer.style.top = '0';
   gameContainer.style.width = '1280px';
   gameContainer.style.height = '720px';
-  gameContainer.style.opacity = '1';
+  gameContainer.style.opacity = '0';
   gameContainer.style.pointerEvents = 'none';
-  gameContainer.style.zIndex = '0';
+  gameContainer.style.zIndex = '-1';
   gameContainer.style.background = 'transparent';
   gameContainer.style.overflow = 'hidden';
   document.body.appendChild(gameContainer);
@@ -557,7 +585,7 @@ function ensureOverlayContainer() {
   overlayContainer.style.opacity = '1';
   overlayContainer.style.pointerEvents = 'none';
   overlayContainer.style.zIndex = '3';
-  overlayContainer.style.background = '#000';
+  overlayContainer.style.background = 'transparent';
   overlayContainer.style.overflow = 'hidden';
   overlayContainer.style.display = 'none';
   document.body.appendChild(overlayContainer);
@@ -625,6 +653,56 @@ function updateOverlayPosition() {
   overlayContainer.style.height = `${fitted.h}px`;
 }
 
+function clearSplashAnimation() {
+  if (splashRafId !== null) {
+    cancelAnimationFrame(splashRafId);
+    splashRafId = null;
+  }
+  splashPlayBtn = null;
+  splashProgressFill = null;
+}
+
+function showGameSplash() {
+  clearSplashAnimation();
+  splashActive = true;
+  splashReady = false;
+  splashPlayRect = null;
+  splashStart = performance.now();
+  ensureSplashImage();
+  needsRedraw = true;
+}
+
+function hideGameSplash() {
+  clearSplashAnimation();
+  splashActive = false;
+  splashReady = false;
+  splashPlayRect = null;
+  needsRedraw = true;
+}
+
+function ensureSplashImage() {
+  if (splashImage) return;
+  splashImage = new Image();
+  splashImage.decoding = 'async';
+  splashImage.src = 'games/game-splash-screen.png';
+}
+
+function getSplashProgress(nowMs) {
+  if (!splashActive) return 1;
+  const elapsed = Math.max(0, nowMs - splashStart);
+  const t = Math.min(1, elapsed / GAME_SPLASH_DURATION_MS);
+  let eased;
+  if (t < GAME_SPLASH_FAST_PORTION) {
+    const nt = t / GAME_SPLASH_FAST_PORTION;
+    eased = nt * 0.92;
+  } else {
+    const nt = (t - GAME_SPLASH_FAST_PORTION) / (1 - GAME_SPLASH_FAST_PORTION);
+    eased = 0.92 + nt * 0.08;
+  }
+  if (t >= 1 && !splashReady) splashReady = true;
+  return Math.min(1, eased);
+}
+
 function getScreenMeshRect() {
   const geom = screenMesh.geometry;
   if (!geom.boundingBox) geom.computeBoundingBox();
@@ -678,6 +756,10 @@ function destroyGameIframe() {
   gameInputEnabled = false;
   if (cameraPanelInputBtn) cameraPanelInputBtn.textContent = 'Game input: off';
   setOverlayActive(false);
+  clearSplashAnimation();
+  splashActive = false;
+  splashReady = false;
+  splashPlayRect = null;
   setScreenMeshHidden(false);
 }
 
@@ -779,6 +861,7 @@ function drawScreen() {
   if (contentMode === 'game' && !cssGameActive && !overlayActive) {
     attachGameCanvas();
   }
+  const now = performance.now();
   const ctx = screenCtx;
   const W = screenCanvas.width;
   const H = screenCanvas.height;
@@ -804,8 +887,10 @@ function drawScreen() {
     contentRect = fitRectToAspect(surface, aspect);
   }
 
-  const canDrawGame = contentMode === 'game' && !cssGameActive && !overlayActive && isCanvasUsable(gameCanvas);
-  if (canDrawGame) {
+  const canDrawGame = contentMode === 'game' && !cssGameActive && !overlayActive && !splashActive && isCanvasUsable(gameCanvas);
+  if (splashActive) {
+    drawGameSplash(ctx, contentRect, now);
+  } else if (canDrawGame) {
     try {
       ctx.drawImage(gameCanvas, 0, 0, W, H);
       if (!loggedDrawSuccess) {
@@ -876,6 +961,60 @@ function drawSpeedBadge(ctx, videoRect) {
   ctx.textBaseline = 'middle';
   ctx.font = `${Math.round(h * 0.55)}px "Segoe UI", Arial, sans-serif`;
   ctx.fillText(`${SPEED_RATES[speedIndex]}x`, x + w / 2, y + h / 2);
+  ctx.restore();
+}
+
+function drawGameSplash(ctx, rect, nowMs) {
+  const progress = getSplashProgress(nowMs);
+  const ready = progress >= 0.999;
+  const pad = Math.min(rect.w, rect.h) * 0.04;
+  const box = {
+    x: rect.x + pad,
+    y: rect.y + pad,
+    w: rect.w - pad * 2,
+    h: rect.h - pad * 2
+  };
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+
+  if (splashImage && splashImage.complete) {
+    const imgAspect = splashImage.naturalWidth && splashImage.naturalHeight
+      ? splashImage.naturalWidth / splashImage.naturalHeight
+      : 16 / 9;
+    const imgRect = fitRectToAspect(box, imgAspect);
+    ctx.drawImage(splashImage, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
+  }
+
+  const barW = rect.w * 0.72;
+  const barH = Math.max(12, Math.round(rect.h * 0.04));
+  const barX = rect.x + (rect.w - barW) / 2;
+  const barY = rect.y + rect.h * 0.78;
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.fillStyle = '#7e3ccf';
+  ctx.fillRect(barX, barY, barW * progress, barH);
+
+  const btnR = Math.min(rect.w, rect.h) * 0.07;
+  const btnX = rect.x + rect.w / 2;
+  const btnY = rect.y + rect.h / 2;
+  splashPlayRect = { x: btnX, y: btnY, r: btnR };
+
+  ctx.globalAlpha = ready ? 1 : 0.3;
+  ctx.fillStyle = '#6b2fa3';
+  ctx.beginPath();
+  ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#f2e6ff';
+  const triR = btnR * 0.5;
+  ctx.beginPath();
+  ctx.moveTo(btnX + triR * 0.5, btnY);
+  ctx.lineTo(btnX - triR * 0.4, btnY - triR * 0.7);
+  ctx.lineTo(btnX - triR * 0.4, btnY + triR * 0.7);
+  ctx.closePath();
+  ctx.fill();
+
   ctx.restore();
 }
 
@@ -1017,6 +1156,19 @@ function handlePointerDown(ev) {
     } else if (action && action.type === 'video') {
       const entry = VIDEO_LIST[action.index];
       if (entry) startVideoReel(entry.src);
+    }
+    return;
+  }
+
+  if (splashActive) {
+    if (splashReady && splashPlayRect) {
+      const dx = hit.x - splashPlayRect.x;
+      const dy = hit.y - splashPlayRect.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= splashPlayRect.r) {
+        hideGameSplash();
+        return;
+      }
     }
     return;
   }
@@ -1230,7 +1382,7 @@ function findConstructCanvas(doc) {
 }
 
 function isGameActive() {
-  return contentMode === 'game' && gameReady && gameCanvas && !overlayActive;
+  return contentMode === 'game' && gameReady && gameCanvas && !overlayActive && !splashActive;
 }
 
 function mapHitToClient(hit) {

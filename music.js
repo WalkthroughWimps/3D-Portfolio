@@ -1,3 +1,24 @@
+// === RESET-DEBUG: detect reload vs navigation vs HMR ===
+(() => {
+    const tag = (msg, extra={}) => console.log('[RESET-DEBUG] ' + msg, extra);
+    try{
+        window.addEventListener('beforeunload', () => tag('beforeunload (page is unloading)', {url: location.href}));
+        window.addEventListener('unload', () => tag('unload', {url: location.href}));
+        window.addEventListener('popstate', () => tag('popstate', {url: location.href}));
+        window.addEventListener('hashchange', () => tag('hashchange', {url: location.href}));
+        const _push = history.pushState.bind(history);
+        const _replace = history.replaceState.bind(history);
+        history.pushState = function(...args){ tag('history.pushState', {args, stack: (new Error()).stack}); return _push(...args); };
+        history.replaceState = function(...args){ tag('history.replaceState', {args, stack: (new Error()).stack}); return _replace(...args); };
+        window.addEventListener('error', (ev) => tag('window error', {message: ev.message, filename: ev.filename, lineno: ev.lineno, colno: ev.colno}));
+        window.addEventListener('unhandledrejection', (ev) => tag('unhandledrejection', {reason: ev.reason}));
+        const key = '__reset_debug_count__';
+        const n = Number(sessionStorage.getItem(key) || 0) + 1;
+        sessionStorage.setItem(key, String(n));
+        tag('boot', {bootCountThisTab: n, url: location.href, navType: performance.getEntriesByType('navigation')?.[0]?.type});
+    }catch(e){ console.warn('[RESET-DEBUG] instrumentation failed', e); }
+})();
+
 // Bubble system: PNG note-bubbles with gentle physics.
 // Now spawns appear at the center, grow in, drift outward, collide softly, and exit on any side.
 

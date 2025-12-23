@@ -151,6 +151,13 @@
             <option value="2">2×</option>
           </select>
         </label>
+        <!-- UV map controls: toggle/cycle or set directly to U/V -->
+        <div class="uv-map-controls" style="display:inline-flex; gap:6px; margin-left:12px; align-items:center;">
+          <button id="uvToggleBtn" title="Toggle UV map (none → U → V)">UV: Off</button>
+          <button id="uvUBtn" title="Show U color map">UV U</button>
+          <button id="uvVBtn" title="Show V color map">UV V</button>
+          <button id="uvCheckerBtn" title="Show checkerboard UV map">UV Checker</button>
+        </div>
       </div>
       <div class="sync-offset-wrap">
         <label for="syncOffset" class="sync-label">Audio Sync Offset:
@@ -299,7 +306,27 @@
 
 
 
+
         </script>
+  <script>
+    // Hook up UV map control buttons (calls functions exposed by music-piano-debug.js)
+    (function(){
+      const toggle = document.getElementById('uvToggleBtn');
+      const ubtn = document.getElementById('uvUBtn');
+      const vbtn = document.getElementById('uvVBtn');
+      const checkerBtn = document.getElementById('uvCheckerBtn');
+      const updateLabel = ()=>{
+        const mode = (window.backboardUVMapMode || 'none');
+        if(toggle) toggle.textContent = 'UV: ' + (mode === 'none' ? 'Off' : mode.toUpperCase());
+      };
+      if(toggle){ toggle.addEventListener('click', ()=>{ try{ window.toggleBackboardUVMap(); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(ubtn){ ubtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('u'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(vbtn){ vbtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('v'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(checkerBtn){ checkerBtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('checker'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      // reflect initial state after a brief delay to allow module to initialize
+      setTimeout(updateLabel, 300);
+    })();
+  </script>
 </body>
 
 </html>

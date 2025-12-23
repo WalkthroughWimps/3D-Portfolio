@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Game Wrapper</title>
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        background: #0e0b16;
+        color: #e8e8e8;
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+      .wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      .frame {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+      .status {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 18px;
+        opacity: 0.7;
+        pointer-events: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      <div class="status" id="status">Loading...</div>
+    </div>
+    <script>
+      (function () {
+        const statusEl = document.getElementById('status');
+        const params = new URLSearchParams(window.location.search);
+        const rawSrc = params.get('src');
+        if (!rawSrc) {
+          reportFailure('missing-src', 'Missing src parameter.');
+          statusEl.textContent = 'Missing game source.';
+          return;
+        }
+
+        const gameSrc = rawSrc;
+        const frame = document.createElement('iframe');
+        frame.className = 'frame';
+        frame.id = 'game-frame';
+        frame.allow = 'autoplay';
+        document.querySelector('.wrapper').appendChild(frame);
+        tryInjectShims(frame);
+        frame.src = gameSrc;
+
+        frame.addEventListener('load', () => {
+          postToParent('WRAPPER_IFRAME_LOADED');
+          tryInjectShims(frame);
+          hookInnerErrors(frame);
+          startCanvasProbe(frame);
+        });
+
+        frame.addEventListener('error', () => {
+          reportFailure('iframe-error', 'Game iframe failed to load.');
+        });
+
+        window.addEventListener('error', (event) => {
+          reportFailure('wrapper-error', event.message || 'Wrapper error.');
+        });
+
+        window.addEventListener('unhandledrejection', (event) => {
+          reportFailure('wrapper-rejection', event.reason ? String(event.reason) : 'Wrapper rejection.');
+        });
+
+        function postToParent(type, extra) {
+          const payload = Object.assign({ type }, extra || {});
+          window.parent.postMessage(payload, window.location.origin);
+        }
+
+        function reportFailure(reason, message) {
+          postToParent('WRAPPER_GAME_FAILED', { reason, message });
+        }
+
+        function tryInjectShims(iframe) {
+          try {
+            const win = iframe.contentWindow;
+            if (!win) return;
+            if (!win.chrome) win.chrome = {};
+            if (!win.chrome.webview) {
+              win.chrome.webview = { addEventListener: () => {}, postMessage: () => {} };
+            }
+          } catch (err) {
+            // Cross-origin; skip shim injection.
+          }
+        }
+
+        function hookInnerErrors(iframe) {
+          try {
+            const win = iframe.contentWindow;
+            if (!win) return;
+            win.addEventListener('error', (event) => {
+              reportFailure('game-error', event.message || 'Game error.');
+            });
+            win.addEventListener('unhandledrejection', (event) => {
+              reportFailure('game-rejection', event.reason ? String(event.reason) : 'Game rejection.');
+            });
+          } catch (err) {
+            // Cross-origin; cannot attach handlers.
+          }
+        }
+
+        function startCanvasProbe(iframe) {
+          const startedAt = performance.now();
+          const timer = window.setInterval(() => {
+            const elapsed = performance.now() - startedAt;
+            if (elapsed > 30000) {
+              window.clearInterval(timer);
+              reportFailure('timeout', 'Canvas never appeared.');
+              return;
+            }
+            try {
+              const doc = iframe.contentDocument;
+              if (!doc) return;
+              const canvas = doc.querySelector('canvas');
+              if (!canvas) return;
+              const rect = canvas.getBoundingClientRect();
+              if (rect.width > 0 && rect.height > 0) {
+                window.clearInterval(timer);
+                postToParent('WRAPPER_CANVAS_PRESENT');
+              }
+            } catch (err) {
+              window.clearInterval(timer);
+              reportFailure('cross-origin', 'Cannot access game iframe.');
+            }
+          }, 250);
+        }
+      })();
+    </script>
+  </body>
+</html>

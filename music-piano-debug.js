@@ -1,3 +1,24 @@
+// === RESET-DEBUG: detect reload vs navigation vs HMR ===
+(() => {
+  const tag = (msg, extra={}) => console.log('[RESET-DEBUG] ' + msg, extra);
+  try{
+    window.addEventListener('beforeunload', () => tag('beforeunload (page is unloading)', {url: location.href}));
+    window.addEventListener('unload', () => tag('unload', {url: location.href}));
+    window.addEventListener('popstate', () => tag('popstate', {url: location.href}));
+    window.addEventListener('hashchange', () => tag('hashchange', {url: location.href}));
+    const _push = history.pushState.bind(history);
+    const _replace = history.replaceState.bind(history);
+    history.pushState = function(...args){ tag('history.pushState', {args, stack: (new Error()).stack}); return _push(...args); };
+    history.replaceState = function(...args){ tag('history.replaceState', {args, stack: (new Error()).stack}); return _replace(...args); };
+    window.addEventListener('error', (ev) => tag('window error', {message: ev.message, filename: ev.filename, lineno: ev.lineno, colno: ev.colno}));
+    window.addEventListener('unhandledrejection', (ev) => tag('unhandledrejection', {reason: ev.reason}));
+    const key = '__reset_debug_count__';
+    const n = Number(sessionStorage.getItem(key) || 0) + 1;
+    sessionStorage.setItem(key, String(n));
+    tag('boot', {bootCountThisTab: n, url: location.href, navType: performance.getEntriesByType('navigation')?.[0]?.type});
+  }catch(e){ console.warn('[RESET-DEBUG] instrumentation failed', e); }
+})();
+
 // music-piano-debug.js
 // Fresh debug loader: isolates GLB visibility without previous logic
 import * as THREE from 'three';
@@ -42,6 +63,7 @@ const HUD = document.createElement('div');
 HUD.style.cssText='position:fixed;left:8px;top:calc(var(--header-height, 6rem) + 8px);padding:6px 10px;background:rgba(0,0,0,.6);color:#d0ffe4;font:12px monospace;z-index:100;border-radius:6px;white-space:pre;';
 document.body.appendChild(HUD);
 let root=null; let keyMeshes=[]; let stickerMeshes=[]; let userStickersGroup = null;
+let qwertyLabelsGroup = null;
 let selectedKey=null; // middle key chosen for demo animation
 const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
@@ -93,7 +115,10 @@ const PRESS_ATTACK_MS = 55;   // ramp press
 const RELEASE_DECAY_MS = 110; // ramp release
 const VELOCITY_MIN = 20;      // floor for depth scaling
 const VELOCITY_MAX = 127;     // MIDI max
-const FADE_SEC = 0.03; // default release fade (seconds)
+// NOTE fade / attack constants used for smoothing note start/stops
+const NOTE_FADE_SEC = 0.03; // 0.02–0.06 recommended
+const NOTE_ATTACK_SEC = 0.005; // quick attack to avoid clicks
+const FADE_SEC = NOTE_FADE_SEC; // backward-compatible alias used elsewhere
 // Per-note animation state: noteNumber -> { mesh, phase, startMs, fromAngle, targetAngle }
 const keyAnimState = new Map();
 // Audio context and sampler state
@@ -123,6 +148,28 @@ let backboardMesh = null;
 let backboardCanvas = null;
 let backboardCtx = null;
 let backboardTexture = null;
+// Backboard redraw throttle / dirty flag to avoid per-frame canvas uploads
+let backboardDirty = true;
+let lastBackboardDrawMs = 0;
+const BACKBOARD_MAX_FPS = 20; // throttle canvas uploads to ~20 FPS
+function requestBackboardRedraw(){ backboardDirty = true; }
+// Surface aspect (world w/h) used to pre-compensate canvas drawing so
+// circles/text look visually correct when mapped to the mesh UVs.
+let backboardSurfaceAspect = 1;
+let backboardUvDebugLogged = false;
+// logical CSS-pixel drawing size for the backboard canvas (set at creation)
+let backboardCssW = 2048;
+let backboardCssH = 512;
+// Backboard UV orientation correction (detect if UV island is rotated/flipped)
+// backboardUVCorrection: per-axis correction detected at load time
+// { swap:bool, mirrorU:bool, mirrorV:bool }
+let backboardUVCorrection = { swap:false, mirrorU:false, mirrorV:false };
+// Backboard world-space horizontal span (used to derive per-key lanes)
+let backboardHorizAxis = 'x';
+let backboardWorldSpan = { min:0, max:1, span:1 };
+// Backboard UV bounds (uMin/uMax/vMin/vMax) used to crop the canvas texture to the
+// mesh UV island so drawings are 1:1 and not stretched.
+let backboardUVBounds = { uMin:0, uMax:1, vMin:0, vMax:1, uSpan:1, vSpan:1 };
 let keyByNote = new Map();
 let jsonKeymapLoaded = false;
 let keymapULeft = 0;
@@ -131,6 +178,10 @@ let RAYCAST_KEYMAP_READY = false;
 const activeNotes = new Map(); // note -> { velocity, tOn }
 const activeNoteSet = new Set(); // stores MIDI note numbers currently held down
 const codeToMidiDown = new Map(); // ev.code -> latched midi number
+
+// Debug lane guide toggle
+const DEBUG_LANES = true;
+let keyLanesAbs = new Map(); // note -> {u0,u1} derived from world positions
 
 const BLACK_PCS = new Set([1,3,6,8,10]);
 function isBlackNoteByNumber(n){ return BLACK_PCS.has(n % 12); }
@@ -154,19 +205,249 @@ function drawUGradient(canvas){
   ctx.fillRect(0,0,W,H);
 }
 
-// Draw a bottom->top V gradient (v=0 bottom red, v=0.5 middle green, v=1 top blue)
-function drawVGradient(canvas){
+// V mapping constants for backboard "island" (local v in [0,1] maps into this UV range)
+const V_MIN = 0.442326;
+const V_MAX = 0.557674;
+const V_RANGE = V_MAX - V_MIN; // 0.115348
+
+// Convert a local v (0..1 within the backboard island) into canvas Y pixels
+function vLocalToYPx(vLocal, H){
+  const vAbs = V_MIN + (vLocal * V_RANGE); // absolute UV v
+  return (1.0 - vAbs) * H;                   // convert UV v to canvas y (y=0 top)
+}
+
+// Convert an absolute UV v (0..1) into canvas Y pixels
+function vAbsToYPx(vAbs, H){
+  return (1.0 - vAbs) * H; // y = (1 - v) * H
+}
+
+// Backboard UV map mode: 'none' | 'u' | 'v'
+let backboardUVMapMode = 'none';
+// mirror current mode on window so non-module scripts can read it
+try{ window.backboardUVMapMode = backboardUVMapMode; }catch(e){}
+
+// Set backboard UV map mode and request a texture update
+function setBackboardUVMapMode(mode){
+  if(!mode) mode = 'none';
+  mode = String(mode).toLowerCase();
+  if(!['none','u','v','checker'].includes(mode)) mode = 'none';
+  backboardUVMapMode = mode;
+  try{ window.backboardUVMapMode = backboardUVMapMode; }catch(e){}
+  // trigger a redraw/update of the texture if canvas exists
+  try{
+    requestBackboardRedraw();
+  }catch(e){}
+  try{
+    if(backboardTexture){
+      // re-apply repeat/offset so the live canvas remains cropped to the UV island
+      try{ backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan); }catch(e){}
+      try{ backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin); }catch(e){}
+      backboardTexture.needsUpdate = true;
+      // One-time debug print
+      try{
+        if(!backboardUvDebugLogged){
+          console.log('Backboard UV', 'flipY:', backboardTexture.flipY, 'repeat:', backboardTexture.repeat.x, backboardTexture.repeat.y, 'offset:', backboardTexture.offset.x, backboardTexture.offset.y);
+          backboardUvDebugLogged = true;
+        }
+      }catch(e){}
+    }
+  }catch(e){}
+}
+
+function toggleBackboardUVMap(){
+  const order = ['none','u','v'];
+  const idx = order.indexOf(backboardUVMapMode);
+  const next = order[(idx+1) % order.length];
+  setBackboardUVMapMode(next);
+}
+
+// Draw U (horizontal) color map
+function drawUMap(canvas){
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  // Create gradient from bottom (y=H) to top (y=0) so v increases upward
-  const grad = ctx.createLinearGradient(0, H, 0, 0);
+  const W = backboardCssW, H = backboardCssH;
+  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  // Draw gradient only across the U local viewport (keymapULeft..keymapURight)
+  const uMin = Number(keymapULeft || 0);
+  const uMax = Number(keymapURight || 1);
+  const x0 = Math.round(uMin * W);
+  const x1 = Math.round(uMax * W);
+  const grad = ctx.createLinearGradient(x0, 0, x1, 0);
+  grad.addColorStop(0.0, '#ff0000');
+  grad.addColorStop(0.5, '#00ff00');
+  grad.addColorStop(1.0, '#0000ff');
+  // fill full vertical span but only in the U window horizontally
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = grad;
+  ctx.fillRect(x0, 0, Math.max(1, x1-x0), H);
+}
+
+// Map helpers: localU/localV in [0..1] -> absolute UV -> canvas px
+// Map normalized local coords [0..1] -> absolute UV (0..1) taking into account
+// the detected UV island bounds and any axis swap or per-axis mirroring.
+function mapNormToUv(localU, localV){
+  const ub = backboardUVBounds || { uMin: Number(keymapULeft||0), uMax: Number(keymapURight||1), vMin: V_MIN, vMax: V_MAX, uSpan: (Number(keymapURight||1) - Number(keymapULeft||0)), vSpan: V_RANGE };
+  const uSpan = (ub.uSpan != null) ? ub.uSpan : (ub.uMax - ub.uMin);
+  const vSpan = (ub.vSpan != null) ? ub.vSpan : (ub.vMax - ub.vMin);
+  let uAbs, vAbs;
+  if(backboardUVCorrection && backboardUVCorrection.swap){
+    // axes swapped: localU -> V, localV -> U
+    uAbs = ub.uMin + (localV * vSpan);
+    vAbs = ub.vMin + (localU * uSpan);
+  } else {
+    uAbs = ub.uMin + (localU * uSpan);
+    vAbs = ub.vMin + (localV * vSpan);
+  }
+  if(backboardUVCorrection && backboardUVCorrection.mirrorU){ uAbs = (ub.uMin + ub.uMax) - uAbs; }
+  if(backboardUVCorrection && backboardUVCorrection.mirrorV){ vAbs = (ub.vMin + ub.vMax) - vAbs; }
+  return { u: uAbs, v: vAbs };
+}
+
+function localUToAbs(localU){ return mapNormToUv(localU, 0).u; }
+function localVToAbs(localV){ return mapNormToUv(0, localV).v; }
+
+function absUToXpx(uAbs, W){ return Math.round(uAbs * W); }
+function absVToYpx(vAbs, H){ return Math.round((1.0 - vAbs) * H); }
+
+// Convert absolute U (0..1) to backboard canvas X taking UV cropping into account
+function absUToBackboardX(uAbs, W){
+  const uv = backboardUVBounds || { uMin:0, uSpan:1 };
+  const uMin = Number(uv.uMin ?? 0);
+  const span = Math.max(1e-6, Number(uv.uSpan ?? (uv.uMax - uv.uMin) ?? 1));
+  return Math.round(((uAbs - uMin) / span) * W);
+}
+
+// Compute approximate world-per-UV scale for the backboard mesh so markers draw with correct aspect
+function computeWorldPerUV(mesh){
+  if(!mesh || !mesh.isMesh){ return null; }
+  try{
+    const bb = new THREE.Box3().setFromObject(mesh);
+    const size = bb.getSize(new THREE.Vector3());
+    // pick largest and second-largest components as width/height
+    const comps = [size.x, size.y, size.z].map((v,i)=>({v, i})).sort((a,b)=>b.v-a.v);
+    const worldW = Math.max(1e-6, comps[0].v);
+    const worldH = Math.max(1e-6, comps[1].v);
+    const uMin = Number(keymapULeft || 0);
+    const uMax = Number(keymapURight || 1);
+    const uvW = Math.max(1e-6, (uMax - uMin));
+    const uvH = Math.max(1e-6, V_RANGE);
+    const worldPerU = worldW / uvW;
+    const worldPerV = worldH / uvH;
+    return { worldPerU, worldPerV, worldW, worldH };
+  }catch(e){ return null; }
+}
+
+// Derive backboard horizontal axis and span from its world-space bounding box
+function computeBackboardWorldSpan(mesh){
+  if(!mesh || !mesh.isMesh) return false;
+  try{
+    const bb = new THREE.Box3().setFromObject(mesh);
+    const size = bb.getSize(new THREE.Vector3());
+    const axis = (size.x >= size.z) ? 'x' : 'z';
+    const min = bb.min[axis];
+    const max = bb.max[axis];
+    const span = Math.max(1e-6, max - min);
+    backboardHorizAxis = axis;
+    backboardWorldSpan = { min, max, span };
+    return true;
+  }catch(e){ return false; }
+}
+
+// Compute per-key lane boundaries in absolute U [0..1] derived from world positions
+function computeKeyLanesFromWorld(){
+  if(!backboardMesh || !midiKeyMap || !midiKeyMap.size) return;
+  if(!computeBackboardWorldSpan(backboardMesh)) return;
+  const lanes = new Map();
+  let entries = [];
+  midiKeyMap.forEach((mesh, note)=>{
+    try{
+      const bb = new THREE.Box3().setFromObject(mesh);
+      let u0 = (bb.min[backboardHorizAxis] - backboardWorldSpan.min) / backboardWorldSpan.span;
+      let u1 = (bb.max[backboardHorizAxis] - backboardWorldSpan.min) / backboardWorldSpan.span;
+      if(u0 > u1) { const t=u0; u0=u1; u1=t; }
+      u0 = Math.max(0, Math.min(1, u0));
+      u1 = Math.max(0, Math.min(1, u1));
+      lanes.set(Number(note), { u0, u1 });
+      // augment keyByNote entry so downstream consumers can use abs lanes
+      const existing = keyByNote.get(Number(note)) || { name: mesh?.name };
+      existing.u0_abs = u0; existing.u1_abs = u1;
+      keyByNote.set(Number(note), existing);
+      entries.push({ note:Number(note), mid:(u0+u1)*0.5 });
+    }catch(e){ /* ignore per-key failure */ }
+  });
+  // Mirror if mids decrease with ascending MIDI
+  try{
+    entries.sort((a,b)=>a.note-b.note);
+    let inversions = 0;
+    for(let i=1;i<entries.length;i++){
+      if(entries[i].mid < entries[i-1].mid) inversions++;
+    }
+    if(inversions > Math.max(2, Math.floor(entries.length*0.05))){
+      lanes.forEach((v,k)=>{
+        const nu0 = 1 - v.u1;
+        const nu1 = 1 - v.u0;
+        v.u0 = Math.min(nu0, nu1);
+        v.u1 = Math.max(nu0, nu1);
+        lanes.set(k, v);
+        const kb = keyByNote.get(Number(k));
+        if(kb){ kb.u0_abs = v.u0; kb.u1_abs = v.u1; keyByNote.set(Number(k), kb); }
+      });
+      console.warn('Mirrored world-derived key lanes to enforce left-to-right order');
+    }
+  }catch(e){ /* ignore mirror check */ }
+  keyLanesAbs = lanes;
+  try{ requestBackboardRedraw(); }catch(e){}
+}
+
+
+// Draw V (vertical) color map
+function drawVMap(canvas){
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = backboardCssW, H = backboardCssH;
+  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  // Map local V [0..1] into absolute V range V_MIN..V_MAX and draw gradient within that band
+  const yTop = vAbsToYPx(V_MAX, H);    // top (smaller y)
+  const yBottom = vAbsToYPx(V_MIN, H); // bottom (larger y)
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+  const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
   grad.addColorStop(0.0, '#ff0000');
   grad.addColorStop(0.5, '#00ff00');
   grad.addColorStop(1.0, '#0000ff');
   ctx.fillStyle = grad;
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(0, yTop, W, Math.max(1, Math.round(yBottom - yTop)));
 }
+
+// Draw a small-cell checkerboard for high-resolution UV debugging
+function drawCheckerMap(canvas, cellW = 16, cellH = 12){
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = backboardCssW, H = backboardCssH;
+  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  // Draw checker only inside local UV viewport (u: keymapULeft..keymapURight, v: V_MIN..V_MAX)
+  const uMin = Number(keymapULeft || 0);
+  const uMax = Number(keymapURight || 1);
+  const x0 = Math.round(uMin * W);
+  const x1 = Math.round(uMax * W);
+  const yTop = vAbsToYPx(V_MAX, H);
+  const yBottom = vAbsToYPx(V_MIN, H);
+  const y0 = Math.max(0, Math.min(H-1, Math.round(yTop)));
+  const y1 = Math.max(0, Math.min(H, Math.round(yBottom)));
+  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+  for(let yy = y0; yy < y1; yy += cellH){
+    for(let xx = x0; xx < x1; xx += cellW){
+      const xi = Math.floor((xx - x0) / cellW);
+      const yi = Math.floor((yy - y0) / cellH);
+      const even = ((xi + yi) & 1) === 0;
+      ctx.fillStyle = even ? '#e6e6e6' : '#444444';
+      ctx.fillRect(xx, yy, Math.min(cellW, x1 - xx), Math.min(cellH, y1 - yy));
+    }
+  }
+}
+
+// Publicize control functions for the page UI
+window.setBackboardUVMapMode = setBackboardUVMapMode;
+window.toggleBackboardUVMap = toggleBackboardUVMap;
 // Diagnostic helpers for note names and on-screen debug text
 const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 function midiToName(n) {
@@ -404,6 +685,8 @@ function applyKeyGlow(mesh, noteNumber, on){
     const orig = mesh.userData ? mesh.userData._origMaterial : null;
     if(orig){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
   }
+  // Request backboard redraw when visual key glow changes
+  try{ requestBackboardRedraw(); }catch(e){}
 }
 // ---- Track Metadata (moved earlier to avoid TDZ issues) ----
 // Track metadata (adjust paths if actual filenames differ)
@@ -508,6 +791,36 @@ function chooseMiddleKey(){
   }
   console.log('Selected middle key for demo:', selectedKey.name);
 }
+// Make all white keys share the C8 material so their finish matches visually
+function unifyWhiteKeysToReference(){
+  // Subtle ivory PBR material with vertex colors/maps disabled to avoid baked tints
+  const ivory = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0xf8f3eb), // warm ivory
+    metalness: 0.02,
+    roughness: 0.30,
+    envMapIntensity: 0.35,
+    toneMapped: true,
+    vertexColors: false
+  });
+  ivory.name = 'keys_white_ivory';
+  midiKeyMap.forEach((mesh, note)=>{
+    if(isBlackNoteByNumber(Number(note))) return;
+    if(!mesh || Array.isArray(mesh.material)) return;
+    mesh.material = ivory;
+    // Ensure no baked maps/vertex colors alter the tone
+    if(mesh.material) {
+      mesh.material.map = null;
+      mesh.material.aoMap = null;
+      mesh.material.lightMap = null;
+      mesh.material.vertexColors = false;
+    }
+    // Gentle contact shadows on white keys; avoid them casting onto others
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
+    try{ mesh.material.needsUpdate = true; }catch(e){}
+    if(mesh.userData) mesh.userData._origMaterial = ivory;
+  });
+}
 function isBlackKey(mesh){
   // User guarantee: all black keys include a '#' in their name
   return /#/i.test(mesh?.name||'');
@@ -541,8 +854,15 @@ function animate(){
       if(elapsedMidiSec >= 0) advanceMIDI(elapsedMidiSec * 1000);
     }
     updateKeyAnimations();
-      // update backboard overlay each frame
-      try{ renderBackboardOverlay(); }catch(e){ /* ignore */ }
+      // update backboard overlay only when dirty (throttled to BACKBOARD_MAX_FPS)
+      try{
+        const nowMs = performance.now();
+        if(backboardDirty && (nowMs - lastBackboardDrawMs) >= (1000 / BACKBOARD_MAX_FPS)){
+          try{ renderBackboardOverlay(); }catch(e){}
+          backboardDirty = false;
+          lastBackboardDrawMs = nowMs;
+        }
+      }catch(e){ /* ignore */ }
   }
 }
 animate();
@@ -563,42 +883,104 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
       }
       if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
       // Backboard screen for note info: look for mesh named SK_backboard_screen
-      if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
+        if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
         backboardMesh = o;
         try{
-          // Create overlay canvas (wider than tall for good resolution)
-          const W = 1024, H = 256;
-          backboardCanvas = document.createElement('canvas'); backboardCanvas.width = W; backboardCanvas.height = H;
-          // Fill opaque black background to match piano backboard
+          // Create overlay canvas sized by the mesh world aspect ratio and HiDPI backing store
+          // Compute mesh world bounding box to choose a sensible CSS pixel dimension
+          try{ o.updateMatrixWorld(true); }catch(e){}
+          let bbMesh = null; try{ bbMesh = new THREE.Box3().setFromObject(o); }catch(e){ bbMesh = null; }
+          let worldW = 1.0, worldH = 0.125;
+          try{
+            if(bbMesh){
+              // Use sorted dims to pick true surface width/height (avoid assuming X/Z order)
+              const size = bbMesh.getSize(new THREE.Vector3());
+              const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
+              const thickness = dims[0];
+              const h = dims[1];
+              const w = dims[2];
+              backboardSurfaceAspect = w / h;
+              worldW = w; worldH = h;
+              console.log('backboardSurfaceAspect', backboardSurfaceAspect, 'canvas', backboardCssW, backboardCssH, 'uvBounds', backboardUVBounds);
+            }
+          }catch(e){ worldW = 1.0; worldH = 0.125; }
+          let aspect = backboardSurfaceAspect || (worldW / Math.max(1e-6, worldH));
+          if(!isFinite(aspect) || aspect <= 0) aspect = 8.0; // piano-ish fallback
+          const dpr = Math.min(2, window.devicePixelRatio || 1);
+          const BASE_W = 4096; // high quality base width (lower to 2048 if perf needed)
+          // Prefer sizing the canvas to the UV island aspect so drawings are 1:1.
+          let screenAspect = aspect;
+          try{
+            if(backboardUVBounds && backboardUVBounds.uSpan > 0 && backboardUVBounds.vSpan > 0){
+              screenAspect = backboardUVBounds.uSpan / backboardUVBounds.vSpan;
+            }
+          }catch(e){}
+          // CSS-pixel logical canvas size (we draw in CSS pixels and scale the backing store by dpr)
+          backboardCssW = Math.round(BASE_W);
+          backboardCssH = Math.max(64, Math.round(BASE_W / Math.max(1e-6, screenAspect)));
+          backboardCanvas = document.createElement('canvas');
+          // Create HiDPI backing store and set drawing transform so code can draw in CSS pixels
+          backboardCanvas.width = Math.round(backboardCssW * dpr);
+          backboardCanvas.height = Math.round(backboardCssH * dpr);
+          backboardCanvas.style.width = backboardCssW + 'px';
+          backboardCanvas.style.height = backboardCssH + 'px';
           backboardCtx = backboardCanvas.getContext('2d');
+          // Set transform so drawing commands can use CSS-pixel coordinates
+          try{ backboardCtx.setTransform(dpr,0,0,dpr,0,0); }catch(e){}
+          try{ backboardCtx.imageSmoothingEnabled = true; }catch(e){}
           // Create texture and apply to mesh material
           backboardTexture = new THREE.CanvasTexture(backboardCanvas);
-          try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){}
+          // Prefer colorSpace when available (r152+), fallback to encoding
+          try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
           // Ensure texture Y orientation matches canvas coordinate expectations for our overlay
           try{ backboardTexture.flipY = false; }catch(e){}
-          try{ backboardTexture.needsUpdate = true; }catch(e){}
+          // Apply texture filtering and mipmaps for improved crispness
+          try{ backboardTexture.generateMipmaps = true; }catch(e){}
+          try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch(e){ backboardTexture.minFilter = THREE.LinearFilter; }
+          try{ backboardTexture.magFilter = THREE.LinearFilter; }catch(e){ backboardTexture.magFilter = THREE.LinearFilter; }
+          // If available, enable anisotropy for better sharpness at glancing angles
+          try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
           backboardTexture.wrapS = THREE.ClampToEdgeWrapping; backboardTexture.wrapT = THREE.ClampToEdgeWrapping;
-          backboardTexture.minFilter = THREE.LinearFilter; backboardTexture.magFilter = THREE.LinearFilter;
           backboardTexture.needsUpdate = true;
-          const applyMap = (mat)=>{
+          const applyMap = (mat, idx)=>{
             if(!mat) return;
-            mat.map = backboardTexture;
-            // Ensure opaque appearance: keep black background and opaque material
-            mat.transparent = false;
-            mat.opacity = 1.0;
-            mat.needsUpdate = true;
-            mat.transparent = false;
-            mat.opacity = 1.0;
-            mat.needsUpdate = true;
+            // Replace with unlit material so overlay is not darkened by lighting/tone mapping
+            const basic = new THREE.MeshBasicMaterial({
+              map: backboardTexture,
+              toneMapped: false,
+              transparent: true,
+              opacity: 1.0,
+              depthWrite: false
+            });
+            basic.name = (mat.name || 'backboard_map') + '_basic';
+            return basic;
           };
-          if(Array.isArray(o.material)) o.material.forEach(applyMap); else applyMap(o.material);
-          console.log('Attached overlay canvas texture to', o.name);
-          // Ensure texture uses no repeat/offset and log canvas/texture for diagnostics
+          if(Array.isArray(o.material)){
+            o.material = o.material.map(applyMap);
+          } else {
+            o.material = applyMap(o.material);
+          }
+          console.log('Applied backboard canvas texture to', o.name);
+          // Ensure texture is cropped to the backboard UV island so drawings are not stretched
           try{
-            backboardTexture.repeat.set(1,1);
-            backboardTexture.offset.set(0,0);
-            console.log('backboard canvas', backboardCanvas.width, backboardCanvas.height, 'texture repeat', backboardTexture.repeat.toArray(), 'offset', backboardTexture.offset.toArray());
+            backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan);
+            backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin);
+            console.log('backboard canvas', backboardCanvas.width, backboardCanvas.height, 'texture repeat', backboardTexture.repeat.toArray(), 'offset', backboardTexture.offset.toArray(), 'uvBounds', backboardUVBounds);
+            try{
+              if(!backboardUvDebugLogged){
+                console.log('Backboard UV', 'flipY:', backboardTexture.flipY, 'repeat:', backboardTexture.repeat.x, backboardTexture.repeat.y, 'offset:', backboardTexture.offset.x, backboardTexture.offset.y);
+                backboardUvDebugLogged = true;
+              }
+            }catch(e){}
           }catch(e){ console.warn('texture repeat/offset set failed', e); }
+
+          // Note: do NOT alter the original backboard mesh material here —
+          // we want to preserve the imported GLB appearance. The overlay
+          // plane created below will carry the yellow circle texture.
+
+          // Overlay plane creation removed: we apply the backboard canvas texture
+          // directly to the imported `SK_backboard_screen` material so the
+          // circle drawn by `renderBackboardOverlay()` appears on the mesh.
           // Attempt to load precomputed keymap.json and use it preferentially
           (async ()=>{
             try{
@@ -615,12 +997,126 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
                 keymapURight = Number(keymap.uRight) || keymapURight;
                 jsonKeymapLoaded = true;
                 RAYCAST_KEYMAP_READY = keyByNote.size > 0;
+                // Ensure U runs left->right: flip if mids decrease with ascending note
+                try{
+                  const entries = Array.from(keyByNote.entries()).map(([note, obj])=>({
+                    note: Number(note),
+                    u0: Number(obj.u0),
+                    u1: Number(obj.u1),
+                    mid: (Number(obj.u0)+Number(obj.u1))*0.5
+                  })).sort((a,b)=>a.note-b.note);
+                  let inversions = 0;
+                  for(let i=1;i<entries.length;i++){
+                    if(entries[i].mid < entries[i-1].mid) inversions++;
+                  }
+                  if(false && inversions > Math.max(2, Math.floor(entries.length*0.05))){
+                    const uL = Number(keymapULeft||0);
+                    const uR = Number(keymapURight||1);
+                    const span = uR - uL;
+                    const mirror = (u)=> uL + (span - (u - uL));
+                    keyByNote.forEach((v,k)=>{
+                      const nu0 = mirror(Number(v.u1));
+                      const nu1 = mirror(Number(v.u0));
+                      v.u0 = Math.min(nu0, nu1);
+                      v.u1 = Math.max(nu0, nu1);
+                      keyByNote.set(k, v);
+                    });
+                    console.warn('keymap.json U mirrored to enforce left-to-right order');
+                  }
+                }catch(e){ console.warn('keymap.json mirror check failed', e); }
                 console.log('Loaded keymap.json: uLeft/uRight', keymapULeft, keymapURight);
                 console.log('k28', keyByNote.get(28), 'k60', keyByNote.get(60), 'k108', keyByNote.get(108));
+                // Derive UV bounds from keymap.json if present. Preferred fields:
+                // keymap.screenUvBounds.{uMin,uMax,vMin,vMax} OR keymap.uv_uMin,uv_uMax,uv_vMin,uv_vMax
+                try{
+                  let uMin=0,uMax=1,vMin=0,vMax=1;
+                  if(isFinite(keymapULeft) && isFinite(keymapURight) && keymapURight > keymapULeft){
+                    uMin = keymapULeft; uMax = keymapURight;
+                  }
+                  if(keymap.screenUvBounds && typeof keymap.screenUvBounds === 'object'){
+                    uMin = Number(keymap.screenUvBounds.uMin ?? uMin);
+                    uMax = Number(keymap.screenUvBounds.uMax ?? uMax);
+                    vMin = Number(keymap.screenUvBounds.vMin ?? vMin);
+                    vMax = Number(keymap.screenUvBounds.vMax ?? vMax);
+                  } else if('uv_uMin' in keymap || 'uv_uMax' in keymap || 'uv_vMin' in keymap || 'uv_vMax' in keymap){
+                    uMin = Number(keymap.uv_uMin ?? uMin);
+                    uMax = Number(keymap.uv_uMax ?? uMax);
+                    vMin = Number(keymap.uv_vMin ?? vMin);
+                    vMax = Number(keymap.uv_vMax ?? vMax);
+                  }
+                  let uSpan = (uMax - uMin); let vSpan = (vMax - vMin);
+                  if(!(isFinite(uSpan) && isFinite(vSpan) && uSpan>0 && vSpan>0)){
+                    console.warn('Invalid UV spans from keymap.json; falling back to full 0..1');
+                    uMin=0; uMax=1; vMin=0; vMax=1; uSpan=1; vSpan=1;
+                  }
+                  backboardUVBounds = { uMin, uMax, vMin, vMax, uSpan, vSpan };
+                  // If the canvas already exists, resize it to the UV aspect and reapply texture repeat/offset
+                  try{
+                    const dpr = Math.min(2, window.devicePixelRatio || 1);
+                    const BASE_W = 4096;
+                    const screenAspect = backboardUVBounds.uSpan / Math.max(1e-6, backboardUVBounds.vSpan);
+                    backboardCssW = Math.round(BASE_W);
+                    backboardCssH = Math.max(64, Math.round(BASE_W / Math.max(1e-6, screenAspect)));
+                    if(backboardCanvas){
+                      backboardCanvas.width = Math.round(backboardCssW * dpr);
+                      backboardCanvas.height = Math.round(backboardCssH * dpr);
+                      backboardCanvas.style.width = backboardCssW + 'px';
+                      backboardCanvas.style.height = backboardCssH + 'px';
+                      backboardCtx = backboardCanvas.getContext('2d');
+                      try{ backboardCtx.setTransform(dpr,0,0,dpr,0,0); }catch(e){}
+                      try{ backboardCtx.imageSmoothingEnabled = true; }catch(e){}
+                    }
+                    if(backboardTexture){
+                      backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan);
+                      backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin);
+                      try{ backboardTexture.generateMipmaps = true; }catch(e){}
+                      try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch(e){ backboardTexture.minFilter = THREE.LinearFilter; }
+                      try{ backboardTexture.magFilter = THREE.LinearFilter; }catch(e){}
+                      try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
+                      backboardTexture.needsUpdate = true;
+                    }
+                  }catch(e){ console.warn('Failed to resize backboard canvas after keymap.json', e); }
+                }catch(e){ console.warn('Error parsing keymap.json UV bounds', e); }
+                try{ requestBackboardRedraw(); }catch(e){}
               }
             }catch(e){ console.warn('Loading keymap.json failed or not present', e); }
           })();
           // Note: keymap.json loading disabled — runtime raycast will generate authoritative keymap
+          // Detect UV island orientation to know if U runs left->right or was rotated/flipped in Blender
+          try{
+            const geom = o.geometry;
+            if(geom && geom.isBufferGeometry && geom.attributes && geom.attributes.position && geom.attributes.uv){
+              const posAttr = geom.attributes.position;
+              const uvAttr = geom.attributes.uv;
+              const count = posAttr.count;
+              // find extrema indices for X, Y, Z
+              let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity,minZ=Infinity,maxZ=-Infinity;
+              let iMinX=0,iMaxX=0,iMinY=0,iMaxY=0,iMinZ=0,iMaxZ=0;
+              for(let i=0;i<count;i++){
+                const x = posAttr.getX(i), y = posAttr.getY(i), z = posAttr.getZ(i);
+                if(x < minX){ minX = x; iMinX = i; } if(x > maxX){ maxX = x; iMaxX = i; }
+                if(y < minY){ minY = y; iMinY = i; } if(y > maxY){ maxY = y; iMaxY = i; }
+                if(z < minZ){ minZ = z; iMinZ = i; } if(z > maxZ){ maxZ = z; iMaxZ = i; }
+              }
+              // choose vertical axis by span Y vs Z
+              const spanY = maxY - minY; const spanZ = maxZ - minZ;
+              const verticalAxis = (spanY >= spanZ) ? 'Y' : 'Z';
+              // Compare UV.x at left-most and right-most mesh positions to detect mirrorU
+              const uAtMinX = uvAttr.getX(iMinX); const uAtMaxX = uvAttr.getX(iMaxX);
+              const mirrorU = (uAtMaxX < uAtMinX);
+              // For V, compare UV.y at bottom vs top (using chosen vertical axis)
+              const iBot = (verticalAxis === 'Y') ? iMinY : iMinZ;
+              const iTop = (verticalAxis === 'Y') ? iMaxY : iMaxZ;
+              const vAtBot = uvAttr.getY(iBot); const vAtTop = uvAttr.getY(iTop);
+              const mirrorV = (vAtTop < vAtBot);
+              // Detect axis swap: check whether UV changes more in U or V when moving along mesh X
+              const du = Math.abs(uAtMaxX - uAtMinX);
+              const dv = Math.abs(uvAttr.getY(iMaxX) - uvAttr.getY(iMinX));
+              const swapped = dv > du;
+              backboardUVCorrection = { swap: !!swapped, mirrorU: !!mirrorU, mirrorV: !!mirrorV };
+              console.log('Backboard UV correction detected:', backboardUVCorrection, 'verticalAxis', verticalAxis, 'du', du.toFixed(3), 'dv', dv.toFixed(3));
+            }
+          }catch(e){ console.warn('backboard UV detect failed', e); }
         }catch(e){ console.warn('Backboard overlay setup failed', e); }
       }
       if(o.isMesh && o.material && o.material.color){ 
@@ -658,6 +1154,8 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
     }
     fit(box);
     collectKeys(root);
+    computeKeyLanesFromWorld();
+    unifyWhiteKeysToReference();
     // Create our own sticker sprites (do not use mesh stickers). Hide original sticker meshes.
     try{
       // Build reverse map from CODE_TO_MIDI (midi -> display key char)
@@ -745,6 +1243,58 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
           userStickersGroup.add(sprite);
         }catch(e){ console.warn('user sticker create failed', e); }
       });
+      // Create QWERTY labels as camera-facing sprites so they never mirror and can be positioned above keys
+      try{
+        if(qwertyLabelsGroup){ safeRun(()=> root.remove(qwertyLabelsGroup)); qwertyLabelsGroup = null; }
+        qwertyLabelsGroup = new THREE.Group(); qwertyLabelsGroup.name = 'qwerty_labels_group';
+        root.add(qwertyLabelsGroup);
+        // Build midi->label from CODE_TO_MIDI if available
+        const midiToKeyLabel = new Map();
+        if(typeof CODE_TO_MIDI !== 'undefined'){
+          const displayFromCode = (code)=>{
+            if(!code) return '';
+            if(code.startsWith('Key')) return code.slice(3).toLowerCase();
+            if(code.startsWith('Digit')) return code.slice(5);
+            switch(code){ case 'Comma': return ','; case 'Period': return '.'; case 'Slash': return '/'; case 'Semicolon': return ';'; case 'BracketLeft': return '['; case 'BracketRight': return ']'; case 'Minus': return '-'; default: return code; }
+          };
+          CODE_TO_MIDI.forEach((midi, code)=> midiToKeyLabel.set(Number(midi), displayFromCode(code)));
+        }
+        // Create a sprite per white key
+        midiToKeyLabel.forEach((label, midi)=>{
+          try{
+            const mNum = Number(midi);
+            if(isBlackNoteByNumber(mNum)) return;
+            const kMesh = midiKeyMap.get(mNum);
+            if(!kMesh) return;
+            // Position slightly above the key toward the camera to avoid black-key occlusion
+            const pos = new THREE.Vector3(); kMesh.getWorldPosition(pos);
+            const camPos = new THREE.Vector3(); cam.getWorldPosition(camPos);
+            const towardCam = camPos.sub(pos).normalize();
+            // small upward world offset plus toward-camera offset
+            pos.y += 0.03;
+            pos.addScaledVector(towardCam, 0.03);
+            // Size based on key physical width
+            const bbox = new THREE.Box3().setFromObject(kMesh);
+            const bsz = bbox.getSize(new THREE.Vector3());
+            const baseScale = Math.max(0.03, (bsz.x || 0.04) * 0.9);
+            const Wc = 128, Hc = 96; const c = document.createElement('canvas'); c.width = Wc; c.height = Hc;
+            const ctx = c.getContext('2d'); ctx.clearRect(0,0,Wc,Hc);
+            // Draw transparent background and text with subtle shadow
+            const fontPx = Math.max(18, Math.round(Math.min(48, Wc * 0.28)));
+            ctx.font = `bold ${fontPx}px system-ui, Arial, sans-serif`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(String(label).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
+            ctx.fillStyle = 'white'; ctx.fillText(String(label).toUpperCase(), Wc/2, Hc/2);
+            const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+            tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
+            const mat = new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false });
+            const sprite = new THREE.Sprite(mat);
+            sprite.position.copy(pos);
+            sprite.scale.set(baseScale, baseScale * (Hc / Wc) * 0.9, 1);
+            qwertyLabelsGroup.add(sprite);
+          }catch(e){ /* ignore single-label failures */ }
+        });
+      }catch(e){ console.warn('qwerty label generation failed', e); }
     }catch(e){ console.warn('user sticker generation failed', e); }
     // After keys are collected and backboard identified, generate runtime keymap via raycasting
     try{ if(backboardMesh && keyMeshes && keyMeshes.length){
@@ -761,6 +1311,8 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
     // Recompute box after recenter to ensure framing updates for new geometry (e.g., pedals)
     const box2 = new THREE.Box3().setFromObject(root);
     fit(box2);
+    // Refresh world-derived lanes after recenter so backboard mapping aligns
+    computeKeyLanesFromWorld();
     console.log('GLB loaded. Final box size:', size, 'post-recenter size:', box2.getSize(new THREE.Vector3()));
     // If there are animations, prepare subclips and lock pose initially
     if(gltf.animations && gltf.animations.length){
@@ -1135,40 +1687,123 @@ function updateKeyAnimations(){
 // --- Backboard overlay rendering (note bars) ---
 function renderBackboardOverlay(){
   if(!backboardCanvas || !backboardCtx || !backboardTexture) return;
-  const ctx = backboardCtx; const W = backboardCanvas.width; const H = backboardCanvas.height;
-  // Clear canvas and draw a neutral black background for the overlay
+  const ctx = backboardCtx; const W = backboardCssW, H = backboardCssH; // logical CSS-pixel drawing units
+  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  // Use canvas-derived aspect (width/height) for visual compensation
+  try{ backboardSurfaceAspect = (W / Math.max(1, H)); }catch(e){}
+  // Helper to compensate for mesh surface aspect so drawn circles/text look round on the mesh
+  function withAspectComp(ctxLocal, cx, cy, fn){
+    const a = (backboardSurfaceAspect && isFinite(backboardSurfaceAspect)) ? backboardSurfaceAspect : 1;
+    ctxLocal.save();
+    ctxLocal.translate(cx, cy);
+    // If surface is wider than tall, X is stretched on mesh, so pre-squash X when drawing
+    ctxLocal.scale(1 / a, 1);
+    try{ fn(); }catch(e){}
+    ctxLocal.restore();
+  }
+  // Clear canvas and draw orange background to confirm the overlay is visible
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#000'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#d96b00'; ctx.fillRect(0,0,W,H);
+  // watermark to confirm overlay is active
+  try{
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.font = '24px system-ui, Arial, sans-serif';
+    ctx.fillText('overlay', 12, Math.max(26, Math.round(H * 0.08)));
+  }catch(e){}
 
-  // Build a reverse map midi -> QWERTY label (e.g., 'a','s','d','f',',', '.')
-  const midiToKey = new Map();
-  const displayFromCode = (code)=>{
-    if(!code) return '';
-    if(code.startsWith('Key')) return code.slice(3).toLowerCase();
-    if(code.startsWith('Digit')) return code.slice(5);
-    switch(code){
-      case 'Comma': return ',';
-      case 'Period': return '.';
-      case 'Slash': return '/';
-      case 'Semicolon': return ';';
-      case 'BracketLeft': return '[';
-      case 'BracketRight': return ']';
-      case 'Minus': return '-';
-      default: return code;
-    }
-  };
-  if(typeof CODE_TO_MIDI !== 'undefined'){
-    try{
-      if(typeof CODE_TO_MIDI.forEach === 'function'){
-        CODE_TO_MIDI.forEach((v,k)=> midiToKey.set(Number(v), displayFromCode(k)));
-      } else {
-        for(const k in CODE_TO_MIDI){ if(Object.prototype.hasOwnProperty.call(CODE_TO_MIDI,k)){ midiToKey.set(Number(CODE_TO_MIDI[k]), displayFromCode(k)); } }
-      }
-    }catch(e){ /* ignore mapping build errors */ }
+  // Draw selected UV map mode if enabled
+  if(backboardUVMapMode === 'u'){
+    drawUMap(backboardCanvas);
+  } else if(backboardUVMapMode === 'v'){
+    drawVMap(backboardCanvas);
+  } else if(backboardUVMapMode === 'checker'){
+    drawCheckerMap(backboardCanvas);
+  } else {
+    // none: keep solid black background (already filled above)
   }
 
-  // Draw vertical color map for v (use helper that maps v->canvas Y as y=(1.0-v)*H)
-  drawVGradient(backboardCanvas);
+  try{
+    // Use explicit V band math (do not use canvas.width/height here)
+    const V_MIN_LOCAL = V_MIN; const V_MAX_LOCAL = V_MAX;
+    const yMin = (1 - V_MIN_LOCAL) * H; // bottom of band (larger y)
+    const yMax = (1 - V_MAX_LOCAL) * H; // top of band (smaller y)
+    const bandH = Math.max(1, yMin - yMax);
+    // circle/legend debugging removed for cleanliness
+  }catch(e){ /* ignore debug draw errors */ }
+
+  // QWERTY lane labels on the backboard (white keys only)
+  try{
+    // Helper: build lane list from keyByNote if available, otherwise derive evenly across U span from midiKeyMap
+    const buildWhiteLanes = ()=>{
+      const lanes = [];
+      if(keyByNote && keyByNote.size){
+        Array.from(keyByNote.entries())
+          .filter(([note]) => !isBlackNoteByNumber(Number(note)))
+          .sort((a,b)=> Number(a[0]) - Number(b[0])) // preserve musical order
+          .forEach(([note, info])=>{
+            const n = Number(note);
+            const laneAbs = keyLanesAbs.get(n);
+            const u0 = (laneAbs && isFinite(laneAbs.u0)) ? laneAbs.u0
+                      : (isFinite(info.u0_abs) ? info.u0_abs
+                        : (isFinite(info.u0) ? info.u0 : null));
+            const u1 = (laneAbs && isFinite(laneAbs.u1)) ? laneAbs.u1
+                      : (isFinite(info.u1_abs) ? info.u1_abs
+                        : (isFinite(info.u1) ? info.u1 : null));
+            if(u0 == null || u1 == null) return;
+            lanes.push({ note:n, u0, u1 });
+          });
+      }
+      // Fallback evenly-spaced only if no keymap present
+      if(!lanes.length && keyLanesAbs && keyLanesAbs.size){
+        Array.from(keyLanesAbs.entries())
+          .filter(([note]) => !isBlackNoteByNumber(Number(note)))
+          .sort((a,b)=>Number(a[0]) - Number(b[0]))
+          .forEach(([note, lane])=>{
+            if(lane && isFinite(lane.u0) && isFinite(lane.u1)){
+              lanes.push({ note:Number(note), u0:lane.u0, u1:lane.u1 });
+            }
+          });
+      }
+      if(!lanes.length && midiKeyMap && midiKeyMap.size){
+        console.warn('Keymap lanes fallback: keymap.json not loaded; using evenly spaced U');
+        const whites = Array.from(midiKeyMap.keys()).filter(n=>!isBlackNoteByNumber(Number(n))).sort((a,b)=>a-b);
+        if(whites.length){
+          const span = Math.max(1e-6, Number(keymapURight||1) - Number(keymapULeft||0));
+          const startU = Number(keymapULeft||0);
+          const laneW = span / whites.length;
+          whites.forEach((n,i)=>{
+            lanes.push({ note:Number(n), u0: startU + i*laneW, u1: startU + (i+1)*laneW });
+          });
+        }
+      }
+      return lanes;
+    };
+    const lanes = buildWhiteLanes();
+    if(lanes && lanes.length){
+      // (Lane fills disabled to avoid masking markers)
+      // Draw solid black circles in the C3..C6 white-key lanes to verify alignment
+      const laneY = Math.round(yMax + bandH * 0.5);
+      lanes.sort((a,b)=> (a.u0||0) - (b.u0||0));
+      lanes.forEach(({note,u0,u1})=>{
+        // Only show markers for white keys C3..C6
+        if(note < 48 || note > 84 || isBlackNoteByNumber(Number(note))) return;
+        if(!isFinite(u0) || !isFinite(u1) || u1 <= u0) return;
+        const x0 = absUToBackboardX(u0, W);
+        const x1 = absUToBackboardX(u1, W);
+        const cx = (x0 + x1) * 0.5;
+        const rad = Math.max(10, Math.min(24, Math.round((x1 - x0) * 0.32)));
+        ctx.save();
+        ctx.fillStyle = '#000000';
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(cx, laneY, rad, 0, Math.PI*2); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+      });
+    }
+  }catch(e){ /* ignore qwerty overlay errors */ }
+
+  // Ensure texture is updated for three.js
   backboardTexture.needsUpdate = true;
 }
 // Update camera-dependent transforms (runs every frame)
@@ -1312,15 +1947,43 @@ function generateRuntimeKeymap(screenMesh, keys){
       // clamp
       uL = Math.min(1, Math.max(0, uL));
       uR = Math.min(1, Math.max(0, uR));
-      const u0 = Math.min(uL, uR), u1 = Math.max(uL, uR);
+      let u0 = Math.min(uL, uR), u1 = Math.max(uL, uR);
       const note = midiNameToNumber(mesh.name);
+      // If the backboard UVs were mirrored horizontally, mirror per-key lanes
+      try{
+        if(backboardUVCorrection && backboardUVCorrection.mirrorU){
+          const ub = backboardUVBounds || { uMin: 0, uMax: 1 };
+          const nu0 = (ub.uMin + ub.uMax) - u1;
+          const nu1 = (ub.uMin + ub.uMax) - u0;
+          u0 = Math.min(nu0, nu1); u1 = Math.max(nu0, nu1);
+        }
+      }catch(e){ /* ignore mirror failures */ }
       if(Number.isInteger(note)){
           keyByNote.set(Number(note), { u0, u1, name: mesh.name });
       }
     }catch(e){ console.warn('raycast keymap fail for', mesh.name, e); }
   }
+  // Harden generated keymap: detect ordering/inversions and auto-flip U if needed
+  try{
+    const entries = Array.from(keyByNote.entries()).map(([note, obj])=>({ note: Number(note), u0: obj.u0, u1: obj.u1, mid: (obj.u0 + obj.u1) * 0.5 }));
+    entries.sort((a,b)=>a.note - b.note);
+    // count inversions (monotonicity violations)
+    let inversions = 0;
+    for(let i=1;i<entries.length;i++) if(entries[i].mid < entries[i-1].mid) inversions++;
+    // detect sharp decreases (large backward jumps) as another heuristic
+    let sharpDrops = 0; let prev = entries.length ? entries[0].mid : 0;
+    for(let i=1;i<entries.length;i++){ const cur = entries[i].mid; if(cur + 0.15 < prev) sharpDrops++; prev = cur; }
+    if(inversions > Math.max(5, Math.floor(entries.length * 0.03)) || sharpDrops > Math.max(1, Math.floor(entries.length * 0.02))){
+      // flip U for all keys: u0' = 1 - u1, u1' = 1 - u0
+      keyByNote.forEach((v,k)=>{
+        const nu0 = 1 - v.u1; const nu1 = 1 - v.u0; v.u0 = nu0; v.u1 = nu1; keyByNote.set(k, v);
+      });
+      console.warn('Runtime keymap: detected non-monotonic U mids; auto-flipped U coordinates for all keys');
+    }
+  }catch(e){ console.warn('Keymap hardening check failed', e); }
   RAYCAST_KEYMAP_READY = keyByNote.size > 0;
   console.log('Runtime keymap generated, keys:', keyByNote.size, 'ready=', RAYCAST_KEYMAP_READY);
+  try{ requestBackboardRedraw(); }catch(e){}
 }
 // Hook play button if exists
 const playBtn = document.getElementById('playPerformance');
@@ -1674,9 +2337,10 @@ function playUserNote(midiNum, mesh){
       // Create a gain node so we can fade notes out cleanly (prevents clicks)
       ensureAudio();
       const gainNode = audioCtx.createGain();
-      // start near-zero and apply a short linear attack to avoid clicks
-      gainNode.gain.setValueAtTime(0.0001, now);
-      gainNode.gain.linearRampToValueAtTime(1.0, now + 0.01);
+      // start at 0 and apply a short linear attack to avoid clicks
+      try{ gainNode.gain.cancelScheduledValues(now); }catch(e){}
+      try{ gainNode.gain.setValueAtTime(0.0, now); }catch(e){}
+      try{ gainNode.gain.linearRampToValueAtTime(1.0, now + NOTE_ATTACK_SEC); }catch(e){}
       gainNode.connect(masterGain);
       // Many players accept a gainNode option; WebAudioFont adapter we supply will honor it.
       const node = instrumentPlayer.play(midiNum, now, { gain: 1, gainNode });
@@ -1695,6 +2359,7 @@ function playUserNote(midiNum, mesh){
     const mn = Number(midiNum);
     activeNotes.set(mn, { velocity: 1, tOn: performance.now() });
     activeNoteSet.add(mn);
+    try{ requestBackboardRedraw(); }catch(e){}
     return;
   }
   // No sampled instrument loaded: only provide visual feedback (no oscillator fallback)
@@ -1706,6 +2371,7 @@ function playUserNote(midiNum, mesh){
   const mn2 = Number(midiNum);
   activeNotes.set(mn2, { velocity: 1, tOn: performance.now() });
   activeNoteSet.add(mn2);
+  try{ requestBackboardRedraw(); }catch(e){}
   return;
 }
 
@@ -1715,6 +2381,9 @@ function stopUserNote(midiNum){
   if(Number.isNaN(midiNum)) return;
   // Ensure cleanup always runs, even if audio operations throw
   const nowSec = (audioCtx ? audioCtx.currentTime : 0);
+  // Guard: ensure a fade duration is available in case other code referenced lowercase fadeSec
+  const DEFAULT_FADE_SEC = 0.06;
+  const fadeSecLocal = (typeof FADE_SEC === 'number') ? FADE_SEC : DEFAULT_FADE_SEC;
   try{
     // First handle sample nodes if present
     const sampleEntry = activeSampleNodes.get(midiNum);
@@ -1723,7 +2392,7 @@ function stopUserNote(midiNum){
       const started = sampleEntry.startedAt || nowSec;
       const elapsed = Math.max(0, nowSec - started);
       const minSec = MIN_USER_NOTE_MS / 1000;
-      let stopAt = nowSec + FADE_SEC;
+      let stopAt = nowSec + fadeSecLocal;
       if(elapsed < minSec){ stopAt = started + minSec + FADE_SEC; }
 
       // Mark stopped to avoid double-stops
@@ -1734,7 +2403,7 @@ function stopUserNote(midiNum){
           sampleEntry.gainNode.gain.cancelScheduledValues(nowSec);
           const currentGain = sampleEntry.gainNode.gain.value || 1.0;
           sampleEntry.gainNode.gain.setValueAtTime(currentGain, nowSec);
-          sampleEntry.gainNode.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+          sampleEntry.gainNode.gain.linearRampToValueAtTime(0.0, stopAt);
         }catch(e){ /* ignore */ }
       }
       // Finally stop underlying node if we have a stop API
@@ -1742,7 +2411,7 @@ function stopUserNote(midiNum){
         try{ sampleEntry.node.stop(stopAt + 0.02); }catch(e){ /* ignore */ }
       }
       // remove mapping after a safe delay
-      setTimeout(()=>{ activeSampleNodes.delete(midiNum); }, Math.round((Math.max(0, ( (sampleEntry.startedAt||nowSec) + (MIN_USER_NOTE_MS/1000) ) - nowSec) + FADE_SEC + 50) ));
+      setTimeout(()=>{ activeSampleNodes.delete(midiNum); }, Math.round((Math.max(0, ( (sampleEntry.startedAt||nowSec) + (MIN_USER_NOTE_MS/1000) ) - nowSec) + fadeSecLocal + 50) ));
     }
 
     // Then handle oscillator voices if any
@@ -1758,8 +2427,8 @@ function stopUserNote(midiNum){
         const elapsed = (now * 1000) - playedAtMs;
         const remain = Math.max(0, MIN_USER_NOTE_MS - elapsed) / 1000;
         const when = now + remain;
-        v.gain.gain.exponentialRampToValueAtTime(0.0001, when + FADE_SEC);
-        setTimeout(()=>{ safeRun(()=>{ v.osc.stop(); v.oscB.stop(); v.oscC.stop(); }, 'user stop'); activeVoices.delete(midiNum); }, Math.round((remain + FADE_SEC + 0.05)*1000));
+        v.gain.gain.linearRampToValueAtTime(0.0, when + NOTE_FADE_SEC);
+        setTimeout(()=>{ safeRun(()=>{ v.osc.stop(); v.oscB.stop(); v.oscC.stop(); }, 'user stop'); activeVoices.delete(midiNum); }, Math.round((remain + NOTE_FADE_SEC + 0.05)*1000));
       }catch(e){ /* ignore */ }
     }
   }catch(err){
@@ -1783,6 +2452,7 @@ function stopUserNote(midiNum){
       const st = keyAnimState.get(midiNum);
       if(st){ st.phase = 'release'; st.startMs = (audioCtx ? (audioCtx.currentTime - (midiStartCtxTime||0)) * 1000 : 0); st.fromAngle = m ? m.rotation.x : 0; st.targetAngle = 0; }
     }catch(e){ /* ignore */ }
+    try{ requestBackboardRedraw(); }catch(e){}
   }
 }
 
@@ -1826,7 +2496,6 @@ function onGlobalPointerMove(e){
         pointerDownInfo.lastMidi = res.midiNum;
         playUserNote(res.midiNum, res.mesh);
         applyKeyGlow(res.mesh, res.midiNum, true);
-        setTimeout(()=>{ try{ stopUserNote(res.midiNum); }catch(e){} }, MIN_USER_NOTE_MS + 20);
       }
     }
   }
@@ -1929,6 +2598,8 @@ window.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
+// Ensure pointer leaving the canvas also ends any active press
+canvas.addEventListener('pointerleave', onPointerUp);
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
@@ -2010,7 +2681,17 @@ function allNotesOff(){
   codeToMidiDown.clear();
 }
 
+// Panic: stop audio and visuals for all sources (keyboard, pointer, samples, oscillators)
+function panicAllNotes(){
+  try{ allNotesOff(); }catch(e){}
+  try{ activeVoices.forEach(v=>{ try{ v.osc && v.osc.stop && v.osc.stop(); v.oscB && v.oscB.stop && v.oscB.stop(); v.oscC && v.oscC.stop && v.oscC.stop(); }catch(e){} }); activeVoices.clear(); }catch(e){}
+  try{ activeSampleNodes.forEach((entry, k)=>{ try{ const t = (audioCtx && audioCtx.currentTime) ? audioCtx.currentTime : 0; if(entry && entry.gainNode){ entry.gainNode.gain.cancelScheduledValues(t); entry.gainNode.gain.setValueAtTime(0.0, t); } if(entry && entry.node && entry.node.stop) entry.node.stop((t || 0) + 0.02); }catch(e){} }); activeSampleNodes.clear(); }catch(e){}
+  try{ if(pointerDownInfo){ try{ if(pointerDownInfo.played) stopUserNote(pointerDownInfo.midiNum); if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){} } pointerDownInfo = null; }catch(e){}
+  try{ if(typeof pendingPlayTimer !== 'undefined' && pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; } }catch(e){}
+  try{ requestBackboardRedraw(); }catch(e){}
+}
+
 window.addEventListener('keydown', handleKeyDown, { capture:true, passive:false });
 window.addEventListener('keyup', handleKeyUp, { capture:true, passive:false });
-window.addEventListener('blur', allNotesOff);
-document.addEventListener('visibilitychange', ()=>{ if(document.hidden) allNotesOff(); });
+window.addEventListener('blur', panicAllNotes);
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden) panicAllNotes(); });

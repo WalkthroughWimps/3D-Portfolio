@@ -1,0 +1,560 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome • Site Setup</title>
+    <link rel="stylesheet" href="template.css">
+    <style>
+        :root { color-scheme: light dark; }
+        html,body { height:100%; }
+        body { margin:0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; background: #0f1115; color: #e7f6f0; overflow:hidden; }
+        .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 24px; box-sizing:border-box; }
+        header { margin: 12px 0 12px; }
+        h1 { margin: 0 0 8px; font-size: clamp(22px, 4vw, 36px); }
+        p.lead { margin: 0; opacity: .9; }
+        section { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 16px; margin: 16px 0; }
+        .section-title { font-size: 18px; margin: 0 0 12px; }
+        .row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+        .control { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.08); }
+        .control label { font-weight: 600; }
+        .hint { font-size: 12px; opacity: .8; }
+        .radios { display:flex; gap: 12px; }
+        .actions { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+        button.primary { background: #2aa198; color: #fff; border: 1px solid #6ff; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+        button.secondary { background: rgba(255,255,255,.06); color:#fff; border: 1px solid rgba(255,255,255,.15); padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+
+        /* Jump UI styles */
+        .jump-container { display:none; max-width: 980px; margin: 12px auto; background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:12px; box-sizing:border-box; }
+        .top-tabs { display:flex; gap:12px; margin-bottom:12px; }
+        .tab { padding:8px 12px; background: rgba(0,0,0,.25); border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.06); }
+        .tab.active { background: rgba(42,161,152,.12); border-color: rgba(42,161,152,.3); }
+        .video-tabs { display:flex; gap:12px; margin:12px 0; justify-content:center; }
+        .jump-body { display:flex; gap:16px; align-items:stretch; justify-content:center; }
+        .video-area { width:854px; max-width:100%; display:flex; flex-direction:column; align-items:center; }
+        .video-wrapper { width:854px; height:480px; max-width:100%; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
+        video#jumpVideo { width:100%; height:100%; background:#000; }
+        .controls-row { display:flex; gap:12px; align-items:center; margin-top:8px; }
+
+        /* Side controls should span video height and center vertically */
+        .side-controls { width:96px; display:flex; flex-direction:column; align-items:center; gap:12px; justify-content:center; }
+        .slider-vertical-container { width:96px; height:480px; display:flex; align-items:center; justify-content:center; }
+
+        /* Use vertical native slider appearance instead of rotating to avoid overflow issues */
+        .slider-vertical { writing-mode: bt-lr; -webkit-appearance: slider-vertical; appearance: slider-vertical; width:12px; height:420px; background:transparent; }
+        .slider-vertical::-webkit-slider-runnable-track { width:12px; height:100%; background:#2aa198; border-radius:8px; }
+        .slider-vertical::-webkit-slider-thumb { -webkit-appearance:none; width:18px; height:18px; background:#fff; border-radius:50%; margin-top:-6px; }
+        .slider-vertical::-moz-range-track { width:12px; height:100%; background:#2aa198; border-radius:8px; }
+        .slider-vertical::-moz-range-thumb { width:18px; height:18px; background:#fff; border-radius:50%; }
+
+        .arrow-btn { display:block; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); padding:8px; border-radius:6px; cursor:pointer; }
+        .sync-row { margin-top:12px; display:flex; flex-direction:row; align-items:center; gap:8px; }
+        .sync-slider { width:480px; max-width:100%; }
+        .video-select { display:flex; gap:8px; margin-left:8px; }
+        .hidden { display:none !important; }
+        .permission-modal { position:fixed; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+        .permission-box { background:#0f1115; border:1px solid rgba(255,255,255,.08); padding:18px; border-radius:10px; max-width:560px; }
+
+        /* Visualizer */
+        .visualizer-container { width:96px; height:480px; display:flex; align-items:center; justify-content:center; }
+        canvas#visualizer { width:64px; height:420px; background:transparent; display:block; }
+
+        /* Settings overlay inside jump container */
+        .settings-panel { margin-top:12px; }
+        .settings-overlay-btn { position:fixed; right:18px; top:18px; background:transparent; border:1px solid rgba(255,255,255,.06); padding:8px; border-radius:8px; cursor:pointer; }
+        .settings-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+        .settings-modal.open { display:flex; }
+        .settings-box { background:#0f1115; border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:10px; width:720px; max-width:95%; }
+        .settings-tab { padding:8px 12px; border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.04); }
+        .settings-tab.active { background:rgba(42,161,152,.12); }
+    </style>
+    <script src="a11y.js" defer></script>
+</head>
+<body>
+    <a href="#main" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Skip to content</a>
+    <button id="settingsBtn" class="settings-overlay-btn" aria-haspopup="dialog" aria-controls="settingsModal">⚙</button>
+    <main id="main" class="wrap" aria-labelledby="title">
+        <header>
+            <h1 id="title">Welcome</h1>
+            <p class="lead" id="leadText">Let’s tune a few preferences so the site works best for you.</p>
+        </header>
+
+        <section id="a11ySection" aria-labelledby="a11y-title">
+            <h2 id="a11y-title" class="section-title">Accessibility</h2>
+            <div class="row" role="group" aria-labelledby="a11y-title">
+                <div class="control">
+                    <div>
+                        <label for="a11y_reduced_motion">Reduced motion</label>
+                        <div class="hint">Minimize animations and transitions.</div>
+                    </div>
+                    <input id="a11y_reduced_motion" type="checkbox" aria-describedby="a11y_reduced_motion_hint">
+                </div>
+
+                <div class="control">
+                    <div>
+                        <label for="a11y_high_contrast">High contrast</label>
+                        <div class="hint">Increase contrast for readability.</div>
+                    </div>
+                    <input id="a11y_high_contrast" type="checkbox">
+                </div>
+
+                <div class="control">
+                    <div>
+                        <span id="a11y_text_size_label" style="font-weight:600;">Text size</span>
+                        <div class="hint">Choose a comfortable reading size.</div>
+                    </div>
+                    <div class="radios" role="radiogroup" aria-labelledby="a11y_text_size_label">
+                        <label><input type="radio" name="a11y_text" value="normal"> Normal</label>
+                        <label><input type="radio" name="a11y_text" value="large"> Large</label>
+                    </div>
+                </div>
+
+                <div class="control">
+                    <div>
+                        <label for="a11y_focus_outlines">Always show focus outlines</label>
+                        <div class="hint">Keep keyboard focus rings visible.</div>
+                    </div>
+                    <input id="a11y_focus_outlines" type="checkbox">
+                </div>
+            </div>
+            <div class="actions">
+                <button id="save_a11y" class="primary">Save accessibility</button>
+                <button id="reset_a11y" class="secondary" type="button">Reset to defaults</button>
+            </div>
+        </section>
+
+        <!-- Top tabs control: Accessibility / Volume & Sync -->
+        <div class="top-tabs">
+            <div id="topTabA11y" class="tab active">Accessibility</div>
+            <div id="topTabAudio" class="tab">Volume / Sync</div>
+        </div>
+
+        <!-- Jump player container -->
+        <div id="jumpContainer" class="jump-container" aria-hidden="true" tabindex="0">
+            <div class="jump-body">
+                <div class="visualizer-container">
+                    <canvas id="visualizer" width="64" height="420"></canvas>
+                </div>
+
+                <div class="video-area">
+                    <div class="video-wrapper" id="videoWrapper">
+                        <video id="jumpVideo" preload="metadata" controls crossorigin="anonymous" tabindex="0">
+                            <!-- sources set dynamically -->
+                        </video>
+                    </div>
+
+                    <!-- Video selection tabs below the video and above sync slider -->
+                    <div class="video-tabs">
+                        <div id="tab-numbers" class="tab active" role="tab" aria-selected="true">Numbers 1-2-3</div>
+                        <div id="tab-alphabet" class="tab" role="tab" aria-selected="false">Alphabet A-B-C</div>
+                    </div>
+
+                    <div class="controls-row">
+                        <div class="hint">Playback controls</div>
+                        <div class="hint" id="syncDisplay">Sync: 0 ms</div>
+                    </div>
+
+                    <div class="sync-row">
+                        <button class="arrow-btn" id="syncLeft">◀</button>
+                        <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="50" value="0" aria-label="A/V sync (ms)">
+                        <button class="arrow-btn" id="syncRight">▶</button>
+                    </div>
+
+                    <div id="settingsPanel" class="settings-panel">
+                        <div id="settingsA11ySummary" class="hidden">Accessibility saved. Use the main controls to edit.</div>
+                        <div id="settingsAudioControls">Volume and sync controls are shown beside the video.</div>
+                    </div>
+                </div>
+
+                <div class="side-controls">
+                    <button class="arrow-btn" id="volUp">▲</button>
+                    <div class="slider-vertical-container" aria-hidden="false">
+                        <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.25" class="slider-vertical" aria-label="Volume">
+                    </div>
+                    <button class="arrow-btn" id="volDown">▼</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Permission modal -->
+    <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
+        <div class="permission-box">
+            <h3 id="permTitle">Allow sound?</h3>
+            <p>This site would like to play sound for the sample videos. Allow audio playback?</p>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button id="permAllow" class="primary">Allow</button>
+                <button id="permDeny" class="secondary">Deny</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings modal (triggered by nav/settings button) -->
+    <div id="settingsModal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="settings-box">
+            <h3 id="settingsTitle">Settings</h3>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+                <div id="modalTabA11y" class="settings-tab">Accessibility</div>
+                <div id="modalTabAudio" class="settings-tab active">Volume / Sync</div>
+            </div>
+            <div style="margin-top:12px;">
+                <div id="modalA11yContent" class="hidden">
+                    <!-- Reuse minimal controls for editing -->
+                    <div class="control"><label>Reduced motion</label><input id="modal_a11y_reduced_motion" type="checkbox"></div>
+                    <div class="control"><label>High contrast</label><input id="modal_a11y_high_contrast" type="checkbox"></div>
+                    <div style="margin-top:8px;display:flex;gap:8px;"><button id="modalSaveA11y" class="primary">Save</button><button id="modalClose" class="secondary">Close</button></div>
+                </div>
+                <div id="modalAudioContent">
+                    <div style="display:flex;gap:12px;align-items:center;">
+                        <div>Volume</div>
+                        <input id="modalVolume" type="range" min="0" max="1" step="0.01" value="0.25">
+                        <div>Sync</div>
+                        <input id="modalSync" type="range" min="-3000" max="3000" step="50" value="0">
+                    </div>
+                    <div style="margin-top:8px;display:flex;gap:8px;">
+                        <button id="modalClose2" class="secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Bind controls to SiteA11y and implement jump UI with visualizer
+        (function(){
+            // Helper storage keys
+            const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
+            const AUDIO_VOLUME_KEY = 'site.audio.volume';
+            const AUDIO_SYNC_KEY = 'site.audio.sync';
+
+            // File paths (relative to site root)
+            const VIDEOS = {
+                counts: 'assets/videos/Sesame Street  James Earl Jones Counts to 10.mp4',
+                alphabet: 'assets/videos/Sesame Street James Earl Jones Says The Alphabet.mp4'
+            };
+
+            // Elements
+            const saveBtn = document.getElementById('save_a11y');
+            const resetBtn = document.getElementById('reset_a11y');
+            const permModal = document.getElementById('permissionModal');
+            const permAllow = document.getElementById('permAllow');
+            const permDeny = document.getElementById('permDeny');
+            const jumpContainer = document.getElementById('jumpContainer');
+            const jumpVideo = document.getElementById('jumpVideo');
+            const volumeSlider = document.getElementById('volumeSlider');
+            const volUp = document.getElementById('volUp');
+            const volDown = document.getElementById('volDown');
+            const syncSlider = document.getElementById('syncSlider');
+            const syncLeft = document.getElementById('syncLeft');
+            const syncRight = document.getElementById('syncRight');
+            const syncDisplay = document.getElementById('syncDisplay');
+            const tabNumbers = document.getElementById('tab-numbers');
+            const tabAlphabet = document.getElementById('tab-alphabet');
+            const a11ySection = document.getElementById('a11ySection');
+            const settingsBtn = document.getElementById('settingsBtn');
+            const settingsModal = document.getElementById('settingsModal');
+            const leadText = document.getElementById('leadText');
+
+            const topTabA11y = document.getElementById('topTabA11y');
+            const topTabAudio = document.getElementById('topTabAudio');
+
+            // Modal elements
+            const modalTabA11y = document.getElementById('modalTabA11y');
+            const modalTabAudio = document.getElementById('modalTabAudio');
+            const modalA11yContent = document.getElementById('modalA11yContent');
+            const modalAudioContent = document.getElementById('modalAudioContent');
+            const modalVolume = document.getElementById('modalVolume');
+            const modalSync = document.getElementById('modalSync');
+            const modalClose = document.getElementById('modalClose');
+            const modalClose2 = document.getElementById('modalClose2');
+            const modalSaveA11y = document.getElementById('modalSaveA11y');
+
+            // Visualizer
+            const canvas = document.getElementById('visualizer');
+            const canvasCtx = canvas.getContext('2d');
+
+            // Settings tabs in jump container (audio summary)
+            const settingsA11ySummary = document.getElementById('settingsA11ySummary');
+            const settingsAudioControls = document.getElementById('settingsAudioControls');
+
+            // WebAudio nodes
+            let audioCtx = null;
+            let mediaSource = null;
+            let analyser = null;
+            let delayNode = null;
+            let destinationGain = null;
+
+            // State
+            let currentVideoKey = 'counts';
+            let storedVolume = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '0.25');
+            // default sync to 270 ms if nothing stored
+            let storedSync = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '270', 10);
+
+            // Initialize UI values
+            volumeSlider.value = storedVolume;
+            if(modalVolume) modalVolume.value = storedVolume;
+            syncSlider.value = storedSync;
+            if(modalSync) modalSync.value = storedSync;
+            syncDisplay.textContent = `Sync: ${storedSync} ms`;
+
+            function showPermissionIfNeeded(){
+                const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY);
+                if(allowed === null){
+                    permModal.classList.remove('hidden');
+                    permModal.style.display = 'flex';
+                }
+            }
+
+            permAllow.addEventListener('click', async ()=>{
+                localStorage.setItem(AUDIO_ALLOWED_KEY, 'true');
+                permModal.classList.add('hidden');
+                permModal.style.display = 'none';
+                ensureAudioRouting();
+                try{ await audioCtx.resume(); }catch(e){}
+            });
+            permDeny.addEventListener('click', ()=>{
+                localStorage.setItem(AUDIO_ALLOWED_KEY, 'false');
+                permModal.classList.add('hidden');
+                permModal.style.display = 'none';
+            });
+
+            // Create audio context and routing to apply delay to audio and visualizer
+            function ensureAudioRouting(){
+                if(audioCtx) return;
+                try{
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    mediaSource = audioCtx.createMediaElementSource(jumpVideo);
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 256;
+                    delayNode = audioCtx.createDelay(3.0); // max 3s
+                    destinationGain = audioCtx.createGain();
+                    // route: mediaSource -> analyser -> delayNode -> destinationGain -> audioCtx.destination
+                    mediaSource.connect(analyser);
+                    analyser.connect(delayNode);
+                    delayNode.connect(destinationGain);
+                    destinationGain.connect(audioCtx.destination);
+                    applySyncValue(storedSync);
+                    applyVolumeValue(storedVolume);
+                    startVisualizer();
+                }catch(e){
+                    // WebAudio not supported or blocked
+                    audioCtx = null;
+                    mediaSource = null;
+                    analyser = null;
+                    delayNode = null;
+                    destinationGain = null;
+                }
+            }
+
+            function applySyncValue(ms){
+                storedSync = parseInt(ms, 10) || 0;
+                localStorage.setItem(AUDIO_SYNC_KEY, String(storedSync));
+                syncDisplay.textContent = `Sync: ${storedSync} ms`;
+
+                if(!audioCtx || !delayNode) return;
+                const audioDelaySec = Math.max(0, storedSync/1000);
+                delayNode.delayTime.value = audioDelaySec;
+            }
+
+            function applyVolumeValue(v){
+                storedVolume = parseFloat(v);
+                localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+                // When using WebAudio, set gain; otherwise set video volume
+                if(destinationGain){
+                    destinationGain.gain.value = storedVolume;
+                    jumpVideo.muted = false;
+                }else{
+                    jumpVideo.volume = storedVolume;
+                }
+                if(modalVolume) modalVolume.value = storedVolume;
+            }
+
+            function loadVideo(key){
+                currentVideoKey = key;
+                const src = VIDEOS[key];
+                jumpVideo.pause();
+                // Clear sources
+                while(jumpVideo.firstChild) jumpVideo.removeChild(jumpVideo.firstChild);
+                const srcEl = document.createElement('source');
+                srcEl.src = src;
+                jumpVideo.appendChild(srcEl);
+                jumpVideo.load();
+
+                // Recreate audio routing to new element
+                if(audioCtx){
+                    try{ mediaSource.disconnect(); }catch(e){}
+                    try{ analyser.disconnect(); }catch(e){}
+                    try{ delayNode.disconnect(); }catch(e){}
+                    try{ destinationGain.disconnect(); }catch(e){}
+                    try{ mediaSource = audioCtx.createMediaElementSource(jumpVideo); mediaSource.connect(analyser); }catch(e){}
+                    try{ analyser.connect(delayNode); delayNode.connect(destinationGain); destinationGain.connect(audioCtx.destination); }catch(e){}
+                }
+                applyVolumeValue(storedVolume);
+                applySyncValue(storedSync);
+            }
+
+            // Visualizer draw loop
+            let vizAnimation = null;
+            function startVisualizer(){
+                if(!analyser || !canvasCtx) return;
+                const bufferLength = analyser.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                const width = canvas.width;
+                const height = canvas.height;
+
+                function draw(){
+                    analyser.getByteFrequencyData(dataArray);
+                    // compute average
+                    let sum = 0;
+                    for(let i=0;i<dataArray.length;i++){ sum += dataArray[i]; }
+                    const avg = sum / dataArray.length;
+                    canvasCtx.clearRect(0,0,width,height);
+                    // draw vertical level (bottom-up)
+                    const level = (avg/255) * height;
+                    canvasCtx.fillStyle = '#2aa198';
+                    canvasCtx.fillRect(0, height - level, width, level);
+                    vizAnimation = requestAnimationFrame(draw);
+                }
+                if(!vizAnimation) draw();
+            }
+            function stopVisualizer(){ if(vizAnimation){ cancelAnimationFrame(vizAnimation); vizAnimation=null;} }
+
+            // Event bindings
+            saveBtn.addEventListener('click', ()=>{
+                const reducedMotion = document.getElementById('a11y_reduced_motion').checked;
+                const highContrast = document.getElementById('a11y_high_contrast').checked;
+                const textScale = (document.querySelector('input[name="a11y_text"]:checked')?.value)||'normal';
+                const focusOutline = document.getElementById('a11y_focus_outlines').checked ? 'always':'auto';
+                try{ window.SiteA11y.set({ reducedMotion, highContrast, textScale, focusOutline }); }catch(e){}
+
+                // Hide the original accessibility controls so volume/sync take center stage
+                a11ySection.style.display = 'none';
+
+                // After saving accessibility preferences, show the jump UI and switch to audio tab
+                jumpContainer.style.display = 'block';
+                topTabA11y.classList.remove('active');
+                topTabAudio.classList.add('active');
+                // change lead text for the second page
+                leadText.textContent = 'Please customize volume and audio sync for best comfort and accuracy.';
+
+                showPermissionIfNeeded();
+                // ensure audio routing will be created after user allows
+                // load video to prepare element
+                loadVideo(currentVideoKey);
+            });
+
+            resetBtn.addEventListener('click', ()=>{
+                try { localStorage.removeItem('site.a11y.settings'); } catch {}
+                window.SiteA11y.apply(window.SiteA11y.get());
+                hydrate();
+            });
+
+            // Top tabs behavior (always at top)
+            topTabA11y.addEventListener('click', ()=>{
+                topTabA11y.classList.add('active'); topTabAudio.classList.remove('active');
+                a11ySection.style.display = 'block';
+                jumpContainer.style.display = 'none';
+                leadText.textContent = 'Let’s tune a few preferences so the site works best for you.';
+            });
+            topTabAudio.addEventListener('click', ()=>{
+                topTabAudio.classList.add('active'); topTabA11y.classList.remove('active');
+                a11ySection.style.display = 'none';
+                jumpContainer.style.display = 'block';
+                leadText.textContent = 'Please customize volume and audio sync for best comfort and accuracy.';
+                loadVideo(currentVideoKey);
+                showPermissionIfNeeded();
+            });
+
+            // Video tabs (below video)
+            tabNumbers.addEventListener('click', ()=>{ tabNumbers.classList.add('active'); tabAlphabet.classList.remove('active'); loadVideo('counts'); });
+            tabAlphabet.addEventListener('click', ()=>{ tabAlphabet.classList.add('active'); tabNumbers.classList.remove('active'); loadVideo('alphabet'); });
+
+            // Volume arrows
+            function changeVolumeBy(delta){
+                let v = parseFloat(volumeSlider.value) + delta;
+                v = Math.max(0, Math.min(1, v));
+                volumeSlider.value = v; applyVolumeValue(v);
+            }
+            volUp.addEventListener('click', ()=>{ changeVolumeBy(0.05); });
+            volDown.addEventListener('click', ()=>{ changeVolumeBy(-0.05); });
+
+            // Sync arrows left/right
+            function changeSyncBy(deltaMs){
+                let v = parseInt(syncSlider.value,10) + deltaMs;
+                v = Math.max(-3000, Math.min(3000, v));
+                syncSlider.value = v; applySyncValue(v);
+            }
+            syncLeft.addEventListener('click', ()=>{ changeSyncBy(-50); });
+            syncRight.addEventListener('click', ()=>{ changeSyncBy(50); });
+
+            // Sliders input
+            volumeSlider.addEventListener('input', (e)=>{ applyVolumeValue(e.target.value); });
+            syncSlider.addEventListener('input', (e)=>{ applySyncValue(e.target.value); if(modalSync) modalSync.value = e.target.value; });
+
+            // Keyboard arrows affect volume and sync when jump container is focused
+            jumpContainer.addEventListener('keydown', (e)=>{
+                if(e.key === 'ArrowUp'){ e.preventDefault(); changeVolumeBy(0.02); }
+                if(e.key === 'ArrowDown'){ e.preventDefault(); changeVolumeBy(-0.02); }
+                if(e.key === 'ArrowRight'){ e.preventDefault(); changeSyncBy(50); }
+                if(e.key === 'ArrowLeft'){ e.preventDefault(); changeSyncBy(-50); }
+            });
+
+            volumeSlider.addEventListener('keydown', (e)=>{
+                if(e.key === 'ArrowUp'){ e.preventDefault(); changeVolumeBy(0.02); }
+                if(e.key === 'ArrowDown'){ e.preventDefault(); changeVolumeBy(-0.02); }
+            });
+            syncSlider.addEventListener('keydown', (e)=>{
+                if(e.key === 'ArrowRight'){ e.preventDefault(); changeSyncBy(50); }
+                if(e.key === 'ArrowLeft'){ e.preventDefault(); changeSyncBy(-50); }
+            });
+
+            // Keep modal controls in sync with main controls
+            if(modalVolume) modalVolume.addEventListener('input', (e)=>{ applyVolumeValue(e.target.value); volumeSlider.value = e.target.value; });
+            if(modalSync) modalSync.addEventListener('input', (e)=>{ applySyncValue(e.target.value); syncSlider.value = e.target.value; });
+
+            // Settings modal handlers
+            settingsBtn.addEventListener('click', ()=>{ settingsModal.classList.add('open'); });
+            modalClose.addEventListener('click', ()=>{ settingsModal.classList.remove('open'); });
+            modalClose2.addEventListener('click', ()=>{ settingsModal.classList.remove('open'); });
+
+            modalTabA11y.addEventListener('click', ()=>{
+                modalTabA11y.classList.add('active'); modalTabAudio.classList.remove('active');
+                modalA11yContent.classList.remove('hidden'); modalAudioContent.classList.add('hidden');
+            });
+            modalTabAudio.addEventListener('click', ()=>{
+                modalTabAudio.classList.add('active'); modalTabA11y.classList.remove('active');
+                modalAudioContent.classList.remove('hidden'); modalA11yContent.classList.add('hidden');
+            });
+
+            modalSaveA11y.addEventListener('click', ()=>{
+                // apply modal a11y controls back to main
+                document.getElementById('a11y_reduced_motion').checked = document.getElementById('modal_a11y_reduced_motion').checked;
+                document.getElementById('a11y_high_contrast').checked = document.getElementById('modal_a11y_high_contrast').checked;
+                // save and hide
+                saveBtn.click();
+                settingsModal.classList.remove('open');
+            });
+
+            // Hydrate function from original file
+            function hydrate(){
+                const s = window.SiteA11y.get();
+                document.getElementById('a11y_reduced_motion').checked = !!s.reducedMotion;
+                document.getElementById('a11y_high_contrast').checked = !!s.highContrast;
+                const val = s.textScale === 'large' ? 'large' : 'normal';
+                [...document.querySelectorAll('input[name="a11y_text"]')].forEach(r=>{ r.checked = (r.value===val); });
+                document.getElementById('a11y_focus_outlines').checked = (s.focusOutline === 'always');
+            }
+
+            document.addEventListener('DOMContentLoaded', ()=>{
+                hydrate();
+                // On load check permission and show prompt if not set
+                showPermissionIfNeeded();
+                // Initialize audio values from storage
+                applyVolumeValue(storedVolume);
+                applySyncValue(storedSync);
+            });
+        })();
+    </script>
+</body>
+</html>
