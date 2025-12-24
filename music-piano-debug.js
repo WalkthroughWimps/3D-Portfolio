@@ -143,7 +143,9 @@ const VELOCITY_MIN = 20;      // floor for depth scaling
 const VELOCITY_MAX = 127;     // MIDI max
 // NOTE fade / attack constants used for smoothing note start/stops
 const NOTE_FADE_SEC = 0.03; // 0.02–0.06 recommended
-const NOTE_ATTACK_SEC = 0.005; // quick attack to avoid clicks
+const NOTE_ATTACK = 0.02;
+const NOTE_RELEASE = 0.18;
+const NOTE_MAX_DUR = 120; // seconds, long enough to behave like “held”
 const FADE_SEC = NOTE_FADE_SEC; // backward-compatible alias used elsewhere
 // Per-note animation state: noteNumber -> { mesh, phase, startMs, fromAngle, targetAngle }
 const keyAnimState = new Map();
@@ -153,7 +155,7 @@ let masterGain = null;
 // Sampler (SoundFont) support
 let instrumentPlayer = null; // Soundfont player instance for current instrument
 let currentInstrumentName = null;
-const activeSampleNodes = new Map(); // midiNum -> node returned by instrumentPlayer.play()
+const heldNotes = new Map(); // midiNum -> { src, gain, startedAt, releasedPending, releasing }
 let audioTrimMs = 0; // detected leading silence trim
 const TRIM_THRESHOLD = 0.0025; // RMS amplitude threshold
 const TRIM_WINDOW_SAMPLES = 2048; // window size for scanning
@@ -192,7 +194,7 @@ let instrumentPickerEl = null;
 let lastInstrumentPickerRect = { x: 0, y: 0, w: 0, h: 0 };
 let screenPlane = null;
 let screenPlaneNormal = new THREE.Vector3(0,0,1);
-let uvDebugMode = true; // draw UV test card
+let uvDebugMode = false; // draw UV test card
 const INSTRUMENT_BUTTONS = [
   { id: 'acoustic_grand_piano', label: 'Acoustic Piano' },
   { id: 'bright_acoustic_piano', label: 'Bright Piano' },
@@ -207,6 +209,111 @@ const INSTRUMENT_BUTTONS = [
   { id: 'pad_1', label: 'Pad' },
   { id: 'choir_aahs', label: 'Choir' }
 ];
+const GRID_COLS = 24;
+const GRID_ROWS = 12;
+
+const instrumentById = new Map(INSTRUMENT_BUTTONS.map(btn => [btn.id, btn]));
+
+const LEFT_INSTRUMENT_LAYOUT = [
+  { startCol: 'C', row: 4, colspan: 2, id: 'acoustic_grand_piano' },
+  { startCol: 'E', row: 4, colspan: 2, id: 'honkytonk' },
+  { startCol: 'G', row: 4, colspan: 2, id: 'accordion' },
+  { startCol: 'I', row: 4, colspan: 2, label: 'Brass' },
+  { startCol: 'C', row: 5, colspan: 2, id: 'bright_acoustic_piano' },
+  { startCol: 'E', row: 5, colspan: 2, id: 'harpsichord' },
+  { startCol: 'G', row: 5, colspan: 2, id: 'string_ensemble_1' },
+  { startCol: 'I', row: 5, colspan: 2, label: 'Dog' },
+  { startCol: 'C', row: 6, colspan: 2, id: 'electric_piano_1' },
+  { startCol: 'E', row: 6, colspan: 2, id: 'vibraphone' },
+  { startCol: 'G', row: 6, colspan: 2, id: 'pad_1' },
+  { startCol: 'I', row: 6, colspan: 2, label: '???' },
+  { startCol: 'C', row: 7, colspan: 2, id: 'electric_piano_2' },
+  { startCol: 'E', row: 7, colspan: 2, id: 'church_organ' },
+  { startCol: 'G', row: 7, colspan: 2, id: 'choir_aahs' },
+  { startCol: 'I', row: 7, colspan: 2, label: 'Drums' }
+];
+const RIGHT_INSTRUMENT_LAYOUT = [
+  { startCol: 'P', row: 4, colspan: 2, id: 'acoustic_grand_piano' },
+  { startCol: 'R', row: 4, colspan: 2, id: 'honkytonk' },
+  { startCol: 'T', row: 4, colspan: 2, id: 'accordion' },
+  { startCol: 'V', row: 4, colspan: 2, label: 'Brass' },
+  { startCol: 'P', row: 5, colspan: 2, id: 'bright_acoustic_piano' },
+  { startCol: 'R', row: 5, colspan: 2, id: 'harpsichord' },
+  { startCol: 'T', row: 5, colspan: 2, id: 'string_ensemble_1' },
+  { startCol: 'V', row: 5, colspan: 2, label: 'Dog' },
+  { startCol: 'P', row: 6, colspan: 2, id: 'electric_piano_1' },
+  { startCol: 'R', row: 6, colspan: 2, id: 'vibraphone' },
+  { startCol: 'T', row: 6, colspan: 2, id: 'pad_1' },
+  { startCol: 'V', row: 6, colspan: 2, label: '???' },
+  { startCol: 'P', row: 7, colspan: 2, id: 'electric_piano_2' },
+  { startCol: 'R', row: 7, colspan: 2, id: 'church_organ' },
+  { startCol: 'T', row: 7, colspan: 2, id: 'choir_aahs' },
+  { startCol: 'V', row: 7, colspan: 2, label: 'Drums' }
+];
+const keymapFlippedPositions = [];
+const keymapFlippedNoteNames = new Map();
+let keymapFlippedLoaded = false;
+let keymapFlippedPromise = null;
+let keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
+function updateKeymapFlippedBounds(){
+  let min = Infinity, max = -Infinity;
+  keymapFlippedPositions.forEach(entry => {
+    const u0 = Number(entry.u0);
+    const u1 = Number(entry.u1);
+    if(Number.isFinite(u0)){
+      min = Math.min(min, u0);
+      max = Math.max(max, u0);
+    }
+    if(Number.isFinite(u1)){
+      min = Math.min(min, u1);
+      max = Math.max(max, u1);
+    }
+  });
+  if(min === Infinity || max === -Infinity){
+    keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
+    return;
+  }
+  const span = Math.max(1e-6, max - min);
+  keymapFlippedBounds = { uMin: min, uMax: max, uSpan: span };
+}
+function getFlippedNoteName(midi){
+  return keymapFlippedNoteNames.get(Number(midi));
+}
+function loadKeymapFlipped(){
+  if(keymapFlippedPromise) return keymapFlippedPromise;
+  keymapFlippedPromise = fetch('keymap_flipped.json')
+    .then(res => res.json())
+    .then(data => {
+      keymapFlippedPositions.length = 0;
+      keymapFlippedNoteNames.clear();
+      const keys = (data && Array.isArray(data.keys)) ? data.keys : [];
+      keys.forEach(entry => {
+        const midi = Number(entry.note);
+        if(!Number.isFinite(midi)) return;
+        const cleanName = (entry.name || '').toString().replace(/^\d+_/, '');
+        keymapFlippedNoteNames.set(midi, cleanName);
+        keymapFlippedPositions.push({
+          note: midi,
+          u0: Number(entry.u0),
+          u1: Number(entry.u1),
+          label: cleanName,
+          isBlack: cleanName.includes('#')
+        });
+      });
+      updateKeymapFlippedBounds();
+      keymapFlippedLoaded = true;
+      requestBackboardRedraw();
+      return keymapFlippedPositions;
+    })
+    .catch(err => {
+      console.warn('Failed to load keymap_flipped.json', err);
+      keymapFlippedLoaded = false;
+      keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
+      return [];
+    });
+  return keymapFlippedPromise;
+}
+loadKeymapFlipped();
 const panelState = {
   left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id },
   right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id }
@@ -234,7 +341,7 @@ let RAYCAST_KEYMAP_READY = false;
 const activeNotes = new Map(); // note -> { velocity, tOn }
 const activeNoteSet = new Set(); // stores MIDI note numbers currently held down
 const codeToMidiDown = new Map(); // ev.code -> latched midi number
-const PERSISTENT_HIGHLIGHTS = [36]; // C2
+const PERSISTENT_HIGHLIGHTS = []; // C2
 
 // Debug lane guide toggle
 const DEBUG_LANES = true;
@@ -467,11 +574,21 @@ function hitTestPanelUI(uv){
 function updateInstrumentHover(clientX, clientY){
   const uv = raycastBackboardForUv(clientX, clientY);
   const hit = uv ? hitTestPanelUI(uv) : null;
-  const nextHover = hit ? hit.id : null;
+  const nextHover = hit ? hit.key : null;
   if(nextHover !== panelHover){
     panelHover = nextHover;
     requestBackboardRedraw();
   }
+}
+
+function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
+  if(!label || typeof label !== 'string' || label.length < 2) return null;
+  const col = label.charCodeAt(0) - 65; // 'A' => 0
+  const rowNum = Number(label.slice(1));
+  if(!Number.isFinite(rowNum) || rowNum < 1 || rowNum > rows) return null;
+  if(col < 0 || col >= cols) return null;
+  const rowIndex = Math.max(0, Math.min(rowNum - 1, rows - 1));
+  return { x: col * cellW, y: rowIndex * cellH, w: cellW, h: cellH };
 }
 
 async function triggerInstrumentButton(id){
@@ -811,6 +928,7 @@ async function loadInstrument(name){
         const inst = await SF.instrument(audioCtx, name, opts);
         instrumentPlayer = inst;
         currentInstrumentName = name + ' (SoundFont)';
+        updateNoteEngineMode();
         console.log('Loaded instrument (SoundFont)', name, inst);
         if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
         return inst;
@@ -896,7 +1014,8 @@ async function loadInstrument(name){
       _player: player,
       _preset: preset,
       play: function(midiNum, whenSec, opts){
-        const dur = (opts && opts.duration) ? opts.duration : 1.8; // default short note
+        // Use a long default so user-held notes don't auto-cut; noteOff handles release.
+        const dur = (opts && opts.duration) ? opts.duration : USER_HOLD_DURATION_SEC;
         const vol = (opts && typeof opts.gain === 'number') ? opts.gain : 1;
         // allow an external gainNode to be supplied so we can control fades without touching library internals
         const dest = (opts && opts.gainNode) ? opts.gainNode : audioCtx.destination;
@@ -911,6 +1030,7 @@ async function loadInstrument(name){
     };
     instrumentPlayer = adapter;
     currentInstrumentName = name + ' (WebAudioFont)';
+    updateNoteEngineMode();
     console.log('Loaded instrument (WebAudioFont)', name, info.url, info.variable);
     if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
     return adapter;
@@ -994,7 +1114,7 @@ const TRACKS = {
 let currentTrackKey = 'baby';
 
 // Adjustable framing tightness (lower value = closer). Original was 1.55 (looser)
-const FRAME_TIGHTNESS = 1.6; // higher => further camera distance
+const FRAME_TIGHTNESS = 1; // higher => further camera distance
 function fit(box){
   const size = new THREE.Vector3(); box.getSize(size);
   const center = new THREE.Vector3(); box.getCenter(center);
@@ -1002,20 +1122,12 @@ function fit(box){
   const fov = cam.fov*Math.PI/180;
   const dist = (maxDim/2)/Math.tan(fov/2) * FRAME_TIGHTNESS;
 
-  // Static framing for debug: "10 frames back" from the closer hero shot.
-  // Slightly higher and farther so more of the stand is visible.
-  const debugDist = dist * 0.90;
-  const camPos = new THREE.Vector3(
-    center.x + debugDist * 0.04,
-    center.y + size.y * 0.72,
-    center.z + debugDist * 0.78
-  );
-
-  const target = new THREE.Vector3(center.x, center.y + size.y * 0.32, center.z);
+  const direction = new THREE.Vector3(-0.26, -0.02, 0.95).normalize();
+  const camPos = direction.clone().multiplyScalar(dist).add(center);
 
   cam.position.copy(camPos);
-  cam.lookAt(target);
-  controls.target.copy(target);
+  cam.lookAt(center);
+  controls.target.copy(center);
 }
 function collectKeys(node){
   const found=[];
@@ -1209,10 +1321,12 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
             });
             screenPlane = new THREE.Mesh(planeGeom, planeMat);
             screenPlane.name = 'UI_ScreenOverlay';
-            screenPlane.position.set(0, 0, 0.0005);
+            screenPlane.position.set(0, 0, 0.01);
             // Rotate overlay 180deg so the canvas appears upright
             try{ screenPlane.rotateZ(Math.PI); }catch(e){}
             screenPlane.renderOrder = 999;
+            // Ensure overlay UI never writes to depth
+            try{ if(screenPlane.material) screenPlane.material.depthWrite = false; }catch(e){}
             backboardMesh.add(screenPlane);
             screenPlane.updateMatrixWorld(true);
           }catch(e){ console.warn('ScreenPlane creation failed', e); }
@@ -1220,7 +1334,19 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
           // Hide the original backboard surface so only the overlay is visible
           try{
             const mats = Array.isArray(backboardMesh.material) ? backboardMesh.material : [backboardMesh.material];
-            mats.forEach(m => { if(!m) return; m.transparent = true; m.opacity = 0; m.needsUpdate = true; });
+            mats.forEach(m => {
+              if(!m) return;
+              m.transparent = true;
+              m.opacity = 0;
+
+              // Critical: don’t let the invisible surface occlude the overlay
+              m.depthWrite = false;
+
+              // Optional: if clipping persists at extreme angles
+              // m.depthTest = false;
+
+              m.needsUpdate = true;
+            });
           }catch(e){ console.warn('Unable to hide SK_backboard_screen base material', e); }
 
           // Overlay plane creation removed: we apply the backboard canvas texture
@@ -1922,6 +2048,102 @@ function renderBackboardOverlay(){
   } else {
     ctx.fillStyle = '#000';
     ctx.fillRect(0,0,W,H);
+    // Draw a light grid with labeled cells (A1 bottom-left -> J10 top-right)
+    const cols = 24, rows = 12;
+    const cellW = W / cols;
+    const cellH = H / rows;
+    const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const baseChar = 'A'.charCodeAt(0);
+    for(let r=0;r<rows;r++){
+      const rowNum = r + 1; // top = 1
+      const cy = (r + 0.5) * cellH;
+      for(let c=0;c<cols;c++){
+        const label = String.fromCharCode(baseChar + c) + rowNum;
+        const cx = (c + 0.5) * cellW;
+        ctx.fillText(label, cx, cy);
+      }
+    }
+    const usingFlippedKeymap = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
+    const overlayBounds = (usingFlippedKeymap && keymapFlippedBounds) ? keymapFlippedBounds : (backboardUVBounds || { uMin: 0, uMax: 1, uSpan: 1 });
+    const normX = (u) => {
+      const uMin = Number(overlayBounds.uMin ?? 0);
+      const span = Math.max(1e-6, Number(overlayBounds.uSpan ?? ((overlayBounds.uMax ?? (uMin + 1)) - uMin)));
+      const uMax = uMin + span;
+      let normalized = (Math.min(Math.max(u, uMin), uMax) - uMin) / span;
+      // keymap_flipped.json is already authored for the screen's left->right direction,
+      // so don't apply an additional mirror correction when using it.
+      if(!usingFlippedKeymap && backboardUVCorrection && backboardUVCorrection.mirrorU){
+        normalized = 1 - normalized;
+      }
+      return Math.min(Math.max(normalized, 0), 1) * W;
+    };
+    if(keyByNote && keyByNote.size){
+      const whiteEntries = [];
+      const blackEntries = [];
+      const midiToKeyLabel = new Map();
+      if(typeof CODE_TO_MIDI !== 'undefined'){
+        const displayFromCode = (code)=>{
+          if(!code) return '';
+          if(code.startsWith('Key')) return code.slice(3).toUpperCase();
+          if(code.startsWith('Digit')) return code.slice(5);
+          switch(code){
+            case 'Comma': return ',';
+            case 'Period': return '.';
+            case 'Slash': return '/';
+            case 'Semicolon': return ';';
+            case 'BracketLeft': return '[';
+            case 'BracketRight': return ']';
+            case 'Minus': return '-';
+            default: return code;
+          }
+        };
+        CODE_TO_MIDI.forEach((midi, code)=> midiToKeyLabel.set(Number(midi), displayFromCode(code)));
+      }
+      const sourceEntries = keymapFlippedLoaded && keymapFlippedPositions.length
+        ? keymapFlippedPositions.map(entry => ({
+          note: entry.note,
+          u0: entry.u0,
+          u1: entry.u1,
+          isBlack: entry.isBlack,
+          noteName: entry.label
+        }))
+        : Array.from(keyByNote.entries()).map(([note, info]) => ({
+          note: Number(note),
+          u0: info.u0,
+          u1: info.u1,
+          isBlack: (info && typeof info.name === 'string') ? info.name.includes('#') : isBlackNoteByNumber(Number(note)),
+          noteName: info && typeof info.name === 'string' ? info.name : undefined
+        }));
+      sourceEntries.forEach(entry => {
+        if(!entry || entry.u0 == null || entry.u1 == null) return;
+        const mapped = midiToKeyLabel.get(Number(entry.note));
+        if(!mapped) return; // QWERTY-only mode: hide raw note names
+        const mid = (Number(entry.u0) + Number(entry.u1)) * 0.5;
+        if(!isFinite(mid)) return;
+        const x = normX(mid);
+        const label = mapped;
+        const target = { x, label };
+        if(entry.isBlack) blackEntries.push(target);
+        else whiteEntries.push(target);
+      });
+      const drawNoteRow = (entries, rowIndex, color) => {
+        if(!entries.length) return;
+        entries.sort((a,b)=>a.x - b.x);
+        const y = Math.min(H - cellH * 0.35, Math.max(cellH * 0.35, (rowIndex + 0.5) * cellH));
+        ctx.fillStyle = color;
+        entries.forEach(entry => ctx.fillText(entry.label, entry.x, y));
+      };
+      const qwertyFontSize = Math.max(18, Math.round(fontSize * 2));
+      ctx.font = `bold ${qwertyFontSize}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      drawNoteRow(whiteEntries, rows - 2, '#ffffff');
+      drawNoteRow(blackEntries, rows - 3, '#fff056');
+    }
   }
 
   // Draw selected UV map mode if enabled
@@ -1935,92 +2157,78 @@ function renderBackboardOverlay(){
     // none: keep solid black background (already filled above)
   }
 
-  // Instrument buttons UI (spread horizontally across the screen)
-  // Draw panels
-  try{
-    panelHitRects = [];
-    const panelW = W * 0.42;
-    const panelH = H * 0.8;
-    const panelY = (H - panelH) / 2;
-    const leftX = W * 0.04;
-    const rightX = W - panelW - leftX;
-    const pad = panelW * 0.04;
-    const btnH = (panelH - pad * 2) / 8; // 6 buttons + 2 arrows
-    const fontSize = Math.max(14, Math.round(btnH * 0.38));
-    const drawPanel = (panelId, x0)=>{
-      const state = panelState[panelId];
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.strokeStyle = '#8df7d4';
-      ctx.lineWidth = Math.max(2, W * 0.0018);
-      const radius = 12;
-      if(typeof ctx.roundRect === 'function'){
-        ctx.beginPath(); ctx.roundRect(x0, panelY, panelW, panelH, radius); ctx.fill(); ctx.stroke();
-      } else {
-        ctx.fillRect(x0, panelY, panelW, panelH); ctx.strokeRect(x0, panelY, panelW, panelH);
-      }
-      ctx.fillStyle = '#fff';
-      ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      // Arrow up
-      const upRect = { x: x0 + pad, y: panelY + pad, w: panelW - pad*2, h: btnH };
-      ctx.fillStyle = panelHover === `${panelId}-up` ? '#1c9' : '#222';
-      ctx.fillRect(upRect.x, upRect.y, upRect.w, upRect.h);
-      ctx.fillStyle = '#fff';
-      ctx.fillText('▲', upRect.x + upRect.w/2, upRect.y + upRect.h/2);
-      panelHitRects.push({ panel: panelId, type: 'arrow-up', id: `${panelId}-up`, rect: upRect });
-      // Buttons (6 visible)
-      const startIdx = Math.max(0, Math.min(INSTRUMENT_BUTTONS.length - 6, state.offset));
-      for(let i=0;i<6;i++){
-        const idx = startIdx + i;
-        const btn = INSTRUMENT_BUTTONS[idx];
-        const y = panelY + pad + btnH * (i+1);
-        const rect = { x: x0 + pad, y, w: panelW - pad*2, h: btnH };
-        const selected = state.selected === btn.id;
-        const hover = panelHover === `${panelId}-${btn.id}`;
-        ctx.fillStyle = selected ? '#ffb347' : (hover ? '#244' : '#111');
-        ctx.strokeStyle = selected ? '#ffda8c' : '#0f9';
-        if(typeof ctx.roundRect === 'function'){
-          ctx.beginPath(); ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 8); ctx.fill(); ctx.stroke();
-        } else {
-          ctx.fillRect(rect.x, rect.y, rect.w, rect.h); ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-        }
-        ctx.fillStyle = '#fff';
-        ctx.fillText(btn.label, rect.x + rect.w/2, rect.y + rect.h/2);
-        panelHitRects.push({ panel: panelId, type: 'button', id: btn.id, rect });
-      }
-      // Arrow down
-      const downRect = { x: x0 + pad, y: panelY + panelH - pad - btnH, w: panelW - pad*2, h: btnH };
-      ctx.fillStyle = panelHover === `${panelId}-down` ? '#1c9' : '#222';
-      ctx.fillRect(downRect.x, downRect.y, downRect.w, downRect.h);
-      ctx.fillStyle = '#fff';
-      ctx.fillText('▼', downRect.x + downRect.w/2, downRect.y + downRect.h/2);
-      panelHitRects.push({ panel: panelId, type: 'arrow-down', id: `${panelId}-down`, rect: downRect });
-      ctx.restore();
-    };
-    drawPanel('left', leftX);
-    drawPanel('right', rightX);
-  }catch(e){ /* ignore draw panel errors */ }
-  // Draw 12 circles horizontally centered
-  try{
-    const n = 12;
-    const radius = Math.max(6, Math.min(W, H) * 0.03);
-    const left = W * 0.05;
-    const right = W * 0.95;
-    const span = right - left;
-    const y = H * 0.5;
-    ctx.strokeStyle = '#ff6';
-    ctx.lineWidth = Math.max(2, W * 0.002);
-    for(let i=0;i<n;i++){
-      const t = n>1 ? i/(n-1) : 0.5;
-      const x = left + span * t;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI*2);
-      ctx.stroke();
-    }
-  }catch(e){ /* ignore */ }
-
+  // Instrument buttons now live inside the grid cells
+    try{
+      panelHitRects = [];
+      const cellCols = GRID_COLS;
+      const cellRows = GRID_ROWS;
+      const cellW = W / cellCols;
+      const cellH = H / cellRows;
+      const drawTitleBlock = (text, startCol, row, spanCols)=>{
+        const colIndex = (startCol || 'A').charCodeAt(0) - 65;
+        if(colIndex < 0 || colIndex >= cellCols) return;
+        const rowIndex = Math.max(0, Math.min(row - 1, cellRows - 1));
+        const blockX = colIndex * cellW;
+        const blockY = rowIndex * cellH;
+        const blockW = Math.min(cellCols - colIndex, spanCols) * cellW;
+        ctx.fillStyle = '#60b6dd';
+        ctx.fillRect(blockX + 1, blockY + 1, Math.max(0, blockW - 2), Math.max(0, cellH - 2));
+        ctx.fillStyle = '#021414';
+        const titleFont = Math.max(14, Math.round(cellH * 0.55));
+        ctx.font = `bold ${titleFont}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text.toUpperCase(), blockX + blockW / 2, blockY + cellH / 2);
+      };
+      drawTitleBlock('Lower Instrument', 'C', 3, 8);
+      drawTitleBlock('Higher Instrument', 'P', 3, 8);
+      const drawInstrumentGrid = (panelId, layout)=>{
+        layout.forEach(cell=>{
+          const colIndex = (cell.startCol || 'A').charCodeAt(0) - 65;
+          const rowIndex = Math.max(0, Math.min(cell.row - 1, cellRows - 1));
+          if(colIndex < 0 || colIndex >= cellCols) return;
+          const span = Math.max(1, Math.min(cell.colspan || 1, cellCols - colIndex));
+          const baseRect = {
+            x: colIndex * cellW,
+            y: rowIndex * cellH,
+            w: span * cellW,
+            h: cellH
+          };
+          const inset = 4;
+          const btnRect = {
+            x: baseRect.x + inset,
+            y: baseRect.y + inset,
+            w: Math.max(0, baseRect.w - inset * 2),
+            h: Math.max(0, baseRect.h - inset * 2)
+          };
+          const instrumentInfo = cell.id ? instrumentById.get(cell.id) : null;
+          const label = cell.label || instrumentInfo?.label || '';
+          if(instrumentInfo){
+            const btn = instrumentInfo;
+            const hitKey = `${panelId}:${btn.id}`;
+            panelHitRects.push({ panel: panelId, type: 'button', id: btn.id, key: hitKey, rect: btnRect });
+            const isSelected = panelState[panelId].selected === btn.id;
+            const isHover = panelHover === hitKey;
+            ctx.fillStyle = isSelected ? 'rgba(255,179,71,0.45)' : (isHover ? 'rgba(45,233,184,0.45)' : 'rgba(8,8,8,0.85)');
+            ctx.strokeStyle = '#ffeb3b';
+          } else {
+            ctx.fillStyle = 'rgba(255,255,255,0.08)';
+            ctx.strokeStyle = '#7fb9d8';
+          }
+          ctx.lineWidth = 2;
+          ctx.fillRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
+          ctx.strokeRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
+          ctx.fillStyle = '#fff';
+          const fontSizeBtn = Math.max(12, Math.round(btnRect.h * 0.55));
+          ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+        });
+      };
+      drawInstrumentGrid('left', LEFT_INSTRUMENT_LAYOUT);
+      drawInstrumentGrid('right', RIGHT_INSTRUMENT_LAYOUT);
+    }catch(e){ /* ignore draw panel errors */ }
   // Ensure texture is updated for three.js
   backboardTexture.needsUpdate = true;
 }
@@ -2519,161 +2727,49 @@ function playAnimRange(which){
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 // pointer tracking to distinguish click vs drag for playing notes
-let pointerDownInfo = null; // { startX, startY, moved, midiNum, mesh, played, playedAt, glowApplied }
+let pointerDownInfo = null; // { startX, startY, moved, midiNum, mesh, played, playedAt, glowApplied, lastMidi, lastSwitchAt }
 let pendingPlayTimer = null;
 const MIN_USER_NOTE_MS = 250;
+const USER_HOLD_DURATION_SEC = 60; // allow long holds; noteOff will stop immediately
 function midiNameToNumber(name){ const m = name.match(/^(\d{3})_/); return m? parseInt(m[1],10) : null; }
 // Simple polyphonic piano-like synth with sustain support
-const activeVoices = new Map(); // midiNum -> {osc, gain, stopTime, mesh}
-function playUserNote(midiNum, mesh){
-  midiNum = Number(midiNum);
-  if(Number.isNaN(midiNum) || midiNum==null) return;
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
-  if(audioCtx.state !== 'running'){ safeRun(() => audioCtx.resume(), 'audioCtx resume'); }
+const activeVoices = new Map(); // midiNum -> {osc, gain, startTime, stopping, releasedPending}
+const noteTriggerCount = new Map(); // midi -> trigger count
+function bumpTrigger(midi){
+  noteTriggerCount.set(midi, (noteTriggerCount.get(midi) || 0) + 1);
+}
+function playHeldSample(midiNum){
+  if(!instrumentPlayer) return null;
+  ensureAudio();
   const now = audioCtx.currentTime;
-  // If a sampled instrument is loaded, prefer it
-  if(instrumentPlayer){
-    try{
-      // If a previous sample node exists for this midi, gracefully fade it out
-      const existing = activeSampleNodes.get(midiNum);
-      const fadeShort = 0.06;
-      if(existing && !existing.stopped){
-        existing.stopped = true;
-        try{
-          if(existing.gainNode){
-            const t = audioCtx.currentTime;
-            existing.gainNode.gain.cancelScheduledValues(t);
-            existing.gainNode.gain.setValueAtTime(existing.gainNode.gain.value, t);
-            existing.gainNode.gain.exponentialRampToValueAtTime(0.0001, t + fadeShort);
-            if(existing.node && existing.node.stop) existing.node.stop(t + fadeShort + 0.02);
-          } else if(existing.node && existing.node.stop){
-            existing.node.stop(audioCtx.currentTime + fadeShort);
-          }
-        }catch(e){ /* ignore */ }
-      }
-
-      // Create a gain node so we can fade notes out cleanly (prevents clicks)
-      ensureAudio();
-      const gainNode = audioCtx.createGain();
-      // start at 0 and apply a short linear attack to avoid clicks
-      try{ gainNode.gain.cancelScheduledValues(now); }catch(e){}
-      try{ gainNode.gain.setValueAtTime(0.0, now); }catch(e){}
-      try{ gainNode.gain.linearRampToValueAtTime(1.0, now + NOTE_ATTACK_SEC); }catch(e){}
-      gainNode.connect(masterGain);
-      // Many players accept a gainNode option; WebAudioFont adapter we supply will honor it.
-      const node = instrumentPlayer.play(midiNum, now, { gain: 1, gainNode });
-      activeSampleNodes.set(midiNum, { node: node, gainNode: gainNode, startedAt: now, stopped: false });
-      // defensive cleanup in case stop isn't called later (keep a long timeout)
-      setTimeout(()=>{ const e = activeSampleNodes.get(midiNum); if(e && e.stopped) activeSampleNodes.delete(midiNum); }, 12000);
-    }catch(e){ console.warn('Instrument play failed, falling back to synth', e); }
-    if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
-    // Update picker status if present (debug HUD handled separately)
-    try{
-      const status = document.querySelector('#instrumentPicker > div');
-      if(status) status.textContent = 'Playing: ' + (currentInstrumentName || '') + ' ' + midiNum;
-      setTimeout(()=>{ if(status) status.textContent = 'Loaded: ' + (currentInstrumentName || ''); }, 120);
-    }catch(e){}
-    // Mark active note for overlay
-    const mn = Number(midiNum);
-    activeNotes.set(mn, { velocity: 1, tOn: performance.now() });
-    activeNoteSet.add(mn);
-    try{ requestBackboardRedraw(); }catch(e){}
-    return;
-  }
-  // No sampled instrument loaded: only provide visual feedback (no oscillator fallback)
-  if(mesh){
-    const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
-    mesh.rotation.x = base * 0.6;
-  }
-  // Register active note so highlights appear even without a sampled instrument
-  const mn2 = Number(midiNum);
-  activeNotes.set(mn2, { velocity: 1, tOn: performance.now() });
-  activeNoteSet.add(mn2);
-  try{ requestBackboardRedraw(); }catch(e){}
-  return;
+  if(heldNotes.has(midiNum)) return heldNotes.get(midiNum);
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.gain.linearRampToValueAtTime(1.0, now + NOTE_ATTACK);
+  gainNode.connect(masterGain);
+  const node = instrumentPlayer.play(midiNum, now, { gain: 1, gainNode, duration: NOTE_MAX_DUR });
+  const entry = { src: node, gain: gainNode, startedAt: now, releasedPending: false, releasing: false };
+  heldNotes.set(midiNum, entry);
+  return entry;
 }
-
-// Stop a user-triggered note quickly and remove glow
-function stopUserNote(midiNum){
-  midiNum = Number(midiNum);
-  if(Number.isNaN(midiNum)) return;
-  // Ensure cleanup always runs, even if audio operations throw
-  const nowSec = (audioCtx ? audioCtx.currentTime : 0);
-  // Guard: ensure a fade duration is available in case other code referenced lowercase fadeSec
-  const DEFAULT_FADE_SEC = 0.06;
-  const fadeSecLocal = (typeof FADE_SEC === 'number') ? FADE_SEC : DEFAULT_FADE_SEC;
+function releaseHeldSample(midiNum){
+  const entry = heldNotes.get(midiNum);
+  if(!entry || entry.releasing) return;
+  entry.releasing = true;
+  heldNotes.delete(midiNum);
+  const now = (audioCtx && audioCtx.currentTime) ? audioCtx.currentTime : 0;
   try{
-    // First handle sample nodes if present
-    const sampleEntry = activeSampleNodes.get(midiNum);
-    if(sampleEntry){
-      // Determine elapsed time since this note started so a short tap still respects MIN_USER_NOTE_MS
-      const started = sampleEntry.startedAt || nowSec;
-      const elapsed = Math.max(0, nowSec - started);
-      const minSec = MIN_USER_NOTE_MS / 1000;
-      let stopAt = nowSec + fadeSecLocal;
-      if(elapsed < minSec){ stopAt = started + minSec + FADE_SEC; }
-
-      // Mark stopped to avoid double-stops
-      sampleEntry.stopped = true;
-      // If we control a gainNode, ramp it down for a smooth release
-      if(sampleEntry.gainNode){
-        try{
-          sampleEntry.gainNode.gain.cancelScheduledValues(nowSec);
-          const currentGain = sampleEntry.gainNode.gain.value || 1.0;
-          sampleEntry.gainNode.gain.setValueAtTime(currentGain, nowSec);
-          sampleEntry.gainNode.gain.linearRampToValueAtTime(0.0, stopAt);
-        }catch(e){ /* ignore */ }
-      }
-      // Finally stop underlying node if we have a stop API
-      if(sampleEntry.node && sampleEntry.node.stop){
-        try{ sampleEntry.node.stop(stopAt + 0.02); }catch(e){ /* ignore */ }
-      }
-      // remove mapping after a safe delay
-      setTimeout(()=>{ activeSampleNodes.delete(midiNum); }, Math.round((Math.max(0, ( (sampleEntry.startedAt||nowSec) + (MIN_USER_NOTE_MS/1000) ) - nowSec) + fadeSecLocal + 50) ));
+    if(entry.gain){
+      entry.gain.gain.cancelScheduledValues(now);
+      const currentGain = entry.gain.gain.value || 1.0;
+      entry.gain.gain.setValueAtTime(currentGain, now);
+      entry.gain.gain.linearRampToValueAtTime(0.0, now + NOTE_RELEASE);
     }
-
-    // Then handle oscillator voices if any
-    const v = activeVoices.get(midiNum);
-    if(v && !v.stopping){
-      v.stopping = true;
-      try{
-        const now = nowSec;
-        v.gain.gain.cancelScheduledValues(now);
-        v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-        // ensure minimum duration before fading
-        const playedAtMs = (v.playedAt !== undefined) ? v.playedAt : (v.startTime * 1000);
-        const elapsed = (now * 1000) - playedAtMs;
-        const remain = Math.max(0, MIN_USER_NOTE_MS - elapsed) / 1000;
-        const when = now + remain;
-        v.gain.gain.linearRampToValueAtTime(0.0, when + NOTE_FADE_SEC);
-        setTimeout(()=>{ safeRun(()=>{ v.osc.stop(); v.oscB.stop(); v.oscC.stop(); }, 'user stop'); activeVoices.delete(midiNum); }, Math.round((remain + NOTE_FADE_SEC + 0.05)*1000));
-      }catch(e){ /* ignore */ }
-    }
-  }catch(err){
-    console.warn('stopUserNote audio path failed', err);
-  } finally {
-    // ALWAYS run visual/material cleanup
-    const mesh = midiKeyMap.get(midiNum);
-    try{
-      keyActiveCount.set(Number(midiNum), 0);
-      const orig = mesh && mesh.userData ? mesh.userData._origMaterial : null;
-      if(orig && mesh){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
-    }catch(e){ /* ignore */ }
-    // Remove overlay active note
-    try{ activeNotes.delete(Number(midiNum)); }catch(e){}
-    try{ activeNoteSet.delete(Number(midiNum)); }catch(e){}
-    // restore key rotation and mark animation release state
-    try{
-      const v = activeVoices.get(midiNum);
-      const m = mesh || (v && v.mesh);
-      if(m) m.rotation.x = 0;
-      const st = keyAnimState.get(midiNum);
-      if(st){ st.phase = 'release'; st.startMs = (audioCtx ? (audioCtx.currentTime - (midiStartCtxTime||0)) * 1000 : 0); st.fromAngle = m ? m.rotation.x : 0; st.targetAngle = 0; }
-    }catch(e){ /* ignore */ }
-    try{ requestBackboardRedraw(); }catch(e){}
+  }catch(e){ /* ignore */ }
+  if(entry.src && entry.src.stop){
+    try{ entry.src.stop(now + NOTE_RELEASE + 0.03); }catch(e){ /* ignore */ }
   }
 }
-
 function onGlobalPointerMove(e){
   // Safety: if we think pointer is down but no buttons are pressed (lost release), treat as pointer up
   if(pointerDownInfo && typeof e.buttons === 'number' && e.buttons === 0){
@@ -2689,13 +2785,13 @@ function onGlobalPointerMove(e){
   if(!pointerDownInfo.moved && dist2 > (8*8)){
     pointerDownInfo.moved = true;
     if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
-    if(pointerDownInfo.played){ stopUserNote(pointerDownInfo.midiNum); pointerDownInfo.played = false; }
-    // If we applied immediate visual glow but are now moving, clear it
-    if(pointerDownInfo.glowApplied){ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); pointerDownInfo.glowApplied = false; }
     // do not re-enable rotate here if the pointer started on a key; rotation remains disabled until release
   }
   // Glissando: when pointer moved while down on a key, play notes encountered under pointer
   if(pointerDownInfo && pointerDownInfo.moved){
+    if(pointerDownInfo.played && pointerDownInfo.lastMidi == null){
+      pointerDownInfo.lastMidi = pointerDownInfo.midiNum;
+    }
     // Only allow glissando playback while the primary button is held.
     if(typeof e.buttons === 'number' && ((e.buttons & 1) === 0)) return;
     const rect = canvas.getBoundingClientRect();
@@ -2706,54 +2802,217 @@ function onGlobalPointerMove(e){
     if(intersects.length){
       const hit = intersects[0].object;
       const res = findKeyFromObject(hit);
-      if(res && res.midiNum !== pointerDownInfo.lastMidi){
+      if(res){
         const prev = pointerDownInfo.lastMidi;
-        if(prev != null){
-          try{ stopUserNote(prev); }catch(e){}
+        const now = performance.now();
+        if(res.midiNum !== prev){
+          const lastSwitchAt = pointerDownInfo.lastSwitchAt || 0;
+          if(now - lastSwitchAt < 40) {
+            return;
+          }
+          pointerDownInfo.lastSwitchAt = now;
+          if(prev != null){
+            try{ NoteEngine.noteOff(prev); }catch(e){}
+          }
+          pointerDownInfo.lastMidi = res.midiNum;
+          NoteEngine.noteOn(res.midiNum, res.mesh);
+          applyKeyGlow(res.mesh, res.midiNum, true);
         }
-        pointerDownInfo.lastMidi = res.midiNum;
-        playUserNote(res.midiNum, res.mesh);
-        applyKeyGlow(res.mesh, res.midiNum, true);
       }
     }
   }
 }
 
+function ensureAudioContextRunning(){
+  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state !== 'running'){ safeRun(() => audioCtx.resume(), 'audioCtx resume'); }
+}
+
+function midiToFrequency(midiNum){
+  return 440 * Math.pow(2, (midiNum - 69) / 12);
+}
+
+function startOscillatorVoice(midiNum){
+  if(activeVoices.has(midiNum)) return activeVoices.get(midiNum);
+  ensureAudio();
+  const now = audioCtx.currentTime;
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.setValueAtTime(0.0001, now);
+  gainNode.connect(masterGain);
+  const osc = audioCtx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(midiToFrequency(midiNum), now);
+  osc.connect(gainNode);
+  osc.start(now);
+  gainNode.gain.linearRampToValueAtTime(0.7, now + NOTE_ATTACK);
+  const entry = { osc, gain: gainNode, startTime: now, stopping: false, releasedPending: false };
+  activeVoices.set(midiNum, entry);
+  return entry;
+}
+
+function releaseOscillatorVoice(midiNum){
+  const entry = activeVoices.get(midiNum);
+  if(!entry || entry.stopping) return;
+  entry.stopping = true;
+  const now = (audioCtx && audioCtx.currentTime) ? audioCtx.currentTime : 0;
+  try{
+    entry.gain.gain.cancelScheduledValues(now);
+    const currentGain = entry.gain.gain.value || 1.0;
+    entry.gain.gain.setValueAtTime(currentGain, now);
+    entry.gain.gain.exponentialRampToValueAtTime(0.0001, now + NOTE_RELEASE);
+  }catch(e){ /* ignore */ }
+  try{ entry.osc.stop(now + NOTE_RELEASE + 0.02); }catch(e){ /* ignore */ }
+  setTimeout(()=>{ activeVoices.delete(midiNum); }, Math.ceil((NOTE_RELEASE + 0.05)*1000));
+}
+
+function notifyInstrumentPicker(midiNum){
+  try{
+    const status = document.querySelector('#instrumentPicker > div');
+    if(status) status.textContent = 'Playing: ' + (currentInstrumentName || '') + ' ' + midiNum;
+    setTimeout(()=>{ if(status) status.textContent = 'Loaded: ' + (currentInstrumentName || ''); }, 120);
+  }catch(e){ /* ignore */ }
+}
+
+function markNoteActive(midiNum){
+  const mn = Number(midiNum);
+  if(Number.isNaN(mn)) return;
+  activeNotes.set(mn, { velocity: 1, tOn: performance.now() });
+  activeNoteSet.add(mn);
+  try{ requestBackboardRedraw(); }catch(e){}
+}
+
+function clearNoteActive(midiNum){
+  const mn = Number(midiNum);
+  if(Number.isNaN(mn)) return;
+  activeNotes.delete(mn);
+  activeNoteSet.delete(mn);
+  try{ requestBackboardRedraw(); }catch(e){}
+}
+
+function resetKeyVisuals(midiNum){
+  const mesh = midiKeyMap.get(midiNum);
+  try{
+    keyActiveCount.set(midiNum, 0);
+    const orig = mesh && mesh.userData ? mesh.userData._origMaterial : null;
+    if(orig && mesh){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
+  }catch(e){ /* ignore */ }
+  try{
+    const currentAngle = mesh ? mesh.rotation.x : 0;
+    if(mesh) mesh.rotation.x = 0;
+    const st = keyAnimState.get(midiNum);
+    if(st){
+      st.phase = 'release';
+      st.startMs = (audioCtx ? (audioCtx.currentTime - (midiStartCtxTime||0)) * 1000 : 0);
+      st.fromAngle = currentAngle;
+      st.targetAngle = 0;
+    }
+  }catch(e){ /* ignore */ }
+}
+
+function shouldUseSynthForInstrument(name){
+  const n = String(name || '').toLowerCase();
+  return n.includes('acoustic grand') || n.includes('piano');
+}
+
+function updateNoteEngineMode(){
+  if(typeof NoteEngine === 'object' && NoteEngine){
+    NoteEngine.mode = shouldUseSynthForInstrument(currentInstrumentName) ? 'osc' : 'sample';
+  }
+}
+
+const NoteEngine = {
+  mode: 'sample',
+  noteOn(midiNum, mesh){
+    const midi = Number(midiNum);
+    if(Number.isNaN(midi)) return;
+    bumpTrigger(midi);
+    ensureAudioContextRunning();
+    ensureAudio();
+    if(this.mode === 'sample'){
+      playHeldSample(midi);
+      if(instrumentPlayer){ notifyInstrumentPicker(midi); }
+    } else {
+      startOscillatorVoice(midi);
+    }
+    const targetMesh = mesh || midiKeyMap.get(midi);
+    if(targetMesh){
+      const base = (isBlackKey(targetMesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
+      targetMesh.rotation.x = base * 0.6;
+    }
+    markNoteActive(midi);
+  },
+  noteOff(midiNum){
+    const midi = Number(midiNum);
+    if(Number.isNaN(midi)) return;
+    if(this.mode === 'sample'){
+      const entry = heldNotes.get(midi);
+      if(entry){
+        if(isSustainDown()){
+          entry.releasedPending = true;
+        } else {
+          releaseHeldSample(midi);
+        }
+      }
+    } else {
+      const entry = activeVoices.get(midi);
+      if(entry){
+        if(isSustainDown()){
+          entry.releasedPending = true;
+        } else {
+          releaseOscillatorVoice(midi);
+        }
+      }
+    }
+    resetKeyVisuals(midi);
+    clearNoteActive(midi);
+  },
+  panic(){
+    heldNotes.forEach((_, midi) => { releaseHeldSample(midi); });
+    heldNotes.clear();
+    const oscKeys = Array.from(activeVoices.keys());
+    oscKeys.forEach(midi => releaseOscillatorVoice(midi));
+    activeVoices.clear();
+  }
+};
+
 function onGlobalPointerUp(e){
   if(!pointerDownInfo) return;
-  if(!pointerDownInfo.moved){
-    // If we haven't played yet, play briefly then stop
-    if(!pointerDownInfo.played){
-      playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
-      pointerDownInfo.played = true;
-      const v = activeVoices.get(pointerDownInfo.midiNum);
-      if(v) v.playedAt = performance.now();
+    if(!pointerDownInfo.moved){
+      // If we haven't played yet, play briefly then stop
+      if(!pointerDownInfo.played){
+        NoteEngine.noteOn(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+        pointerDownInfo.played = true;
+        pointerDownInfo.lastMidi = pointerDownInfo.midiNum;
+        const v = activeVoices.get(pointerDownInfo.midiNum);
+        if(v) v.playedAt = performance.now();
+      }
+      if(pointerDownInfo.played){ NoteEngine.noteOff(pointerDownInfo.midiNum); }
     }
-    if(pointerDownInfo.played){ stopUserNote(pointerDownInfo.midiNum); }
-  }
   if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
   // Ensure any last glissando note is stopped
   try{
-    if(pointerDownInfo && pointerDownInfo.lastMidi != null){ stopUserNote(pointerDownInfo.lastMidi); }
+    if(pointerDownInfo && pointerDownInfo.lastMidi != null && pointerDownInfo.lastMidi !== pointerDownInfo.midiNum){
+      NoteEngine.noteOff(pointerDownInfo.lastMidi);
+    }
   }catch(e){}
   pointerDownInfo = null;
 }
 // Handle pedal release affecting sustained voices
+function isSustainDown(){
+  return (sustainAnim.phase==='press' || sustainAnim.phase==='held');
+}
 function applySustainState(){
-  const sustainActive = (sustainAnim.phase==='press' || sustainAnim.phase==='held');
-  if(!sustainActive){
-    // Begin release on all voices that were held
-    const now = audioCtx ? audioCtx.currentTime : 0;
-    activeVoices.forEach(v => {
-      if(v.stopping) return;
-      v.stopping=true;
-      v.gain.gain.cancelScheduledValues(now);
-      v.gain.gain.setValueAtTime(v.gain.gain.value, now);
-      v.gain.gain.exponentialRampToValueAtTime(0.0001, now+0.9);
-      setTimeout(()=>{ safeRun(() => { v.osc.stop(); v.oscB.stop(); v.oscC.stop(); }, 'sustain voice release'); }, 1000);
+  if(!isSustainDown()){
+    const pendingOsc = [];
+    activeVoices.forEach((entry, midi) => {
+      if(entry && entry.releasedPending && !entry.stopping) pendingOsc.push(midi);
     });
-    // After release, clear map gradually
-    setTimeout(()=>{ activeVoices.clear(); }, 1100);
+    pendingOsc.forEach(m => releaseOscillatorVoice(m));
+    const pendingSamples = [];
+    heldNotes.forEach((entry, midi) => {
+      if(entry && entry.releasedPending) pendingSamples.push(midi);
+    });
+    pendingSamples.forEach(m=> releaseHeldSample(m));
   }
 }
 function findKeyFromObject(obj){
@@ -2817,7 +3076,7 @@ function onPointerDown(e){
     const hit = intersects[0].object;
     const res = findKeyFromObject(hit);
     if(res){
-      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId };
+      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId, lastMidi: null, lastSwitchAt: 0 };
       // capture the pointer so we reliably receive pointerup even if the cursor leaves the canvas
       try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
       // immediate visual feedback so quick taps show highlight
@@ -2827,9 +3086,11 @@ function onPointerDown(e){
       controls.enableRotate = false; suppressRotate = true;
       pendingPlayTimer = setTimeout(()=>{
         if(pointerDownInfo && !pointerDownInfo.moved){
-          playUserNote(pointerDownInfo.midiNum, pointerDownInfo.mesh);
+          NoteEngine.noteOn(pointerDownInfo.midiNum, pointerDownInfo.mesh);
           pointerDownInfo.played = true;
+          pointerDownInfo.lastMidi = pointerDownInfo.midiNum;
           pointerDownInfo.playedAt = performance.now();
+          pointerDownInfo.lastSwitchAt = performance.now();
         }
         pendingPlayTimer = null;
       }, 40);
@@ -2888,22 +3149,71 @@ function noteOn(midi){
     const mesh = midiKeyMap.get(Number(midi));
     // Visual feedback: apply glow for keyboard-triggered notes
     if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch(e){}
-    playUserNote(Number(midi), mesh);
+    NoteEngine.noteOn(Number(midi), mesh);
   }catch(e){ console.warn('noteOn failed', e); }
 }
 function noteOff(midi){
-  try{ stopUserNote(Number(midi)); }catch(e){ console.warn('noteOff failed', e); }
+  try{ NoteEngine.noteOff(Number(midi)); }catch(e){ console.warn('noteOff failed', e); }
+}
+
+let sustainKeyDown = false;
+function sustainPedalDown(){
+  // Use the same timebase as updateKeyAnimations() (audioCtx-relative ms).
+  try{ ensureAudio(); }catch(e){}
+  const elapsedMs = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0;
+  if(sustainPedalMesh){
+    if(sustainAnim.phase === 'release'){
+      sustainPedalMesh.rotation.x = 0;
+      sustainAnim.fromAngle = 0;
+    }
+    sustainAnim.phase = 'press';
+    sustainAnim.startMs = elapsedMs;
+    sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
+    sustainAnim.targetAngle = PEDAL_MAX_ANGLE;
+  } else {
+    sustainAnim.phase = 'held';
+  }
+}
+function sustainPedalUp(){
+  try{ ensureAudio(); }catch(e){}
+  const elapsedMs = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0;
+  if(sustainPedalMesh){
+    sustainAnim.phase = 'release';
+    sustainAnim.startMs = elapsedMs;
+    sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
+    sustainAnim.targetAngle = 0;
+  } else {
+    sustainAnim.phase = 'idle';
+  }
+  applySustainState();
 }
 
 function handleKeyDown(ev){
   // Allow modifier shortcuts to pass through
   if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
   const code = ev.code;
+
+  // Prevent browser single-key shortcuts (e.g. Firefox quick find on Quote)
+  if(code === 'Quote'){
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
+  // Spacebar controls sustain pedal
+  if(code === 'Space'){
+    ev.preventDefault();
+    ev.stopPropagation();
+    if(ev.repeat || sustainKeyDown) return;
+    sustainKeyDown = true;
+    sustainPedalDown();
+    return;
+  }
+
   const midi = CODE_TO_MIDI.get(code);
   if(midi == null) return;
 
-  // Prevent default browser action for slash but allow note handling
-  if(code === 'Slash') ev.preventDefault();
+  // Prevent default browser actions for any mapped piano key (slash, find, scroll, etc.)
+  ev.preventDefault();
 
   // Avoid repeats and track by code
   if(ev.repeat) return;
@@ -2921,6 +3231,14 @@ function handleKeyDown(ev){
 
 function handleKeyUp(ev){
   const code = ev.code;
+  if(code === 'Space'){
+    ev.preventDefault();
+    ev.stopPropagation();
+    if(!sustainKeyDown) return;
+    sustainKeyDown = false;
+    sustainPedalUp();
+    return;
+  }
   // ALWAYS release by the latched value, not by recomputing from key/code
   const m = codeToMidiDown.get(code);
   if(m == null) return;
@@ -2944,10 +3262,9 @@ function allNotesOff(){
 
 // Panic: stop audio and visuals for all sources (keyboard, pointer, samples, oscillators)
 function panicAllNotes(){
+  try{ NoteEngine.panic(); }catch(e){}
   try{ allNotesOff(); }catch(e){}
-  try{ activeVoices.forEach(v=>{ try{ v.osc && v.osc.stop && v.osc.stop(); v.oscB && v.oscB.stop && v.oscB.stop(); v.oscC && v.oscC.stop && v.oscC.stop(); }catch(e){} }); activeVoices.clear(); }catch(e){}
-  try{ activeSampleNodes.forEach((entry, k)=>{ try{ const t = (audioCtx && audioCtx.currentTime) ? audioCtx.currentTime : 0; if(entry && entry.gainNode){ entry.gainNode.gain.cancelScheduledValues(t); entry.gainNode.gain.setValueAtTime(0.0, t); } if(entry && entry.node && entry.node.stop) entry.node.stop((t || 0) + 0.02); }catch(e){} }); activeSampleNodes.clear(); }catch(e){}
-  try{ if(pointerDownInfo){ try{ if(pointerDownInfo.played) stopUserNote(pointerDownInfo.midiNum); if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){} } pointerDownInfo = null; }catch(e){}
+  try{ if(pointerDownInfo){ try{ if(pointerDownInfo.played) NoteEngine.noteOff(pointerDownInfo.midiNum); if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){} } pointerDownInfo = null; }catch(e){}
   try{ if(typeof pendingPlayTimer !== 'undefined' && pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; } }catch(e){}
   try{ requestBackboardRedraw(); }catch(e){}
 }
