@@ -269,7 +269,7 @@ const V_RANGE = V_MAX - V_MIN; // 0.115348
 
 // Map backboard mesh to screen-space rect for DOM overlays (instrument picker)
 function getBackboardScreenRect(){
-  const target = backboardMesh;
+  const target = screenPlane || backboardMesh;
   if(!target || !renderer || !cam) return null;
   const geom = target.geometry;
   if(!geom) return null;
@@ -365,6 +365,8 @@ function drawUvTestCard(ctx, W, H){
 }
 
 function createBackboardCanvas(aspect){
+  // IMPORTANT: This locks backboard canvas resolution to the measured surface aspect.
+  // Do not resize this canvas after texture creation; changes will break UV mapping.
   if(backboardCanvas) return; // already created; do not resize
   const baseH = BACKBOARD_BASE_HEIGHT;
   const targetW = Math.round((baseH * aspect) / 64) * 64;
@@ -419,17 +421,23 @@ function uvToCanvasPx(uv){
 }
 
 function raycastBackboardForUv(clientX, clientY){
-  if(!backboardMesh) return null;
+  const target = screenPlane || backboardMesh;
+  if(!target) return null;
   const rect = canvas.getBoundingClientRect();
   const nx = ((clientX - rect.left)/rect.width)*2 - 1;
   const ny = -((clientY - rect.top)/rect.height)*2 + 1;
   pointer.set(nx, ny);
   raycaster.setFromCamera(pointer, cam);
-  const hits = raycaster.intersectObject(backboardMesh, true);
+  const hits = raycaster.intersectObject(target, true);
   if(!hits.length) return null;
   const h = hits[0];
   if(!h.uv) return null;
-  return h.uv;
+  // Overlay plane is rotated 180deg to display upright; flip V for hit mapping
+  const uv = h.uv.clone ? h.uv.clone() : { x: h.uv.x, y: h.uv.y };
+  if(target === screenPlane && uv && typeof uv.y === 'number'){
+    uv.y = 1 - uv.y;
+  }
+  return uv;
 }
 
 function setBackboardDebug(uv){
@@ -1147,82 +1155,73 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
       }
       if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
       // Backboard screen for note info: look for mesh named SK_backboard_screen
-        if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
+      if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
         backboardMesh = o;
+        console.log('Backboard mesh found:', backboardMesh?.name, backboardMesh?.type);
         try{
-          // Create overlay canvas sized by the mesh world aspect ratio and HiDPI backing store
-          // Compute mesh world bounding box to choose a sensible CSS pixel dimension
-          try{ o.updateMatrixWorld(true); }catch(e){}
-          let bbMesh = null; try{ bbMesh = new THREE.Box3().setFromObject(o); }catch(e){ bbMesh = null; }
-          let worldW = 1.0, worldH = 0.125;
+          // Rotate 180 degrees around local Z so overlay is not upside-down
+          backboardMesh.rotateZ(Math.PI);
+        }catch(e){ console.warn('backboard rotate failed', e); }
+        try{
+          // Measure the backboard surface in LOCAL space so we don't double-apply parent scale
+          let size = new THREE.Vector3(1,1,1);
           try{
-            if(bbMesh){
-              // Use sorted dims to pick true surface width/height (avoid assuming X/Z order)
-              const size = bbMesh.getSize(new THREE.Vector3());
-              const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
-              const thickness = dims[0];
-              const h = dims[1];
-              const w = dims[2];
-              backboardSurfaceAspect = w / h;
-              worldW = w; worldH = h;
-              console.log('backboardSurfaceAspect', backboardSurfaceAspect, 'canvas', backboardCssW, backboardCssH, 'uvBounds', backboardUVBounds);
-            }
-          }catch(e){ worldW = 1.0; worldH = 0.125; }
-          let aspect = backboardSurfaceAspect || (worldW / Math.max(1e-6, worldH));
-          if(!isFinite(aspect) || aspect <= 0) aspect = 8.0; // piano-ish fallback
-          const dpr = Math.min(2, window.devicePixelRatio || 1);
-          const BASE_W = 4096; // high quality base width (lower to 2048 if perf needed)
-          // Prefer sizing the canvas to the UV island aspect so drawings are 1:1.
-          let screenAspect = aspect;
-          try{
-            if(backboardUVBounds && backboardUVBounds.uSpan > 0 && backboardUVBounds.vSpan > 0){
-              screenAspect = backboardUVBounds.uSpan / backboardUVBounds.vSpan;
+            if(o.geometry){
+              if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+              const bb = o.geometry.boundingBox;
+              if(bb){ bb.getSize(size); }
             }
           }catch(e){}
-          // CSS-pixel logical canvas size (we draw in CSS pixels and scale the backing store by dpr)
-          backboardCssW = Math.round(BASE_W);
-          backboardCssH = Math.max(64, Math.round(BASE_W / Math.max(1e-6, screenAspect)));
-          backboardCanvas = document.createElement('canvas');
-          // Create HiDPI backing store and set drawing transform so code can draw in CSS pixels
-          backboardCanvas.width = Math.round(backboardCssW * dpr);
-          backboardCanvas.height = Math.round(backboardCssH * dpr);
-          backboardCanvas.style.width = backboardCssW + 'px';
-          backboardCanvas.style.height = backboardCssH + 'px';
-          backboardCtx = backboardCanvas.getContext('2d');
-          // Set transform so drawing commands can use CSS-pixel coordinates
-          try{ backboardCtx.setTransform(dpr,0,0,dpr,0,0); }catch(e){}
-          try{ backboardCtx.imageSmoothingEnabled = true; }catch(e){}
-          // Create texture and apply to mesh material
+          if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
+            try{
+              o.updateMatrixWorld(true);
+              size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+            }catch(e){}
+          }
+          const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
+          const planeH = dims[1];
+          const planeW = dims[2];
+          const aspect = planeW / planeH;
+          backboardSurfaceAspect = aspect;
+          console.log('Backboard plane dims (local):', planeW.toFixed(4), planeH.toFixed(4), 'aspect:', aspect.toFixed(4));
+          createBackboardCanvas(aspect);
+          console.log('Backboard canvas:', backboardCanvas.width, backboardCanvas.height, 'css:', backboardCssW, backboardCssH, 'aspect:', (backboardCanvas.width/backboardCanvas.height).toFixed(4));
           backboardTexture = new THREE.CanvasTexture(backboardCanvas);
-          // Prefer colorSpace when available (r152+), fallback to encoding
           try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
-          // Ensure texture Y orientation matches canvas coordinate expectations for our overlay
           try{ backboardTexture.flipY = false; }catch(e){}
-          // Apply texture filtering and mipmaps for improved crispness
           try{ backboardTexture.generateMipmaps = true; }catch(e){}
           try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch(e){ backboardTexture.minFilter = THREE.LinearFilter; }
           try{ backboardTexture.magFilter = THREE.LinearFilter; }catch(e){ backboardTexture.magFilter = THREE.LinearFilter; }
-          // If available, enable anisotropy for better sharpness at glancing angles
           try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
           backboardTexture.wrapS = THREE.ClampToEdgeWrapping; backboardTexture.wrapT = THREE.ClampToEdgeWrapping;
           backboardTexture.needsUpdate = true;
 
-          // Log mesh found
-          console.log('Backboard mesh found:', backboardMesh?.name, backboardMesh?.type);
-          // Force a basic material with the texture for visibility
-          backboardMesh.material = new THREE.MeshBasicMaterial({
-            map: backboardTexture,
-            transparent: false,
-            toneMapped: false,
-            side: THREE.DoubleSide
-          });
-          backboardMesh.material.needsUpdate = true;
-          // Debug canvas size
-          console.log('Backboard canvas:', backboardCanvas.width, backboardCanvas.height, 'css:', backboardCssW, backboardCssH);
+          // Overlay plane only
+          try{
+            const planeGeom = new THREE.PlaneGeometry(planeW, planeH);
+            const planeMat = new THREE.MeshBasicMaterial({
+              map: backboardTexture,
+              transparent: true,
+              opacity: 1.0,
+              depthWrite: false,
+              toneMapped: false,
+              side: THREE.DoubleSide
+            });
+            screenPlane = new THREE.Mesh(planeGeom, planeMat);
+            screenPlane.name = 'UI_ScreenOverlay';
+            screenPlane.position.set(0, 0, 0.0005);
+            // Rotate overlay 180deg so the canvas appears upright
+            try{ screenPlane.rotateZ(Math.PI); }catch(e){}
+            screenPlane.renderOrder = 999;
+            backboardMesh.add(screenPlane);
+            screenPlane.updateMatrixWorld(true);
+          }catch(e){ console.warn('ScreenPlane creation failed', e); }
 
-          // Note: do NOT alter the original backboard mesh material here —
-          // we want to preserve the imported GLB appearance. The overlay
-          // plane created below will carry the yellow circle texture.
+          // Hide the original backboard surface so only the overlay is visible
+          try{
+            const mats = Array.isArray(backboardMesh.material) ? backboardMesh.material : [backboardMesh.material];
+            mats.forEach(m => { if(!m) return; m.transparent = true; m.opacity = 0; m.needsUpdate = true; });
+          }catch(e){ console.warn('Unable to hide SK_backboard_screen base material', e); }
 
           // Overlay plane creation removed: we apply the backboard canvas texture
           // directly to the imported `SK_backboard_screen` material so the
