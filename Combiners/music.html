@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="template.css">
+    <link rel="stylesheet" href="music.css">
+  <script src="music.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.0/gsap.min.js" defer></script>
+  <!-- three.js + loaders for GLB -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+      }
+    }
+  </script>
+  <!-- Demo-only: no MIDI for now; load our viewer module -->
+  <!-- Swap to isolated debug script to diagnose invisibility -->
+  <script type="module" src="global-sync.js"></script>
+  <!-- SoundFont player for sampled instruments: try multiple CDNs if one fails -->
+  <script>
+    (function tryLoadSoundfont(){
+      const urls = [
+        'https://cdn.jsdelivr.net/npm/soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://unpkg.com/soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://ga.jspm.io/npm:soundfont-player@0.15.0/dist/soundfont-player.js',
+        'https://cdn.skypack.dev/soundfont-player@0.15.0',
+        'https://esm.sh/soundfont-player@0.15.0',
+        '/assets/vendor/soundfont-player.js' // local fallback - place file here if CDNs are blocked
+      ];
+      window.SOUNDFONT_LOADED = null;
+      let i = 0;
+      function tryOne(){
+        if(i >= urls.length){ window.SOUNDFONT_LOADED = false; console.error('soundfont-player: all CDN attempts failed'); return; }
+        const src = urls[i++];
+        const s = document.createElement('script');
+        s.src = src;
+        s.async = true;
+        s.onload = function(){ window.SOUNDFONT_LOADED = true; console.log('soundfont-player loaded from', src); };
+        s.onerror = function(){ console.warn('soundfont-player failed to load from', src); // try next
+          // remove element and try next
+          s.remove(); setTimeout(tryOne, 100);
+        };
+        document.head.appendChild(s);
+      }
+      tryOne();
+    })();
+  </script>
+  <script type="module" src="music-piano-debug.js"></script>
+
+    <!--<img src="assets/svg/Note1.svg" id="Note1" class="note">
+    <img src="assets/svg/Note2.svg" id="Note2" class="note">
+    <img src="assets/svg/Note3.svg" id="Note3" class="note">
+    <img src="assets/svg/Note4.svg" id="Note4" class="note">
+    <img src="assets/svg/Note5.svg" id="Note5" class="note">
+    <img src="assets/svg/Note6.svg" id="Note6" class="note">
+    <img src="assets/svg/Note7.svg" id="Note7" class="note">
+    <img src="assets/svg/Note8.svg" id="Note8" class="note">
+    <img src="assets/svg/Note9.svg" id="Note9" class="note">-->
+</head>
+
+<body>
+    <div class="header" id="patterned-background">
+        <div class="background-shape" id="patterned-background-shape">
+            <div class="head-pic-container">
+                <?xml version="1.0" encoding="UTF-8"?>
+                <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+                  <defs>
+                    <clipPath id="clippath" clipPathUnits="userSpaceOnUse">
+                      <!-- Align clip circle with head-inner for symmetric clipping -->
+                      <circle cx="45.7" cy="35.5" r="23.1" style="fill: none;"/>
+                    </clipPath>
+                    <radialGradient id="radial-gradient" cx="45.7" cy="-6221.6" fx="45.7" fy="-6221.6" r="23.1" gradientTransform="translate(0 -6186.1) scale(1 -1)" gradientUnits="userSpaceOnUse">
+                      <stop offset=".7" stop-color="#ccc" stop-opacity="0"/>
+                      <stop offset="1" stop-color="#53272d"/>
+                    </radialGradient>
+                  </defs>
+                  <g style="isolation: isolate;">
+                    <g id="Layer_1">
+                      <path class="head-bg"id="head-bg" d="M2.2,59.86C-3.29,33.02,14.1,7.49,40.14,2.2c19.02-3.86,38.95,3.76,50.34,20.54,17.19,25.42,6.81,60.3-21.56,72.2-28.47,12.1-60.81-5.29-66.81-35.19h0l.1.1Z" style="fill: var(panel-color);"/>
+                      <path class="head-fill" id="head-fill" d="M50,0C22.4,0,0,22.4,0,50s22.4,50,50,50,50-22.4,50-50S77.6,0,50,0ZM76.8,89.8c-6.9,4.7-14.5,7.2-22.1,8-.1.01-.2.01-.31.02-.86-1.4-1.89-2.35-3.27-3.27-.24-.58-.74-1.3-.92-2.11-.3-1.7,1.4-2.1,2.5-4.9,0-.3.3-.9.4-1.1l.4-.5c0-.2.2-.2.3-.2.2,0,.5-.5.8-1,.3-.5.5-1.1.5-1.6.2-1.7,0-2.4.2-3.9.4-2.7,2.6-5.3,5-6.5h.6c.8.3,1.7.6,2.5.9,1.1.4,2.2.7,3.4.7,2.7,0,5.7-2.4,6.1-5.9v-1.5c0-.9-.6-1.6.2-2.4.8-.8.8,0,1.2-.4.4-.4.3-1,.3-1.6v-.4c0-.2-.2-.5-.4-.7,3.2-1.5.5-3.6.5-4.1,0,0,.3-.5.3-1,1.5,0,3.3-.8,4.1-2,.2-.3.4-.6.4-.9.3-1.6-.4-2.3-2.7-4.5,0,0-2.4-2.2-3.6-4.3-.5-.9-.7-1.6-.7-2.6v-1c.3-.9,1-1.5,1-2.4s-1.2-5.8-1.2-6.6c-.2-.9-.4-1.7-.5-2.1-.2-.6-.6-1.4-1.1-2.1.8.2,2,.5,2.6,1,.8.6,1.3,1.4,1.6,2.3.4,1.1.5,2.3.5,3.2s0,.2.2.2.3,0,.3-.2c0,0,.4-1.4.2-3.4,0-2.1-.8-3.7-1.6-4.8,1.8-.3,3.4-1.3,4.5-2.6,1.1-1.4,1.5-4,1.3-4.8-.3-.9-1-1.9-1.9-2.3-.5-3.3-3.2-6.6-7.3-7.7-8.1-2-12,3.3-18,1.8s-22.3-1.4-28.2,7c-.9,1.3-1.6,3-1,4.4-1.2.8-2.2,1.9-2.9,3.1-5.1,8.2-3.4,18.9.9,27.5,1.5,2.9,2.9,4.3,2.5,7.9-.2,2.2-1.2,4.6,1.6,5.6.6.2,1.5.5,1.7.5h1.2c0,2.6.8,6.4-1.6,10.6-1.4,2.3-3.6,4.5-4.2,6.1h-.3c-1.7.28-3.58,1.19-5.22,2.22-.06-.06-.12-.11-.18-.16-4.9-4.5-8.9-10.1-11.7-16.6C-6.1,40.6,10.9,9,40.3,3c3.2-.6,6.4-1,9.7-1,13.1,0,25.2,5.3,33.9,14.1,21.4,21.4,17.9,56.8-7.1,73.7Z" style="fill: var(--primary-color);"/>
+                      <circle class="head-inner" id="head-inner" cx="45.7" cy="35.5" r="23.1" style="fill: var(--secondary-color); isolation: isolate;"/>
+                      <g id="Notes">
+                        <g style="clip-path: url(#clippath);">
+                          <path class="note" id="Note9" d="M47.81,74c-.59-1.61-2.01-2.41-6.05-5.27-.01-.83-1-.71-.99-.09l.15,14.84c-2.12-1.27-5.55.21-5.24,2.29.18,1.25,1.73,2.06,3.45,1.81,1.72-.25,2.98-1.46,2.8-2.71l-.11-10.97c2.99-.06,4.64,1.36,3.99,5.93.73-.8,1.42-1.66,1.83-2.66.42-1,.55-2.15.18-3.17Z"/>
+                          <path class="note" id="Note8" d="M49.26,83.12l-.02-14.43c0-.38-.38-.64-.73-.52-9.91,3.56-9.63,3.3-9.8,3.9-.06.13-.03.02-.01,12.2-1.71-1.05-4.5.13-4.27,1.82.14,1.01,1.39,1.68,2.79,1.49,1.4-.19,2.43-1.17,2.29-2.18v-8.43s8.95-3.22,8.95-3.22v8.22c-1.7-1.05-4.49.13-4.26,1.82.14,1.01,1.39,1.68,2.79,1.49,1.4-.19,2.43-1.17,2.29-2.18ZM39.49,75.82v-1.59s8.96-3.22,8.96-3.22v1.59s-8.96,3.22-8.96,3.22Z"/>
+                          <path class="note" id="Note7" d="M41.78,75.04c-2.09.05-3.77,1.36-3.73,2.93s1.76,2.81,3.85,2.76,3.77-1.36,3.73-2.93-1.76-2.81-3.86-2.76ZM41.9,80.24c-1.05.02-1.92-1.01-1.95-2.31-.03-1.3.8-2.37,1.85-2.39,1.05-.02,1.92,1.01,1.95,2.31.03,1.3-.8,2.37-1.85,2.39Z" style="fill: #3ca2a6;"/>
+                          <g class="note" id="Note6">
+                            <path d="M37.73,68.35s-.05,0-.03,0c-2.92.85-4.15,3.36-4.13,4.43.03,1.1.93,1.96,2.03,1.94,1.1-.03,1.96-.93,1.94-2.03-.03-1.13-.99-2-2.09-1.94,3.63-1.99,8.09.11,8.06,5.75,0,.36-.04.84-.02.64-.48,4.9-2.7,7.84-6.1,10.49,5.52-1.2,9.47-6.94,8.78-12.73-.72-5.21-4.99-7.53-8.45-6.55Z"/>
+                            <path d="M50.03,75.66c-.04-1.61-2.47-1.56-2.44.06s2.47,1.56,2.44-.06Z"/>
+                            <path d="M47.68,79.59c.04,1.61,2.47,1.56,2.44-.06-.04-1.61-2.47-1.56-2.44.06Z"/>
+                          </g>
+                          <path class="note" id="Note5" d="M43.37,75.8c-.14-1.44-.25-2.91-.29-4.4.99-.93,2.94-2.88,3.75-4.01,1.96-2.12,1.88-7.72-.97-8.19.02,0-.1-.01-.1-.01-3.55-.2-4.36,8.58-4.33,12.25-3.51,2.56-7.15,5.3-6.57,9.88.63,3.6,4.5,6.03,8.04,5.77.12,2.41.29,6.66-1.36,8.02-1.66,1.37-3.97.39-3.79-1.67,0,.02,0,0,0,0,.16-.76.61-1.11.83-1.26-.42.71.08,1.61.91,1.61,1.18,0,1.48-1.65.38-2.06h0c-2.52-.58-3.9,3.06-1.13,4.55,0,0,.04.02.03.02,1.17.5,2.35.32,3.38-.43-.08.07,2.33-.75,2.16-9.04,7.08-2.08,5.23-11.78-.96-11.03ZM45.56,60.5c1.6.04,3.36,4.96-2.49,9.7,0-2.35.57-8.8,2.49-9.7ZM41.48,72.92c.05,1.2.15,2.3.25,3.36-3.26,1.55-3.38,5.86-.7,7.89l.1-.12c-3.13-3.15.03-6.55-.54-5.78.28-.31.6-.67,1.25-.99.29,2.6.75,5.58.98,8.46-.72.08-8.49-6.65-1.34-12.82ZM47.42,82.15c-.54,1.58-1.67,2.65-3.14,3.23-.14-2.92-.44-5.1-.8-8.53,1.61-.1,2.6.75,2.5.68.93.74,1.42,1.66,1.57,2.76.1.73-.2,1.99-.13,1.86Z"/>
+                          <path class="note" id="Note4" d="M49.2,83.71l.87-14.97c.02-.39-.35-.69-.73-.58-10.59,3.1-10.4,2.82-10.45,3.69l-.72,12.41c-1.71-1.19-4.68-.14-4.54,1.63.08,1.06,1.33,1.83,2.8,1.72,1.47-.11,2.59-1.06,2.51-2.12l.67-11.6,9.49-2.78-.66,11.38c-1.71-1.19-4.68-.14-4.54,1.63.08,1.06,1.33,1.83,2.8,1.72,1.46-.11,2.59-1.06,2.51-2.12Z"/>
+                          <path class="note" id="Note3" d="M44.97,84.86l-.16-16.23c0-.65-.99-.64-.99,0l.15,14.84c-2.12-1.28-5.54.21-5.24,2.29.18,1.25,1.73,2.06,3.45,1.81,1.73-.25,2.98-1.46,2.8-2.71Z"/>
+                          <path class="note" id="Note2" d="M40.06,79.92l.03-10.21c0-.66-1-.67-1,0-.06,16.86-.32,16.84.44,16.85.28,0,.5-.22.5-.5v-.21c1.51-.43,2.87-1.37,3.8-2.63,2.83-3.84-2.23-6.32-3.78-3.29ZM40.04,85.06l.02-4.58c.72-.73,1.89-1.26,2.59-.52.66.7,1.52,3.24-2.6,5.1Z"/>
+                          <path class="note" id="Note1" d="M44.99,84.87l-.16-16.23c0-.66-1-.64-.99,0l.15,14.84c-2.41-1.44-5.91.67-5.22,2.41.43,1.25,2.08,1.89,3.43,1.69,1.73-.25,2.98-1.46,2.8-2.71ZM41.94,87.21c-.88.04-1.63-.81-1.68-1.9-.05-1.09.62-2,1.5-2.05.88-.04,1.63.81,1.68,1.9.05,1.09-.62,2.01-1.5,2.05Z"/>
+                        </g>
+                      </g>
+                      <circle id="gradient-circle" cx="45.7" cy="35.5" r="23.1" style="fill: url(#radial-gradient); isolation: isolate; mix-blend-mode: multiply;"/>
+                    </g>
+                  </g>
+                </svg>
+
+            </div>
+        </div>
+
+        <div class="title">
+            <h1>Matt Hall</h1>
+            <h2>Composer</h2>
+        </div>
+
+    <div id="header-placeholder"></div> <!-- Placeholder for header -->
+  </div>
+
+  <!-- Controls moved into separate fixed overlay (see bottom of file) -->
+
+  
+    <section aria-label="3D Toy Piano" class="piano-stage">
+        <div class="piano-canvas-wrap">
+        <canvas id="pianoCanvas" aria-label="3D toy piano"></canvas>
+        <button id="playPerformance" class="piano-play">Play / Pause</button>
+      </div>
+      <div class="piano-notes" aria-live="polite" aria-atomic="true"></div>
+    </section>
+  
+    <!-- Fixed overlay for music UI: controls + play button -->
+    <div class="music-ui-overlay" aria-hidden="false">
+      <div class="piano-controls">
+        <div class="track-select">
+          <button id="trackBaby" data-track="baby" title="Play Baby track">Baby</button>
+          <button id="trackRaisins" data-track="raisins" title="Play Raisins track">Raisins</button>
+        </div>
+        <div class="track-select" style="margin-left:8px;">
+          <button id="trackForests" data-track="forests" title="Play Forests track">Forests</button>
+        </div>
+        <button id="restartPlayback" title="Restart from beginning">Restart</button>
+        <label for="playbackRate" style="display:flex; align-items:center; gap:6px; color:#e8fff4; font:12px monospace; margin-left:8px;">
+          Speed
+          <select id="playbackRate" aria-label="Playback speed">
+            <option value="0.75">0.75×</option>
+            <option value="0.85">0.85×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.2">1.2×</option>
+            <option value="1.6">1.6×</option>
+            <option value="2">2×</option>
+          </select>
+        </label>
+        <!-- UV map controls: toggle/cycle or set directly to U/V -->
+        <div class="uv-map-controls" style="display:inline-flex; gap:6px; margin-left:12px; align-items:center;">
+          <button id="uvToggleBtn" title="Toggle UV map (none → U → V)">UV: Off</button>
+          <button id="uvUBtn" title="Show U color map">UV U</button>
+          <button id="uvVBtn" title="Show V color map">UV V</button>
+          <button id="uvCheckerBtn" title="Show checkerboard UV map">UV Checker</button>
+        </div>
+      </div>
+      <div class="sync-offset-wrap">
+        <label for="syncOffset" class="sync-label">Audio Sync Offset:
+          <input id="syncOffset" type="range" min="-3000" max="3000" step="10" value="0" aria-label="Audio sync offset slider (-3000ms to +3000ms)">
+          <span id="syncOffsetValue" class="sync-value">0 ms</span>
+        </label>
+        <small class="sync-hint">(-3s leads MIDI → +3s lags)</small>
+      </div>
+      <button id="playPerformance" class="piano-play">Play / Pause</button>
+    </div>
+    <!-- Left-side backend picker (choose library) -->
+    <div class="instrument-backend-picker" id="instrumentBackendPicker" aria-hidden="false" role="toolbar" aria-label="Instrument backend picker"></div>
+    <!-- Left-side instrument picker -->
+    <div class="instrument-picker" id="instrumentPicker" aria-hidden="false" role="toolbar" aria-label="Instrument picker"></div>
+
+    <script>
+      // Build backend picker UI and expose preference on window.PREFERRED_INSTRUMENT_BACKEND
+      (function(){
+        const backends = [
+          ['auto','Auto (SoundFont → WebAudioFont)'],
+          ['soundfont','soundfont-player'],
+          ['webaudiofont','WebAudioFont (CDN)'],
+          ['webaudiofont-local','WebAudioFont (local)']
+        ];
+        const wrap = document.getElementById('instrumentBackendPicker');
+        if(!wrap) return;
+        const status = document.createElement('div');
+        status.style.cssText = 'color:#cfe8d8;font:12px/1.2 "Source Sans 3", system-ui; margin-bottom:6px;';
+        status.textContent = 'backend: auto';
+        wrap.appendChild(status);
+        backends.forEach(([key,label])=>{
+          const b = document.createElement('button');
+          b.textContent = label;
+          b.dataset.backend = key;
+          b.addEventListener('click', ()=>{
+            window.PREFERRED_INSTRUMENT_BACKEND = key;
+            document.querySelectorAll('#instrumentBackendPicker button').forEach(x=>x.classList.remove('active'));
+            b.classList.add('active');
+            status.textContent = 'backend: ' + label;
+            console.log('Instrument backend set to', key);
+          });
+          wrap.appendChild(b);
+        });
+        // default to auto
+        setTimeout(()=>{ const btn = wrap.querySelector('button[data-backend="auto"]'); if(btn) btn.click(); }, 60);
+      })();
+    </script>
+  
+
+  <script>
+        // Build instrument picker buttons and hook to sampler
+        (function(){
+          const list = [
+            ['acoustic_grand_piano','Acoustic Piano'],
+            ['bright_acoustic_piano','Bright Piano'],
+            ['electric_piano_1','Electric Piano 1'],
+            ['electric_piano_2','Electric Piano 2'],
+            ['honkytonk','Honky-Tonk'],
+            ['harpsichord','Harpsichord'],
+            ['vibraphone','Vibraphone'],
+            ['church_organ','Organ'],
+            ['accordion','Accordion'],
+            ['string_ensemble_1','Strings'],
+            ['pad_1','Pad'],
+            ['choir_aahs','Choir']
+          ];
+          const wrap = document.getElementById('instrumentPicker');
+          if(!wrap) return;
+          const status = document.createElement('div');
+          status.style.cssText = 'color:#cfe8d8;font:12px/1.2 "Source Sans 3", system-ui; margin-bottom:6px;';
+          status.textContent = 'No instrument loaded';
+          wrap.appendChild(status);
+          // Reflect soundfont loader state in the status text while attempting CDN loads
+          if(window.SOUNDFONT_LOADED === null){ status.textContent = 'Loading soundfont-player...'; }
+          if(window.SOUNDFONT_LOADED === false){ status.textContent = 'Soundfont script failed to load (check console)'; }
+          const sfCheck = setInterval(()=>{
+            if(window.SOUNDFONT_LOADED === true){
+              status.textContent = 'No instrument loaded';
+              clearInterval(sfCheck);
+            } else if(window.SOUNDFONT_LOADED === false){
+              status.textContent = 'Soundfont script failed to load (check console)';
+              clearInterval(sfCheck);
+            } else {
+              status.textContent = 'Loading soundfont-player...';
+            }
+          }, 250);
+          list.forEach(([name,label])=>{
+            const b = document.createElement('button');
+            b.textContent = label;
+            b.dataset.instrument = name;
+            b.addEventListener('click', async (ev)=>{
+              const btn = ev.currentTarget;
+              btn.disabled = true; btn.classList.add('loading');
+              try{
+                const inst = await window.loadInstrument(name);
+                if(inst){
+                  document.querySelectorAll('.instrument-picker button').forEach(x=>x.classList.remove('active'));
+                  btn.classList.add('active');
+                  status.textContent = 'Loaded: ' + label;
+                } else {
+                  status.textContent = 'Load failed';
+                }
+              }catch(e){ alert('Failed to load instrument: '+name); }
+              btn.disabled = false; btn.classList.remove('loading');
+            });
+            // extra debug: log pointer events so we can see clicks in the console
+            b.addEventListener('pointerenter', ()=>{ console.log('picker hover', name); });
+            b.addEventListener('pointerdown', ()=>{ console.log('picker down', name); });
+            b.addEventListener('click', ()=>{ console.log('picker click', name); });
+            wrap.appendChild(b);
+          });
+          // Try to preload the first instrument
+          setTimeout(()=>{ const first = wrap.querySelector('button'); if(first) first.click(); }, 600);
+        })();
+            // Load the header
+            document.addEventListener('DOMContentLoaded', function () {
+                fetch('header.html')
+                    .then(response => response.text())
+                    .then(data => {
+                      document.getElementById('header-placeholder').innerHTML = data;
+                      // After header content is inserted, compute its height and expose to CSS
+                      const updateHeaderHeight = () => {
+                        const hdr = document.querySelector('.header');
+                        if(hdr){
+                          const h = hdr.getBoundingClientRect().height || 0;
+                          document.documentElement.style.setProperty('--header-height', Math.ceil(h) + 'px');
+                          // Also reposition the instrument picker to avoid overlap with header/HUD
+                          try{
+                            const picker = document.getElementById('instrumentPicker');
+                            if(picker){
+                              const rect = hdr.getBoundingClientRect();
+                              const top = Math.ceil(rect.bottom + 12); // 12px below header
+                              picker.style.top = top + 'px';
+                              picker.style.maxHeight = 'calc(100vh - ' + (top + 24) + 'px)';
+                            }
+                          }catch(e){ console.warn('picker reposition failed', e); }
+                        }
+                      };
+                      // Initial set and on resize
+                      updateHeaderHeight();
+                      window.addEventListener('resize', updateHeaderHeight);
+                      // also re-run after a short delay in case fonts/images changed layout
+                      setTimeout(updateHeaderHeight, 250);
+                    });
+            });
+
+
+
+
+        </script>
+  <script>
+    // Hook up UV map control buttons (calls functions exposed by music-piano-debug.js)
+    (function(){
+      const toggle = document.getElementById('uvToggleBtn');
+      const ubtn = document.getElementById('uvUBtn');
+      const vbtn = document.getElementById('uvVBtn');
+      const checkerBtn = document.getElementById('uvCheckerBtn');
+      const updateLabel = ()=>{
+        const mode = (window.backboardUVMapMode || 'none');
+        if(toggle) toggle.textContent = 'UV: ' + (mode === 'none' ? 'Off' : mode.toUpperCase());
+      };
+      if(toggle){ toggle.addEventListener('click', ()=>{ try{ window.toggleBackboardUVMap(); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(ubtn){ ubtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('u'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(vbtn){ vbtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('v'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      if(checkerBtn){ checkerBtn.addEventListener('click', ()=>{ try{ window.setBackboardUVMapMode('checker'); }catch(e){}; setTimeout(updateLabel, 120); }); }
+      // reflect initial state after a brief delay to allow module to initialize
+      setTimeout(updateLabel, 300);
+    })();
+  </script>
+</body>
+
+</html>
+
