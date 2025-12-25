@@ -24,6 +24,11 @@ __pycache__/
 unused/
 unused/*
 
+# Places where scripts are stored or worked on
+/backups/
+/Combiners/
+
+
 # Large media and intermediate render outputs (host externally)
 /music/
 /glb/
