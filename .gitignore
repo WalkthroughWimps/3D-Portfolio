@@ -58,3 +58,7 @@ ffprobe*.json
 # Rename / dryrun artifacts
 rename-*.txt
 rename-*.log
+
+# Local backups
+*.BACKUP
+
