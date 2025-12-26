@@ -56,6 +56,61 @@ window.addEventListener('DOMContentLoaded', ()=>{
     }
   });
 });
+
+// Label display mode: 'qwerty' | 'note' | 'none'
+try{ window.qwertyLabelMode = window.qwertyLabelMode || 'qwerty'; }catch(e){}
+window.setQwertyLabelMode = function(mode){
+  const valid = ['qwerty','note','none'];
+  if(typeof mode === 'string' && valid.includes(mode)){
+    window.qwertyLabelMode = mode;
+  } else {
+    const idx = valid.indexOf(window.qwertyLabelMode || 'qwerty');
+    window.qwertyLabelMode = valid[(idx + 1) % valid.length];
+  }
+  try{
+    // toggle sprite visibility quickly; full rebuild happens on redraw where needed
+    if(window.qwertyLabelMode === 'none'){
+      if(qwertyLabelsGroup && qwertyLabelsGroup.children) qwertyLabelsGroup.children.forEach(c => c.visible = false);
+    } else {
+      if(qwertyLabelsGroup && qwertyLabelsGroup.children) qwertyLabelsGroup.children.forEach(c => c.visible = true);
+      try{ window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
+    }
+  }catch(e){}
+  try{ requestBackboardRedraw(); }catch(e){}
+  return window.qwertyLabelMode;
+};
+window.toggleQwertyLabelMode = function(){ return window.setQwertyLabelMode(); };
+
+// Rebuild qwerty label textures for all sprites based on current mode ('qwerty'|'note'|'none')
+window.rebuildQwertyLabels = function(mode){
+  const useMode = mode || window.qwertyLabelMode || 'qwerty';
+  if(!qwertyLabelsGroup || !qwertyLabelsGroup.children) return 0;
+  qwertyLabelsGroup.children.forEach(s => {
+    try{
+      const midi = s.userData && s.userData.midi;
+      const q = s.userData && s.userData.qwerty;
+      const n = s.userData && (s.userData.noteName || String(midi));
+      const text = (useMode === 'note') ? (n || String(midi)) : ((useMode === 'qwerty') ? (q || '') : '');
+      const Wc = 128, Hc = 96;
+      const c = document.createElement('canvas'); c.width = Wc; c.height = Hc;
+      const ctx = c.getContext('2d'); ctx.clearRect(0,0,Wc,Hc);
+      if(text){
+        const fontPx = Math.max(18, Math.round(Math.min(48, Wc * 0.28)));
+        ctx.font = `bold ${fontPx}px system-ui, Arial, sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(String(text).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
+        ctx.fillStyle = 'white'; ctx.fillText(String(text).toUpperCase(), Wc/2, Hc/2);
+      }
+      const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+      tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
+      try{ if(s.material && s.material.map && s.material.map.dispose) s.material.map.dispose(); }catch(e){}
+      if(s.material) s.material.map = tex;
+      s.visible = !!text;
+    }catch(e){/* ignore per-sprite failures */}
+  });
+  try{ requestBackboardRedraw(); }catch(e){}
+  return qwertyLabelsGroup.children.length;
+};
 const canvas = document.getElementById('pianoCanvas');
 if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
@@ -95,12 +150,11 @@ const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
 // Orbit controls
 const controls = new OrbitControls(cam, renderer.domElement);
-// User-specified mouse button mapping
-controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+// Rotate on RMB so LMB can interact with keys/screen without accidental camera motion.
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.enablePan = true;
-controls.panSpeed = 0.6;
+controls.enablePan = false;
 controls.minDistance = 0.5;
 controls.maxDistance = 20; // allow further zooming out
 controls.target.set(0,0.4,0);
@@ -128,10 +182,52 @@ const BLACK_MAX = demoAngleBlack;
 const KEY_PRESS_SIGN = 1;
 // Sustain pedal (right) animation support
 let sustainPedalMesh = null;
+let sustainPedalGlowMat = null;
+const SUSTAIN_PEDAL_BLUE = {
+  color: 0x1a5bd7,
+  emissive: 0x1a5bd7,
+  emissiveIntensity: 1.0,
+  metalness: 0.0,
+  roughness: 0.35
+};
+function ensureSustainPedalGlowMat(){
+  if(sustainPedalGlowMat) return sustainPedalGlowMat;
+  const color = SUSTAIN_PEDAL_BLUE.color;
+  const emissive = SUSTAIN_PEDAL_BLUE.emissive;
+  const emissiveIntensity = SUSTAIN_PEDAL_BLUE.emissiveIntensity;
+  const metalness = SUSTAIN_PEDAL_BLUE.metalness;
+  const roughness = SUSTAIN_PEDAL_BLUE.roughness;
+  sustainPedalGlowMat = new THREE.MeshStandardMaterial({
+    name: 'sustain_pedal_glow',
+    color: new THREE.Color(color),
+    emissive: new THREE.Color(emissive),
+    emissiveIntensity,
+    metalness,
+    roughness
+  });
+  sustainPedalGlowMat.side = THREE.DoubleSide;
+  return sustainPedalGlowMat;
+}
+function applySustainPedalGlow(isOn){
+  if(!sustainPedalMesh) return;
+  const mesh = sustainPedalMesh;
+  if(!mesh.userData) mesh.userData = {};
+  if(mesh.userData._origMaterial == null){
+    mesh.userData._origMaterial = mesh.material;
+  }
+  if(isOn){
+    const glow = ensureSustainPedalGlowMat();
+    mesh.material = Array.isArray(mesh.userData._origMaterial) ? mesh.userData._origMaterial.map(()=>glow) : glow;
+  } else {
+    mesh.material = mesh.userData._origMaterial;
+  }
+  if(mesh.material) mesh.material.needsUpdate = true;
+}
 const PEDAL_MAX_ANGLE = THREE.MathUtils.degToRad(6);
 const PEDAL_PRESS_MS = 85;
 const PEDAL_RELEASE_MS = 140;
 const sustainAnim = { phase:'idle', startMs:0, fromAngle:0, targetAngle:0 };
+let sustainKeyDown = false;
 // Smooth animation & velocity scaling
 // For predictive pedal bounce
 let sustainEventTimes = []; // times (ms) of cc64 presses (value>=64) for lookahead
@@ -233,28 +329,31 @@ const LEFT_INSTRUMENT_LAYOUT = [
   { startCol: 'I', row: 7, colspan: 2, label: 'Drums' }
 ];
 const RIGHT_INSTRUMENT_LAYOUT = [
-  { startCol: 'P', row: 4, colspan: 2, id: 'acoustic_grand_piano' },
-  { startCol: 'R', row: 4, colspan: 2, id: 'honkytonk' },
-  { startCol: 'T', row: 4, colspan: 2, id: 'accordion' },
-  { startCol: 'V', row: 4, colspan: 2, label: 'Brass' },
-  { startCol: 'P', row: 5, colspan: 2, id: 'bright_acoustic_piano' },
-  { startCol: 'R', row: 5, colspan: 2, id: 'harpsichord' },
-  { startCol: 'T', row: 5, colspan: 2, id: 'string_ensemble_1' },
-  { startCol: 'V', row: 5, colspan: 2, label: 'Dog' },
-  { startCol: 'P', row: 6, colspan: 2, id: 'electric_piano_1' },
-  { startCol: 'R', row: 6, colspan: 2, id: 'vibraphone' },
-  { startCol: 'T', row: 6, colspan: 2, id: 'pad_1' },
-  { startCol: 'V', row: 6, colspan: 2, label: '???' },
-  { startCol: 'P', row: 7, colspan: 2, id: 'electric_piano_2' },
-  { startCol: 'R', row: 7, colspan: 2, id: 'church_organ' },
-  { startCol: 'T', row: 7, colspan: 2, id: 'choir_aahs' },
-  { startCol: 'V', row: 7, colspan: 2, label: 'Drums' }
+  { startCol: 'O', row: 4, colspan: 2, id: 'acoustic_grand_piano' },
+  { startCol: 'Q', row: 4, colspan: 2, id: 'honkytonk' },
+  { startCol: 'S', row: 4, colspan: 2, id: 'accordion' },
+  { startCol: 'U', row: 4, colspan: 2, label: 'Brass' },
+  { startCol: 'O', row: 5, colspan: 2, id: 'bright_acoustic_piano' },
+  { startCol: 'Q', row: 5, colspan: 2, id: 'harpsichord' },
+  { startCol: 'S', row: 5, colspan: 2, id: 'string_ensemble_1' },
+  { startCol: 'U', row: 5, colspan: 2, label: 'Dog' },
+  { startCol: 'O', row: 6, colspan: 2, id: 'electric_piano_1' },
+  { startCol: 'Q', row: 6, colspan: 2, id: 'vibraphone' },
+  { startCol: 'S', row: 6, colspan: 2, id: 'pad_1' },
+  { startCol: 'U', row: 6, colspan: 2, label: '???' },
+  { startCol: 'O', row: 7, colspan: 2, id: 'electric_piano_2' },
+  { startCol: 'Q', row: 7, colspan: 2, id: 'church_organ' },
+  { startCol: 'S', row: 7, colspan: 2, id: 'choir_aahs' },
+  { startCol: 'U', row: 7, colspan: 2, label: 'Drums' }
 ];
 const keymapFlippedPositions = [];
 const keymapFlippedNoteNames = new Map();
 let keymapFlippedLoaded = false;
 let keymapFlippedPromise = null;
 let keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
+const keymapLanePositions = [];
+let keymapLaneLoaded = false;
+let keymapLanePromise = null;
 function updateKeymapFlippedBounds(){
   let min = Infinity, max = -Infinity;
   keymapFlippedPositions.forEach(entry => {
@@ -300,7 +399,13 @@ function loadKeymapFlipped(){
           isBlack: cleanName.includes('#')
         });
       });
-      updateKeymapFlippedBounds();
+      const uLeft = Number(data && data.uLeft);
+      const uRight = Number(data && data.uRight);
+      if(Number.isFinite(uLeft) && Number.isFinite(uRight) && uRight > uLeft){
+        keymapFlippedBounds = { uMin: uLeft, uMax: uRight, uSpan: Math.max(1e-6, uRight - uLeft) };
+      } else {
+        updateKeymapFlippedBounds();
+      }
       keymapFlippedLoaded = true;
       requestBackboardRedraw();
       return keymapFlippedPositions;
@@ -314,6 +419,37 @@ function loadKeymapFlipped(){
   return keymapFlippedPromise;
 }
 loadKeymapFlipped();
+function loadKeymapLane(){
+  if(keymapLanePromise) return keymapLanePromise;
+  keymapLanePromise = fetch('keymap2.json')
+    .then(res => res.json())
+    .then(data => {
+      keymapLanePositions.length = 0;
+      const keys = (data && Array.isArray(data.keys)) ? data.keys : [];
+      keys.forEach(entry => {
+        const midi = Number(entry.note);
+        if(!Number.isFinite(midi)) return;
+        const cleanName = (entry.name || '').toString().replace(/^\d+_/, '');
+        keymapLanePositions.push({
+          note: midi,
+          u0: Number(entry.u0),
+          u1: Number(entry.u1),
+          label: cleanName,
+          isBlack: cleanName.includes('#')
+        });
+      });
+      keymapLaneLoaded = keymapLanePositions.length > 0;
+      requestBackboardRedraw();
+      return keymapLanePositions;
+    })
+    .catch(err => {
+      console.warn('Failed to load keymap2.json', err);
+      keymapLaneLoaded = false;
+      return [];
+    });
+  return keymapLanePromise;
+}
+loadKeymapLane();
 const panelState = {
   left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id },
   right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id }
@@ -885,8 +1021,23 @@ const glowMatWhite = new THREE.MeshStandardMaterial({
   roughness: GlowMaterials['keys_white_glow'].roughness
 });
 glowMatBlack.side = THREE.DoubleSide; glowMatWhite.side = THREE.DoubleSide;
+const makeTrackGlowMat = (name, hex) => {
+  const mat = new THREE.MeshStandardMaterial({
+    name,
+    color: new THREE.Color(hex),
+    emissive: new THREE.Color(hex),
+    emissiveIntensity: 1.0,
+    metalness: 0.0,
+    roughness: 0.3
+  });
+  mat.side = THREE.DoubleSide;
+  return mat;
+};
+const glowMatMelody = makeTrackGlowMat('keys_melody_glow', 0x2a8bff);
+const glowMatHarmony = makeTrackGlowMat('keys_harmony_glow', 0x8b4bff);
 // Track how many overlapping note-ons are active per key to safely restore material
 const keyActiveCount = new Map(); // noteNumber -> count
+const trackGlowState = new Map(); // noteNumber -> {melody,harmony,accomp}
 const safeRun = (fn, label = 'Non-critical failure') => {
   try { fn(); }
   catch (err) { console.warn(label, err); }
@@ -901,6 +1052,7 @@ const disposeAudioSource = (reason) => {
 // Clear all active glow states and restore original materials
 function clearAllKeyGlow(){
   keyActiveCount.clear();
+  trackGlowState.clear();
   if(keyMeshes && keyMeshes.length){
     keyMeshes.forEach(m => {
       const orig = m?.userData?._origMaterial;
@@ -1050,25 +1202,58 @@ function ensureAudio(){
     masterGain.connect(audioCtx.destination);
   }
 }
+function getTrackGlowLevel(noteNumber){
+  const st = trackGlowState.get(noteNumber);
+  if(!st) return null;
+  if(st.melody > 0) return 'melody';
+  if(st.harmony > 0) return 'harmony';
+  if(st.accomp > 0) return 'accomp';
+  return null;
+}
+function updateKeyGlowMaterial(mesh, noteNumber){
+  if(!mesh) return;
+  if(mesh.userData && mesh.userData._origMaterial === undefined){
+    mesh.userData._origMaterial = mesh.material;
+  }
+  const level = getTrackGlowLevel(noteNumber);
+  let mat = null;
+  if(level === 'melody'){
+    mat = glowMatMelody;
+  } else if(level === 'harmony'){
+    mat = glowMatHarmony;
+  } else if(level === 'accomp'){
+    mat = (isBlackKey(mesh) ? glowMatBlack : glowMatWhite);
+  } else if((keyActiveCount.get(noteNumber) || 0) > 0){
+    mat = (isBlackKey(mesh) ? glowMatBlack : glowMatWhite);
+  }
+  if(mat){
+    mesh.material = mat;
+  } else {
+    const orig = mesh.userData ? mesh.userData._origMaterial : null;
+    if(orig) mesh.material = orig;
+  }
+  if(mesh.material) mesh.material.needsUpdate = true;
+}
+function applyTrackGlow(noteNumber, mesh, part, on){
+  const partName = String(part || '').toLowerCase();
+  const tag = partName.includes('melody') ? 'melody' : (partName.includes('harmony') ? 'harmony' : 'accomp');
+  const st = trackGlowState.get(noteNumber) || { melody:0, harmony:0, accomp:0 };
+  st[tag] = Math.max(0, st[tag] + (on ? 1 : -1));
+  if(st.melody === 0 && st.harmony === 0 && st.accomp === 0){
+    trackGlowState.delete(noteNumber);
+  } else {
+    trackGlowState.set(noteNumber, st);
+  }
+  const targetMesh = mesh || midiKeyMap.get(noteNumber);
+  updateKeyGlowMaterial(targetMesh, noteNumber);
+  try{ requestBackboardRedraw(); }catch(e){}
+}
 function applyKeyGlow(mesh, noteNumber, on){
   if(!mesh) return;
   const cur = (keyActiveCount.get(noteNumber) || 0) + (on? 1 : -1);
   const next = Math.max(0, cur);
   keyActiveCount.set(noteNumber, next);
-  if(on){
-    // Save original material once
-    if(mesh.userData && mesh.userData._origMaterial === undefined){
-      mesh.userData._origMaterial = mesh.material;
-    }
-    // Prefer the Blender spec pair; only fall back to a single captured glbGlowMaterial if explicitly desired
-    const gm = (isBlackKey(mesh) ? glowMatBlack : glowMatWhite);
-    mesh.material = gm;
-    if(mesh.material) mesh.material.needsUpdate = true;
-  } else if(next===0) {
-    // Restore original when no more active presses remain
-    const orig = mesh.userData ? mesh.userData._origMaterial : null;
-    if(orig){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
-  }
+  updateKeyGlowMaterial(mesh, noteNumber);
   // Request backboard redraw when visual key glow changes
   try{ requestBackboardRedraw(); }catch(e){}
 }
@@ -1638,6 +1823,8 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
             const sprite = new THREE.Sprite(mat);
             sprite.position.copy(pos);
             sprite.scale.set(baseScale, baseScale * (Hc / Wc) * 0.9, 1);
+            // store metadata so labels can be rebuilt to show note names or QWERTY
+            try{ sprite.userData = { midi: mNum, qwerty: String(label), noteName: getFlippedNoteName ? getFlippedNoteName(mNum) : null }; }catch(e){ sprite.userData = { midi: mNum, qwerty: String(label), noteName: null }; }
             qwertyLabelsGroup.add(sprite);
           }catch(e){ /* ignore single-label failures */ }
         });
@@ -1705,6 +1892,13 @@ function readVLQ(data, offset){
   do { byte = data[i++]; value = (value<<7) | (byte & 0x7f); } while(byte & 0x80);
   return {value, next:i};
 }
+function getForestsPartFromUrl(url){
+  const u = String(url || '').toLowerCase();
+  if(u.includes('melody')) return 'melody';
+  if(u.includes('harmony')) return 'harmony';
+  if(u.includes('accomp')) return 'accomp';
+  return 'accomp';
+}
 async function loadMIDI(urlOrArray){
   try {
     if(Array.isArray(urlOrArray)){
@@ -1713,14 +1907,15 @@ async function loadMIDI(urlOrArray){
         try { const r=await fetch(encodeURI(u)); if(!r.ok) throw new Error('HTTP '+r.status); return await r.arrayBuffer(); }
         catch(err){ console.warn('[MIDI] fetch failed for', u, err); return null; }
       }));
-      const valid = fetched.filter(Boolean);
+      const valid = fetched.map((buf, idx)=> buf ? ({ url: urls[idx], buf }) : null).filter(Boolean);
       if(valid.length===0) throw new Error('All MIDI fetches failed');
       // Parse off-main in small timeout to keep UI responsive
       setTimeout(()=>{
         const allEvents=[];
         let primaryTempoMap=null; let primaryTPQ=ticksPerQuarter;
-        valid.forEach((ab, idx)=>{
-          const {events, tempoMap:tm, ticksPerQuarter:tpq} = parseMIDIToEventList(new Uint8Array(ab));
+        valid.forEach((entry, idx)=>{
+          const part = (currentTrackKey === 'forests') ? getForestsPartFromUrl(entry.url) : null;
+          const {events, tempoMap:tm, ticksPerQuarter:tpq} = parseMIDIToEventList(new Uint8Array(entry.buf), part);
           if(idx===0){ primaryTempoMap = tm; primaryTPQ = tpq; }
           allEvents.push(...events);
         });
@@ -1747,7 +1942,7 @@ async function loadMIDI(urlOrArray){
     }
   } catch(e){ console.error('MIDI load failed:', e); midiError=true; updatePlayButton(); }
 }
-function parseMIDIToEventList(bytes){
+function parseMIDIToEventList(bytes, partName){
   // Two-pass parser: collect events in ticks and tempo changes, then map ticks->ms.
   let p=0;
   function readStr(n){ const s = String.fromCharCode(...bytes.slice(p,p+n)); p+=n; return s; }
@@ -1806,7 +2001,7 @@ function parseMIDIToEventList(bytes){
     let idx=0; for(let i=localTempoMap.length-1;i>=0;i--){ if(localTempoMap[i].tick<=T){ idx=i; break; } }
     const seg=localTempoMap[idx]; return seg.timeMs + ( (T-seg.tick) * seg.tempo)/localTPQ/1000;
   }
-  const localEvents = eventsTicks.map(e=>({ timeMs: tickToMs(e.tick), type:e.type, note:e.note, velocity:e.velocity, chan:e.chan, value:e.value }));
+  const localEvents = eventsTicks.map(e=>({ timeMs: tickToMs(e.tick), type:e.type, note:e.note, velocity:e.velocity, chan:e.chan, value:e.value, part: partName }));
   localEvents.sort((a,b)=>a.timeMs-b.timeMs);
   return { events: localEvents, tempoMap: localTempoMap, ticksPerQuarter: localTPQ };
 }
@@ -1952,7 +2147,11 @@ function advanceMIDI(elapsedMs){
         const target = base * (0.55 + 0.45 * depthScale);
         state.phase='press'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=target;
         // Apply glow while the note is active
-        applyKeyGlow(mesh, ev.note, true);
+        if(ev.part){
+          applyTrackGlow(ev.note, mesh, ev.part, true);
+        } else {
+          applyKeyGlow(mesh, ev.note, true);
+        }
         // Mark active note for backboard overlay
         const nnum = Number(ev.note);
         activeNotes.set(nnum, { velocity: Math.max(0, Math.min(1, ev.velocity/127)), tOn: performance.now() });
@@ -1960,7 +2159,11 @@ function advanceMIDI(elapsedMs){
       } else {
         state.phase='release'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=0;
         // Remove glow when the note-off occurs (respect overlapping notes via counter)
-        applyKeyGlow(mesh, ev.note, false);
+        if(ev.part){
+          applyTrackGlow(ev.note, mesh, ev.part, false);
+        } else {
+          applyKeyGlow(mesh, ev.note, false);
+        }
         // Remove from overlay
         const deln = Number(ev.note);
         activeNotes.delete(deln);
@@ -1970,6 +2173,7 @@ function advanceMIDI(elapsedMs){
       if(!sustainPedalMesh) continue;
       const pressed = (ev.value|0) >= 64;
       if(pressed){
+        sustainKeyDown = true;
         // If previous release was still mid-way, force full rest (bounce up) before press
         if(sustainAnim.phase==='release'){
           sustainPedalMesh.rotation.x = 0;
@@ -1980,7 +2184,10 @@ function advanceMIDI(elapsedMs){
         sustainAnim.startMs=elapsedMs;
         sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
         sustainAnim.targetAngle = PEDAL_MAX_ANGLE;
+        applySustainPedalGlow(true);
+        try{ requestBackboardRedraw(); }catch(e){}
       } else {
+        sustainKeyDown = false;
         // Release logic with lookahead: if next press soon, use fast release
         const nextPress = sustainEventTimes.find(t => t>ev.timeMs);
         const soon = nextPress!==undefined && (nextPress - ev.timeMs) < PEDAL_LOOKAHEAD_MS;
@@ -1995,6 +2202,8 @@ function advanceMIDI(elapsedMs){
         }
         // Once pedal goes up, apply sustain release to voices
         applySustainState();
+        applySustainPedalGlow(false);
+        try{ requestBackboardRedraw(); }catch(e){}
       }
     }
   }
@@ -2018,7 +2227,7 @@ function updateKeyAnimations(){
     mesh.rotation.x = st.fromAngle + (st.targetAngle - st.fromAngle) * e;
   });
   // Sustain pedal easing
-  if(sustainPedalMesh && sustainAnim.phase!=='idle'){
+  if(sustainPedalMesh && (sustainAnim.phase === 'press' || sustainAnim.phase === 'release')){
     const dur = sustainAnim.phase==='press' ? PEDAL_PRESS_MS : PEDAL_RELEASE_MS;
     const t = Math.max(0, (elapsed - sustainAnim.startMs)/Math.max(1,dur));
     if(t>=1){
@@ -2052,6 +2261,22 @@ function renderBackboardOverlay(){
     const cols = 24, rows = 12;
     const cellW = W / cols;
     const cellH = H / rows;
+    {
+      const sustainRowIndex = rows - 1; // row 12 (bottom)
+      const y = sustainRowIndex * cellH;
+      ctx.fillStyle = 'rgba(20, 60, 140, 0.35)';
+      ctx.fillRect(0, y, W, cellH);
+      ctx.strokeStyle = 'rgba(110, 170, 255, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(0, y, W, cellH);
+      if(sustainKeyDown){
+        ctx.fillStyle = 'rgba(70, 170, 255, 0.55)';
+        ctx.fillRect(0, y, W, cellH);
+        ctx.strokeStyle = 'rgba(140, 210, 255, 0.55)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, y, W, cellH);
+      }
+    }
     const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
     ctx.fillStyle = 'rgba(255,255,255,0.22)';
     ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
@@ -2068,12 +2293,9 @@ function renderBackboardOverlay(){
       }
     }
     const usingFlippedKeymap = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
-    const overlayBounds = (usingFlippedKeymap && keymapFlippedBounds) ? keymapFlippedBounds : (backboardUVBounds || { uMin: 0, uMax: 1, uSpan: 1 });
     const normX = (u) => {
-      const uMin = Number(overlayBounds.uMin ?? 0);
-      const span = Math.max(1e-6, Number(overlayBounds.uSpan ?? ((overlayBounds.uMax ?? (uMin + 1)) - uMin)));
-      const uMax = uMin + span;
-      let normalized = (Math.min(Math.max(u, uMin), uMax) - uMin) / span;
+      // Map absolute U directly to canvas width so key lanes match the screen UVs.
+      let normalized = Number(u);
       // keymap_flipped.json is already authored for the screen's left->right direction,
       // so don't apply an additional mirror correction when using it.
       if(!usingFlippedKeymap && backboardUVCorrection && backboardUVCorrection.mirrorU){
@@ -2118,31 +2340,144 @@ function renderBackboardOverlay(){
           isBlack: (info && typeof info.name === 'string') ? info.name.includes('#') : isBlackNoteByNumber(Number(note)),
           noteName: info && typeof info.name === 'string' ? info.name : undefined
         }));
-      sourceEntries.forEach(entry => {
+      const laneRowWhite = rows - 2; // row 11 (1-based labels)
+      const laneRowBlack = rows - 3; // row 10 (1-based labels)
+      const laneWhiteY = { y0: Math.max(0, (laneRowBlack + 0.5) * cellH), y1: Math.min(H, (laneRowWhite + 1) * cellH) };
+      const laneBlackY = { y0: Math.max(0, (laneRowBlack - 1) * cellH), y1: Math.min(H, (laneRowBlack + 0.5) * cellH) };
+      const SHOW_LANE_LINES = false;
+      const laneEntries = (keymapLaneLoaded && keymapLanePositions.length)
+        ? keymapLanePositions
+        : sourceEntries;
+      if(SHOW_LANE_LINES){
+        ctx.save();
+        // Subtle full-height guide for all keys
+        ctx.strokeStyle = 'rgba(110, 200, 255, 0.15)';
+        ctx.lineWidth = 1;
+        laneEntries.forEach(entry => {
+          if(!entry || entry.u0 == null || entry.u1 == null) return;
+          const x0 = normX(entry.u0);
+          const x1 = normX(entry.u1);
+          ctx.beginPath();
+          ctx.moveTo(x0, 0);
+          ctx.lineTo(x0, H);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x1, 0);
+          ctx.lineTo(x1, H);
+          ctx.stroke();
+        });
+        // Strong lanes: white keys on row 11, black keys on row 10
+        laneEntries.forEach(entry => {
+          if(!entry || entry.u0 == null || entry.u1 == null) return;
+          const x0 = normX(entry.u0);
+          const x1 = normX(entry.u1);
+          const band = entry.isBlack ? laneBlackY : laneWhiteY;
+          ctx.strokeStyle = entry.isBlack ? 'rgba(255, 210, 90, 0.85)' : 'rgba(160, 230, 255, 0.9)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x0, band.y0 + 1);
+          ctx.lineTo(x0, band.y1 - 1);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(x1, band.y0 + 1);
+          ctx.lineTo(x1, band.y1 - 1);
+          ctx.stroke();
+        });
+        ctx.restore();
+      }
+      laneEntries.forEach(entry => {
         if(!entry || entry.u0 == null || entry.u1 == null) return;
         const mapped = midiToKeyLabel.get(Number(entry.note));
         if(!mapped) return; // QWERTY-only mode: hide raw note names
-        const mid = (Number(entry.u0) + Number(entry.u1)) * 0.5;
+        const u0 = Number(entry.u0);
+        const u1 = Number(entry.u1);
+        const mid = (u0 + u1) * 0.5;
         if(!isFinite(mid)) return;
-        const x = normX(mid);
+        const x0 = normX(u0);
+        const x1 = normX(u1);
+        const x = (x0 + x1) * 0.5;
         const label = mapped;
-        const target = { x, label };
+        const target = { x, label, w: Math.abs(x1 - x0), midi: Number(entry.note) };
         if(entry.isBlack) blackEntries.push(target);
         else whiteEntries.push(target);
       });
-      const drawNoteRow = (entries, rowIndex, color) => {
+      const qwertyFontSize = Math.max(18, Math.round(fontSize * 2));
+      const getCssVar = (name, fallback) => {
+        try{
+          const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
+          if(val && val.trim()) return val.trim();
+        }catch(e){}
+        return fallback;
+      };
+      const greenDark = getCssVar('--green-dark', '#00130d');
+      const darkColor = getCssVar('--dark-color', greenDark);
+      const greenSecondary = getCssVar('--green-secondary', '#0d5023');
+      const toCssHex = (num) => {
+        const v = (typeof num === 'number' && isFinite(num)) ? num : 0;
+        return `#${(v >>> 0).toString(16).padStart(6, '0')}`;
+      };
+      const glowWhite = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_white_glow'])
+        ? toCssHex(GlowMaterials['keys_white_glow'].emissive)
+        : '#17ff1c';
+      const glowBlack = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_black_glow'])
+        ? toCssHex(GlowMaterials['keys_black_glow'].emissive)
+        : '#860b07';
+      const labelStyles = {
+        white: { fill: '#ffffff', text: greenDark, line: greenDark },
+        black: { fill: greenSecondary, text: '#ffffff', line: greenSecondary }
+      };
+      const getActiveStyle = (entry, baseStyle) => {
+        if(!entry || entry.midi == null || !activeNoteSet || !activeNoteSet.has(Number(entry.midi))) return baseStyle;
+        const isBlack = isBlackNoteByNumber ? isBlackNoteByNumber(Number(entry.midi)) : false;
+        const glow = isBlack ? glowBlack : glowWhite;
+        return { fill: glow, text: baseStyle.text, line: glow };
+      };
+      const drawQwertyLabel = (entry, textBand, shapeBand, style, bandHeight) => {
+        const keyW = Math.max(6, entry.w || 0);
+        const labelW = Math.max(14, Math.min(keyW * 0.9, cellW * 1.6));
+        const shapeTop = Math.min(shapeBand.y1 - 2, textBand.y0 + 1);
+        const shapeBottom = Math.max(shapeTop + 10, shapeBand.y1 - 1);
+        const labelH = Math.max(10, shapeBottom - shapeTop);
+        const left = Math.max(0, Math.min(W - labelW, entry.x - labelW / 2));
+        const top = Math.min(shapeBottom - labelH, shapeTop);
+        const radius = Math.min(labelH * 0.55, labelW * 0.35);
+        ctx.fillStyle = style.fill;
+        ctx.beginPath();
+        ctx.moveTo(left, top + labelH);
+        ctx.lineTo(left + labelW, top + labelH);
+        ctx.lineTo(left + labelW, top + radius);
+        ctx.arcTo(left + labelW, top, left + labelW - radius, top, radius);
+        ctx.lineTo(left + radius, top);
+        ctx.arcTo(left, top, left, top + radius, radius);
+        ctx.lineTo(left, top + labelH);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = style.line;
+        ctx.lineWidth = Math.max(1, Math.round(labelH * 0.08));
+        ctx.beginPath();
+        ctx.moveTo(left, top + labelH);
+        ctx.lineTo(left + labelW, top + labelH);
+        ctx.stroke();
+        ctx.fillStyle = style.text;
+        const textY = Math.min(textBand.y1 - 2, Math.max(textBand.y0 + 2, (textBand.y0 + textBand.y1) * 0.5));
+        ctx.fillText(entry.label, left + labelW / 2, textY);
+      };
+      const drawLabelRow = (entries, textBand, shapeBand, style) => {
         if(!entries.length) return;
         entries.sort((a,b)=>a.x - b.x);
-        const y = Math.min(H - cellH * 0.35, Math.max(cellH * 0.35, (rowIndex + 0.5) * cellH));
-        ctx.fillStyle = color;
-        entries.forEach(entry => ctx.fillText(entry.label, entry.x, y));
+        const bandHeight = Math.max(1, shapeBand.y1 - textBand.y0);
+        const labelFontSize = Math.max(16, Math.round(Math.min(qwertyFontSize, bandHeight * 0.6)));
+        ctx.font = `700 ${labelFontSize}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        entries.forEach(entry => {
+          const entryStyle = getActiveStyle(entry, style);
+          drawQwertyLabel(entry, textBand, shapeBand, entryStyle, bandHeight);
+        });
       };
-      const qwertyFontSize = Math.max(18, Math.round(fontSize * 2));
-      ctx.font = `bold ${qwertyFontSize}px "Source Sans 3", system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      drawNoteRow(whiteEntries, rows - 2, '#ffffff');
-      drawNoteRow(blackEntries, rows - 3, '#fff056');
+      const labelBlackShapeBand = { y0: laneBlackY.y0, y1: laneWhiteY.y1 };
+      drawLabelRow(blackEntries, laneBlackY, labelBlackShapeBand, labelStyles.black);
+      drawLabelRow(whiteEntries, laneWhiteY, laneWhiteY, labelStyles.white);
     }
   }
 
@@ -2181,7 +2516,7 @@ function renderBackboardOverlay(){
         ctx.fillText(text.toUpperCase(), blockX + blockW / 2, blockY + cellH / 2);
       };
       drawTitleBlock('Lower Instrument', 'C', 3, 8);
-      drawTitleBlock('Higher Instrument', 'P', 3, 8);
+      drawTitleBlock('Higher Instrument', 'O', 3, 8);
       const drawInstrumentGrid = (panelId, layout)=>{
         layout.forEach(cell=>{
           const colIndex = (cell.startCol || 'A').charCodeAt(0) - 65;
@@ -2789,7 +3124,7 @@ function onGlobalPointerMove(e){
   }
   // Glissando: when pointer moved while down on a key, play notes encountered under pointer
   if(pointerDownInfo && pointerDownInfo.moved){
-    if(pointerDownInfo.played && pointerDownInfo.lastMidi == null){
+    if(pointerDownInfo.played && pointerDownInfo.lastMidi == null && !pointerDownInfo.offKey){
       pointerDownInfo.lastMidi = pointerDownInfo.midiNum;
     }
     // Only allow glissando playback while the primary button is held.
@@ -2811,14 +3146,46 @@ function onGlobalPointerMove(e){
             return;
           }
           pointerDownInfo.lastSwitchAt = now;
+          if(!pointerDownInfo.played && pointerDownInfo.glowApplied && pointerDownInfo.midiNum !== res.midiNum){
+            try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
+            try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
+            try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+            pointerDownInfo.glowApplied = false;
+          }
           if(prev != null){
             try{ NoteEngine.noteOff(prev); }catch(e){}
           }
           pointerDownInfo.lastMidi = res.midiNum;
+          pointerDownInfo.offKey = false;
           NoteEngine.noteOn(res.midiNum, res.mesh);
           applyKeyGlow(res.mesh, res.midiNum, true);
+          pointerDownInfo.played = true;
         }
+      } else {
+        const currentMidi = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi
+          : (pointerDownInfo.played ? pointerDownInfo.midiNum : null);
+        if(currentMidi != null){
+          try{ NoteEngine.noteOff(currentMidi); }catch(e){}
+        } else if(pointerDownInfo.glowApplied){
+          try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
+          try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
+          try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+        }
+        pointerDownInfo.lastMidi = null;
+        pointerDownInfo.offKey = true;
       }
+    } else {
+      const currentMidi = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi
+        : (pointerDownInfo.played ? pointerDownInfo.midiNum : null);
+      if(currentMidi != null){
+        try{ NoteEngine.noteOff(currentMidi); }catch(e){}
+      } else if(pointerDownInfo.glowApplied){
+        try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
+        try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
+        try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+      }
+      pointerDownInfo.lastMidi = null;
+      pointerDownInfo.offKey = true;
     }
   }
 }
@@ -2893,8 +3260,7 @@ function resetKeyVisuals(midiNum){
   const mesh = midiKeyMap.get(midiNum);
   try{
     keyActiveCount.set(midiNum, 0);
-    const orig = mesh && mesh.userData ? mesh.userData._origMaterial : null;
-    if(orig && mesh){ mesh.material = orig; if(mesh.material) mesh.material.needsUpdate = true; }
+    updateKeyGlowMaterial(mesh, midiNum);
   }catch(e){ /* ignore */ }
   try{
     const currentAngle = mesh ? mesh.rotation.x : 0;
@@ -2977,24 +3343,27 @@ const NoteEngine = {
 
 function onGlobalPointerUp(e){
   if(!pointerDownInfo) return;
-    if(!pointerDownInfo.moved){
-      // If we haven't played yet, play briefly then stop
-      if(!pointerDownInfo.played){
-        NoteEngine.noteOn(pointerDownInfo.midiNum, pointerDownInfo.mesh);
-        pointerDownInfo.played = true;
-        pointerDownInfo.lastMidi = pointerDownInfo.midiNum;
-        const v = activeVoices.get(pointerDownInfo.midiNum);
-        if(v) v.playedAt = performance.now();
-      }
-      if(pointerDownInfo.played){ NoteEngine.noteOff(pointerDownInfo.midiNum); }
-    }
+  const primaryMidi = pointerDownInfo.midiNum;
+  const primaryMesh = pointerDownInfo.mesh;
+  const currentMidi = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi : primaryMidi;
+  const playedAny = !!pointerDownInfo.played || (pointerDownInfo.lastMidi != null);
+
   if(pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; }
-  // Ensure any last glissando note is stopped
-  try{
-    if(pointerDownInfo && pointerDownInfo.lastMidi != null && pointerDownInfo.lastMidi !== pointerDownInfo.midiNum){
-      NoteEngine.noteOff(pointerDownInfo.lastMidi);
-    }
-  }catch(e){}
+
+  // If we haven't played yet (quick tap), play briefly then stop.
+  if(!pointerDownInfo.moved && !playedAny){
+    try{ NoteEngine.noteOn(primaryMidi, primaryMesh); }catch(e){}
+  }
+
+  // Always stop the currently-active note on release (works for both tap and glissando).
+  try{ if(currentMidi != null) NoteEngine.noteOff(currentMidi); }catch(e){}
+
+  // If a glow was applied but a note never started (tap-move-cancel), clear it.
+  if(!playedAny && primaryMesh){
+    try{ applyKeyGlow(primaryMesh, primaryMidi, false); }catch(e){}
+    try{ resetKeyVisuals(primaryMidi); }catch(e){}
+    try{ clearNoteActive(primaryMidi); }catch(e){}
+  }
   pointerDownInfo = null;
 }
 // Handle pedal release affecting sustained voices
@@ -3076,7 +3445,7 @@ function onPointerDown(e){
     const hit = intersects[0].object;
     const res = findKeyFromObject(hit);
     if(res){
-      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId, lastMidi: null, lastSwitchAt: 0 };
+      pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId, lastMidi: null, lastSwitchAt: 0, offKey: false };
       // capture the pointer so we reliably receive pointerup even if the cursor leaves the canvas
       try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
       // immediate visual feedback so quick taps show highlight
@@ -3119,8 +3488,7 @@ canvas.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
 canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
-// Ensure pointer leaving the canvas also ends any active press
-canvas.addEventListener('pointerleave', onPointerUp);
+// Keep pointer-down glissando active even if cursor leaves the canvas
 canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); }});
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
@@ -3156,7 +3524,6 @@ function noteOff(midi){
   try{ NoteEngine.noteOff(Number(midi)); }catch(e){ console.warn('noteOff failed', e); }
 }
 
-let sustainKeyDown = false;
 function sustainPedalDown(){
   // Use the same timebase as updateKeyAnimations() (audioCtx-relative ms).
   try{ ensureAudio(); }catch(e){}
@@ -3170,9 +3537,11 @@ function sustainPedalDown(){
     sustainAnim.startMs = elapsedMs;
     sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
     sustainAnim.targetAngle = PEDAL_MAX_ANGLE;
+    applySustainPedalGlow(true);
   } else {
     sustainAnim.phase = 'held';
   }
+  try{ requestBackboardRedraw(); }catch(e){}
 }
 function sustainPedalUp(){
   try{ ensureAudio(); }catch(e){}
@@ -3182,10 +3551,12 @@ function sustainPedalUp(){
     sustainAnim.startMs = elapsedMs;
     sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
     sustainAnim.targetAngle = 0;
+    applySustainPedalGlow(false);
   } else {
     sustainAnim.phase = 'idle';
   }
   applySustainState();
+  try{ requestBackboardRedraw(); }catch(e){}
 }
 
 function handleKeyDown(ev){
@@ -3264,7 +3635,16 @@ function allNotesOff(){
 function panicAllNotes(){
   try{ NoteEngine.panic(); }catch(e){}
   try{ allNotesOff(); }catch(e){}
-  try{ if(pointerDownInfo){ try{ if(pointerDownInfo.played) NoteEngine.noteOff(pointerDownInfo.midiNum); if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){} } pointerDownInfo = null; }catch(e){}
+  try{
+    if(pointerDownInfo){
+      try{
+        const midiToStop = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi : pointerDownInfo.midiNum;
+        if(midiToStop != null) NoteEngine.noteOff(midiToStop);
+        if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false);
+      }catch(e){}
+    }
+    pointerDownInfo = null;
+  }catch(e){}
   try{ if(typeof pendingPlayTimer !== 'undefined' && pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; } }catch(e){}
   try{ requestBackboardRedraw(); }catch(e){}
 }
