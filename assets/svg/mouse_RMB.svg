@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Illustration_have_a_nice_day_" data-name="Illustration (have a nice day)" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 584.89 1059.52">
+  <g id="Click_the_right_mouse_button" data-name="Click the right mouse button">
+    <g id="Base">
+      <path d="M279.71,449.52v-45.44c0-3.53,5.32-6.39,8.85-6.39h.17v-77.69s-33.68-.41-33.68-26.9v-136.53s-3.64-25.08,33.68-25.08V-4.53S4.37-15.49,6.55,326.42c2.18,341.87-2.18,354.98-2.18,354.98,0,0-9.83,105.58,0,139.81,9.83,34.22,55.34,226.09,284.35,233.74h7.45c229.01-7.65,274.52-199.52,284.35-233.74,9.83-34.22,0-139.81,0-139.81,0,0-4.37-13.11-2.18-354.98C580.51-15.49,296.16-4.53,296.16-4.53v136.03c37.32,0,33.68,25.08,33.68,25.08v136.53c0,26.49-33.68,26.9-33.68,26.9v77.96h0c3.53,0,8.85,2.86,8.85,6.39v45.24c0,3.55-5.35,6.42-8.9,6.39l-7.61-.07c-3.51-.03-8.79-2.88-8.79-6.39Z" fill="#f2f2f2"/>
+      <path d="M580.52,681.4s9.83,105.58,0,139.81c-9.83,34.22-55.34,226.09-284.35,233.74h-7.45C59.72,1047.3,14.21,855.43,4.38,821.21c-9.83-34.22,0-139.81,0-139.81,0,0,42.86,300.89,288.07,298.71,245.21-2.18,288.07-298.71,288.07-298.71Z" fill="#e6e6e6"/>
+    </g>
+    <g id="Options_button" data-name="Options button">
+      <rect x="285.26" y="402.88" width="13.65" height="48.06" rx="3.91" ry="3.91" fill="#e6e6e6"/>
+    </g>
+    <g id="The_mouse_wheel" data-name="The mouse wheel">
+      <rect x="265.69" y="142.38" width="53.52" height="164.38" rx="8.34" ry="8.34" fill="#e6e6e6"/>
+    </g>
+    <g id="Right_mouse_button" data-name="Right mouse button">
+      <path d="M296.24,364.51v-44.51s33.68-.41,33.68-26.9v-136.53s3.64-25.08-33.68-25.08V-4.53s284.35-10.96,282.16,330.95l-.6,144.18-281.57-106.09Z" fill="#c1272d"/>
+    </g>
+    <g id="LegendText">
+      <text x="292.44" y="750" font-family="Eras Demi ITC, Eras Demi, Eras ITC, serif" font-size="108" fill="#0f1115" text-anchor="middle">+50ms</text>
+      <text x="292.44" y="920" font-family="Eras Demi ITC, Eras Demi, Eras ITC, serif" font-size="108" fill="#0f1115" text-anchor="middle">+5%</text>
+    </g>
+  </g>
+</svg>
