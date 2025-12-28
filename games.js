@@ -9,7 +9,7 @@ const STAGE_ID = 'model-stage';
 const GLB_URL = './glb/Arcade-Console.glb';
 const SCREEN_MESH_CANDIDATES = ['arcade_screen_surface', 'arcade_screen'];
 
-const VIDEO_SRC = './Videos/games-page/Video-Games-Reel_hq.webm';
+const VIDEO_SRC = './Videos/games-page/video-games-reel-hq.webm';
 const SPEED_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const DEFAULT_GAME_URL = './games/battleship/index.html';
 const GAME_RENDER_MODE = 'blit'; // 'overlay', 'blit', or 'css3d'
@@ -51,8 +51,12 @@ const VIDEO_THUMBS = {
   christmas: './Videos/games-page/christmas-games.png'
 };
 const VIDEO_LQ = {
-  reel: './Videos/games-page/video-games-reel_lq.webm',
-  christmas: './Videos/games-page/christmas-games_lq.webm'
+  reel: './Videos/games-page/video-games-reel-lq.webm',
+  christmas: './Videos/games-page/christmas-games-lq.webm'
+};
+const VIDEO_AUDIO = {
+  reel: './Videos/games-page/video-games-reel.opus',
+  christmas: './Videos/games-page/christmas-games.opus'
 };
 const GAME_SPLASH_FAST_PORTION = 0.78; // progress quickly then slow near the end
 const DEFAULT_CAMERA = {
@@ -84,6 +88,55 @@ const DISPLAY_FLIP_V = false;
 const INPUT_FLIP_U = true;
 const INPUT_FLIP_V = true;
 
+const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
+const AUDIO_VOLUME_KEY = 'site.audio.volume';
+const AUDIO_SYNC_KEY = 'site.audio.sync';
+const AUDIO_MUTED_KEY = 'site.audio.muted';
+
+function getStoredAudioSettings() {
+  const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
+  const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
+  return { muted, volume };
+}
+
+function getStoredSyncMs() {
+  const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
+  return Number.isFinite(raw) ? raw : 0;
+}
+
+function createAudioElement(src) {
+  const audio = document.createElement('audio');
+  audio.crossOrigin = 'anonymous';
+  audio.preload = 'auto';
+  audio.src = src;
+  return audio;
+}
+
+function applyAudioSettings(audio) {
+  if (!audio) return;
+  const { muted, volume } = getStoredAudioSettings();
+  audio.muted = muted;
+  try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+}
+
+function syncAudioToVideo(video, audio) {
+  if (!video || !audio) return;
+  const syncMs = getStoredSyncMs();
+  const syncSec = syncMs / 1000;
+  let target = video.currentTime - syncSec;
+  if (target < 0) target = 0;
+  if (Math.abs(audio.currentTime - target) > 0.1) {
+    try { audio.currentTime = target; } catch (e) { /* ignore */ }
+  }
+}
+
+function startAudioForVideo(video, audio) {
+  if (!video || !audio) return;
+  applyAudioSettings(audio);
+  syncAudioToVideo(video, audio);
+  try { audio.play().catch(() => {}); } catch (e) { /* ignore */ }
+}
 
 let renderer;
 let cssRenderer;
@@ -104,8 +157,11 @@ let screenTexture = null;
 
 let player = null;
 let playerVideo = null;
+let playerAudio = null;
+let playerBaseVideo = null;
 let videoReady = false;
 let reelVideo = null;
+let reelAudio = null;
 let reelReady = false;
 let reelSource = '';
 
@@ -537,22 +593,41 @@ function setupPlayer() {
     controlsFadeDuration: 200
   });
   player.loadVideos([VIDEO_SRC]);
+  player.setActiveVideo(0, { showControls: true });
 
   playerVideo = player.videos[0] || null;
+  playerBaseVideo = playerVideo;
   if (playerVideo) {
     playerVideo.crossOrigin = 'anonymous';
     playerVideo.playsInline = true;
     playerVideo.setAttribute('playsinline', '');
     playerVideo.preload = 'metadata';
+    playerVideo.muted = true;
+    playerAudio = createAudioElement(VIDEO_AUDIO.reel);
     playerVideo.addEventListener('loadedmetadata', () => {
       videoReady = true;
       needsRedraw = true;
     });
-    playerVideo.addEventListener('play', () => { needsRedraw = true; });
+    playerVideo.addEventListener('play', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
     playerVideo.addEventListener('pause', () => { needsRedraw = true; });
     playerVideo.addEventListener('ended', () => { needsRedraw = true; });
+    playerVideo.addEventListener('play', () => { startAudioForVideo(playerVideo, playerAudio); });
+    playerVideo.addEventListener('pause', () => { if (playerAudio) playerAudio.pause(); });
+    playerVideo.addEventListener('seeking', () => { syncAudioToVideo(playerVideo, playerAudio); });
+    playerVideo.addEventListener('timeupdate', () => { syncAudioToVideo(playerVideo, playerAudio); });
+    playerVideo.addEventListener('ratechange', () => {
+      if (playerAudio) {
+        try { playerAudio.playbackRate = playerVideo.playbackRate; } catch (e) { /* ignore */ }
+      }
+    });
     playerVideo.playbackRate = SPEED_RATES[speedIndex];
   }
+}
+
+function bindPlayerToVideo(video, showControls = true) {
+  if (!player || !video) return;
+  player.loadVideos([video]);
+  player.setActiveVideo(0, { showControls });
 }
 
 function setupMenu() {
@@ -913,26 +988,41 @@ function exitGameImmediate() {
   needsRedraw = true;
 }
 
-function startVideoReel(src) {
+function startVideoReel(entry) {
   if (!screenCanvas) return;
   stopVideoReel();
   setHoveredVideo(null);
   contentMode = 'video';
-  reelSource = src;
+  reelSource = entry && entry.src ? entry.src : '';
+  const audioSrc = entry && entry.id ? VIDEO_AUDIO[entry.id] : null;
   enterContentView();
   reelVideo = document.createElement('video');
-  reelVideo.src = src;
+  reelVideo.src = reelSource;
   reelVideo.loop = true;
   reelVideo.playsInline = true;
   reelVideo.setAttribute('playsinline', '');
   reelVideo.preload = 'metadata';
+  reelVideo.muted = true;
+  if (audioSrc) {
+    reelAudio = createAudioElement(audioSrc);
+  }
   reelVideo.addEventListener('loadedmetadata', () => {
     reelReady = true;
     needsRedraw = true;
   });
-  reelVideo.addEventListener('play', () => { needsRedraw = true; });
+  reelVideo.addEventListener('play', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
   reelVideo.addEventListener('pause', () => { needsRedraw = true; });
   reelVideo.addEventListener('ended', () => { needsRedraw = true; });
+  reelVideo.addEventListener('play', () => { startAudioForVideo(reelVideo, reelAudio); });
+  reelVideo.addEventListener('pause', () => { if (reelAudio) reelAudio.pause(); });
+  reelVideo.addEventListener('seeking', () => { syncAudioToVideo(reelVideo, reelAudio); });
+  reelVideo.addEventListener('timeupdate', () => { syncAudioToVideo(reelVideo, reelAudio); });
+  reelVideo.addEventListener('ratechange', () => {
+    if (reelAudio) {
+      try { reelAudio.playbackRate = reelVideo.playbackRate; } catch (e) { /* ignore */ }
+    }
+  });
+  bindPlayerToVideo(reelVideo, true);
   reelVideo.play().catch(() => {});
   needsRedraw = true;
   setExitControlVisible(true);
@@ -941,12 +1031,19 @@ function startVideoReel(src) {
 function stopVideoReel() {
   if (!reelVideo) return;
   reelVideo.pause();
+  if (reelAudio) {
+    try { reelAudio.pause(); } catch (e) {}
+    reelAudio = null;
+  }
   reelVideo.removeAttribute('src');
   reelVideo.load();
   reelVideo = null;
   reelReady = false;
   reelSource = '';
   contentMode = 'menu';
+  if (playerBaseVideo) {
+    bindPlayerToVideo(playerBaseVideo, false);
+  }
   setExitControlVisible(false);
   setScreenMeshHidden(false);
   restoreViewAfterContent();
@@ -1045,9 +1142,15 @@ function drawScreen() {
     } catch (e) { /* ignore */ }
   }
 
-  if (player && contentMode !== 'menu') {
-    player.updateControls();
-    player.drawControls();
+  if (player) {
+    player.setControlsBounds(contentRect || { x: 0, y: 0, w: W, h: H });
+    const showControls = (contentMode !== 'menu') ||
+      (playerVideo && !playerVideo.paused && !playerVideo.ended) ||
+      (reelVideo && !reelVideo.paused && !reelVideo.ended);
+    if (showControls) {
+      player.updateControls();
+      player.drawControls();
+    }
     drawSpeedBadge(ctx, contentRect);
     if (!playerVideo || playerVideo.paused || playerVideo.ended) {
       drawPlayOverlay(ctx, contentRect);
@@ -1346,7 +1449,7 @@ function handlePointerDown(ev) {
       if (entry) startGame(entry.url, entry.renderMode);
     } else if (action && action.type === 'video') {
       const entry = VIDEO_LIST[action.index];
-      if (entry) startVideoReel(entry.src);
+      if (entry) startVideoReel(entry);
     }
     return;
   }
@@ -1373,10 +1476,9 @@ function handlePointerDown(ev) {
   } else if (player) {
     const videoRect = getVideoRect();
     if (videoRect && pointInRect(hit.x, hit.y, videoRect)) {
-      if (playerVideo && (playerVideo.paused || playerVideo.ended)) {
-        playerVideo.muted = false;
-        playerVideo.volume = 1.0;
-        playerVideo.play().catch(() => {});
+      const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+      if (activeVideo && (activeVideo.paused || activeVideo.ended)) {
+        activeVideo.play().catch(() => {});
         needsRedraw = true;
       }
     }
@@ -1462,15 +1564,63 @@ function handlePointerUp(ev) {
 }
 
 function handleKeyDown(ev) {
-  if (ev.key !== 'Escape') return;
-  if (contentMode === 'game') {
-    exitGameImmediate();
-  } else if (contentMode === 'video') {
-    stopVideoReel();
-  } else {
-    contentMode = 'menu';
-    needsRedraw = true;
+  const key = (ev.key || '').toLowerCase();
+  if (key === 'escape') {
+    if (contentMode === 'game') {
+      exitGameImmediate();
+    } else if (contentMode === 'video') {
+      stopVideoReel();
+    } else {
+      contentMode = 'menu';
+      needsRedraw = true;
+    }
+    return;
   }
+
+  if (contentMode === 'game') return;
+  const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+  const activeAudio = (contentMode === 'video' && reelVideo) ? reelAudio : playerAudio;
+  if (!activeVideo) return;
+
+  const shift = ev.shiftKey;
+  const prevent = () => { try { ev.preventDefault(); } catch (e) { /* ignore */ } };
+
+  const seekBy = (delta) => {
+    if (!activeVideo.duration || !isFinite(activeVideo.duration)) return;
+    try { activeVideo.currentTime = Math.max(0, Math.min(activeVideo.duration, activeVideo.currentTime + delta)); } catch (e) { /* ignore */ }
+  };
+
+  if (key === ' ' || key === 'k') {
+    prevent();
+    if (activeVideo.paused) activeVideo.play().catch(() => {});
+    else activeVideo.pause();
+    if (player) player.showControlsTemporarily();
+    return;
+  }
+  if (key === 'm') {
+    prevent();
+    if (activeAudio) activeAudio.muted = !activeAudio.muted;
+    if (player) player.showControlsTemporarily();
+    return;
+  }
+  if (key === 'j') { prevent(); seekBy(-10); if (player) player.showControlsTemporarily(); return; }
+  if (key === 'l') { prevent(); seekBy(10); if (player) player.showControlsTemporarily(); return; }
+  if (key === 'arrowleft') { prevent(); seekBy(-5); if (player) player.showControlsTemporarily(); return; }
+  if (key === 'arrowright') { prevent(); seekBy(5); if (player) player.showControlsTemporarily(); return; }
+  if (key === 'arrowup') {
+    prevent();
+    if (activeAudio) activeAudio.volume = Math.max(0, Math.min(1, (activeAudio.volume || 0) + 0.05));
+    if (player) player.showControlsTemporarily();
+    return;
+  }
+  if (key === 'arrowdown') {
+    prevent();
+    if (activeAudio) activeAudio.volume = Math.max(0, Math.min(1, (activeAudio.volume || 0) - 0.05));
+    if (player) player.showControlsTemporarily();
+    return;
+  }
+  if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
+  if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
 }
 
 function enterContentView() {
@@ -1871,15 +2021,16 @@ function toCanvasEvent(x, y) {
   const rect = screenCanvas.getBoundingClientRect();
   const clientX = rect.left + (x / screenCanvas.width) * rect.width;
   const clientY = rect.top + (y / screenCanvas.height) * rect.height;
-  return { clientX, clientY };
+  return { clientX, clientY, canvasX: x, canvasY: y };
 }
 
 function getVideoRect() {
   if (!screenCanvas) return null;
   const W = screenCanvas.width;
   const H = screenCanvas.height;
-  const aspect = videoReady && playerVideo && playerVideo.videoWidth && playerVideo.videoHeight
-    ? playerVideo.videoWidth / playerVideo.videoHeight
+  const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+  const aspect = activeVideo && activeVideo.videoWidth && activeVideo.videoHeight
+    ? activeVideo.videoWidth / activeVideo.videoHeight
     : 16 / 9;
   return fitRectToAspect({ x: 0, y: 0, w: W, h: H }, aspect);
 }
@@ -1895,7 +2046,8 @@ function isPointInSpeedBadge(x, y, videoRect) {
 
 function cycleSpeed() {
   speedIndex = (speedIndex + 1) % SPEED_RATES.length;
-  if (playerVideo) playerVideo.playbackRate = SPEED_RATES[speedIndex];
+  const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+  if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex];
   needsRedraw = true;
 }
 

@@ -7,8 +7,8 @@ export const GAME_LIST = [
 ];
 
 export const VIDEO_LIST = [
-  { id: 'reel', label: 'Game Reel', src: './Videos/games-page/Video-Games-Reel_hq.webm' },
-  { id: 'christmas', label: 'Christmas', src: './Videos/games-page/Christmas-Games_hq.webm' }
+  { id: 'reel', label: 'Game Reel', src: './Videos/games-page/video-games-reel-hq.webm' },
+  { id: 'christmas', label: 'Christmas', src: './Videos/games-page/christmas-games-hq.webm' }
 ];
 
 export const MENU_LAYOUT = Object.freeze({

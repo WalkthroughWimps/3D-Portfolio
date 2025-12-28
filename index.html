@@ -8,9 +8,9 @@
     <style>
         :root { color-scheme: light dark; }
         html,body { height:100%; }
-        body { margin:0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; background: #0f1115; color: #e7f6f0; overflow:hidden; }
-        .wrap { max-width: 960px; margin: 0 auto; padding: 24px 16px 24px; box-sizing:border-box; }
-        header { margin: 12px 0 12px; }
+        body { margin:0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; background: #0f1115; color: #e7f6f0; overflow-y:auto; }
+        .wrap { max-width: 960px; margin: 0 auto; padding: 12px 16px 24px; box-sizing:border-box; }
+        header { margin: 4px 0 8px; }
         h1 { margin: 0 0 8px; font-size: clamp(22px, 4vw, 36px); }
         p.lead { margin: 0; opacity: .9; }
         section { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 16px; margin: 16px 0; }
@@ -25,18 +25,24 @@
         button.secondary { background: rgba(255,255,255,.06); color:#fff; border: 1px solid rgba(255,255,255,.15); padding: 10px 14px; border-radius: 8px; cursor: pointer; }
 
         /* Jump UI styles */
-        .jump-container { display:none; max-width: 980px; margin: 12px auto; background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:12px; box-sizing:border-box; }
+        .jump-container { display:none; max-width: 980px; margin: 8px auto; background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:12px; box-sizing:border-box; }
         .top-tabs { display:flex; gap:12px; margin-bottom:12px; }
         .tab { padding:8px 12px; background: rgba(0,0,0,.25); border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.06); }
         .tab.active { background: rgba(42,161,152,.12); border-color: rgba(42,161,152,.3); }
-        .video-tabs { display:flex; gap:12px; margin:12px 0; justify-content:center; }
+        .video-tabs { display:flex; gap:12px; margin:4px 0 6px; justify-content:center; }
         .jump-body { display:flex; gap:16px; align-items:stretch; justify-content:center; }
         .video-area { width:854px; max-width:100%; display:flex; flex-direction:column; align-items:center; }
-        .video-wrapper { width:854px; height:480px; max-width:100%; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
-        video#jumpVideo { width:100%; height:100%; background:#000; }
-        .controls-row { display:flex; gap:12px; align-items:center; margin-top:8px; }
+        .video-wrapper { width: min(640px, 100%); aspect-ratio: 4 / 3; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
+        video#jumpVideo { width:100%; height:100%; background:#000; object-fit: fill; }
+        .controls-row { display:flex; gap:12px; align-items:center; margin-top:-2px; }
+        .jump-actions { display:flex; justify-content:flex-end; margin-top:16px; }
 
-        .sync-row { margin-top:12px; display:flex; flex-direction:row; align-items:center; gap:8px; }
+        .slider-area { position:relative; width:100%; padding-top:12px; }
+        .slider-block { display:flex; align-items:flex-start; margin-top:0; padding-left:180px; }
+        .mouse-legend { position:absolute; left:-24px; top:24px; width:180px; height:100%; display:flex; gap:12px; align-items:flex-end; justify-content:center; }
+        .mouse-icon { width:78px; height:auto; }
+        .slider-stack { display:flex; flex-direction:column; gap:10px; }
+        .sync-row { display:flex; flex-direction:row; align-items:center; gap:8px; }
         .sync-slider { width:480px; max-width:100%; }
         .video-select { display:flex; gap:8px; margin-left:8px; }
         .hidden { display:none !important; }
@@ -44,8 +50,13 @@
         .permission-box { background:#0f1115; border:1px solid rgba(255,255,255,.08); padding:18px; border-radius:10px; max-width:560px; }
 
         /* Visualizer */
-        .visualizer-container { width:96px; height:480px; display:flex; align-items:center; justify-content:center; }
-        canvas#visualizer { width:64px; height:420px; background:transparent; display:block; }
+        .visualizer-container { width:150px; height:480px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; }
+        .viz-meter { display:flex; align-items:stretch; gap:6px; }
+        .viz-scale { display:flex; flex-direction:column; justify-content:space-between; height:420px; font-size:11px; opacity:.75; }
+        .viz-mark { display:flex; align-items:center; gap:6px; }
+        .viz-rule { width:18px; height:1px; background:rgba(255,255,255,.25); }
+        canvas#visualizer { width:28px; height:420px; background:transparent; display:block; }
+        .viz-readout { font-size:12px; opacity:.85; }
 
         /* Settings overlay inside jump container */
         .settings-panel { margin-top:12px; }
@@ -121,7 +132,22 @@
         <div id="jumpContainer" class="jump-container" aria-hidden="true" tabindex="0">
             <div class="jump-body">
                 <div class="visualizer-container">
-                    <canvas id="visualizer" width="64" height="420"></canvas>
+                    <div class="viz-meter">
+                        <div class="viz-scale" aria-hidden="true">
+                            <div class="viz-mark"><span>0</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-6</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-12</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-18</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-24</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-30</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-36</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-42</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-48</span><span class="viz-rule"></span></div>
+                            <div class="viz-mark"><span>-54</span><span class="viz-rule"></span></div>
+                        </div>
+                        <canvas id="visualizer" width="28" height="420"></canvas>
+                    </div>
+                    <div id="vizDb" class="viz-readout">dB: -inf</div>
                 </div>
 
                 <div class="video-area">
@@ -142,17 +168,36 @@
                     <div class="controls-row">
                         <div class="hint">Playback controls</div>
                         <div class="hint" id="syncDisplay">Sync: 0 ms</div>
+                        <div class="hint" id="volumeDisplay">Volume: 25%</div>
                     </div>
 
-                    <div class="sync-row">
-                        <button class="arrow-btn" id="syncLeft">◀</button>
-                        <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="50" value="0" aria-label="A/V sync (ms)">
-                        <button class="arrow-btn" id="syncRight">▶</button>
+                    <div class="slider-area">
+                        <div class="mouse-legend" aria-hidden="true">
+                            <img class="mouse-icon" src="assets/SVG/mouse-LMB.svg" alt="Left mouse button">
+                            <img class="mouse-icon" src="assets/SVG/mouse_RMB.svg" alt="Right mouse button">
+                        </div>
+                        <div class="slider-block">
+                            <div class="slider-stack">
+                                <div class="sync-row">
+                                    <button class="arrow-btn" id="syncLeft">&lt;</button>
+                                    <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="10" value="0" aria-label="A/V sync (ms)">
+                                    <button class="arrow-btn" id="syncRight">&gt;</button>
+                                </div>
+                                <div class="sync-row">
+                                    <button class="arrow-btn" id="volDown">&lt;</button>
+                                    <input id="volumeSlider" class="sync-slider" type="range" min="0" max="100" step="1" value="25" aria-label="Volume (%)">
+                                    <button class="arrow-btn" id="volUp">&gt;</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="settingsPanel" class="settings-panel">
                         <div id="settingsA11ySummary" class="hidden">Accessibility saved. Use the main controls to edit.</div>
-                        <div id="settingsAudioControls">Volume and sync controls are shown beside the video.</div>
+                    </div>
+
+                    <div class="jump-actions">
+                        <button id="nextBtn" class="primary" type="button">Next</button>
                     </div>
                 </div>
             </div>
@@ -210,9 +255,15 @@
             const AUDIO_MUTED_KEY = 'site.audio.muted';
 
             // File paths (relative to site root)
-            const VIDEOS = {
-                counts: 'assets/videos/Sesame Street  James Earl Jones Counts to 10.mp4',
-                alphabet: 'assets/videos/Sesame Street James Earl Jones Says The Alphabet.mp4'
+            const MEDIA = {
+                counts: {
+                    video: 'Videos/start-page/counting-hq.webm',
+                    audio: 'Videos/start-page/counting.opus'
+                },
+                alphabet: {
+                    video: 'Videos/start-page/alphabet-hq.webm',
+                    audio: 'Videos/start-page/alphabet.opus'
+                }
             };
 
             // Elements
@@ -228,8 +279,13 @@
             const syncLeft = document.getElementById('syncLeft');
             const syncRight = document.getElementById('syncRight');
             const syncDisplay = document.getElementById('syncDisplay');
+            const volumeSlider = document.getElementById('volumeSlider');
+            const volDown = document.getElementById('volDown');
+            const volUp = document.getElementById('volUp');
+            const volumeDisplay = document.getElementById('volumeDisplay');
             const tabNumbers = document.getElementById('tab-numbers');
             const tabAlphabet = document.getElementById('tab-alphabet');
+            const nextBtn = document.getElementById('nextBtn');
             const a11ySection = document.getElementById('a11ySection');
             const settingsBtn = document.getElementById('settingsBtn');
             const settingsModal = document.getElementById('settingsModal');
@@ -251,6 +307,7 @@
             // Visualizer
             const canvas = document.getElementById('visualizer');
             const canvasCtx = canvas.getContext('2d');
+            const vizDb = document.getElementById('vizDb');
 
             // WebAudio nodes
             let audioCtx = null;
@@ -258,6 +315,9 @@
             let analyser = null;
             let delayNode = null;
             let destinationGain = null;
+            let suppressVolumeEvent = false;
+            let vizPeakDb = -Infinity;
+            let vizPeakColor = '#2aa198';
 
             // State
             let currentVideoKey = 'counts';
@@ -282,9 +342,14 @@
 
             permAllow.addEventListener('click', async ()=>{
                 localStorage.setItem(AUDIO_ALLOWED_KEY, 'true');
+                localStorage.setItem(AUDIO_MUTED_KEY, 'false');
+                storedMuted = false;
+                storedVolume = 0.25;
+                localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
                 permModal.classList.add('hidden');
                 permModal.style.display = 'none';
                 ensureAudioRouting();
+                applyVolumeAndMuted();
                 try{ await audioCtx.resume(); }catch(e){}
             });
             permDeny.addEventListener('click', ()=>{
@@ -303,11 +368,11 @@
                     analyser.fftSize = 256;
                     delayNode = audioCtx.createDelay(3.0); // max 3s
                     destinationGain = audioCtx.createGain();
-                    // route: mediaSource -> analyser -> delayNode -> destinationGain -> audioCtx.destination
-                    mediaSource.connect(analyser);
-                    analyser.connect(delayNode);
+                    // route: mediaSource -> delayNode -> destinationGain -> analyser -> audioCtx.destination
+                    mediaSource.connect(delayNode);
                     delayNode.connect(destinationGain);
-                    destinationGain.connect(audioCtx.destination);
+                    destinationGain.connect(analyser);
+                    analyser.connect(audioCtx.destination);
                     applySyncValue(storedSync);
                     applyVolumeAndMuted();
                     startVisualizer();
@@ -320,34 +385,69 @@
                     destinationGain = null;
                 }
             }
+            function resumeAudioContext(){
+                if(audioCtx && audioCtx.state === 'suspended'){
+                    audioCtx.resume().catch(()=>{});
+                }
+            }
 
             function applySyncValue(ms){
                 storedSync = parseInt(ms, 10) || 0;
                 localStorage.setItem(AUDIO_SYNC_KEY, String(storedSync));
                 syncDisplay.textContent = `Sync: ${storedSync} ms`;
 
+                if(window.siteConfig) window.siteConfig.audioSyncMs = storedSync;
+
                 if(!audioCtx || !delayNode) return;
                 const audioDelaySec = Math.max(0, storedSync/1000);
                 delayNode.delayTime.value = audioDelaySec;
+                if(isPlaying) syncWhilePlaying();
             }
 
             function applyVolumeAndMuted(){
                 // When WebAudio available use gain node and keep native element muted to avoid double audio.
                 if(destinationGain){
                     destinationGain.gain.value = storedMuted ? 0 : storedVolume;
-                    try{ jumpAudio.muted = true; }catch(e){}
-                    try{ jumpVideo.muted = true; }catch(e){}
+                    try{ jumpAudio.muted = false; }catch(e){}
+                    try{
+                        suppressVolumeEvent = true;
+                        jumpVideo.muted = true;
+                    }catch(e){} finally { suppressVolumeEvent = false; }
                 }else{
                     try{ jumpAudio.muted = false; jumpVideo.muted = storedMuted; jumpVideo.volume = storedVolume; }catch(e){}
                 }
                 // persist
                 localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
                 localStorage.setItem(AUDIO_MUTED_KEY, storedMuted ? 'true':'false');
+                updateVolumeUI();
+                resetPeakHold();
+            }
+
+            function updateVolumeUI(){
+                if(volumeSlider){
+                    volumeSlider.value = Math.round(storedVolume * 100);
+                }
+                if(volumeDisplay){
+                    volumeDisplay.textContent = `Volume: ${Math.round(storedVolume * 100)}%`;
+                }
+            }
+
+            function setVolumeFromPercent(percent){
+                const clamped = Math.max(0, Math.min(100, percent));
+                storedVolume = clamped / 100;
+                storedMuted = storedVolume === 0;
+                resumeAudioContext();
+                applyVolumeAndMuted();
+            }
+
+            function resetPeakHold(){
+                vizPeakDb = -Infinity;
+                vizPeakColor = '#2aa198';
             }
 
             function loadVideo(key){
                 currentVideoKey = key;
-                const src = VIDEOS[key];
+                const media = MEDIA[key];
                 // Pause both
                 jumpVideo.pause();
                 jumpAudio.pause();
@@ -355,8 +455,8 @@
                 // Set sources on both elements
                 while(jumpVideo.firstChild) jumpVideo.removeChild(jumpVideo.firstChild);
                 while(jumpAudio.firstChild) jumpAudio.removeChild(jumpAudio.firstChild);
-                const vsrc = document.createElement('source'); vsrc.src = src;
-                const asrc = document.createElement('source'); asrc.src = src;
+                const vsrc = document.createElement('source'); vsrc.src = media.video; vsrc.type = 'video/webm';
+                const asrc = document.createElement('source'); asrc.src = media.audio; asrc.type = 'audio/ogg; codecs=opus';
                 jumpVideo.appendChild(vsrc);
                 jumpAudio.appendChild(asrc);
                 jumpVideo.load();
@@ -368,76 +468,70 @@
                     try{ analyser.disconnect(); }catch(e){}
                     try{ delayNode.disconnect(); }catch(e){}
                     try{ destinationGain.disconnect(); }catch(e){}
-                    try{ mediaSource = audioCtx.createMediaElementSource(jumpAudio); mediaSource.connect(analyser); }catch(e){}
-                    try{ analyser.connect(delayNode); delayNode.connect(destinationGain); destinationGain.connect(audioCtx.destination); }catch(e){}
+                    try{ mediaSource = audioCtx.createMediaElementSource(jumpAudio); mediaSource.connect(delayNode); }catch(e){}
+                    try{ delayNode.connect(destinationGain); destinationGain.connect(analyser); analyser.connect(audioCtx.destination); }catch(e){}
                 }
                 // apply persisted settings
                 applyVolumeAndMuted();
                 applySyncValue(storedSync);
             }
 
+            function preloadMedia(){
+                Object.values(MEDIA).forEach((media)=>{
+                    const preloadVideo = document.createElement('video');
+                    preloadVideo.preload = 'auto';
+                    preloadVideo.src = media.video;
+                    preloadVideo.load();
+
+                    const preloadAudio = document.createElement('audio');
+                    preloadAudio.preload = 'auto';
+                    preloadAudio.src = media.audio;
+                    preloadAudio.load();
+                });
+            }
+
             // Orchestrate playback so sync offset works both positive and negative
             let isPlaying = false;
             // Whether orchestration (separate audio element + WebAudio) is available and should be used.
             let orchestrationSupported = true;
-            function orchestratedPlay(){
-                if(isOrchestrating) return;
-                isOrchestrating = true;
+            function startAudioForVideoPlayback(){
                 ensureAudioRouting();
+                resumeAudioContext();
                 const sync = storedSync;
-                // Align audio and video currentTime
-                try{
-                    // Keep times close. Use jumpVideo.currentTime as master.
-                    const ct = jumpVideo.currentTime || 0;
-                    jumpAudio.currentTime = ct;
-                    // If positive sync: delay audio via delayNode, play both simultaneously
-                    if(sync >= 0){
-                        if(delayNode) delayNode.delayTime.value = sync / 1000;
-                        Promise.all([jumpAudio.play(), jumpVideo.play()]).then(()=>{
-                            isPlaying = true; isOrchestrating = false;
-                        }).catch((err)=>{
-                            // Orchestration failed (browser blocked audio or other issue).
-                            isOrchestrating = false;
-                            orchestrationSupported = false;
-                            // Fallback: play video natively with audio unmuted
-                            fallbackToNativePlayback();
-                        });
-                    }else{
-                        // Negative sync: audio should be earlier -> play audio now and delay video start
-                        if(delayNode) delayNode.delayTime.value = 0;
-                        jumpAudio.play().then(()=>{
-                            isPlaying = true;
-                            // delay video by abs(sync)
-                            setTimeout(()=>{ jumpVideo.play(); isOrchestrating=false; }, Math.abs(sync));
-                        }).catch((err)=>{
-                            isOrchestrating = false;
-                            orchestrationSupported = false;
-                            fallbackToNativePlayback();
-                        });
+                const ct = jumpVideo.currentTime || 0;
+                if(sync >= 0){
+                    if(jumpAudio.readyState >= 1){
+                        try{ jumpAudio.currentTime = ct; }catch(e){}
                     }
-                }catch(e){ isOrchestrating=false; }
-            }
-            function orchestratedPause(){
-                try{ jumpAudio.pause(); }catch(e){}
-                try{ jumpVideo.pause(); }catch(e){}
-                isPlaying = false;
+                    if(delayNode) delayNode.delayTime.value = sync / 1000;
+                }else{
+                    if(delayNode) delayNode.delayTime.value = 0;
+                    const audioOffset = Math.abs(sync) / 1000;
+                    if(jumpAudio.readyState >= 1){
+                        try{ jumpAudio.currentTime = ct + audioOffset; }catch(e){}
+                    }
+                }
+                jumpAudio.play().catch(()=>{
+                    // Allow video-only playback if audio is blocked.
+                    orchestrationSupported = false;
+                });
             }
 
             // When user presses the visible video's play control, intercept and orchestrate (if supported)
             jumpVideo.addEventListener('play', (e)=>{
                 if(!orchestrationSupported){
                     // allow native playback
+                    isPlaying = true;
                     return;
                 }
-                // If audio routing is used, control playback from orchestrator
-                if(!isPlaying){
-                    // stop native immediate play and run orchestrator
-                    jumpVideo.pause();
-                    orchestratedPlay();
-                }
+                startAudioForVideoPlayback();
+                isPlaying = true;
             });
             jumpVideo.addEventListener('pause', ()=>{
-                if(isPlaying){ orchestratedPause(); }
+                if(isPlaying){
+                    try{ jumpAudio.pause(); }catch(e){}
+                    isPlaying = false;
+                }
             });
 
             // When user seeks using visible video's UI, update audio currentTime
@@ -445,34 +539,81 @@
                 try{ jumpAudio.currentTime = jumpVideo.currentTime; }catch(e){}
             });
 
-            // If sync changes while playing, resync by restarting playback aligned
-            function resyncWhilePlaying(){
-                const wasPlaying = isPlaying;
+            // If sync changes while playing, adjust without restarting.
+            function syncWhilePlaying(){
+                if(!isPlaying || !orchestrationSupported) return;
                 const ct = jumpVideo.currentTime || 0;
-                orchestratedPause();
-                // set positions
-                try{ jumpVideo.currentTime = ct; jumpAudio.currentTime = ct; }catch(e){}
-                if(wasPlaying) orchestratedPlay();
+                if(storedSync >= 0){
+                    if(delayNode) delayNode.delayTime.value = storedSync / 1000;
+                    try{ jumpAudio.currentTime = ct; }catch(e){}
+                }else{
+                    if(delayNode) delayNode.delayTime.value = 0;
+                    const audioOffset = Math.abs(storedSync) / 1000;
+                    try{
+                        const target = ct + audioOffset;
+                        const duration = jumpAudio.duration || 0;
+                        jumpAudio.currentTime = duration ? Math.min(target, Math.max(0, duration - 0.05)) : target;
+                    }catch(e){}
+                }
             }
 
             // Visualizer draw loop
             let vizAnimation = null;
             function startVisualizer(){
                 if(!analyser || !canvasCtx) return;
-                const bufferLength = analyser.frequencyBinCount;
+                const bufferLength = analyser.fftSize;
                 const dataArray = new Uint8Array(bufferLength);
                 const width = canvas.width;
                 const height = canvas.height;
+                const minDb = -54;
+                const gateDb = -20;
 
                 function draw(){
-                    analyser.getByteFrequencyData(dataArray);
-                    let sum = 0;
-                    for(let i=0;i<dataArray.length;i++){ sum += dataArray[i]; }
-                    const avg = sum / dataArray.length;
+                    analyser.getByteTimeDomainData(dataArray);
+                    let peak = 0;
+                    for(let i=0;i<dataArray.length;i++){
+                        const centered = (dataArray[i] - 128) / 128;
+                        const abs = Math.abs(centered);
+                        if(abs > peak) peak = abs;
+                    }
+                    const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+                    const belowGate = !(Number.isFinite(db)) || db < gateDb;
+                    const gatedDb = belowGate ? gateDb : db;
+                    const clampedDb = Math.max(minDb, Math.min(0, gatedDb));
+                    const norm = (clampedDb - minDb) / Math.abs(minDb);
+                    const level = norm * height;
+
+                    let meterColor = '#2aa198';
+                    if(db > -6){
+                        meterColor = '#e44b4b';
+                    }else if(db > -18){
+                        meterColor = '#e3c14a';
+                    }
+
+                    if(!belowGate && db > vizPeakDb){
+                        vizPeakDb = db;
+                        vizPeakColor = meterColor;
+                    }
+
                     canvasCtx.clearRect(0,0,width,height);
-                    const level = (avg/255) * height;
-                    canvasCtx.fillStyle = '#2aa198';
+                    canvasCtx.fillStyle = meterColor;
                     canvasCtx.fillRect(0, height - level, width, level);
+
+                    if(Number.isFinite(vizPeakDb)){
+                        const peakClamped = Math.max(minDb, Math.min(0, vizPeakDb));
+                        const peakNorm = (peakClamped - minDb) / Math.abs(minDb);
+                        const peakY = height - (peakNorm * height);
+                        canvasCtx.fillStyle = vizPeakColor;
+                        canvasCtx.fillRect(0, Math.max(0, peakY - 1), width, 2);
+                    }
+
+                    if(vizDb){
+                        if(belowGate){
+                            vizDb.textContent = 'dB: < -20';
+                        }else{
+                            vizDb.textContent = `dB: ${db.toFixed(1)}`;
+                        }
+                    }
                     vizAnimation = requestAnimationFrame(draw);
                 }
                 if(!vizAnimation) draw();
@@ -519,27 +660,55 @@
                 showPermissionIfNeeded();
             });
 
+            if(nextBtn){
+                nextBtn.addEventListener('click', ()=>{
+                    window.location.href = 'about.html';
+                });
+            }
+
             // Video tabs
             tabNumbers.addEventListener('click', ()=>{ tabNumbers.classList.add('active'); tabAlphabet.classList.remove('active'); loadVideo('counts'); });
             tabAlphabet.addEventListener('click', ()=>{ tabAlphabet.classList.add('active'); tabNumbers.classList.remove('active'); loadVideo('alphabet'); });
+
+            function bindStepButton(button, leftDelta, rightDelta, handler){
+                if(!button) return;
+                button.addEventListener('pointerup', (e)=>{
+                    if(e.button === 0){
+                        handler(leftDelta);
+                    }
+                });
+                button.addEventListener('contextmenu', (e)=>{
+                    e.preventDefault();
+                    handler(rightDelta);
+                });
+            }
 
             // Sync arrows
             function changeSyncBy(deltaMs){
                 let v = parseInt(syncSlider.value,10) + deltaMs;
                 v = Math.max(-3000, Math.min(3000, v));
                 syncSlider.value = v; applySyncValue(v);
-                if(isPlaying) resyncWhilePlaying();
             }
-            syncLeft.addEventListener('click', ()=>{ changeSyncBy(-50); });
-            syncRight.addEventListener('click', ()=>{ changeSyncBy(50); });
+            bindStepButton(syncLeft, -10, -50, changeSyncBy);
+            bindStepButton(syncRight, 10, 50, changeSyncBy);
+
+            // Volume arrows
+            function changeVolumeBy(deltaPct){
+                const currentPct = Math.round(storedVolume * 100);
+                setVolumeFromPercent(currentPct + deltaPct);
+            }
+            bindStepButton(volDown, -1, -5, changeVolumeBy);
+            bindStepButton(volUp, 1, 5, changeVolumeBy);
 
             // Sliders input
-            syncSlider.addEventListener('input', (e)=>{ applySyncValue(e.target.value); if(modalSync) modalSync.value = e.target.value; if(isPlaying) resyncWhilePlaying(); });
-            if(modalSync) modalSync.addEventListener('input', (e)=>{ applySyncValue(e.target.value); syncSlider.value = e.target.value; if(isPlaying) resyncWhilePlaying(); });
+            syncSlider.addEventListener('input', (e)=>{ applySyncValue(e.target.value); if(modalSync) modalSync.value = e.target.value; });
+            if(modalSync) modalSync.addEventListener('input', (e)=>{ applySyncValue(e.target.value); syncSlider.value = e.target.value; });
+            if(volumeSlider) volumeSlider.addEventListener('input', (e)=>{ setVolumeFromPercent(parseInt(e.target.value, 10)); });
 
             // Capture native volume/mute changes on the video and persist them across pages
             // Note: users will use visible video's controls; we map them to stored values
             jumpVideo.addEventListener('volumechange', ()=>{
+                if(suppressVolumeEvent) return;
                 const vol = jumpVideo.volume;
                 const muted = jumpVideo.muted;
                 storedVolume = vol;
@@ -604,7 +773,17 @@
                 syncSlider.value = storedSync;
                 if(modalSync) modalSync.value = storedSync;
                 applySyncValue(storedSync);
+                preloadMedia();
                 loadVideo(currentVideoKey);
+                if(localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true'){
+                    storedMuted = false;
+                    storedVolume = 0.25;
+                    localStorage.setItem(AUDIO_MUTED_KEY, 'false');
+                    localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+                    ensureAudioRouting();
+                    applyVolumeAndMuted();
+                    jumpVideo.play().catch(()=>{});
+                }
             });
         })();
     </script>

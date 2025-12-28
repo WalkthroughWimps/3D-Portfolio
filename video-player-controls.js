@@ -46,6 +46,7 @@ class PlayerState {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.state = new PlayerState();
+      this.controlsBounds = null;
       
       // Configuration
       this.config = {
@@ -56,6 +57,8 @@ class PlayerState {
         onBackClick: options.onBackClick || null,
         onVideoEnd: options.onVideoEnd || null,
         getGridRect: options.getGridRect || null, // function(index) -> {x, y, w, h}
+        getControlsBounds: options.getControlsBounds || null, // function() -> {x, y, w, h}
+        controlsOnlyWhenPlaying: options.controlsOnlyWhenPlaying !== false,
         ...options
       };
 
@@ -336,8 +339,45 @@ class PlayerState {
       this.state.controlsAnimStart = performance.now();
     }
 
+    getActiveVideo() {
+      const idx = this.state.fullIndex;
+      if (idx < 0 || idx >= this.videos.length) return null;
+      return this.videos[idx] || null;
+    }
+
+    setActiveVideo(index, opts = {}) {
+      if (index < 0 || index >= this.videos.length) return false;
+      this.state.fullIndex = index;
+      this.state.activeIndex = index;
+      this.state.playingFull = true;
+      if (opts.showControls) this.showControlsTemporarily();
+      return true;
+    }
+
+    setControlsBounds(rect) {
+      if (!rect || !isFinite(rect.x) || !isFinite(rect.y) || !isFinite(rect.w) || !isFinite(rect.h)) {
+        this.controlsBounds = null;
+        return;
+      }
+      this.controlsBounds = {
+        x: rect.x,
+        y: rect.y,
+        w: rect.w,
+        h: rect.h
+      };
+    }
+
     getCanvasPoint(event) {
+      if (event && Number.isFinite(event.canvasX) && Number.isFinite(event.canvasY)) {
+        return { x: event.canvasX, y: event.canvasY };
+      }
       const rect = this.canvas.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) {
+        if (event && Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+          return { x: event.clientX, y: event.clientY };
+        }
+        return null;
+      }
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       const scaleX = this.canvas.width / rect.width;
@@ -356,32 +396,49 @@ class PlayerState {
     getControlsLayout() {
       const CW = this.canvas.width;
       const CH = this.canvas.height;
-      const BAR_H = this.getBarHeight();
+      const bounds = (() => {
+        if (this.config.getControlsBounds) {
+          try {
+            const b = this.config.getControlsBounds();
+            if (b && isFinite(b.x) && isFinite(b.y) && isFinite(b.w) && isFinite(b.h)) return b;
+          } catch (e) { /* ignore */ }
+        }
+        return this.controlsBounds || { x: 0, y: 0, w: CW, h: CH };
+      })();
+      const BAR_H = Math.max(24, Math.round(bounds.h * 0.08));
       const ICON_SIZE = Math.round(BAR_H * 0.5);
       const PAD = Math.round(BAR_H * 0.25);
 
       return {
         top: {
-          x: 0,
-          y: 0,
-          w: CW,
+          x: bounds.x,
+          y: bounds.y,
+          w: bounds.w,
           h: BAR_H,
-          back: { x: PAD, y: (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE }
+          back: { x: bounds.x + PAD, y: bounds.y + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE }
         },
         bottom: {
-          x: 0,
-          y: CH - BAR_H,
-          w: CW,
+          x: bounds.x,
+          y: bounds.y + bounds.h - BAR_H,
+          w: bounds.w,
           h: BAR_H,
-          play: { x: PAD, y: CH - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
-          mute: { x: PAD * 2 + ICON_SIZE, y: CH - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
-          progress: { x: PAD * 3 + ICON_SIZE * 2, y: CH - BAR_H + BAR_H / 2 - 2, w: CW - (PAD * 4 + ICON_SIZE * 2), h: 4 }
+          play: { x: bounds.x + PAD, y: bounds.y + bounds.h - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
+          mute: { x: bounds.x + PAD * 2 + ICON_SIZE, y: bounds.y + bounds.h - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
+          progress: { x: bounds.x + PAD * 3 + ICON_SIZE * 2, y: bounds.y + bounds.h - BAR_H + BAR_H / 2 - 2, w: bounds.w - (PAD * 4 + ICON_SIZE * 2), h: 4 }
         }
       };
     }
 
     updateControls() {
-      if (!this.state.playingFull) return;
+      const video = this.getActiveVideo();
+      if (!video) return;
+      if (this.config.controlsOnlyWhenPlaying && (video.paused || video.ended)) {
+        this.state.controlsVisible = 0;
+        return;
+      }
+      if (!this.state.controlsAnimStart) {
+        this.showControlsTemporarily();
+      }
 
       // Auto-hide controls after delay
       const now = performance.now();
@@ -403,7 +460,7 @@ class PlayerState {
 
       const ctx = this.ctx;
       const ui = this.getControlsLayout();
-      const video = this.videos[this.state.fullIndex];
+      const video = this.getActiveVideo();
       if (!video) return;
 
       const finalAlpha = alpha * this.state.controlsVisible;
@@ -884,12 +941,51 @@ class PlayerState {
       const mediaHq = media.hq || {};
       const mediaLq = media.lq || {};
       const mediaThumbs = media.thumbs || {};
+      const mediaAudio = media.audio || {};
+      const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
+      const AUDIO_VOLUME_KEY = 'site.audio.volume';
+      const AUDIO_SYNC_KEY = 'site.audio.sync';
+      const AUDIO_MUTED_KEY = 'site.audio.muted';
+      const AUDIO_DEBUG_KEY = 'site.audio.debug';
 
       function resolveMediaUrl(path) {
         if (!path) return null;
         if (/^https?:\/\//i.test(path) || path.startsWith('/') || path.startsWith('data:')) return path;
         const srcPath = base + path;
         return encodeURI((window && window.mediaUrl) ? window.mediaUrl(srcPath) : srcPath);
+      }
+
+      function getStoredAudioSettings() {
+        const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+        const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
+        const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
+        return { muted, volume };
+      }
+
+      function getEffectiveAudioSettings() {
+        const stored = getStoredAudioSettings();
+        if (!canUseAudio()) {
+          return { muted: true, volume: 0 };
+        }
+        const volume = Math.max(0, Math.min(1, stored.volume));
+        const muted = stored.muted || volume <= 0.001;
+        return { muted, volume: muted ? 0 : volume };
+      }
+
+      function getStoredSyncMs() {
+        const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
+        return Number.isFinite(raw) ? raw : 0;
+      }
+
+      function isAudioDebugEnabled() {
+        try { return localStorage.getItem(AUDIO_DEBUG_KEY) === 'true'; } catch (e) { return false; }
+      }
+
+      function setAudioDebugEnabled(enabled) {
+        try {
+          if (enabled) localStorage.setItem(AUDIO_DEBUG_KEY, 'true');
+          else localStorage.removeItem(AUDIO_DEBUG_KEY);
+        } catch (e) { /* ignore */ }
       }
 
       const thumbs = entries.map((entry) => {
@@ -934,6 +1030,13 @@ class PlayerState {
         const rate = playbackRates[Math.max(0, Math.min(playbackRates.length - 1, uiState.playbackRateIndex))];
         try { video.playbackRate = rate; } catch (e) { /* ignore */ }
         setPreservePitchFlag(video, uiState.preservePitch);
+      }
+
+      function applyAudioPlaybackSettings(audio) {
+        if (!audio) return;
+        const rate = playbackRates[Math.max(0, Math.min(playbackRates.length - 1, uiState.playbackRateIndex))];
+        try { audio.playbackRate = rate; } catch (e) { /* ignore */ }
+        setPreservePitchFlag(audio, uiState.preservePitch);
       }
 
       function toggleMute(video) {
@@ -1154,6 +1257,34 @@ class PlayerState {
         return v;
       }
 
+      function createAudio(srcs = []) {
+        const a = document.createElement('audio');
+        a.crossOrigin = 'anonymous';
+        a.preload = 'auto';
+        a.loop = false;
+        let i = 0;
+        const list = Array.isArray(srcs) ? srcs : [srcs];
+        const tryNext = () => {
+          if (i >= list.length) return;
+          const current = list[i++];
+          const srcPath = resolveMediaUrl(current);
+          if (!srcPath) { tryNext(); return; }
+          a.src = srcPath;
+          a.load();
+        };
+        const onAbortLike = () => tryNext();
+        a.addEventListener('error', tryNext);
+        a.addEventListener('abort', onAbortLike);
+        a.addEventListener('stalled', onAbortLike);
+        a.addEventListener('loadedmetadata', () => {
+          a.removeEventListener('error', tryNext);
+          a.removeEventListener('abort', onAbortLike);
+          a.removeEventListener('stalled', onAbortLike);
+        }, { once: true });
+        tryNext();
+        return a;
+      }
+
       const previewVideos = entries.map((entry) => {
         const lqUrl = mediaLq[entry.id];
         const sources = lqUrl ? [lqUrl] : [`${entry.id}-lq.webm`, `${entry.id}.mp4`];
@@ -1163,6 +1294,11 @@ class PlayerState {
         const hqUrl = mediaHq[entry.id];
         const sources = hqUrl ? [hqUrl] : [`${entry.id}-hq.webm`, `${entry.id}.mp4`];
         return createVideo(sources, !opts.allowSound);
+      });
+      const fullAudios = entries.map((entry) => {
+        const audioUrl = mediaAudio[entry.id];
+        const sources = audioUrl ? [audioUrl] : [`${entry.id}.opus`];
+        return createAudio(sources);
       });
       // expose preview/full video element arrays so external player instances can reuse them
       try { window.__videoGridPreviewVideos = previewVideos; window.__videoGridFullVideos = fullVideos; } catch (e) { /* ignore */ }
@@ -1176,12 +1312,311 @@ class PlayerState {
         if (!v) return;
         try { v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
       });
+      fullAudios.forEach((a) => {
+        if (!a) return;
+        try { a.preload = 'auto'; a.load(); } catch (e) { /* ignore */ }
+      });
 
       function applySettingsToAllVideos() {
         previewVideos.forEach(applyPlaybackSettings);
         fullVideos.forEach(applyPlaybackSettings);
+        fullAudios.forEach(applyAudioPlaybackSettings);
       }
       applySettingsToAllVideos();
+      try {
+        const { volume } = getStoredAudioSettings();
+        if (volume > 0.001) uiState.lastVolume = volume;
+      } catch (e) { /* ignore */ }
+
+      function canUseAudio() {
+        return !!opts.allowSound && localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+      }
+
+      function getFullAudio(idx) {
+        return fullAudios[idx];
+      }
+
+      function ensureVideoMuted(video) {
+        if (!video) return;
+        try { video.muted = true; video.volume = 0; } catch (e) { /* ignore */ }
+      }
+
+      function setStoredVolumeFromRatio(ratio) {
+        const clamped = Math.max(0, Math.min(1, ratio));
+        try {
+          localStorage.setItem(AUDIO_VOLUME_KEY, String(clamped));
+          localStorage.setItem(AUDIO_MUTED_KEY, clamped <= 0.001 ? 'true' : 'false');
+        } catch (e) { /* ignore */ }
+      }
+
+      function toggleStoredMute() {
+        const { muted, volume } = getStoredAudioSettings();
+        if (muted || volume <= 0.001) {
+          const target = uiState.lastVolume || 0.5;
+          setStoredVolumeFromRatio(target);
+        } else {
+          uiState.lastVolume = volume;
+          setStoredVolumeFromRatio(0);
+        }
+        applyAudioSettings(getFullAudio(fullIndex));
+      }
+
+      function startFullPlayback(idx) {
+        const video = fullVideos[idx];
+        const audio = getFullAudio(idx);
+        if (!video) return;
+        ensureVideoMuted(video);
+        if (canUseAudio()) {
+          startAudioForVideo(video, audio);
+        } else if (audio) {
+          try { audio.pause(); } catch (e) { /* ignore */ }
+        }
+        video.play().catch(() => {});
+      }
+
+      function pauseFullPlayback(idx) {
+        const video = fullVideos[idx];
+        const audio = getFullAudio(idx);
+        if (video) { try { video.pause(); } catch (e) { /* ignore */ } }
+        if (audio) { try { audio.pause(); } catch (e) { /* ignore */ } }
+      }
+
+      function applyAudioSettings(audio) {
+        if (!audio) return;
+        const { muted, volume } = getEffectiveAudioSettings();
+        audio.muted = muted;
+        try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+      }
+
+      const audioSyncState = fullAudios.map(() => ({
+        driftEma: 0,
+        lastAdjustTs: 0,
+        lastHardTs: 0,
+        rateAdjusted: false,
+        lastDrift: 0,
+        lastDriftSmooth: 0,
+        lastAheadA: 0,
+        lastAheadV: 0,
+        didHardSeek: false,
+        didSoftAdjust: false
+      }));
+      const debugOverlayState = { lastDrawTs: 0, snapshot: null };
+
+      function resetAudioSyncState(idx) {
+        const state = audioSyncState[idx] || {};
+        state.driftEma = 0;
+        state.lastAdjustTs = 0;
+        state.lastHardTs = 0;
+        state.rateAdjusted = false;
+        state.lastDrift = 0;
+        state.lastDriftSmooth = 0;
+        state.lastAheadA = 0;
+        state.lastAheadV = 0;
+        state.didHardSeek = false;
+        state.didSoftAdjust = false;
+        audioSyncState[idx] = state;
+      }
+
+      function syncAudioToVideo(video, audio, idx, opts = {}) {
+        if (!video || !audio) return;
+        if (!canUseAudio()) return;
+        if (video.paused || audio.paused) return;
+        if (video.seeking || audio.seeking) return;
+        if (!Number.isFinite(video.currentTime)) return;
+        if (audio.readyState < 2) return; // wait for enough data
+        const syncMs = getStoredSyncMs();
+        const syncSec = syncMs / 1000;
+        let target = video.currentTime - syncSec;
+        if (target < 0) target = 0;
+        const drift = audio.currentTime - target;
+        const absDrift = Math.abs(drift);
+        const now = Number.isFinite(opts.now) ? opts.now : performance.now();
+        const state = audioSyncState[idx] || (audioSyncState[idx] = {
+          driftEma: 0,
+          lastAdjustTs: 0,
+          lastHardTs: 0,
+          rateAdjusted: false,
+          lastDrift: 0,
+          lastDriftSmooth: 0,
+          lastAheadA: 0,
+          lastAheadV: 0,
+          didHardSeek: false,
+          didSoftAdjust: false
+        });
+
+        state.didHardSeek = false;
+        state.didSoftAdjust = false;
+
+        const aAhead = getBufferedAhead(audio);
+        const vAhead = getBufferedAhead(video);
+        state.lastAheadA = aAhead;
+        state.lastAheadV = vAhead;
+        if (aAhead < 0.15) return;
+        if (vAhead < 0.10) return;
+
+        const alpha = 0.15;
+        const prevEma = Number.isFinite(state.driftEma) ? state.driftEma : 0;
+        state.driftEma = prevEma * (1 - alpha) + drift * alpha;
+        const driftSmooth = state.driftEma;
+
+        state.lastDrift = drift;
+        state.lastDriftSmooth = driftSmooth;
+
+        const hardThreshold = opts.force ? 0 : 0.9;
+        const hardCooldown = 1500;
+        const canHardSeek = absDrift > hardThreshold &&
+          aAhead >= 1.0 && vAhead >= 0.5 &&
+          (now - state.lastHardTs) > hardCooldown;
+
+        if (canHardSeek) {
+          try { audio.currentTime = target; } catch (e) { /* ignore */ }
+          state.driftEma = 0;
+          applyAudioPlaybackSettings(audio);
+          state.lastHardTs = now;
+          state.rateAdjusted = false;
+          state.didHardSeek = true;
+          return;
+        }
+
+        const softThreshold = 0.08;
+        const maxAdjust = 0.012; // +/-1.2%
+        const adjustInterval = 120;
+        const kP = 0.35;
+        if (Math.abs(driftSmooth) > softThreshold && (now - state.lastAdjustTs) > adjustInterval) {
+          const baseRate = video.playbackRate || 1;
+          const adjust = Math.max(-maxAdjust, Math.min(maxAdjust, -driftSmooth * kP));
+          try { audio.playbackRate = baseRate * (1 + adjust); } catch (e) { /* ignore */ }
+          setPreservePitchFlag(audio, uiState.preservePitch);
+          state.lastAdjustTs = now;
+          state.rateAdjusted = true;
+          state.didSoftAdjust = true;
+          return;
+        }
+
+        if (state.rateAdjusted && (now - state.lastAdjustTs) > 400) {
+          applyAudioPlaybackSettings(audio);
+          state.rateAdjusted = false;
+        }
+      }
+
+      function getBufferedAhead(media) {
+        try {
+          if (!media || !media.buffered || media.buffered.length === 0) return 0;
+          const t = media.currentTime || 0;
+          for (let i = 0; i < media.buffered.length; i++) {
+            const start = media.buffered.start(i);
+            const end = media.buffered.end(i);
+            if (t >= start && t <= end) return Math.max(0, end - t);
+          }
+        } catch (e) { /* ignore */ }
+        return 0;
+      }
+
+      function drawSyncDebugOverlay(ctx, video, audio, idx, surfaceRect, now) {
+        if (!isAudioDebugEnabled() || !ctx || !video) return;
+        const throttleMs = 120;
+        const timeNow = Number.isFinite(now) ? now : performance.now();
+        if (!debugOverlayState.snapshot || (timeNow - debugOverlayState.lastDrawTs) >= throttleMs) {
+          const syncMs = getStoredSyncMs();
+          const target = (video.currentTime || 0) - (syncMs / 1000);
+          const drift = (audio ? (audio.currentTime || 0) : 0) - target;
+          const driftMs = drift * 1000;
+          const vRate = video.playbackRate || 1;
+          const aRate = audio ? (audio.playbackRate || 1) : 0;
+          const bufAhead = getBufferedAhead(audio);
+          const ready = audio ? audio.readyState : 0;
+          const net = audio ? audio.networkState : 0;
+          const state = audioSyncState[idx] || { rateAdjusted: false };
+          debugOverlayState.snapshot = {
+            syncMs,
+            target,
+            driftMs,
+            driftSmoothMs: (state.lastDriftSmooth || 0) * 1000,
+            vTime: (video.currentTime || 0),
+            aTime: (audio ? (audio.currentTime || 0) : 0),
+            vRate,
+            aRate,
+            bufAhead,
+            vAhead: getBufferedAhead(video),
+            ready,
+            net,
+            rateAdjusted: !!state.rateAdjusted,
+            didHardSeek: !!state.didHardSeek,
+            didSoftAdjust: !!state.didSoftAdjust,
+            allowed: canUseAudio(),
+            muted: audio ? audio.muted : null
+          };
+          debugOverlayState.lastDrawTs = timeNow;
+        }
+
+        const snap = debugOverlayState.snapshot;
+        if (!snap) return;
+        const pad = Math.max(8, Math.round(gridCanvas.width * 0.012));
+        const x = surfaceRect ? surfaceRect.x + pad : pad;
+        const y = surfaceRect ? surfaceRect.y + pad : pad;
+        const fontSize = Math.max(12, Math.round(gridCanvas.width * 0.018));
+        const lineH = Math.round(fontSize * 1.2);
+        const lines = [
+          `Audio Sync Debug`,
+          `drift: ${snap.driftMs.toFixed(1)}ms (smooth=${snap.driftSmoothMs.toFixed(1)}ms)`,
+          `v=${snap.vTime.toFixed(3)} a=${snap.aTime.toFixed(3)}`,
+          `rate v=${snap.vRate.toFixed(2)} a=${snap.aRate.toFixed(2)} adj=${snap.rateAdjusted ? 'yes' : 'no'}`,
+          `buf a=${snap.bufAhead.toFixed(2)}s v=${snap.vAhead.toFixed(2)}s ready=${snap.ready} net=${snap.net}`,
+          `hard=${snap.didHardSeek ? 'yes' : 'no'} soft=${snap.didSoftAdjust ? 'yes' : 'no'}`,
+          `allowed=${snap.allowed ? 'yes' : 'no'} muted=${snap.muted === null ? 'n/a' : (snap.muted ? 'yes' : 'no')}`
+        ];
+
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = 'rgba(0,0,0,0.5)';
+        const boxW = Math.max(220, Math.round(gridCanvas.width * 0.38));
+        const boxH = lineH * lines.length + pad * 0.8;
+        ctx.fillRect(x - pad * 0.6, y - pad * 0.4, boxW, boxH);
+        ctx.fillStyle = '#fff';
+        ctx.font = `${fontSize}px "Segoe UI", Arial, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        for (let i = 0; i < lines.length; i++) {
+          ctx.fillText(lines[i], x, y + i * lineH);
+        }
+        ctx.restore();
+      }
+
+      function startAudioForVideo(video, audio) {
+        if (!video || !audio) return;
+        if (!canUseAudio()) {
+          try { audio.pause(); } catch (e) { /* ignore */ }
+          return;
+        }
+        resetAudioSyncState(fullIndex);
+        applyAudioSettings(audio);
+        applyAudioPlaybackSettings(audio);
+        try {
+          const syncMs = getStoredSyncMs();
+          const syncSec = syncMs / 1000;
+          const target = Math.max(0, (video.currentTime || 0) - syncSec);
+          audio.currentTime = target;
+        } catch (e) { /* ignore */ }
+        try { audio.play().catch(() => {}); } catch (e) { /* ignore */ }
+      }
+
+      fullVideos.forEach((video, idx) => {
+        const audio = fullAudios[idx];
+        if (!video || !audio) return;
+        try { video.muted = true; video.volume = 0; } catch (e) { /* ignore */ }
+        video.addEventListener('play', () => {
+          if (canUseAudio()) startAudioForVideo(video, audio);
+          else { try { audio.pause(); } catch (e) {} }
+        });
+        video.addEventListener('pause', () => { try { audio.pause(); } catch (e) {} });
+        video.addEventListener('seeking', () => { resetAudioSyncState(idx); });
+        video.addEventListener('timeupdate', () => { syncAudioToVideo(video, audio, idx); });
+        video.addEventListener('ratechange', () => {
+          applyAudioPlaybackSettings(audio);
+          resetAudioSyncState(idx);
+        });
+        video.addEventListener('ended', () => { try { audio.pause(); } catch (e) {} });
+      });
 
       fullVideos.forEach((vid, idx) => {
         if (!vid) return;
@@ -1641,9 +2076,9 @@ class PlayerState {
         chromeAnimStart = lastMouseMoveTs;
         description = `${entries[idx].title}: ${entries[idx].description}`;
         try {
-          v.muted = !opts.allowSound;
-          if (!v.muted) v.volume = 1.0;
+          ensureVideoMuted(v);
           v.currentTime = 0;
+          if (canUseAudio()) startAudioForVideo(v, getFullAudio(idx));
           v.play().catch(() => {});
         } catch (e) { /* ignore */ }
         animation.phase = 'in';
@@ -1656,10 +2091,7 @@ class PlayerState {
 
       function startZoomOut(idx) {
         if (idx === -1) return;
-        const v = fullVideos[idx];
-        if (v) {
-          try { v.pause(); } catch (e) { /* ignore */ }
-        }
+        pauseFullPlayback(idx);
         animation.phase = 'out';
         animation.start = performance.now();
         animation.from = lastFullRect || animation.to || layout.cells[idx];
@@ -1962,9 +2394,10 @@ class PlayerState {
           const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
           drawPanelIcon(bottomPanelCtx, botUI.playRect, playGlyph, a);
 
-          const volumeLevel = video.muted ? 0 : (video.volume || 0);
+          const { muted: effMuted, volume: effVolume } = getEffectiveAudioSettings();
+          const volumeLevel = effMuted ? 0 : (effVolume || 0);
           let volGlyph = 'volume_up';
-          if (video.muted || volumeLevel <= 0.0001) volGlyph = 'no_sound';
+          if (effMuted || volumeLevel <= 0.0001) volGlyph = 'no_sound';
           else if (volumeLevel <= 0.3) volGlyph = 'volume_mute';
           else if (volumeLevel <= 0.7) volGlyph = 'volume_down';
           else volGlyph = 'volume_up';
@@ -2076,9 +2509,10 @@ class PlayerState {
         ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.playRect, playGlyph); ctrlCtx.restore();
 
         // Volume icon & slider
-        const volumeLevel = video.muted ? 0 : (video.volume || 0);
+        const { muted: effMuted, volume: effVolume } = getEffectiveAudioSettings();
+        const volumeLevel = effMuted ? 0 : (effVolume || 0);
         let volGlyph = 'volume_up';
-        if (video.muted || volumeLevel <= 0.0001) volGlyph = 'no_sound';
+        if (effMuted || volumeLevel <= 0.0001) volGlyph = 'no_sound';
         else if (volumeLevel <= 0.3) volGlyph = 'volume_mute';
         else if (volumeLevel <= 0.7) volGlyph = 'volume_down';
         else volGlyph = 'volume_up';
@@ -2234,11 +2668,19 @@ class PlayerState {
           drawControls(ui, video, entries[fullIndex], chromeVisible);
           ctx.drawImage(controlsCanvas, 0, 0);
         }
+        drawSyncDebugOverlay(ctx, video, getFullAudio(fullIndex), fullIndex, frames.surfaceRect, now);
         ctx.restore();
       }
 
       function render() {
         const now = performance.now();
+        if (playingFull && fullIndex >= 0) {
+          const v = fullVideos[fullIndex];
+          const a = getFullAudio(fullIndex);
+          if (v && a && !v.paused && !a.paused) {
+            syncAudioToVideo(v, a, fullIndex, { now });
+          }
+        }
         if (playingFull) {
           if (now - lastMouseMoveTs > chromeHideDelay && chromeTarget !== 0) {
             chromeTarget = 0; chromeAnimStart = now;
@@ -2292,19 +2734,20 @@ class PlayerState {
 
           const botUI = buildBottomPanelLayout();
           if (within(botUI.playRect)) {
-            if (video.paused) video.play().catch(() => {});
-            else video.pause();
+            if (video.paused) startFullPlayback(fullIndex);
+            else pauseFullPlayback(fullIndex);
             return;
           }
           if (within(botUI.volumeRect)) {
-            toggleMute(video);
+            toggleStoredMute();
             uiState.volumeHover = true;
             return;
           }
           if (uiState.volumeHover && within(botUI.volumeSliderRect)) {
             const ratio = Math.max(0, Math.min(1, (pt.x - botUI.volumeSliderRect.x) / botUI.volumeSliderRect.w));
-            if (ratio <= 0.001) { uiState.lastVolume = video.volume || uiState.lastVolume || 0.5; video.muted = true; video.volume = 0; }
-            else { video.muted = false; video.volume = ratio; uiState.lastVolume = ratio; }
+            uiState.lastVolume = ratio;
+            setStoredVolumeFromRatio(ratio);
+            applyAudioSettings(getFullAudio(fullIndex));
             return;
           }
           if (pt.y >= botUI.progressRect.y - 4 && pt.y <= botUI.progressRect.y + botUI.progressRect.h + 4) {
@@ -2333,21 +2776,20 @@ class PlayerState {
           handled.any = true; return;
         }
         if (within(ui.playRect)) {
-          if (video.paused) video.play().catch(() => {});
-          else video.pause();
+          if (video.paused) startFullPlayback(fullIndex);
+          else pauseFullPlayback(fullIndex);
           handled.any = true; return;
         }
         if (within(ui.volumeRect)) {
-          toggleMute(video);
+          toggleStoredMute();
           uiState.volumeHover = true;
           handled.any = true; return;
         }
         if (uiState.volumeHover && within(ui.volumeSliderRect)) {
           const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
-          if (video) {
-            if (ratio <= 0.001) { uiState.lastVolume = video.volume || uiState.lastVolume || 0.5; video.muted = true; video.volume = 0; }
-            else { video.muted = false; video.volume = ratio; uiState.lastVolume = ratio; }
-          }
+          uiState.lastVolume = ratio;
+          setStoredVolumeFromRatio(ratio);
+          applyAudioSettings(getFullAudio(fullIndex));
           handled.any = true; return;
         }
         if (pt.y >= ui.progressRect.y - 4 && pt.y <= ui.progressRect.y + ui.progressRect.h + 4) {
@@ -2363,7 +2805,7 @@ class PlayerState {
         if (handled.any) return;
         // If click fell inside control bars but not on actionable UI, ignore to prevent play/pause toggles
         if (pt.y <= ui.topBar.y + ui.topBar.h || pt.y >= ui.bottomBar.y) return;
-        if (video) { if (video.paused) video.play().catch(() => {}); else video.pause(); }
+        if (video) { if (video.paused) startFullPlayback(fullIndex); else pauseFullPlayback(fullIndex); }
       }
 
 
@@ -2401,17 +2843,9 @@ class PlayerState {
             }
             if (dragState && dragState.type === 'volume') {
               const ratio = Math.max(0, Math.min(1, (pt.x - botUI.volumeSliderRect.x) / botUI.volumeSliderRect.w));
-              try {
-                if (ratio <= 0.001) {
-                  uiState.lastVolume = video.volume || uiState.lastVolume || 0.5;
-                  video.muted = true;
-                  video.volume = 0;
-                } else {
-                  video.muted = false;
-                  video.volume = ratio;
-                  uiState.lastVolume = ratio;
-                }
-              } catch (e) { /* ignore */ }
+              uiState.lastVolume = ratio;
+              setStoredVolumeFromRatio(ratio);
+              applyAudioSettings(getFullAudio(fullIndex));
               uiState.volumeHover = true;
               ev.stopImmediatePropagation?.();
               ev.stopPropagation?.();
@@ -2441,20 +2875,9 @@ class PlayerState {
             }
             if (dragState.type === 'volume') {
               const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
-              try {
-                const v = fullVideos[fullIndex];
-                if (v) {
-                  if (ratio <= 0.001) {
-                    uiState.lastVolume = v.volume || uiState.lastVolume || 0.5;
-                    v.muted = true;
-                    v.volume = 0;
-                  } else {
-                    v.muted = false;
-                    v.volume = ratio;
-                    uiState.lastVolume = ratio;
-                  }
-                }
-              } catch (e) { /* ignore */ }
+              uiState.lastVolume = ratio;
+              setStoredVolumeFromRatio(ratio);
+              applyAudioSettings(getFullAudio(fullIndex));
               uiState.volumeHover = true;
               ev.stopImmediatePropagation?.();
               ev.stopPropagation?.();
@@ -2531,8 +2954,8 @@ class PlayerState {
           // Click on canvas outside thumbnails toggles play/pause if a video is active
           const v = fullVideos[fullIndex];
           if (v) {
-            if (v.paused) v.play().catch(() => {});
-            else v.pause();
+            if (v.paused) startFullPlayback(fullIndex);
+            else pauseFullPlayback(fullIndex);
           }
           if (isDouble) { /* fullscreen disabled on double-click */ /* toggleFullscreenMode(); */ }
         }
@@ -2560,10 +2983,9 @@ class PlayerState {
           if (within(ui.volumeSliderRect)) {
             dragState = { type: 'volume' };
             const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
-            try {
-              if (ratio <= 0.001) { uiState.lastVolume = video.volume || uiState.lastVolume || 0.5; video.muted = true; video.volume = 0; }
-              else { video.muted = false; video.volume = ratio; uiState.lastVolume = ratio; }
-            } catch (e) { /* ignore */ }
+            uiState.lastVolume = ratio;
+            setStoredVolumeFromRatio(ratio);
+            applyAudioSettings(getFullAudio(fullIndex));
             uiState.volumeHover = true;
             ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.();
             return;
@@ -2591,7 +3013,9 @@ class PlayerState {
         if (within(ui.volumeSliderRect)) {
           dragState = { type: 'volume' };
           const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
-          try { const v = fullVideos[fullIndex]; if (v) { if (ratio <= 0.001) { uiState.lastVolume = v.volume || uiState.lastVolume || 0.5; v.muted = true; v.volume = 0; } else { v.muted = false; v.volume = ratio; uiState.lastVolume = ratio; } } } catch (e) { /* ignore */ }
+          uiState.lastVolume = ratio;
+          setStoredVolumeFromRatio(ratio);
+          applyAudioSettings(getFullAudio(fullIndex));
           uiState.volumeHover = true;
           ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.();
           return;
@@ -2644,16 +3068,17 @@ class PlayerState {
           try { video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + delta)); } catch (e) { /* ignore */ }
         };
         const setVolume = (delta) => {
-          let v = video.muted ? 0 : video.volume || 0;
-          v = Math.max(0, Math.min(1, v + delta));
-          video.volume = v;
-          if (v > 0) { video.muted = false; uiState.lastVolume = v; }
+          const { volume } = getStoredAudioSettings();
+          let v = Math.max(0, Math.min(1, volume + delta));
+          uiState.lastVolume = v;
+          setStoredVolumeFromRatio(v);
+          applyAudioSettings(getFullAudio(fullIndex));
         };
 
         // Toggle play/pause
-        if (key === ' ' || key === 'k') { prevent(); video.paused ? video.play().catch(() => {}) : video.pause(); return; }
+        if (key === ' ' || key === 'k') { prevent(); video.paused ? startFullPlayback(fullIndex) : pauseFullPlayback(fullIndex); return; }
         // Mute
-        if (key === 'm') { prevent(); toggleMute(video); return; }
+        if (key === 'm') { prevent(); toggleStoredMute(); return; }
         // Fullscreen - keyboard shortcut disabled (commented out)
         // if (key === 'f') { prevent(); toggleFullscreenMode(); return; }
         // Seek
@@ -2667,6 +3092,8 @@ class PlayerState {
         // Rate change
         if (key === ',' && shift) { prevent(); uiState.playbackRateIndex = Math.max(0, uiState.playbackRateIndex - 1); applySettingsToAllVideos(); return; }
         if (key === '.' && shift) { prevent(); uiState.playbackRateIndex = Math.min(playbackRates.length - 1, uiState.playbackRateIndex + 1); applySettingsToAllVideos(); return; }
+        // Toggle audio sync debug overlay
+        if (key === 'd' && shift) { prevent(); setAudioDebugEnabled(!isAudioDebugEnabled()); return; }
         // Frame step when paused
         if (key === ',' && video.paused) { prevent(); seekBy(-1 / 30); return; }
         if (key === '.' && video.paused) { prevent(); seekBy(1 / 30); return; }

@@ -130,7 +130,7 @@ onReady(() => {
   }
 
   const primaryPath = (window && window.mediaUrl) ? window.mediaUrl('glb/video-tablet.glb') : 'glb/video-tablet.glb';
-  const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || localStorage.getItem('allowSound') === 'true';
+  const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || localStorage.getItem('site.audio.allowed') === 'true';
 
   // load GLB and init
   const doLoadGlb = () => {

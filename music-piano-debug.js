@@ -30,6 +30,7 @@ import { getSyncOffsetMs } from './global-sync.js';
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
+const USE_TOPPAD_GRID = true;
 window.addEventListener('DOMContentLoaded', ()=>{
   instrumentPickerEl = document.getElementById('instrumentPicker');
   if(instrumentPickerEl){
@@ -49,10 +50,8 @@ window.addEventListener('DOMContentLoaded', ()=>{
 
   document.addEventListener('keydown', (e)=>{
     if(e.code === 'F10'){
-      const dbg = document.getElementById('uiDebugCanvas');
-      if(dbg){
-        dbg.style.display = (dbg.style.display === 'none') ? 'block' : 'none';
-      }
+      showPanelHitRects = !showPanelHitRects;
+      requestBackboardRedraw();
     }
   });
 });
@@ -146,6 +145,11 @@ document.body.appendChild(HUD);
 let root=null; let keyMeshes=[]; let stickerMeshes=[]; let userStickersGroup = null;
 let qwertyLabelsGroup = null;
 let selectedKey=null; // middle key chosen for demo animation
+let rootBaseY = 0;
+let fitDistance = null;
+let fitSizeY = null;
+let pianoYOffset = 0;
+let autoCenterOffsetY = 0;
 const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
 // Orbit controls
@@ -173,6 +177,16 @@ let sentinelFilteredCount = 0; // count of filtered sentinel notes
 let midiStretch = 1.0;      // stretch factor to match audio active duration
 let midiActiveDurationMs = 0; // MIDI active span (first on -> last off) after filtering
 const STRETCH_CLAMP = 0.20; // +/-20% max stretch to cover export mismatches
+const NOTE_FALL_LEAD_MS = 1000; // time from top to bottom
+let midiNoteSpans = []; // {note, startMs, endMs}
+let midiNoteSpansDirty = true;
+let transportStartAudioTime = 0;
+const SONG_LEAD_IN_SEC = 1.0;
+const FALL_TIME_SEC = NOTE_FALL_LEAD_MS / 1000;
+let pendingNotes = [];
+let activeFallingNotes = [];
+let playbackParticles = [];
+let lastTransportNowSec = null;
 const midiKeyMap = new Map(); // noteNumber -> mesh
 const pressState = new Map(); // mesh -> currentRotation
 const WHITE_MAX = demoAngleWhite; // reuse deg limits
@@ -272,6 +286,12 @@ let backboardMesh = null;
 let backboardCanvas = null;
 let backboardCtx = null;
 let backboardTexture = null;
+let topPadMesh = null;
+let topPadCanvas = null;
+let topPadCtx = null;
+let topPadTexture = null;
+let topPadHoverCell = null;
+let topPadUvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0 };
 // Backboard redraw throttle / dirty flag to avoid per-frame canvas uploads
 let backboardDirty = true;
 let lastBackboardDrawMs = 0;
@@ -285,6 +305,12 @@ let backboardUvDebugLogged = false;
 let backboardCssW = 2048;
 let backboardCssH = 512;
 const BACKBOARD_BASE_HEIGHT = 512;
+const TOPPAD_GRID_COLS = 12;
+const TOPPAD_GRID_ROWS = 12;
+let showBackboardGridLabels = false;
+let showPanelHitRects = false;
+let qwertyZoneHover = { divider: 0, left: 0, right: 0 };
+let qwertyZoneHoverLastMs = 0;
 // Instrument picker overlay targeting the backboard
 let instrumentPickerEl = null;
 let lastInstrumentPickerRect = { x: 0, y: 0, w: 0, h: 0 };
@@ -454,6 +480,23 @@ const panelState = {
   left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id },
   right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id }
 };
+const BACKBOARD_VIEW_MODES = ['record-mode', 'playback-mode'];
+let backboardViewMode = 'record-mode';
+try{ window.backboardViewMode = backboardViewMode; }catch(e){}
+function setBackboardViewMode(mode){
+  const next = String(mode || '').toLowerCase();
+  backboardViewMode = BACKBOARD_VIEW_MODES.includes(next) ? next : 'record-mode';
+  try{ window.backboardViewMode = backboardViewMode; }catch(e){}
+  requestBackboardRedraw();
+  return backboardViewMode;
+}
+function toggleBackboardViewMode(){
+  return setBackboardViewMode(backboardViewMode === 'record-mode' ? 'playback-mode' : 'record-mode');
+}
+try{
+  window.setBackboardViewMode = setBackboardViewMode;
+  window.toggleBackboardViewMode = toggleBackboardViewMode;
+}catch(e){}
 let panelHitRects = [];
 let panelHover = null;
 let backboardClickPanel = null;
@@ -699,6 +742,14 @@ function hitTestPanelUI(uv){
   const pt = uvToCanvasPx(uv);
   if(!pt) return null;
   for(const hit of panelHitRects){
+    if(hit.type !== 'divider') continue;
+    const r = hit.rect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      return hit;
+    }
+  }
+  for(const hit of panelHitRects){
+    if(hit.type === 'divider') continue;
     const r = hit.rect;
     if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
       return hit;
@@ -707,7 +758,53 @@ function hitTestPanelUI(uv){
   return null;
 }
 
+function raycastTopPadForUv(clientX, clientY){
+  if(!topPadMesh) return null;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left)/rect.width)*2 - 1;
+  const ny = -((clientY - rect.top)/rect.height)*2 + 1;
+  pointer.set(nx, ny);
+  raycaster.setFromCamera(pointer, cam);
+  const hits = raycaster.intersectObject(topPadMesh, true);
+  if(!hits.length) return null;
+  const h = hits[0];
+  if(!h.uv) return null;
+  const uv = h.uv.clone ? h.uv.clone() : { x: h.uv.x, y: h.uv.y };
+  return uv;
+}
+
+function updateTopPadHover(clientX, clientY){
+  if(!topPadMesh || !topPadCanvas) return;
+  const uv = raycastTopPadForUv(clientX, clientY);
+  if(!uv){
+    if(topPadHoverCell){
+      topPadHoverCell = null;
+      renderTopPadGrid();
+    }
+    return;
+  }
+  const u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
+  const v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
+  const clampedU = Math.max(0, Math.min(1, u));
+  const clampedV = Math.max(0, Math.min(1, v));
+  const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
+  const row = Math.floor(clampedV * TOPPAD_GRID_ROWS);
+  const next = { col: Math.max(0, Math.min(TOPPAD_GRID_COLS - 1, col)), row: Math.max(0, Math.min(TOPPAD_GRID_ROWS - 1, row)) };
+  if(!topPadHoverCell || topPadHoverCell.col !== next.col || topPadHoverCell.row !== next.row){
+    topPadHoverCell = next;
+    renderTopPadGrid();
+  }
+}
+
 function updateInstrumentHover(clientX, clientY){
+  if(qwertyDividerDragging){
+    if(panelHover !== 'qwerty:divider'){
+      panelHover = 'qwerty:divider';
+      requestBackboardRedraw();
+    }
+    if(canvas) canvas.style.cursor = 'ew-resize';
+    return;
+  }
   const uv = raycastBackboardForUv(clientX, clientY);
   const hit = uv ? hitTestPanelUI(uv) : null;
   const nextHover = hit ? hit.key : null;
@@ -715,6 +812,151 @@ function updateInstrumentHover(clientX, clientY){
     panelHover = nextHover;
     requestBackboardRedraw();
   }
+  if(canvas){
+    if(hit && (hit.type === 'divider' || hit.type === 'group-handle')){
+      canvas.style.cursor = 'ew-resize';
+    } else if(hit && hit.type === 'piano-shift'){
+      canvas.style.cursor = 'pointer';
+    } else if(hit){
+      canvas.style.cursor = 'pointer';
+    } else {
+      canvas.style.cursor = '';
+    }
+  }
+}
+
+function updateQwertyZoneHover(nowMs){
+  const now = (typeof nowMs === 'number') ? nowMs : performance.now();
+  const dt = Math.max(0, (now - (qwertyZoneHoverLastMs || now)) / 1000);
+  qwertyZoneHoverLastMs = now;
+  const target = {
+    divider: (panelHover === 'qwerty:divider' || qwertyDividerDragging) ? 1 : 0,
+    left: (panelHover === 'qwerty:group:left' || panelHover === 'qwerty:handle:left') ? 1 : 0,
+    right: (panelHover === 'qwerty:group:right' || panelHover === 'qwerty:handle:right') ? 1 : 0
+  };
+  const speed = 14;
+  let needsMore = false;
+  ['divider','left','right'].forEach(key => {
+    const cur = qwertyZoneHover[key] || 0;
+    let next = cur;
+    if(target[key] === 1){
+      next = 1;
+    } else {
+      next = cur + (target[key] - cur) * Math.min(1, dt * speed);
+      if(next < 0.02) next = 0;
+    }
+    qwertyZoneHover[key] = next;
+    if(next > 0.02) needsMore = true;
+  });
+  if(needsMore) requestBackboardRedraw();
+}
+
+function createTopPadCanvas(aspect=1){
+  if(topPadCanvas) return;
+  const width = 1024;
+  const height = Math.max(320, Math.round(width / Math.max(0.1, aspect)));
+  topPadCanvas = document.createElement('canvas');
+  topPadCanvas.width = width;
+  topPadCanvas.height = height;
+  topPadCtx = topPadCanvas.getContext('2d');
+  topPadTexture = new THREE.CanvasTexture(topPadCanvas);
+  try{ topPadTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ topPadTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
+  try{ topPadTexture.flipY = false; }catch(e){}
+  topPadTexture.needsUpdate = true;
+  renderTopPadGrid();
+}
+
+function remapTextureToUvBounds(mesh, texture){
+  if(!mesh || !mesh.geometry || !texture) return;
+  const uv = mesh.geometry.attributes && mesh.geometry.attributes.uv;
+  if(!uv || uv.count < 1) return;
+  let umin = 1, vmin = 1, umax = 0, vmax = 0;
+  for(let i=0;i<uv.count;i++){
+    const u = uv.getX(i);
+    const v = uv.getY(i);
+    if(u < umin) umin = u;
+    if(u > umax) umax = u;
+    if(v < vmin) vmin = v;
+    if(v > vmax) vmax = v;
+  }
+  const ur = Math.max(1e-4, umax - umin);
+  const vr = Math.max(1e-4, vmax - vmin);
+  const repeatU = 1 / ur;
+  const repeatV = 1 / vr;
+  const offsetU = -umin / ur;
+  const offsetV = -vmin / vr;
+  texture.repeat.set(repeatU, repeatV);
+  texture.offset.set(offsetU, offsetV);
+  topPadUvRemap = { repeatU, repeatV, offsetU, offsetV };
+  texture.needsUpdate = true;
+}
+
+function renderTopPadGrid(){
+  if(!topPadCanvas || !topPadCtx || !topPadTexture) return;
+  const ctx = topPadCtx;
+  const W = topPadCanvas.width;
+  const H = topPadCanvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(0,0,W,H);
+  const cellW = W / TOPPAD_GRID_COLS;
+  const cellH = H / TOPPAD_GRID_ROWS;
+  ctx.strokeStyle = 'rgba(210, 210, 210, 0.35)';
+  ctx.lineWidth = 2;
+  for(let c=0;c<=TOPPAD_GRID_COLS;c++){
+    const x = c * cellW;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  for(let r=0;r<=TOPPAD_GRID_ROWS;r++){
+    const y = r * cellH;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  const dotRadius = Math.max(3, cellH * 0.5);
+  ctx.fillStyle = 'rgba(255, 220, 70, 0.7)';
+  for(let r=0;r<=TOPPAD_GRID_ROWS;r++){
+    const y = r * cellH;
+    for(let c=0;c<=TOPPAD_GRID_COLS;c++){
+      if(((c + r) % 2) !== 0) continue;
+      const x = c * cellW;
+      ctx.beginPath();
+      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
+  ctx.fillStyle = 'rgba(220, 220, 220, 0.9)';
+  ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const baseChar = 'A'.charCodeAt(0);
+  for(let r=0;r<TOPPAD_GRID_ROWS;r++){
+    const rowNum = r + 1;
+    const cy = (r + 0.5) * cellH;
+    for(let c=0;c<TOPPAD_GRID_COLS;c++){
+      const label = String.fromCharCode(baseChar + c) + rowNum;
+      const cx = (c + 0.5) * cellW;
+      ctx.fillText(label, cx, cy);
+    }
+  }
+  if(topPadHoverCell){
+    const { col, row } = topPadHoverCell;
+    if(col >= 0 && col < TOPPAD_GRID_COLS && row >= 0 && row < TOPPAD_GRID_ROWS){
+      const x = col * cellW;
+      const y = row * cellH;
+      ctx.fillStyle = 'rgba(255, 220, 70, 0.35)';
+      ctx.fillRect(x, y, cellW, cellH);
+      ctx.strokeStyle = 'rgba(255, 235, 120, 0.9)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, Math.max(0, cellW - 2), Math.max(0, cellH - 2));
+    }
+  }
+  topPadTexture.needsUpdate = true;
 }
 
 function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
@@ -727,11 +969,16 @@ function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
   return { x: col * cellW, y: rowIndex * cellH, w: cellW, h: cellH };
 }
 
-async function triggerInstrumentButton(id){
+async function triggerInstrumentButton(id, panelId){
   // keep selection per panel; caller sets desired panel before calling
   requestBackboardRedraw();
   try{
     await loadInstrument(id);
+    if(panelId && instrumentPlayersBySide[panelId]){
+      instrumentPlayersBySide[panelId].player = instrumentPlayer;
+      instrumentPlayersBySide[panelId].name = currentInstrumentName;
+      instrumentPlayersBySide[panelId].id = id;
+    }
   }catch(e){
     console.warn('Instrument load via backboard UI failed', id, e);
   }
@@ -1306,6 +1553,8 @@ function fit(box){
   const maxDim = Math.max(size.x,size.y,size.z);
   const fov = cam.fov*Math.PI/180;
   const dist = (maxDim/2)/Math.tan(fov/2) * FRAME_TIGHTNESS;
+  fitDistance = dist;
+  fitSizeY = size.y;
 
   const direction = new THREE.Vector3(-0.26, -0.02, 0.95).normalize();
   const camPos = direction.clone().multiplyScalar(dist).add(center);
@@ -1400,6 +1649,36 @@ function animate(){
   if(animationMixer) animationMixer.update(dt);
   renderer.render(scene, cam);
   if(root){
+    if(rootBaseY === 0 && typeof root.position?.y === 'number'){
+      rootBaseY = root.position.y;
+    }
+    let autoYOffset = 0;
+    try{
+      const headerEl = document.getElementById('patterned-background');
+      if(headerEl && typeof window !== 'undefined'){
+        const rect = headerEl.getBoundingClientRect();
+        const safeTop = Math.max(0, rect.bottom || 0);
+        const viewportH = Math.max(1, window.innerHeight || canvas.clientHeight || 1);
+        const targetScreenY = (safeTop + viewportH) * 0.5;
+        const boxCenter = new THREE.Vector3();
+        new THREE.Box3().setFromObject(root).getCenter(boxCenter);
+        const ndc = boxCenter.clone().project(cam);
+        const desiredNdcY = 1 - (targetScreenY / viewportH) * 2;
+        const desiredNdc = new THREE.Vector3(ndc.x, desiredNdcY, ndc.z);
+        const desiredWorld = desiredNdc.unproject(cam);
+        const deltaY = desiredWorld.y - boxCenter.y;
+        autoYOffset = deltaY;
+      }
+    }catch(e){ /* ignore auto-centering failures */ }
+    autoCenterOffsetY = autoCenterOffsetY + (autoYOffset - autoCenterOffsetY) * Math.min(1, dt * 6);
+    if(fitDistance && fitSizeY){
+      const currentDist = cam.position.distanceTo(controls.target);
+      const shiftStart = fitDistance * 0.95;
+      const shiftEnd = fitDistance * 0.7;
+      const t = Math.max(0, Math.min(1, (shiftStart - currentDist) / Math.max(0.001, shiftStart - shiftEnd)));
+      const shiftMax = fitSizeY * 0.14;
+      root.position.y = rootBaseY - (shiftMax * t) + pianoYOffset + autoCenterOffsetY;
+    }
     const box = new THREE.Box3().setFromObject(root);
     const s = box.getSize(new THREE.Vector3());
   let midiLine = midiError? 'midi:error' : (midiLoaded? (playingMIDI? `midi:${midiIndex}/${midiEvents.length}` : 'midi:ready') : 'midi:loading');
@@ -1413,7 +1692,8 @@ function animate(){
     const driftMs = elapsedMidiMs - elapsedAudioMs;
     driftLine = ` drift:${driftMs.toFixed(1)}ms`;
   }
-  HUD.textContent = `children:${root.children.length}\nsize:${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}\nkeys:${keyMeshes.length}\n${midiLine}\n${audioLine}${trimInfo}${driftLine}\ntempos:${tempoMap.length} sentinels:${sentinelFilteredCount}\ncam:${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}`;
+  const camDist = cam.position.distanceTo(controls.target);
+  HUD.textContent = `children:${root.children.length}\nsize:${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}\nkeys:${keyMeshes.length}\n${midiLine}\n${audioLine}${trimInfo}${driftLine}\ntempos:${tempoMap.length} sentinels:${sentinelFilteredCount}\ncam:${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}\nzoomDist:${camDist.toFixed(2)} pianoOffsetY:${pianoYOffset.toFixed(3)}`;
     // Demo animation for selected key or fallback
     // Always update view-driven transforms (e.g., tablet stand)
     updateViewDrivenTransforms(dt);
@@ -1422,10 +1702,16 @@ function animate(){
       if(elapsedMidiSec >= 0) advanceMIDI(elapsedMidiSec * 1000);
     }
     updateKeyAnimations();
-      // update backboard overlay only when dirty (throttled to BACKBOARD_MAX_FPS)
+      // update backboard overlay
       try{
         const nowMs = performance.now();
-        if(backboardDirty && (nowMs - lastBackboardDrawMs) >= (1000 / BACKBOARD_MAX_FPS)){
+        const playbackVisualsActive = (backboardViewMode === 'playback-mode')
+          && (playingMIDI || audioPlaying || pendingNotes.length || activeFallingNotes.length || playbackParticles.length || savedAudioPosSec > 0);
+        if(playbackVisualsActive){
+          try{ renderBackboardOverlay(); }catch(e){}
+          backboardDirty = false;
+          lastBackboardDrawMs = nowMs;
+        } else if(backboardDirty && (nowMs - lastBackboardDrawMs) >= (1000 / BACKBOARD_MAX_FPS)){
           try{ renderBackboardOverlay(); }catch(e){}
           backboardDirty = false;
           lastBackboardDrawMs = nowMs;
@@ -1441,9 +1727,10 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
   gltf => {
     root = gltf.scene;
     scene.add(root);
-    // Future: attach tablet screen canvas/texture here.
-    // Currently a no-op so tablet changes don't affect playback.
-    try { setupMusicTabletScreen(root); } catch (e) { console.warn('setupMusicTabletScreen failed', e); }
+    // Tablet screen content: skip the thumbnail player when using the top pad grid.
+    if(!USE_TOPPAD_GRID){
+      try { setupMusicTabletScreen(root); } catch (e) { console.warn('setupMusicTabletScreen failed', e); }
+    }
     // brightening + double side
     root.traverse(o=>{ 
       if(/note_stickers|noteSticker|noteAccidental|noteText/i.test(o.name)) { stickerMeshes.push(o); o.visible = true; }
@@ -1451,6 +1738,41 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
         sustainPedalMesh = o;
       }
       if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
+      if(!topPadMesh && /(perpad_screen|pe'rpad_screen)/i.test(o.name)){
+        topPadMesh = o;
+        console.log('Top pad mesh found:', topPadMesh?.name, topPadMesh?.type);
+        try{
+          let size = new THREE.Vector3(1,1,1);
+          try{
+            if(o.geometry){
+              if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+              const bb = o.geometry.boundingBox;
+              if(bb){ bb.getSize(size); }
+            }
+          }catch(e){}
+          if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
+            try{
+              o.updateMatrixWorld(true);
+              size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+            }catch(e){}
+          }
+          const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
+          const planeH = dims[1];
+          const planeW = dims[2];
+          const aspect = planeW / planeH;
+          createTopPadCanvas(aspect);
+          const mats = Array.isArray(topPadMesh.material) ? topPadMesh.material : [topPadMesh.material];
+          mats.forEach(m => {
+            if(!m) return;
+            m.map = topPadTexture;
+            m.emissiveMap = topPadTexture;
+            if(m.emissive && m.emissive.set) m.emissive.set(0xffffff);
+            if(typeof m.emissiveIntensity === 'number') m.emissiveIntensity = 1.0;
+            m.needsUpdate = true;
+          });
+          remapTextureToUvBounds(topPadMesh, topPadTexture);
+        }catch(e){ console.warn('Top pad init failed', e); }
+      }
       // Backboard screen for note info: look for mesh named SK_backboard_screen
       if(!backboardMesh && /SK_backboard_screen/i.test(o.name)){
         backboardMesh = o;
@@ -1702,9 +2024,13 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
             case 'Period': return '.';
             case 'Slash': return '/';
             case 'Semicolon': return ';';
+            case 'Quote': return "'";
             case 'BracketLeft': return '[';
             case 'BracketRight': return ']';
-            case 'Minus': return '-';
+            case 'Backslash': return '\\';
+            case 'Minus': return '−';
+            case 'Equal': return '=';
+            case 'Backspace': return '⌫';
             default: return code;
           }
         };
@@ -2071,6 +2397,7 @@ function filterSentinelNotes(){
     // no filtering; compute first note if not set
     for(const ev of midiEvents){ if(ev.type==='on'){ midiFirstNoteMs = ev.timeMs; break; } }
   }
+  markMidiNoteSpansDirty();
 }
 function computeMidiActiveSpan(){
   // With sentinels removed, first ON is midiFirstNoteMs; find last OFF
@@ -2095,6 +2422,96 @@ function recomputeStretch(){
   }
   // Stretch impacts adjusted times; rebuild fall schedule if MIDI already loaded
 }
+function markMidiNoteSpansDirty(){
+  midiNoteSpansDirty = true;
+}
+function rebuildMidiNoteSpans(){
+  midiNoteSpansDirty = false;
+  midiNoteSpans = [];
+  if(!midiEvents || !midiEvents.length) return;
+  const active = new Map(); // key "chan:note" -> stack of on events
+  for(const ev of midiEvents){
+    if(ev.type === 'on'){
+      const key = `${ev.chan}:${ev.note}`;
+      if(!active.has(key)) active.set(key, []);
+      active.get(key).push(ev);
+    } else if(ev.type === 'off'){
+      const key = `${ev.chan}:${ev.note}`;
+      const stack = active.get(key);
+      if(stack && stack.length){
+        const on = stack.shift();
+        const startMs = on.timeMs;
+        const endMs = ev.timeMs;
+        if(Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs){
+          midiNoteSpans.push({
+            note: on.note,
+            startMs,
+            endMs,
+            velocity: on.velocity,
+            part: on.part || null
+          });
+        }
+      }
+    }
+  }
+}
+function ensureMidiNoteSpans(){
+  if(midiNoteSpansDirty) rebuildMidiNoteSpans();
+  return midiNoteSpans;
+}
+function adjustMidiTimeMs(rawMs){
+  return midiFirstNoteMs + (rawMs - midiFirstNoteMs) * (midiStretch / Math.max(1e-6, currentPlaybackRate));
+}
+function getTransportNowSec(){
+  if(!audioCtx) return 0;
+  return audioCtx.currentTime - transportStartAudioTime;
+}
+function getVisualNowSec(){
+  const baseSec = (midiFirstNoteMs || 0) / 1000;
+  return getTransportNowSec() - baseSec;
+}
+function resetPlaybackVisuals(){
+  pendingNotes = [];
+  activeFallingNotes = [];
+  playbackParticles = [];
+  lastTransportNowSec = null;
+}
+function buildPendingNotes(){
+  const spans = ensureMidiNoteSpans();
+  pendingNotes = [];
+  activeFallingNotes = [];
+  playbackParticles = [];
+  lastTransportNowSec = null;
+  if(!spans || !spans.length) return;
+  const baseMs = adjustMidiTimeMs(midiFirstNoteMs || 0);
+  spans.forEach(span => {
+    if(!span) return;
+    const startAdj = adjustMidiTimeMs(span.startMs);
+    const endAdj = adjustMidiTimeMs(span.endMs);
+    if(!Number.isFinite(startAdj) || !Number.isFinite(endAdj)) return;
+    if(endAdj < startAdj) return;
+    pendingNotes.push({
+      noteNumber: Number(span.note),
+      startSec: (startAdj - baseMs) / 1000,
+      endSec: (endAdj - baseMs) / 1000,
+      velocity: span.velocity,
+      trackId: span.part || null,
+      hasStruck: false
+    });
+  });
+  pendingNotes.sort((a,b)=>a.startSec - b.startSec);
+}
+function ingestPendingNotes(nowSec){
+  while(pendingNotes.length){
+    const next = pendingNotes[0];
+    if(!next) { pendingNotes.shift(); continue; }
+    if((next.startSec - FALL_TIME_SEC) <= nowSec){
+      activeFallingNotes.push(pendingNotes.shift());
+    } else {
+      break;
+    }
+  }
+}
 function startMIDIPlayback(){
   if(!midiLoaded||playingMIDI||!audioCtx) return;
   // Ensure audio context is running (browser gesture requirement)
@@ -2103,6 +2520,7 @@ function startMIDIPlayback(){
   }
   // Remove lingering glow from previous session before starting new playback
   clearAllKeyGlow();
+  resetPlaybackVisuals();
   // Hard stop anything lingering and reset position to start
   disposeAudioSource('startMIDIPlayback cleanup');
   savedAudioPosSec = 0;
@@ -2119,10 +2537,12 @@ function startMIDIPlayback(){
     return;
   }
   const t0 = now + lead;
-  const tAudio = t0 + Math.max(userOffsetSec, 0);
-  const tMidiZero = t0 + Math.max(-userOffsetSec, 0);
+  const tAudio = t0 + SONG_LEAD_IN_SEC + Math.max(userOffsetSec, 0);
+  const tMidiZero = t0 + SONG_LEAD_IN_SEC + Math.max(-userOffsetSec, 0);
   // Align so that first MIDI note occurs exactly at tMidiZero
   midiStartCtxTime = tMidiZero - firstNoteSec;
+  transportStartAudioTime = midiStartCtxTime;
+  buildPendingNotes();
   // Start audio at tAudio, skipping detected leading silence internally
   startAudio((tAudio - now)*1000);
   audioStartCtxTime = tAudio;
@@ -2248,19 +2668,311 @@ function renderBackboardOverlay(){
   try{ ctx.imageSmoothingEnabled = true; }catch(e){}
   // Use canvas-derived aspect (width/height) for visual compensation
   try{ backboardSurfaceAspect = (W / Math.max(1, H)); }catch(e){}
-  // Clear canvas and draw bright background first
+  // Clear canvas and draw base background
+  panelHitRects = [];
   ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#ff00ff';
+  ctx.fillStyle = '#000';
   ctx.fillRect(0,0,W,H);
+  const cols = 24, rows = 12;
+  const cellW = W / cols;
+  const cellH = H / rows;
+  backboardGridCellW = cellW;
+  const toCssHex = (num) => {
+    const v = (typeof num === 'number' && isFinite(num)) ? num : 0;
+    return `#${(v >>> 0).toString(16).padStart(6, '0')}`;
+  };
+  const hexToRgba = (hex, alpha) => {
+    const h = String(hex || '').replace('#', '');
+    if(h.length !== 6) return `rgba(255,255,255,${alpha})`;
+    const r = parseInt(h.slice(0,2), 16);
+    const g = parseInt(h.slice(2,4), 16);
+    const b = parseInt(h.slice(4,6), 16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+  const glowWhite = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_white_glow'])
+    ? toCssHex(GlowMaterials['keys_white_glow'].emissive)
+    : '#17ff1c';
+  const glowBlack = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_black_glow'])
+    ? toCssHex(GlowMaterials['keys_black_glow'].emissive)
+    : '#860b07';
+  const getTrackGlowHex = (trackId) => {
+    if(!trackId) return null;
+    const id = String(trackId).toLowerCase();
+    if(id === 'melody' && glowMatMelody && glowMatMelody.emissive && glowMatMelody.emissive.getHex){
+      return toCssHex(glowMatMelody.emissive.getHex());
+    }
+    if(id === 'harmony' && glowMatHarmony && glowMatHarmony.emissive && glowMatHarmony.emissive.getHex){
+      return toCssHex(glowMatHarmony.emissive.getHex());
+    }
+    return null;
+  };
+  const getNoteGlowHex = (note, lane) => {
+    const trackHex = getTrackGlowHex(note && note.trackId);
+    if(trackHex) return trackHex;
+    return (lane && lane.isBlack) ? glowBlack : glowWhite;
+  };
+  const drawRoundedRectCanvas = (x, y, w, h, r, fillStyle, strokeStyle) => {
+    const radius = Math.min(r, w * 0.5, h * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.arcTo(x + w, y, x + w, y + radius, radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+    ctx.lineTo(x + radius, y + h);
+    ctx.arcTo(x, y + h, x, y + h - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    if(fillStyle){
+      ctx.fillStyle = fillStyle;
+      ctx.fill();
+    }
+    if(strokeStyle){
+      ctx.strokeStyle = strokeStyle;
+      ctx.stroke();
+    }
+  };
+  const buildLaneData = () => {
+    if(!keyByNote || !keyByNote.size) return null;
+    const usingFlippedKeymap = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
+    const normX = (u) => {
+      // Map absolute U directly to canvas width so key lanes match the screen UVs.
+      let normalized = Number(u);
+      // keymap_flipped.json is already authored for the screen's left->right direction,
+      // so don't apply an additional mirror correction when using it.
+      if(!usingFlippedKeymap && backboardUVCorrection && backboardUVCorrection.mirrorU){
+        normalized = 1 - normalized;
+      }
+      return Math.min(Math.max(normalized, 0), 1) * W;
+    };
+    const sourceEntries = keymapFlippedLoaded && keymapFlippedPositions.length
+      ? keymapFlippedPositions.map(entry => ({
+        note: entry.note,
+        u0: entry.u0,
+        u1: entry.u1,
+        isBlack: entry.isBlack,
+        noteName: entry.label
+      }))
+      : Array.from(keyByNote.entries()).map(([note, info]) => ({
+        note: Number(note),
+        u0: info.u0,
+        u1: info.u1,
+        isBlack: (info && typeof info.name === 'string') ? info.name.includes('#') : isBlackNoteByNumber(Number(note)),
+        noteName: info && typeof info.name === 'string' ? info.name : undefined
+      }));
+    const laneRowWhite = rows - 2; // row 11 (1-based labels)
+    const laneRowBlack = rows - 3; // row 10 (1-based labels)
+    const laneRowUpper = rows - 4; // row 9 (1-based labels)
+    const laneWhiteY = { y0: Math.max(0, (laneRowBlack + 0.5) * cellH), y1: Math.min(H, (laneRowWhite + 1) * cellH) };
+    const laneBlackY = { y0: Math.max(0, (laneRowBlack - 1) * cellH), y1: Math.min(H, (laneRowBlack + 0.5) * cellH) };
+    const laneUpperY = { y0: Math.max(0, laneRowUpper * cellH), y1: Math.min(H, (laneRowUpper + 1) * cellH) };
+    const laneEntries = (keymapLaneLoaded && keymapLanePositions.length)
+      ? keymapLanePositions
+      : sourceEntries;
+    return { normX, sourceEntries, laneEntries, laneWhiteY, laneBlackY, laneUpperY };
+  };
+  const buildLaneRenderMap = (laneEntries, normX) => {
+    const map = new Map();
+    if(!laneEntries || !normX) return map;
+    const blackLaneScale = 0.60;
+    const whiteInsetScale = 0.18;
+    laneEntries.forEach(entry => {
+      if(!entry || entry.u0 == null || entry.u1 == null) return;
+      const x0 = normX(entry.u0);
+      const x1 = normX(entry.u1);
+      const laneLeft = Math.min(x0, x1);
+      const laneW = Math.max(1, Math.abs(x1 - x0));
+      const isBlack = !!entry.isBlack;
+      let drawX = laneLeft;
+      let drawW = laneW;
+      if(isBlack){
+        drawW = Math.max(1, laneW * blackLaneScale);
+        drawX = laneLeft + (laneW - drawW) * 0.5;
+      } else {
+        const inset = laneW * whiteInsetScale;
+        drawX = laneLeft + inset;
+        drawW = Math.max(1, laneW - inset * 2);
+      }
+      map.set(Number(entry.note), {
+        x: drawX,
+        w: drawW,
+        isBlack,
+        centerX: drawX + drawW * 0.5
+      });
+    });
+    return map;
+  };
+  const drawLaneHighlights = (laneEntries, normX, laneWhiteY, laneBlackY) => {
+    if(!laneEntries || !normX || !activeNoteSet || !activeNoteSet.size) return;
+    laneEntries.forEach(entry => {
+      if(!entry || entry.u0 == null || entry.u1 == null) return;
+      const midi = Number(entry.note);
+      if(!activeNoteSet.has(midi)) return;
+      const x0 = normX(entry.u0);
+      const x1 = normX(entry.u1);
+      const band = entry.isBlack ? laneBlackY : laneWhiteY;
+      if(!band) return;
+      const left = Math.min(x0, x1);
+      const width = Math.max(1, Math.abs(x1 - x0));
+      const height = Math.max(2, band.y1 - band.y0);
+      const glow = entry.isBlack ? glowBlack : glowWhite;
+      const fillAlpha = (backboardViewMode === 'record-mode') ? 0.45 : 0.75;
+      ctx.fillStyle = hexToRgba(glow, fillAlpha);
+      ctx.fillRect(left, band.y0, width, height);
+      ctx.strokeStyle = hexToRgba(glow, Math.min(1, fillAlpha + 0.2));
+      ctx.lineWidth = 1;
+      ctx.strokeRect(left, band.y0 + 0.5, width, Math.max(1, height - 1));
+    });
+  };
+  const drawFallingNotes = (laneEntries, normX) => {
+    if(!laneEntries || !normX || !midiLoaded) return;
+    const laneRenderMap = buildLaneRenderMap(laneEntries, normX);
+    if(!laneRenderMap.size) return;
+    const nowSec = getVisualNowSec();
+    ingestPendingNotes(nowSec);
+    const dtSec = (lastTransportNowSec == null) ? 0 : Math.max(0, nowSec - lastTransportNowSec);
+    lastTransportNowSec = nowSec;
+    const pixelsPerSec = H / Math.max(0.001, FALL_TIME_SEC);
+    const strikeY = H;
+    const topY = 0;
+    const tailSec = 0.5;
+    const clamp01 = (v)=> Math.max(0, Math.min(1, v));
+    const drawRoundedRect = (x, y, w, h, r, fillStyle, strokeStyle) => {
+      const radius = Math.min(r, w * 2, h * 2);
+      ctx.beginPath();
+      ctx.moveTo(x + radius, y);
+      ctx.lineTo(x + w - radius, y);
+      ctx.arcTo(x + w, y, x + w, y + radius, radius);
+      ctx.lineTo(x + w, y + h - radius);
+      ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+      ctx.lineTo(x + radius, y + h);
+      ctx.arcTo(x, y + h, x, y + h - radius, radius);
+      ctx.lineTo(x, y + radius);
+      ctx.arcTo(x, y, x + radius, y, radius);
+      ctx.closePath();
+      if(fillStyle){
+        ctx.fillStyle = fillStyle;
+        ctx.fill();
+      }
+      if(strokeStyle){
+        ctx.strokeStyle = strokeStyle;
+        ctx.stroke();
+      }
+    };
+    const noteDrawables = [];
+    const nextActive = [];
+    activeFallingNotes.forEach(note => {
+      if(!note || !Number.isFinite(note.startSec) || !Number.isFinite(note.endSec)) return;
+      const appearSec = note.startSec - FALL_TIME_SEC;
+      const durSec = Math.max(0, note.endSec - note.startSec);
+      const heightFull = Math.max(2, durSec * pixelsPerSec);
+      let rectTop = 0;
+      let rectBottom = 0;
+      if(nowSec < note.startSec){
+        const p = clamp01((nowSec - appearSec) / Math.max(0.001, FALL_TIME_SEC));
+        const yHead = topY + (strikeY - topY) * p;
+        rectBottom = yHead;
+        rectTop = yHead - heightFull;
+      } else {
+        const remainingSec = Math.max(0, note.endSec - nowSec);
+        const height = Math.max(1, remainingSec * pixelsPerSec);
+        rectBottom = strikeY;
+        rectTop = strikeY - height;
+      }
+      const lane = laneRenderMap.get(Number(note.noteNumber));
+      if(lane){
+        const drawHeight = Math.max(1, rectBottom - rectTop);
+        const widthScale = lane.isBlack ? 1.3 : 0.75;
+        const drawW = Math.max(1, lane.w * widthScale);
+        const drawX = lane.x + (lane.w - drawW) * 0.5;
+        noteDrawables.push({
+          note,
+          lane,
+          rectTop,
+          rectBottom,
+          drawX,
+          drawW,
+          height: drawHeight
+        });
+        if(nowSec >= note.startSec && !note.hasStruck){
+          note.hasStruck = true;
+          const burstCount = 12;
+          for(let i=0;i<burstCount;i++){
+            const centerX = drawX + drawW * 0.5;
+            playbackParticles.push({
+              x: centerX,
+              y: strikeY,
+              vx: (Math.random() * 80) - 40,
+              vy: -40 - (Math.random() * 80),
+              life: 0,
+              maxLife: 0.25 + Math.random() * 0.25,
+              size: 1 + Math.random() * 2,
+              alpha: 1,
+              color: glow
+            });
+          }
+        }
+      }
+      if(nowSec <= (note.endSec + tailSec) && rectTop <= (H + 20)){
+        nextActive.push(note);
+      }
+    });
+    activeFallingNotes = nextActive;
+    if(noteDrawables.length){
+      const gapPx = 2;
+      const drawByNote = new Map();
+      noteDrawables.forEach(entry => {
+        const key = Number(entry.note.noteNumber);
+        if(!drawByNote.has(key)) drawByNote.set(key, []);
+        drawByNote.get(key).push(entry);
+      });
+      drawByNote.forEach(list => {
+        list.sort((a,b)=>a.rectTop - b.rectTop);
+        for(let i=1;i<list.length;i++){
+          const prev = list[i-1];
+          const cur = list[i];
+          const minTop = prev.rectBottom + gapPx;
+          if(cur.rectTop < minTop){
+            cur.rectTop = minTop;
+          }
+        }
+        list.forEach(entry => {
+          const glow = getNoteGlowHex(entry.note, entry.lane);
+          const drawHeight = Math.max(1, entry.rectBottom - entry.rectTop);
+          const radius = Math.min(10, drawHeight * 0.45);
+          ctx.lineWidth = 1;
+          drawRoundedRect(entry.drawX, entry.rectTop, entry.drawW, drawHeight, radius, hexToRgba(glow, 0.8), hexToRgba(glow, 0.95));
+        });
+      });
+    }
+    if(playbackParticles.length){
+      const gravity = 420;
+      const stillAlive = [];
+      playbackParticles.forEach(p => {
+        if(!p) return;
+        const dt = dtSec || 0;
+        p.vy += gravity * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.life += dt;
+        const t = Math.min(1, p.life / Math.max(0.001, p.maxLife));
+        p.alpha = 1 - t;
+        if(p.alpha > 0){
+          ctx.fillStyle = hexToRgba(p.color || '#ffffff', p.alpha);
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if(p.life < p.maxLife) stillAlive.push(p);
+      });
+      playbackParticles = stillAlive;
+    }
+  };
   if(uvDebugMode){
     drawUvTestCard(ctx, W, H);
-  } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,W,H);
+  } else if(backboardViewMode === 'record-mode'){
     // Draw a light grid with labeled cells (A1 bottom-left -> J10 top-right)
-    const cols = 24, rows = 12;
-    const cellW = W / cols;
-    const cellH = H / rows;
     {
       const sustainRowIndex = rows - 1; // row 12 (bottom)
       const y = sustainRowIndex * cellH;
@@ -2278,7 +2990,7 @@ function renderBackboardOverlay(){
       }
     }
     const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
-    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillStyle = showBackboardGridLabels ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0)';
     ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -2292,21 +3004,57 @@ function renderBackboardOverlay(){
         ctx.fillText(label, cx, cy);
       }
     }
-    const usingFlippedKeymap = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
-    const normX = (u) => {
-      // Map absolute U directly to canvas width so key lanes match the screen UVs.
-      let normalized = Number(u);
-      // keymap_flipped.json is already authored for the screen's left->right direction,
-      // so don't apply an additional mirror correction when using it.
-      if(!usingFlippedKeymap && backboardUVCorrection && backboardUVCorrection.mirrorU){
-        normalized = 1 - normalized;
+    const laneData = buildLaneData();
+    if(laneData){
+      const { normX, sourceEntries, laneEntries, laneWhiteY, laneBlackY, laneUpperY } = laneData;
+      updateQwertyZoneHover();
+      const newWhites = computeQwertyWhiteKeyLanes(laneEntries, normX);
+      const newSig = newWhites.length
+        ? `${newWhites.length}:${newWhites[0].note}:${newWhites[newWhites.length-1].note}`
+        : '0';
+      if(newSig !== qwertyLaneSignature){
+        qwertyWhiteKeyLanes = newWhites;
+        qwertyLaneSignature = newSig;
+        qwertyDividerIndex = null;
+        qwertyLeftEndIndex = null;
+        qwertyRightStartIndex = null;
+        ensureQwertyDivider();
+        qwertyDividerX = getDividerX();
+        rebuildQwertyMapping();
+      } else if(!qwertyWhiteKeyLanes.length && newWhites.length){
+        qwertyWhiteKeyLanes = newWhites;
+        qwertyDividerIndex = null;
+        qwertyLeftEndIndex = null;
+        qwertyRightStartIndex = null;
+        ensureQwertyDivider();
+        qwertyDividerX = getDividerX();
+        rebuildQwertyMapping();
+      } else if(qwertyDividerX == null){
+        qwertyDividerX = getDividerX();
       }
-      return Math.min(Math.max(normalized, 0), 1) * W;
-    };
-    if(keyByNote && keyByNote.size){
+      if(laneEntries && laneEntries.length){
+        const laneMap = new Map();
+        laneEntries.forEach(entry => {
+          if(!entry || entry.u0 == null || entry.u1 == null) return;
+          const x0 = normX(entry.u0);
+          const x1 = normX(entry.u1);
+          const left = Math.min(x0, x1);
+          const right = Math.max(x0, x1);
+          laneMap.set(Number(entry.note), { x0: left, x1: right, center: (left + right) * 0.5, isBlack: !!entry.isBlack });
+        });
+        qwertyLaneByNote = laneMap;
+      }
+      drawLaneHighlights(laneEntries, normX, laneWhiteY, laneBlackY);
       const whiteEntries = [];
       const blackEntries = [];
-      const midiToKeyLabel = new Map();
+      let noteToCodes = new Map();
+      const getCssVarLocal = (name, fallback) => {
+        try{
+          const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
+          if(val && val.trim()) return val.trim();
+        }catch(e){}
+        return fallback;
+      };
       if(typeof CODE_TO_MIDI !== 'undefined'){
         const displayFromCode = (code)=>{
           if(!code) return '';
@@ -2317,37 +3065,23 @@ function renderBackboardOverlay(){
             case 'Period': return '.';
             case 'Slash': return '/';
             case 'Semicolon': return ';';
+            case 'Quote': return "'";
             case 'BracketLeft': return '[';
             case 'BracketRight': return ']';
+            case 'Backslash': return '\\';
             case 'Minus': return '-';
+            case 'Equal': return '=';
+            case 'Backspace': return '⌫';
             default: return code;
           }
         };
-        CODE_TO_MIDI.forEach((midi, code)=> midiToKeyLabel.set(Number(midi), displayFromCode(code)));
+        CODE_TO_MIDI.forEach((midi, code)=>{
+          const label = displayFromCode(code);
+          if(!noteToCodes.has(Number(midi))) noteToCodes.set(Number(midi), []);
+          if(label) noteToCodes.get(Number(midi)).push(label);
+        });
       }
-      const sourceEntries = keymapFlippedLoaded && keymapFlippedPositions.length
-        ? keymapFlippedPositions.map(entry => ({
-          note: entry.note,
-          u0: entry.u0,
-          u1: entry.u1,
-          isBlack: entry.isBlack,
-          noteName: entry.label
-        }))
-        : Array.from(keyByNote.entries()).map(([note, info]) => ({
-          note: Number(note),
-          u0: info.u0,
-          u1: info.u1,
-          isBlack: (info && typeof info.name === 'string') ? info.name.includes('#') : isBlackNoteByNumber(Number(note)),
-          noteName: info && typeof info.name === 'string' ? info.name : undefined
-        }));
-      const laneRowWhite = rows - 2; // row 11 (1-based labels)
-      const laneRowBlack = rows - 3; // row 10 (1-based labels)
-      const laneWhiteY = { y0: Math.max(0, (laneRowBlack + 0.5) * cellH), y1: Math.min(H, (laneRowWhite + 1) * cellH) };
-      const laneBlackY = { y0: Math.max(0, (laneRowBlack - 1) * cellH), y1: Math.min(H, (laneRowBlack + 0.5) * cellH) };
       const SHOW_LANE_LINES = false;
-      const laneEntries = (keymapLaneLoaded && keymapLanePositions.length)
-        ? keymapLanePositions
-        : sourceEntries;
       if(SHOW_LANE_LINES){
         ctx.save();
         // Subtle full-height guide for all keys
@@ -2387,8 +3121,7 @@ function renderBackboardOverlay(){
       }
       laneEntries.forEach(entry => {
         if(!entry || entry.u0 == null || entry.u1 == null) return;
-        const mapped = midiToKeyLabel.get(Number(entry.note));
-        if(!mapped) return; // QWERTY-only mode: hide raw note names
+        const labels = noteToCodes.get(Number(entry.note)) || [];
         const u0 = Number(entry.u0);
         const u1 = Number(entry.u1);
         const mid = (u0 + u1) * 0.5;
@@ -2396,11 +3129,249 @@ function renderBackboardOverlay(){
         const x0 = normX(u0);
         const x1 = normX(u1);
         const x = (x0 + x1) * 0.5;
-        const label = mapped;
-        const target = { x, label, w: Math.abs(x1 - x0), midi: Number(entry.note) };
+        let label = '';
+        let wide = false;
+        let parts = null;
+        let partColors = null;
+        if(labels.length){
+          if(qwertyDualLabelMode === 'wide' && labels.length > 1){
+            const ordered = labels.slice();
+            if(ordered.includes("'") && ordered.includes('1')){
+              ordered.sort((a,b)=>{
+                if(a === "'" && b === '1') return -1;
+                if(a === '1' && b === "'") return 1;
+                return a.localeCompare(b);
+              });
+              parts = [ordered[0], "|", ordered[1]];
+              const sepColor = getCssVarLocal('--red-dark', 'rgba(255, 120, 120, 0.95)');
+              partColors = [null, sepColor, null];
+              label = parts.join(' ');
+            } else {
+              label = ordered.join(' ');
+            }
+            wide = true;
+          } else if(qwertyDualLabelMode === 'alternate' && labels.length > 1){
+            const flip = Math.floor(performance.now() / 2000) % labels.length;
+            label = labels[flip] || labels[0];
+          } else {
+            label = labels[0];
+          }
+        }
+        const target = { x, label, w: Math.abs(x1 - x0), midi: Number(entry.note), wide, parts, partColors };
         if(entry.isBlack) blackEntries.push(target);
         else whiteEntries.push(target);
       });
+      const drawGroupBackgrounds = () => {
+        const rowTop = (8 - 1) * cellH;
+        const rowBottom = 11 * cellH;
+        const bgY = Math.max(0, rowTop);
+        const bgH = Math.max(0, rowBottom - rowTop);
+        const leftBounds = getGroupBoundsForSide('left');
+        const rightBounds = getGroupBoundsForSide('right');
+        const handleW = Math.max(18, cellW * 0.7);
+        const handleH = Math.max(22, bgH * 0.6);
+        const handleY = bgY;
+        const radius = Math.min(12, bgH * 0.18);
+        const dividerZoneW = Math.max(10, cellW * 0.45);
+        const dividerLeft = (qwertyDividerX != null) ? (qwertyDividerX - dividerZoneW * 0.5) : null;
+        const dividerRight = (dividerLeft != null) ? (dividerLeft + dividerZoneW) : null;
+        const hoverAlphaLeft = qwertyZoneHover.left || 0;
+        const hoverAlphaRight = qwertyZoneHover.right || 0;
+        const glowFill = (alpha) => `rgba(255, 180, 205, ${0.36 * alpha})`;
+        const glowStroke = (alpha) => `rgba(255, 220, 235, ${0.75 * alpha})`;
+        const drawGroupBackground = (side, x, y, w, h, r, fillStyle, strokeStyle) => {
+          ctx.beginPath();
+          if(side === 'left'){
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.arcTo(x + w, y, x + w, y + r, r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx.lineTo(x, y + h);
+            ctx.lineTo(x, y);
+          } else {
+            ctx.moveTo(x + r, y);
+            ctx.arcTo(x, y, x, y + r, r);
+            ctx.lineTo(x, y + h - r);
+            ctx.arcTo(x, y + h, x + r, y + h, r);
+            ctx.lineTo(x + w, y + h);
+            ctx.lineTo(x + w, y);
+            ctx.lineTo(x + r, y);
+          }
+          ctx.closePath();
+          if(fillStyle){
+            ctx.fillStyle = fillStyle;
+            ctx.fill();
+          }
+          if(strokeStyle){
+            ctx.strokeStyle = strokeStyle;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+          }
+        };
+        const drawHandle = (side, x, y, w, h, img, hoverAlpha) => {
+          const visualRect = { x, y, w, h };
+          const hitPad = Math.max(6, Math.round(cellW * 0.25));
+          const hitX = Math.max(0, x - hitPad);
+          const hitW = Math.min(W - hitX, w + hitPad * 2);
+          const hitRect = { x: hitX, y, w: hitW, h };
+          panelHitRects.push({ panel: 'qwerty', type: 'group-handle', id: side, key: `qwerty:handle:${side}`, rect: hitRect, side });
+          if(side === 'left') qwertyHandleRects.left = visualRect;
+          if(side === 'right') qwertyHandleRects.right = visualRect;
+          ctx.fillStyle = 'rgba(80, 8, 18, 0.9)';
+          ctx.fillRect(x, y, w, h);
+          if(hoverAlpha > 0.01){
+            ctx.fillStyle = glowFill(hoverAlpha);
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = glowStroke(hoverAlpha);
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x + 0.5, y + 0.5, Math.max(0, w - 1), Math.max(0, h - 1));
+          }
+          if(img && img.complete){
+            const inset = Math.max(6, Math.min(w, h) * 0.2);
+            const iw = w - inset * 2;
+            const ih = h - inset * 2;
+            ctx.drawImage(img, x + inset, y + inset, iw, ih);
+          }
+        };
+        if(leftBounds){
+          const bgX = Math.max(0, leftBounds.minX);
+          const bgW = Math.min(W, leftBounds.maxX) - bgX;
+          drawGroupBackground('left', bgX, bgY, bgW, bgH, radius, 'rgba(80, 8, 18, 0.9)', null);
+          if(hoverAlphaLeft > 0.01){
+            drawGroupBackground('left', bgX, bgY, bgW, bgH, radius, glowFill(hoverAlphaLeft), glowStroke(hoverAlphaLeft));
+          }
+          if(dividerLeft != null){
+            const hitW = Math.max(0, Math.min(bgW, dividerLeft - bgX));
+            if(hitW > 0){
+              panelHitRects.push({
+                panel: 'qwerty',
+                type: 'group-handle',
+                id: 'left',
+                key: 'qwerty:group:left',
+                rect: { x: bgX, y: bgY, w: hitW, h: bgH },
+                side: 'left'
+              });
+            }
+          } else {
+            panelHitRects.push({
+              panel: 'qwerty',
+              type: 'group-handle',
+              id: 'left',
+              key: 'qwerty:group:left',
+              rect: { x: bgX, y: bgY, w: bgW, h: bgH },
+              side: 'left'
+            });
+          }
+          const handleX = Math.max(0, leftBounds.minX - handleW);
+          drawHandle('left', handleX, handleY, handleW, handleH, qwertyArrowLeftImg, hoverAlphaLeft);
+          ctx.fillStyle = 'rgba(90, 20, 30, 0.9)';
+          ctx.fillRect(bgX - 1, bgY, 2, bgH);
+        }
+        if(rightBounds){
+          const bgX = Math.max(0, rightBounds.minX);
+          const bgW = Math.min(W, rightBounds.maxX) - bgX;
+          drawGroupBackground('right', bgX, bgY, bgW, bgH, radius, 'rgba(80, 8, 18, 0.9)', null);
+          if(hoverAlphaRight > 0.01){
+            drawGroupBackground('right', bgX, bgY, bgW, bgH, radius, glowFill(hoverAlphaRight), glowStroke(hoverAlphaRight));
+          }
+          if(dividerRight != null){
+            const startX = Math.max(bgX, dividerRight);
+            const hitW = Math.max(0, (bgX + bgW) - startX);
+            if(hitW > 0){
+              panelHitRects.push({
+                panel: 'qwerty',
+                type: 'group-handle',
+                id: 'right',
+                key: 'qwerty:group:right',
+                rect: { x: startX, y: bgY, w: hitW, h: bgH },
+                side: 'right'
+              });
+            }
+          } else {
+            panelHitRects.push({
+              panel: 'qwerty',
+              type: 'group-handle',
+              id: 'right',
+              key: 'qwerty:group:right',
+              rect: { x: bgX, y: bgY, w: bgW, h: bgH },
+              side: 'right'
+            });
+          }
+          const handleX = Math.min(W - handleW, rightBounds.maxX);
+          drawHandle('right', handleX, handleY, handleW, handleH, qwertyArrowRightImg, hoverAlphaRight);
+          ctx.fillStyle = 'rgba(90, 20, 30, 0.9)';
+          ctx.fillRect(bgX + bgW - 1, bgY, 2, bgH);
+        }
+      };
+      {
+        const toggleRect = { x: 6, y: 6, w: cellW * 4, h: cellH * 0.8 };
+        panelHitRects.push({ panel: 'qwerty', type: 'dual-label-toggle', id: 'dual', key: 'qwerty:dual-label', rect: toggleRect });
+        ctx.fillStyle = 'rgba(70, 30, 40, 0.85)';
+        ctx.fillRect(toggleRect.x, toggleRect.y, toggleRect.w, toggleRect.h);
+        ctx.strokeStyle = 'rgba(210, 160, 190, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(toggleRect.x + 0.5, toggleRect.y + 0.5, toggleRect.w - 1, toggleRect.h - 1);
+        ctx.fillStyle = '#f7e9f2';
+        const tFont = Math.max(10, Math.round(toggleRect.h * 0.55));
+        ctx.font = `bold ${tFont}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const modeLabel = (qwertyDualLabelMode === 'wide') ? 'Dual: Wide' : 'Dual: Alt';
+        ctx.fillText(modeLabel, toggleRect.x + 6, toggleRect.y + toggleRect.h * 0.5);
+      }
+      {
+        const btnW = Math.max(18, cellW * 0.9);
+        const btnH = Math.max(16, cellH * 0.5);
+        const btnX = 6;
+        const btnY = 6 + cellH * 0.95;
+        const upRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+        const downRect = { x: btnX, y: btnY + btnH + 4, w: btnW, h: btnH };
+        panelHitRects.push({ panel: 'view', type: 'piano-shift', id: 'up', key: 'piano:shift:up', rect: upRect });
+        panelHitRects.push({ panel: 'view', type: 'piano-shift', id: 'down', key: 'piano:shift:down', rect: downRect });
+        const drawArrow = (rect, dir) => {
+          const isHover = panelHover === `piano:shift:${dir}`;
+          ctx.fillStyle = isHover ? 'rgba(120, 190, 255, 0.9)' : 'rgba(60, 90, 120, 0.85)';
+          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+          ctx.strokeStyle = 'rgba(200, 220, 255, 0.9)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+          const cx = rect.x + rect.w * 0.5;
+          const cy = rect.y + rect.h * 0.5;
+          const size = Math.min(rect.w, rect.h) * 0.35;
+          ctx.beginPath();
+          if(dir === 'up'){
+            ctx.moveTo(cx, cy - size);
+            ctx.lineTo(cx - size, cy + size);
+            ctx.lineTo(cx + size, cy + size);
+          } else {
+            ctx.moveTo(cx, cy + size);
+            ctx.lineTo(cx - size, cy - size);
+            ctx.lineTo(cx + size, cy - size);
+          }
+          ctx.closePath();
+          ctx.fillStyle = '#ffffff';
+          ctx.fill();
+        };
+        drawArrow(upRect, 'up');
+        drawArrow(downRect, 'down');
+      }
+      {
+        const toggleRect = { x: W - (cellW * 4) - 6, y: 6 + (cellH * 0.9), w: cellW * 4, h: cellH * 0.8 };
+        panelHitRects.push({ panel: 'qwerty', type: 'grid-toggle', id: 'grid', key: 'qwerty:grid-toggle', rect: toggleRect });
+        ctx.fillStyle = 'rgba(70, 30, 40, 0.85)';
+        ctx.fillRect(toggleRect.x, toggleRect.y, toggleRect.w, toggleRect.h);
+        ctx.strokeStyle = 'rgba(210, 160, 190, 0.7)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(toggleRect.x + 0.5, toggleRect.y + 0.5, toggleRect.w - 1, toggleRect.h - 1);
+        ctx.fillStyle = '#f7e9f2';
+        const tFont = Math.max(10, Math.round(toggleRect.h * 0.55));
+        ctx.font = `bold ${tFont}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const label = showBackboardGridLabels ? 'Grid: On' : 'Grid: Off';
+        ctx.fillText(label, toggleRect.x + 6, toggleRect.y + toggleRect.h * 0.5);
+      }
       const qwertyFontSize = Math.max(18, Math.round(fontSize * 2));
       const getCssVar = (name, fallback) => {
         try{
@@ -2412,16 +3383,6 @@ function renderBackboardOverlay(){
       const greenDark = getCssVar('--green-dark', '#00130d');
       const darkColor = getCssVar('--dark-color', greenDark);
       const greenSecondary = getCssVar('--green-secondary', '#0d5023');
-      const toCssHex = (num) => {
-        const v = (typeof num === 'number' && isFinite(num)) ? num : 0;
-        return `#${(v >>> 0).toString(16).padStart(6, '0')}`;
-      };
-      const glowWhite = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_white_glow'])
-        ? toCssHex(GlowMaterials['keys_white_glow'].emissive)
-        : '#17ff1c';
-      const glowBlack = (typeof GlowMaterials === 'object' && GlowMaterials && GlowMaterials['keys_black_glow'])
-        ? toCssHex(GlowMaterials['keys_black_glow'].emissive)
-        : '#860b07';
       const labelStyles = {
         white: { fill: '#ffffff', text: greenDark, line: greenDark },
         black: { fill: greenSecondary, text: '#ffffff', line: greenSecondary }
@@ -2434,7 +3395,9 @@ function renderBackboardOverlay(){
       };
       const drawQwertyLabel = (entry, textBand, shapeBand, style, bandHeight) => {
         const keyW = Math.max(6, entry.w || 0);
-        const labelW = Math.max(14, Math.min(keyW * 0.9, cellW * 1.6));
+        const maxW = entry.wide ? (cellW * 3.2) : (cellW * 1.6);
+        const scaleW = entry.wide ? 1.6 : 0.9;
+        const labelW = Math.max(14, Math.min(keyW * scaleW, maxW));
         const shapeTop = Math.min(shapeBand.y1 - 2, textBand.y0 + 1);
         const shapeBottom = Math.max(shapeTop + 10, shapeBand.y1 - 1);
         const labelH = Math.max(10, shapeBottom - shapeTop);
@@ -2458,9 +3421,23 @@ function renderBackboardOverlay(){
         ctx.moveTo(left, top + labelH);
         ctx.lineTo(left + labelW, top + labelH);
         ctx.stroke();
-        ctx.fillStyle = style.text;
         const textY = Math.min(textBand.y1 - 2, Math.max(textBand.y0 + 2, (textBand.y0 + textBand.y1) * 0.5));
-        ctx.fillText(entry.label, left + labelW / 2, textY);
+        if(entry.parts && entry.parts.length){
+          const widths = entry.parts.map(p => ctx.measureText(p).width);
+          const gap = 6;
+          const total = widths.reduce((a,b)=>a+b, 0) + Math.max(0, entry.parts.length - 1) * gap;
+          const pad = 6;
+          let cursor = (left + labelW / 2) - (total + pad * 2) / 2 + pad;
+          entry.parts.forEach((part, idx)=>{
+            const color = (entry.partColors && entry.partColors[idx]) ? entry.partColors[idx] : style.text;
+            ctx.fillStyle = color;
+            ctx.fillText(part, cursor + widths[idx] / 2, textY);
+            cursor += widths[idx] + gap;
+          });
+        } else {
+          ctx.fillStyle = style.text;
+          ctx.fillText(entry.label, left + labelW / 2, textY);
+        }
       };
       const drawLabelRow = (entries, textBand, shapeBand, style) => {
         if(!entries.length) return;
@@ -2471,13 +3448,120 @@ function renderBackboardOverlay(){
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         entries.forEach(entry => {
+          if(!entry.label) return;
           const entryStyle = getActiveStyle(entry, style);
           drawQwertyLabel(entry, textBand, shapeBand, entryStyle, bandHeight);
         });
       };
+      const drawTopRoundedRect = (x, y, w, h, r, fillStyle, strokeStyle) => {
+        const radius = Math.min(r, w * 0.5, h * 0.5);
+        ctx.beginPath();
+        ctx.moveTo(x, y + h);
+        ctx.lineTo(x, y + radius);
+        ctx.arcTo(x, y, x + radius, y, radius);
+        ctx.lineTo(x + w - radius, y);
+        ctx.arcTo(x + w, y, x + w, y + radius, radius);
+        ctx.lineTo(x + w, y + h);
+        ctx.closePath();
+        if(fillStyle){
+          ctx.fillStyle = fillStyle;
+          ctx.fill();
+        }
+        if(strokeStyle){
+          ctx.strokeStyle = strokeStyle;
+          ctx.stroke();
+        }
+      };
+      const drawSlotRow = (entries, textBand, shapeBand, isBlackRow) => {
+        if(!entries.length) return;
+        const slotFill = isBlackRow ? 'rgba(20, 30, 45, 0.55)' : 'rgba(30, 40, 55, 0.5)';
+        const slotStroke = isBlackRow ? 'rgba(120, 150, 200, 0.2)' : 'rgba(140, 170, 220, 0.2)';
+        entries.forEach(entry => {
+          const keyW = Math.max(6, entry.w || 0);
+          const maxW = entry.wide ? (cellW * 3.2) : (cellW * 1.6);
+          const scaleW = entry.wide ? 1.6 : 0.9;
+          const slotW = Math.max(14, Math.min(keyW * scaleW, maxW));
+          const shapeTop = Math.min(shapeBand.y1 - 2, textBand.y0 + 1);
+          const shapeBottom = Math.max(shapeTop + 10, shapeBand.y1 - 1);
+          const slotH = Math.max(10, shapeBottom - shapeTop);
+          const slotY = Math.min(shapeBottom - slotH, shapeTop);
+          const slotRadius = Math.min(slotH * 0.55, slotW * 0.35);
+          const left = Math.max(0, Math.min(W - slotW, entry.x - slotW / 2));
+          drawTopRoundedRect(left, slotY, slotW, slotH, slotRadius, slotFill, slotStroke);
+        });
+      };
       const labelBlackShapeBand = { y0: laneBlackY.y0, y1: laneWhiteY.y1 };
+      drawSlotRow(blackEntries, laneBlackY, labelBlackShapeBand, true);
+      drawSlotRow(whiteEntries, laneWhiteY, laneWhiteY, false);
+      drawGroupBackgrounds();
+      if(qwertyDividerX != null){
+        const dividerZoneW = Math.max(10, cellW * 0.45);
+        const dividerLineW = 4;
+        const dividerRect = { x: qwertyDividerX - dividerZoneW * 0.5, y: 0, w: dividerZoneW, h: H };
+        panelHitRects.push({ panel: 'qwerty', type: 'divider', id: 'split', key: 'qwerty:divider', rect: dividerRect });
+        const dividerHover = qwertyZoneHover.divider || 0;
+        const suppressDividerGlow = panelHover && (panelHover === 'qwerty:group:left' || panelHover === 'qwerty:group:right' || panelHover === 'qwerty:handle:left' || panelHover === 'qwerty:handle:right');
+        const lineX = qwertyDividerX - dividerLineW * 0.5;
+        const midY = laneBlackY.y1;
+        ctx.fillStyle = 'rgba(160, 70, 255, 0.8)';
+        ctx.fillRect(lineX, 0, dividerLineW, Math.max(0, midY));
+        ctx.strokeStyle = 'rgba(220, 190, 255, 0.85)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(lineX + 0.5, 0.5, dividerLineW - 1, Math.max(0, midY) - 1);
+      }
       drawLabelRow(blackEntries, laneBlackY, labelBlackShapeBand, labelStyles.black);
       drawLabelRow(whiteEntries, laneWhiteY, laneWhiteY, labelStyles.white);
+      if(qwertyDividerX != null){
+        const dividerLineW = 4;
+        const lineX = qwertyDividerX - dividerLineW * 0.5;
+        const midY = laneBlackY.y1;
+        ctx.fillStyle = 'rgba(160, 70, 255, 0.8)';
+        ctx.fillRect(lineX, midY, dividerLineW, Math.max(0, H - midY));
+        ctx.strokeStyle = 'rgba(220, 190, 255, 0.85)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(lineX + 0.5, midY + 0.5, dividerLineW - 1, Math.max(0, H - midY) - 1);
+        const dividerHover = qwertyZoneHover.divider || 0;
+        const suppressDividerGlow = panelHover && (panelHover === 'qwerty:group:left' || panelHover === 'qwerty:group:right' || panelHover === 'qwerty:handle:left' || panelHover === 'qwerty:handle:right');
+        if(dividerHover > 0.01 && !suppressDividerGlow){
+          const dividerZoneW = Math.max(10, cellW * 0.45);
+          const dividerRect = { x: qwertyDividerX - dividerZoneW * 0.5, y: 0, w: dividerZoneW, h: H };
+          ctx.fillStyle = `rgba(225, 190, 255, ${0.65 * dividerHover})`;
+          ctx.fillRect(dividerRect.x, dividerRect.y, dividerRect.w, dividerRect.h);
+          ctx.strokeStyle = `rgba(210, 170, 255, ${0.8 * dividerHover})`;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(dividerRect.x + 1, dividerRect.y + 1, Math.max(0, dividerRect.w - 2), Math.max(0, dividerRect.h - 2));
+          ctx.fillStyle = 'rgba(170, 90, 255, 0.95)';
+          ctx.fillRect(lineX, 0, dividerLineW, H);
+          ctx.strokeStyle = 'rgba(235, 210, 255, 0.95)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(lineX + 0.5, 0.5, dividerLineW - 1, Math.max(0, H - 1));
+        }
+      }
+      if(showPanelHitRects && panelHitRects.length){
+        ctx.save();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 120, 120, 0.9)';
+        ctx.fillStyle = 'rgba(255, 120, 120, 0.15)';
+        ctx.font = '12px "Source Sans 3", system-ui, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        panelHitRects.forEach(hit => {
+          const r = hit.rect;
+          if(!r) return;
+          ctx.fillRect(r.x, r.y, r.w, r.h);
+          ctx.strokeRect(r.x, r.y, r.w, r.h);
+          ctx.fillStyle = 'rgba(255, 220, 220, 0.9)';
+          ctx.fillText(`${hit.type}${hit.id ? `:${hit.id}` : ''}`, r.x + 4, r.y + 2);
+          ctx.fillStyle = 'rgba(255, 120, 120, 0.15)';
+        });
+        ctx.restore();
+      }
+    }
+  } else if(backboardViewMode === 'playback-mode'){
+    const laneData = buildLaneData();
+    if(laneData){
+      const { normX, laneEntries } = laneData;
+      drawFallingNotes(laneEntries, normX);
     }
   }
 
@@ -2492,78 +3576,132 @@ function renderBackboardOverlay(){
     // none: keep solid black background (already filled above)
   }
 
-  // Instrument buttons now live inside the grid cells
+  const drawViewToggleButton = ()=>{
+    const cellCols = GRID_COLS;
+    const cellRows = GRID_ROWS;
+    const cellW = W / cellCols;
+    const cellH = H / cellRows;
+    const btnCols = 4;
+    const btnRows = 1;
+    const startCol = Math.max(0, cellCols - btnCols);
+    const baseRect = {
+      x: startCol * cellW,
+      y: 0,
+      w: btnCols * cellW,
+      h: btnRows * cellH
+    };
+    const inset = Math.max(4, Math.round(cellH * 0.15));
+    const btnRect = {
+      x: baseRect.x + inset,
+      y: baseRect.y + inset,
+      w: Math.max(0, baseRect.w - inset * 2),
+      h: Math.max(0, baseRect.h - inset * 2)
+    };
+    const hitKey = 'view:toggle';
+    const isHover = panelHover === hitKey;
+    panelHitRects.push({ panel: 'view', type: 'view-toggle', id: 'toggle', key: hitKey, rect: btnRect });
+    ctx.fillStyle = isHover ? 'rgba(120, 190, 255, 0.8)' : 'rgba(40, 80, 120, 0.85)';
+    ctx.strokeStyle = '#cfe8ff';
+    ctx.lineWidth = 2;
+    ctx.fillRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
+    ctx.strokeRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
+    ctx.fillStyle = '#ffffff';
+    const fontSizeBtn = Math.max(12, Math.round(btnRect.h * 0.5));
+    ctx.font = `bold ${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = backboardViewMode === 'record-mode' ? 'Record Mode' : 'Playback Mode';
+    ctx.fillText(label, btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+  };
+  drawViewToggleButton();
+
+  // Instrument buttons now live inside the grid cells (record mode only)
+  if(backboardViewMode === 'record-mode'){
     try{
-      panelHitRects = [];
       const cellCols = GRID_COLS;
       const cellRows = GRID_ROWS;
       const cellW = W / cellCols;
       const cellH = H / cellRows;
-      const drawTitleBlock = (text, startCol, row, spanCols)=>{
-        const colIndex = (startCol || 'A').charCodeAt(0) - 65;
-        if(colIndex < 0 || colIndex >= cellCols) return;
-        const rowIndex = Math.max(0, Math.min(row - 1, cellRows - 1));
-        const blockX = colIndex * cellW;
-        const blockY = rowIndex * cellH;
-        const blockW = Math.min(cellCols - colIndex, spanCols) * cellW;
-        ctx.fillStyle = '#60b6dd';
-        ctx.fillRect(blockX + 1, blockY + 1, Math.max(0, blockW - 2), Math.max(0, cellH - 2));
+      const dividerX = (qwertyDividerX != null) ? qwertyDividerX : (W * 0.5);
+      const dividerZoneW = Math.max(10, cellW * 0.45);
+      const panelGap = dividerZoneW * 0.5;
+      const panelCols = 6;
+      const panelW = panelCols * cellW;
+      const leftPanelX = Math.max(0, dividerX - panelGap - panelW);
+      const rightPanelX = Math.min(W - panelW, dividerX + panelGap);
+      const headerRow = 2;
+      const panelTop = (headerRow - 1) * cellH;
+      const panelBottom = (headerRow + 5) * cellH;
+      const panelH = Math.max(0, panelBottom - panelTop);
+      const headerH = cellH;
+      const buttonsY = panelTop + headerH;
+      const buttonsH = Math.max(0, panelH - headerH);
+      const drawTitle = (text, x, y, w, h)=>{
+        drawRoundedRectCanvas(x, y, w, h, Math.min(10, h * 0.45), '#6fb8d8', '#98d7ef');
         ctx.fillStyle = '#021414';
-        const titleFont = Math.max(14, Math.round(cellH * 0.55));
+        const titleFont = Math.max(14, Math.round(h * 0.55));
         ctx.font = `bold ${titleFont}px "Source Sans 3", system-ui, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(text.toUpperCase(), blockX + blockW / 2, blockY + cellH / 2);
+        ctx.fillText(text.toUpperCase(), x + w / 2, y + h / 2);
       };
-      drawTitleBlock('Lower Instrument', 'C', 3, 8);
-      drawTitleBlock('Higher Instrument', 'O', 3, 8);
-      const drawInstrumentGrid = (panelId, layout)=>{
-        layout.forEach(cell=>{
-          const colIndex = (cell.startCol || 'A').charCodeAt(0) - 65;
-          const rowIndex = Math.max(0, Math.min(cell.row - 1, cellRows - 1));
-          if(colIndex < 0 || colIndex >= cellCols) return;
-          const span = Math.max(1, Math.min(cell.colspan || 1, cellCols - colIndex));
+      drawTitle('Lower Instrument', leftPanelX, panelTop, panelW, headerH);
+      drawTitle('Higher Instrument', rightPanelX, panelTop, panelW, headerH);
+      const drawInstrumentGrid = (panelId, layout, x, y, w, h)=>{
+        const cols = 4;
+        const rows = 4;
+        const cellW = w / cols;
+        const cellH = h / rows;
+        const list = layout.map(item => ({
+          id: item.id || null,
+          label: item.label || (item.id ? (instrumentById.get(item.id)?.label || '') : '')
+        }));
+        for(let i=0;i<cols*rows;i++){
+          const item = list[i];
+          const col = i % cols;
+          const row = Math.floor(i / cols);
           const baseRect = {
-            x: colIndex * cellW,
-            y: rowIndex * cellH,
-            w: span * cellW,
+            x: x + col * cellW,
+            y: y + row * cellH,
+            w: cellW,
             h: cellH
           };
-          const inset = 4;
+          const inset = Math.max(6, Math.min(cellW, cellH) * 0.12);
           const btnRect = {
             x: baseRect.x + inset,
             y: baseRect.y + inset,
             w: Math.max(0, baseRect.w - inset * 2),
             h: Math.max(0, baseRect.h - inset * 2)
           };
-          const instrumentInfo = cell.id ? instrumentById.get(cell.id) : null;
-          const label = cell.label || instrumentInfo?.label || '';
+          const instrumentInfo = item && item.id ? instrumentById.get(item.id) : null;
+          const label = item ? item.label : '';
           if(instrumentInfo){
             const btn = instrumentInfo;
             const hitKey = `${panelId}:${btn.id}`;
             panelHitRects.push({ panel: panelId, type: 'button', id: btn.id, key: hitKey, rect: btnRect });
             const isSelected = panelState[panelId].selected === btn.id;
             const isHover = panelHover === hitKey;
-            ctx.fillStyle = isSelected ? 'rgba(255,179,71,0.45)' : (isHover ? 'rgba(45,233,184,0.45)' : 'rgba(8,8,8,0.85)');
-            ctx.strokeStyle = '#ffeb3b';
+            const grad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
+            const base = isSelected ? 'rgba(255,195,90,0.75)' : (isHover ? 'rgba(70,245,200,0.65)' : 'rgba(15,15,15,0.9)');
+            grad.addColorStop(0, 'rgba(255,255,255,0.25)');
+            grad.addColorStop(0.45, base);
+            grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+            drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(10, btnRect.h * 0.35), grad, '#ffeb3b');
           } else {
-            ctx.fillStyle = 'rgba(255,255,255,0.08)';
-            ctx.strokeStyle = '#7fb9d8';
+            drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(10, btnRect.h * 0.35), 'rgba(255,255,255,0.08)', '#7fb9d8');
           }
-          ctx.lineWidth = 2;
-          ctx.fillRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
-          ctx.strokeRect(btnRect.x, btnRect.y, btnRect.w, btnRect.h);
           ctx.fillStyle = '#fff';
-          const fontSizeBtn = Math.max(12, Math.round(btnRect.h * 0.55));
+          const fontSizeBtn = Math.max(12, Math.round(btnRect.h * 0.45));
           ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(label, btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
-        });
+          ctx.fillText(label || '', btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+        }
       };
-      drawInstrumentGrid('left', LEFT_INSTRUMENT_LAYOUT);
-      drawInstrumentGrid('right', RIGHT_INSTRUMENT_LAYOUT);
+      drawInstrumentGrid('left', LEFT_INSTRUMENT_LAYOUT, leftPanelX, buttonsY, panelW, buttonsH);
+      drawInstrumentGrid('right', RIGHT_INSTRUMENT_LAYOUT, rightPanelX, buttonsY, panelW, buttonsH);
     }catch(e){ /* ignore draw panel errors */ }
+  }
   // Ensure texture is updated for three.js
   backboardTexture.needsUpdate = true;
 }
@@ -2840,7 +3978,7 @@ function startAudio(delayMs=0){
   audioSource.connect(audioCtx.destination);
   const when = audioCtx.currentTime + Math.max(0, delayMs)/1000;
   const offset = Math.max(0, (audioTrimMs/1000) + savedAudioPosSec);
-  audioSource.onended = ()=>{ audioPlaying=false; playingMIDI=false; savedAudioPosSec=0; resetKeys(); clearAllKeyGlow(); updatePlayButton(); };
+  audioSource.onended = ()=>{ audioPlaying=false; playingMIDI=false; savedAudioPosSec=0; resetKeys(); clearAllKeyGlow(); resetPlaybackVisuals(); updatePlayButton(); };
   audioSource.start(when, offset);
   audioPlaying=true;
 }
@@ -2932,6 +4070,8 @@ function selectTrack(key){
   audioPlaying=false; playingMIDI=false;
   savedAudioPosSec=0; midiIndex=0; midiLoaded=false; audioReady=false; midiError=false; audioError=false;
   midiEvents=[]; midiFirstNoteMs=0; midiActiveDurationMs=0; midiStretch=1.0; sentinelFilteredCount=0;
+  markMidiNoteSpansDirty();
+  resetPlaybackVisuals();
   updatePlayButton(); resetKeys();
   clearAllKeyGlow();
   // Load assets for track
@@ -2975,6 +4115,7 @@ function togglePlayPause(){
     disposeAudioSource('togglePlayPause cleanup');
     audioPlaying=false; playingMIDI=false; // will resume from savedAudioPosSec
     clearAllKeyGlow();
+    resetPlaybackVisuals();
     updatePlayButton();
   } else {
     // If starting fresh (no saved position), use full alignment path
@@ -2988,6 +4129,8 @@ function togglePlayPause(){
       const t0 = now + lead;
       const midiElapsedMs = (savedAudioPosSec*1000) / Math.max(1e-6, currentPlaybackRate);
       midiStartCtxTime = t0 - (midiElapsedMs/1000);
+      transportStartAudioTime = midiStartCtxTime;
+      buildPendingNotes();
       startAudio((t0 - now)*1000);
       audioStartCtxTime = t0;
       playingMIDI=true;
@@ -3111,6 +4254,27 @@ function onGlobalPointerMove(e){
     const pid = pointerDownInfo.pointerId;
     onGlobalPointerUp();
     try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+    return;
+  }
+  if(qwertyDividerDragging){
+    const uv = raycastBackboardForUv(e.clientX, e.clientY);
+    const pt = uv ? uvToCanvasPx(uv) : null;
+    if(pt){
+      setDividerFromCanvasX(pt.px - (qwertyDividerDragOffsetPx || 0));
+      requestBackboardRedraw();
+    }
+    e.preventDefault();
+    return;
+  }
+  if(qwertyGroupDragging){
+    const uv = raycastBackboardForUv(e.clientX, e.clientY);
+    const pt = uv ? uvToCanvasPx(uv) : null;
+    if(pt){
+      const edgeX = pt.px - (qwertyGroupDragOffsetPx || 0);
+      setGroupByEdgeX(qwertyGroupDragging, edgeX);
+      requestBackboardRedraw();
+    }
+    e.preventDefault();
     return;
   }
   if(!pointerDownInfo) return;
@@ -3291,21 +4455,29 @@ const NoteEngine = {
   noteOn(midiNum, mesh){
     const midi = Number(midiNum);
     if(Number.isNaN(midi)) return;
-    bumpTrigger(midi);
-    ensureAudioContextRunning();
-    ensureAudio();
-    if(this.mode === 'sample'){
-      playHeldSample(midi);
-      if(instrumentPlayer){ notifyInstrumentPicker(midi); }
+    const perform = () => {
+      bumpTrigger(midi);
+      ensureAudioContextRunning();
+      ensureAudio();
+      if(this.mode === 'sample'){
+        playHeldSample(midi);
+        if(instrumentPlayer){ notifyInstrumentPicker(midi); }
+      } else {
+        startOscillatorVoice(midi);
+      }
+      const targetMesh = mesh || midiKeyMap.get(midi);
+      if(targetMesh){
+        const base = (isBlackKey(targetMesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
+        targetMesh.rotation.x = base * 0.6;
+      }
+      markNoteActive(midi);
+    };
+    const side = qwertyNoteSide.get(midi);
+    if(side && instrumentPlayersBySide[side] && instrumentPlayersBySide[side].player){
+      withInstrumentForSide(side, perform);
     } else {
-      startOscillatorVoice(midi);
+      perform();
     }
-    const targetMesh = mesh || midiKeyMap.get(midi);
-    if(targetMesh){
-      const base = (isBlackKey(targetMesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
-      targetMesh.rotation.x = base * 0.6;
-    }
-    markNoteActive(midi);
   },
   noteOff(midiNum){
     const midi = Number(midiNum);
@@ -3407,7 +4579,57 @@ function onPointerDown(e){
   if(uiHit){
     if(uiHit.type === 'button'){
       panelState[uiHit.panel].selected = uiHit.id;
-      triggerInstrumentButton(uiHit.id);
+      triggerInstrumentButton(uiHit.id, uiHit.panel);
+    } else if(uiHit.type === 'view-toggle'){
+      toggleBackboardViewMode();
+    } else if(uiHit.type === 'piano-shift'){
+      const step = fitSizeY ? fitSizeY * 0.02 : 0.1;
+      if(uiHit.id === 'up'){
+        pianoYOffset += step;
+      } else if(uiHit.id === 'down'){
+        pianoYOffset -= step;
+      }
+      requestBackboardRedraw();
+    } else if(uiHit.type === 'divider'){
+      qwertyDividerDragging = true;
+      qwertyDividerDragOffsetPx = 0;
+      const uv = raycastBackboardForUv(e.clientX, e.clientY);
+      const pt = uv ? uvToCanvasPx(uv) : null;
+      if(pt && qwertyDividerX != null){
+        qwertyDividerDragOffsetPx = pt.px - qwertyDividerX;
+      }
+      backboardPointerDown = true;
+      controls.enableRotate = false;
+      suppressRotate = true;
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+      return;
+    } else if(uiHit.type === 'group-handle'){
+      qwertyGroupDragging = uiHit.side;
+      qwertyGroupDragOffsetPx = 0;
+      const uv = raycastBackboardForUv(e.clientX, e.clientY);
+      const pt = uv ? uvToCanvasPx(uv) : null;
+      const rect = (uiHit.side === 'left') ? qwertyHandleRects.left : qwertyHandleRects.right;
+      if(pt && rect){
+        const edgeX = (uiHit.side === 'left') ? (rect.x + rect.w) : rect.x;
+        qwertyGroupDragOffsetPx = pt.px - edgeX;
+      }
+      backboardPointerDown = true;
+      controls.enableRotate = false;
+      suppressRotate = true;
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      e.preventDefault();
+      return;
+    } else if(uiHit.type === 'dual-label-toggle'){
+      qwertyDualLabelMode = (qwertyDualLabelMode === 'wide') ? 'alternate' : 'wide';
+      requestBackboardRedraw();
+      e.preventDefault();
+      return;
+    } else if(uiHit.type === 'grid-toggle'){
+      showBackboardGridLabels = !showBackboardGridLabels;
+      requestBackboardRedraw();
+      e.preventDefault();
+      return;
     } else if(uiHit.type === 'arrow-up'){
       const ps = panelState[uiHit.panel];
       ps.offset = Math.max(0, ps.offset - 1);
@@ -3474,6 +4696,16 @@ function onPointerUp(){
   const pid = pointerDownInfo && pointerDownInfo.pointerId;
   onGlobalPointerUp();
   try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+  if(qwertyDividerDragging){
+    qwertyDividerDragging = false;
+    qwertyDividerDragOffsetPx = 0;
+    if(canvas) canvas.style.cursor = '';
+  }
+  if(qwertyGroupDragging){
+    qwertyGroupDragging = null;
+    qwertyGroupDragOffsetPx = 0;
+    if(canvas) canvas.style.cursor = '';
+  }
   if(suppressRotate){ controls.enableRotate=true; suppressRotate=false; }
   if(backboardPointerDown){
     backboardPointerDown = false;
@@ -3488,8 +4720,9 @@ canvas.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
 canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
+canvas.addEventListener('pointermove', (e)=>updateTopPadHover(e.clientX, e.clientY));
 // Keep pointer-down glissando active even if cursor leaves the canvas
-canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); }});
+canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(canvas) canvas.style.cursor = ''; });
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
@@ -3509,15 +4742,329 @@ const CODE_TO_MIDI = new Map(Object.entries({
   // Top accidentals (skip where no black key exists)
   "Digit2":66, "Digit3":68, "Digit4":70, "Digit6":73, "Digit7":75, "Digit9":78, "Digit0":80, "Minus":82
 }));
+const QWERTY_LOWER_WHITE_CODES = ["KeyZ","KeyX","KeyC","KeyV","KeyB","KeyN","KeyM","Comma","Period","Slash"];
+const QWERTY_LOWER_BLACK_CODES = [
+  "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "Semicolon", "Quote"
+];
+const QWERTY_LOWER_EXTRA_CODE = "KeyA";
+const QWERTY_UPPER_WHITE_CODES = ["KeyQ","KeyW","KeyE","KeyR","KeyT","KeyY","KeyU","KeyI","KeyO","KeyP","BracketLeft","BracketRight","Backslash"];
+const QWERTY_UPPER_BLACK_CODES = [
+  "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8",
+  "Digit9", "Digit0", "Minus", "Equal", "Backspace"
+];
+const QWERTY_UPPER_EXTRA_CODE = "Digit1";
+let qwertyWhiteKeyLanes = []; // [{note, x0, x1, center}]
+let qwertyLaneSignature = '';
+let qwertyDividerIndex = null; // index of first white key on the right side
+let qwertyDividerX = null;
+let qwertyDividerDragging = false;
+const qwertyNoteSide = new Map(); // midi -> 'left' | 'right'
+let qwertyGroupDragging = null; // 'left' | 'right'
+let qwertyDualLabelMode = 'alternate'; // 'alternate' | 'wide'
+let qwertyLeftEndIndex = null;
+let qwertyRightStartIndex = null;
+let qwertyLaneByNote = new Map(); // midi -> {x0,x1,center}
+let qwertyGroupDragOffsetPx = 0;
+let qwertyDividerDragOffsetPx = 0;
+let qwertyHandleRects = { left: null, right: null };
+let backboardGridCellW = 0;
+const instrumentPlayersBySide = {
+  left: { player: null, name: null, id: null },
+  right: { player: null, name: null, id: null }
+};
+const qwertyArrowLeftImg = new Image();
+const qwertyArrowRightImg = new Image();
+qwertyArrowLeftImg.src = 'assets/svg/piano-arrows-left.svg';
+qwertyArrowRightImg.src = 'assets/svg/piano-arrows-right.svg';
+function isBlackMidi(note){
+  const n = Number(note);
+  if(!Number.isFinite(n)) return false;
+  return BLACK_PCS.has(n % 12);
+}
+function computeQwertyWhiteKeyLanes(laneEntries, normX){
+  if(!laneEntries || !normX) return [];
+  const whites = laneEntries
+    .filter(entry => entry && !entry.isBlack && entry.u0 != null && entry.u1 != null)
+    .map(entry => {
+      const x0 = normX(entry.u0);
+      const x1 = normX(entry.u1);
+      const left = Math.min(x0, x1);
+      const right = Math.max(x0, x1);
+      return { note: Number(entry.note), x0: left, x1: right, center: (left + right) * 0.5 };
+    })
+    .filter(entry => Number.isFinite(entry.note) && Number.isFinite(entry.x0) && Number.isFinite(entry.x1));
+  whites.sort((a,b)=> a.center - b.center);
+  return whites;
+}
+function ensureQwertyDivider(){
+  if(qwertyDividerIndex != null) return;
+  const targetRightMidi = 65; // F4
+  let idx = qwertyWhiteKeyLanes.findIndex(entry => entry.note === targetRightMidi);
+  if(idx < 1) idx = Math.max(1, Math.floor(qwertyWhiteKeyLanes.length * 0.5));
+  qwertyDividerIndex = idx;
+}
+function getWhiteIndexByMidi(midi){
+  const m = Number(midi);
+  if(!Number.isFinite(m)) return -1;
+  for(let i=0;i<qwertyWhiteKeyLanes.length;i++){
+    if(qwertyWhiteKeyLanes[i].note === m) return i;
+  }
+  return -1;
+}
+function clampGroupIndices(){
+  if(!qwertyWhiteKeyLanes.length || qwertyDividerIndex == null) return;
+  const minIndex = Math.max(0, getWhiteIndexByMidi(21)); // A0
+  const maxIndex = Math.max(minIndex, getWhiteIndexByMidi(108)); // C8
+  if(qwertyLeftEndIndex == null) qwertyLeftEndIndex = qwertyDividerIndex - 1;
+  if(qwertyRightStartIndex == null) qwertyRightStartIndex = qwertyDividerIndex;
+  const leftSpan = QWERTY_LOWER_WHITE_CODES.length;
+  const rightSpan = QWERTY_UPPER_WHITE_CODES.length;
+  const leftMinEnd = minIndex + Math.max(0, leftSpan - 1);
+  const rightMaxStart = Math.max(minIndex, maxIndex - Math.max(0, rightSpan - 1));
+  qwertyLeftEndIndex = Math.max(leftMinEnd, Math.min(maxIndex, qwertyLeftEndIndex));
+  qwertyRightStartIndex = Math.max(minIndex, Math.min(rightMaxStart, qwertyRightStartIndex));
+  if(qwertyLeftEndIndex >= qwertyRightStartIndex){
+    qwertyRightStartIndex = Math.min(maxIndex, qwertyLeftEndIndex + 1);
+    if(qwertyRightStartIndex <= qwertyLeftEndIndex){
+      qwertyLeftEndIndex = Math.max(minIndex, qwertyRightStartIndex - 1);
+    }
+  }
+}
+function setGroupIndex(side, targetIndex){
+  if(!qwertyWhiteKeyLanes.length) return;
+  const minIndex = Math.max(0, getWhiteIndexByMidi(21));
+  const maxIndex = Math.max(minIndex, getWhiteIndexByMidi(108));
+  const idx = Math.max(minIndex, Math.min(maxIndex, targetIndex));
+  if(side === 'left'){
+    qwertyLeftEndIndex = idx;
+    if(qwertyLeftEndIndex >= qwertyRightStartIndex){
+      qwertyLeftEndIndex = Math.max(minIndex, qwertyRightStartIndex - 1);
+    }
+  } else if(side === 'right'){
+    qwertyRightStartIndex = idx;
+    if(qwertyRightStartIndex <= qwertyLeftEndIndex){
+      qwertyRightStartIndex = Math.min(maxIndex, qwertyLeftEndIndex + 1);
+    }
+  }
+  clampGroupIndices();
+  rebuildQwertyMapping();
+}
+function setGroupByEdgeX(side, edgeX){
+  const idx = getNearestWhiteIndexByEdgeX(side, edgeX);
+  if(idx == null) return;
+  if(side === 'left'){
+    const leftStart = idx;
+    const endIndex = leftStart + (QWERTY_LOWER_WHITE_CODES.length - 1);
+    setGroupIndex('left', endIndex);
+  } else if(side === 'right'){
+    const rightEnd = idx;
+    const startIndex = rightEnd - (QWERTY_UPPER_WHITE_CODES.length - 1);
+    setGroupIndex('right', startIndex);
+  }
+}
+function getGroupBoundsForSide(side){
+  const codes = (side === 'left')
+    ? [...QWERTY_LOWER_WHITE_CODES, ...QWERTY_LOWER_BLACK_CODES, QWERTY_LOWER_EXTRA_CODE]
+    : [...QWERTY_UPPER_WHITE_CODES, ...QWERTY_UPPER_BLACK_CODES, QWERTY_UPPER_EXTRA_CODE];
+  let minX = Infinity;
+  let maxX = -Infinity;
+  codes.forEach(code => {
+    const midi = CODE_TO_MIDI.get(code);
+    const lane = (midi != null) ? qwertyLaneByNote.get(Number(midi)) : null;
+    if(!lane) return;
+    minX = Math.min(minX, lane.x0);
+    maxX = Math.max(maxX, lane.x1);
+  });
+  if(!isFinite(minX) || !isFinite(maxX)) return null;
+  return { minX, maxX };
+}
+function getNearestWhiteIndexByX(xPx){
+  if(!qwertyWhiteKeyLanes.length || !Number.isFinite(xPx)) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for(let i=0;i<qwertyWhiteKeyLanes.length;i++){
+    const c = qwertyWhiteKeyLanes[i].center;
+    const d = Math.abs(xPx - c);
+    if(d < bestDist){
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+function getNearestWhiteIndexByEdgeX(side, xPx){
+  if(!qwertyWhiteKeyLanes.length || !Number.isFinite(xPx)) return null;
+  let best = null;
+  let bestDist = Infinity;
+  for(let i=0;i<qwertyWhiteKeyLanes.length;i++){
+    const lane = qwertyWhiteKeyLanes[i];
+    const edge = (side === 'right') ? lane.x1 : lane.x0;
+    const d = Math.abs(xPx - edge);
+    if(d < bestDist){
+      bestDist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+function getDividerX(){
+  if(!qwertyWhiteKeyLanes.length || qwertyDividerIndex == null) return null;
+  const left = qwertyWhiteKeyLanes[qwertyDividerIndex - 1];
+  const right = qwertyWhiteKeyLanes[qwertyDividerIndex];
+  if(!left || !right) return null;
+  return (left.x1 + right.x0) * 0.5;
+}
+function mapBlackCodesSequential(whiteNotes, blackCodes, side){
+  if(!whiteNotes || !whiteNotes.length || !blackCodes || !blackCodes.length) return;
+  let codeIdx = 0;
+  for(let i=0;i<whiteNotes.length-1 && codeIdx < blackCodes.length;i++){
+    const left = Number(whiteNotes[i]);
+    const right = Number(whiteNotes[i+1]);
+    const code = blackCodes[codeIdx];
+    if(right - left === 2){
+      const black = left + 1;
+      if(isBlackMidi(black)){
+        CODE_TO_MIDI.set(code, black);
+        if(side) qwertyNoteSide.set(black, side);
+      }
+    }
+    codeIdx += 1;
+  }
+}
+function rebuildQwertyMapping(){
+  if(!qwertyWhiteKeyLanes.length || qwertyDividerIndex == null) return;
+  clampGroupIndices();
+  CODE_TO_MIDI.clear();
+  qwertyNoteSide.clear();
+  const whiteNotes = qwertyWhiteKeyLanes.map(entry => entry.note);
+  const lowerEndIndex = qwertyLeftEndIndex;
+  const upperStartIndex = qwertyRightStartIndex;
+  const lowerWhiteNotes = [];
+  for(let i=0;i<QWERTY_LOWER_WHITE_CODES.length;i++){
+    const whiteIndex = lowerEndIndex - (QWERTY_LOWER_WHITE_CODES.length - 1 - i);
+    if(whiteIndex < 0 || whiteIndex >= whiteNotes.length) continue;
+    const midi = whiteNotes[whiteIndex];
+    CODE_TO_MIDI.set(QWERTY_LOWER_WHITE_CODES[i], midi);
+    qwertyNoteSide.set(midi, 'left');
+    lowerWhiteNotes.push(midi);
+  }
+  const upperWhiteNotes = [];
+  for(let i=0;i<QWERTY_UPPER_WHITE_CODES.length;i++){
+    const whiteIndex = upperStartIndex + i;
+    if(whiteIndex < 0 || whiteIndex >= whiteNotes.length) continue;
+    const midi = whiteNotes[whiteIndex];
+    CODE_TO_MIDI.set(QWERTY_UPPER_WHITE_CODES[i], midi);
+    qwertyNoteSide.set(midi, 'right');
+    upperWhiteNotes.push(midi);
+  }
+  lowerWhiteNotes.sort((a,b)=>a-b);
+  upperWhiteNotes.sort((a,b)=>a-b);
+  const lowerMappedBlackNotes = [];
+  const upperMappedBlackNotes = [];
+  mapBlackCodesSequential(lowerWhiteNotes, QWERTY_LOWER_BLACK_CODES, 'left');
+  mapBlackCodesSequential(upperWhiteNotes, QWERTY_UPPER_BLACK_CODES, 'right');
+  QWERTY_LOWER_BLACK_CODES.forEach(code=>{
+    const midi = CODE_TO_MIDI.get(code);
+    if(midi != null) lowerMappedBlackNotes.push(midi);
+  });
+  QWERTY_UPPER_BLACK_CODES.forEach(code=>{
+    const midi = CODE_TO_MIDI.get(code);
+    if(midi != null) upperMappedBlackNotes.push(midi);
+  });
+  const lowerFirst = lowerWhiteNotes[0];
+  if(lowerFirst != null){
+    const extra = lowerFirst - 1;
+    if(isBlackMidi(extra)){
+      CODE_TO_MIDI.set(QWERTY_LOWER_EXTRA_CODE, extra);
+      qwertyNoteSide.set(extra, 'left');
+    }
+  }
+  const upperFirst = upperWhiteNotes[0];
+  if(upperFirst != null){
+    const extra = upperFirst - 1;
+    if(isBlackMidi(extra)){
+      CODE_TO_MIDI.set(QWERTY_UPPER_EXTRA_CODE, extra);
+      qwertyNoteSide.set(extra, 'right');
+    }
+  }
+  if(!CODE_TO_MIDI.has('Quote')){
+    const groupsAdjacent = (qwertyLeftEndIndex != null && qwertyRightStartIndex != null)
+      ? (qwertyRightStartIndex === qwertyLeftEndIndex + 1)
+      : false;
+    if(groupsAdjacent && CODE_TO_MIDI.has('Digit1')){
+      const shared = CODE_TO_MIDI.get('Digit1');
+      CODE_TO_MIDI.set('Quote', shared);
+      qwertyNoteSide.set(shared, 'right');
+    }
+  }
+  if(qwertyDividerX != null && qwertyLaneByNote && qwertyLaneByNote.size){
+    qwertyLaneByNote.forEach((lane, midi)=>{
+      if(!lane || !Number.isFinite(lane.center)) return;
+      const side = (lane.center <= qwertyDividerX) ? 'left' : 'right';
+      qwertyNoteSide.set(Number(midi), side);
+    });
+  }
+  requestBackboardRedraw();
+}
+function setDividerFromCanvasX(xPx){
+  if(!qwertyWhiteKeyLanes.length || !Number.isFinite(xPx)) return;
+  const cellW = backboardGridCellW || (backboardCssW / Math.max(1, GRID_COLS));
+  const clampMin = cellW * 7;
+  const clampMax = backboardCssW - (cellW * 7);
+  const clampedX = Math.max(clampMin, Math.min(clampMax, xPx));
+  let bestIndex = null;
+  let bestDist = Infinity;
+  for(let i=1;i<qwertyWhiteKeyLanes.length;i++){
+    const left = qwertyWhiteKeyLanes[i-1];
+    const right = qwertyWhiteKeyLanes[i];
+    if(!left || !right) continue;
+    const boundary = (left.x1 + right.x0) * 0.5;
+    if(boundary < clampMin || boundary > clampMax) continue;
+    const d = Math.abs(clampedX - boundary);
+    if(d < bestDist){
+      bestDist = d;
+      bestIndex = i;
+    }
+  }
+  if(bestIndex != null && bestIndex !== qwertyDividerIndex){
+    qwertyDividerIndex = bestIndex;
+    qwertyDividerX = getDividerX();
+    rebuildQwertyMapping();
+  }
+}
 
 const downCodes = new Set();
+
+function withInstrumentForSide(side, fn){
+  if(!side || !instrumentPlayersBySide[side] || !instrumentPlayersBySide[side].player){
+    return fn();
+  }
+  const prevPlayer = instrumentPlayer;
+  const prevName = currentInstrumentName;
+  const prevMode = (typeof NoteEngine === 'object' && NoteEngine) ? NoteEngine.mode : null;
+  instrumentPlayer = instrumentPlayersBySide[side].player;
+  currentInstrumentName = instrumentPlayersBySide[side].name || prevName;
+  if(prevMode != null){
+    try{ NoteEngine.mode = shouldUseSynthForInstrument(currentInstrumentName) ? 'osc' : 'sample'; }catch(e){}
+  }
+  try{
+    return fn();
+  } finally {
+    instrumentPlayer = prevPlayer;
+    currentInstrumentName = prevName;
+    if(prevMode != null){
+      try{ NoteEngine.mode = prevMode; }catch(e){}
+    }
+  }
+}
 
 function noteOn(midi){
   try{
     const mesh = midiKeyMap.get(Number(midi));
     // Visual feedback: apply glow for keyboard-triggered notes
     if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch(e){}
-    NoteEngine.noteOn(Number(midi), mesh);
+    const side = qwertyNoteSide.get(Number(midi));
+    withInstrumentForSide(side, ()=> NoteEngine.noteOn(Number(midi), mesh));
   }catch(e){ console.warn('noteOn failed', e); }
 }
 function noteOff(midi){
@@ -3564,8 +5111,25 @@ function handleKeyDown(ev){
   if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
   const code = ev.code;
 
+  if(backboardViewMode === 'record-mode'){
+    if(code === 'ArrowLeft' || code === 'ArrowRight'){
+      ev.preventDefault();
+      const delta = (code === 'ArrowRight') ? 1 : -1;
+      if(qwertyLeftEndIndex == null) clampGroupIndices();
+      if(qwertyLeftEndIndex != null) setGroupIndex('left', qwertyLeftEndIndex + delta);
+      return;
+    }
+    if(code === 'ArrowUp' || code === 'ArrowDown'){
+      ev.preventDefault();
+      const delta = (code === 'ArrowUp') ? 1 : -1;
+      if(qwertyRightStartIndex == null) clampGroupIndices();
+      if(qwertyRightStartIndex != null) setGroupIndex('right', qwertyRightStartIndex + delta);
+      return;
+    }
+  }
+
   // Prevent browser single-key shortcuts (e.g. Firefox quick find on Quote)
-  if(code === 'Quote'){
+  if(code === 'Quote' && !CODE_TO_MIDI.has(code)){
     ev.preventDefault();
     ev.stopPropagation();
     return;
