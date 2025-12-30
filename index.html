@@ -703,6 +703,14 @@
             // Sliders input
             syncSlider.addEventListener('input', (e)=>{ applySyncValue(e.target.value); if(modalSync) modalSync.value = e.target.value; });
             if(modalSync) modalSync.addEventListener('input', (e)=>{ applySyncValue(e.target.value); syncSlider.value = e.target.value; });
+            window.addEventListener('syncOffsetChanged', (e)=>{
+                const ms = parseInt(e?.detail?.offsetMs, 10) || 0;
+                storedSync = ms;
+                syncSlider.value = ms;
+                if(modalSync) modalSync.value = ms;
+                syncDisplay.textContent = `Sync: ${ms} ms`;
+                applySyncValue(ms);
+            });
             if(volumeSlider) volumeSlider.addEventListener('input', (e)=>{ setVolumeFromPercent(parseInt(e.target.value, 10)); });
 
             // Capture native volume/mute changes on the video and persist them across pages

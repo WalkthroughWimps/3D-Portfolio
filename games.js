@@ -3,11 +3,15 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import VideoPlayer from './video-player-controls.js';
+import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyncAudioToVideo, setPreservePitchFlag } from './shared-video-controls.js';
+import { createGameAudioBridge } from './game-audio-bridge.js';
+import { createGamesVideoAdapter } from './games-video-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
 
 const STAGE_ID = 'model-stage';
 const GLB_URL = './glb/Arcade-Console.glb';
 const SCREEN_MESH_CANDIDATES = ['arcade_screen_surface', 'arcade_screen'];
+const TARGET_SCREEN_AR = 0.693 / 0.449;
 
 const VIDEO_SRC = './Videos/games-page/video-games-reel-hq.webm';
 const SPEED_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
@@ -18,6 +22,9 @@ const GAME_FRAME_HEIGHT = 720;
 const GAME_FRAME_ASPECT = GAME_FRAME_WIDTH / GAME_FRAME_HEIGHT;
 const DEBUG_SHOW_CSS3D_FRAME = true;
 const GAME_SPLASH_DURATION_MS = 3000;
+const USE_SHARED_CONTROLS_GAMES = true;
+const SHOW_GAME_AUDIO_PANEL = false;
+const GAME_AUDIO_MAX = 1.5;
 const GAME_SPLASH_DURATIONS_MS = {
   battleship: 8000,
   'train-mania': 10000,
@@ -81,12 +88,15 @@ const START_CAMERA = {
   quat: new THREE.Quaternion(-0.088, 0.897, 0.207, 0.381),
   fov: 22.9
 };
+const CAMERA_ZOOM_DURATION = 420;
 
 // Display/input correction toggles for the screen mesh UVs.
 const DISPLAY_FLIP_U = true;
 const DISPLAY_FLIP_V = false;
 const INPUT_FLIP_U = true;
 const INPUT_FLIP_V = true;
+const CONTROLS_INPUT_FLIP_Y = true;
+const CONTROLS_DRAW_FLIP_Y = false;
 
 const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
 const AUDIO_VOLUME_KEY = 'site.audio.volume';
@@ -113,6 +123,26 @@ function createAudioElement(src) {
   return audio;
 }
 
+const GAME_MEDIA_SCAN_INTERVAL = 1200;
+
+function getGameMediaElements(force = false) {
+  if (!gameIframe || !gameIframe.contentWindow) return [];
+  const now = performance.now();
+  if (!force && (now - gameMediaLastScan) < GAME_MEDIA_SCAN_INTERVAL && gameMediaCache.length) {
+    return gameMediaCache;
+  }
+  try {
+    const doc = gameIframe.contentWindow.document;
+    if (!doc) return [];
+    const mediaEls = Array.from(doc.querySelectorAll('audio, video'));
+    gameMediaCache = mediaEls;
+    gameMediaLastScan = now;
+    return mediaEls;
+  } catch (e) {
+    return [];
+  }
+}
+
 function applyAudioSettings(audio) {
   if (!audio) return;
   const { muted, volume } = getStoredAudioSettings();
@@ -120,15 +150,67 @@ function applyAudioSettings(audio) {
   try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
 }
 
+function applyGameMediaSettings(force = false) {
+  if (!gameIframe || !gameIframe.contentWindow) return;
+  const mediaEls = getGameMediaElements(force);
+  if (!mediaEls.length) return;
+  const { muted, volume } = getStoredAudioSettings();
+  mediaEls.forEach((el) => {
+    try { el.muted = muted; } catch (e) { /* ignore */ }
+    try { el.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+  });
+  try {
+    const howler = gameIframe.contentWindow.Howler;
+    if (howler && typeof howler.volume === 'function') {
+      howler.volume(muted ? 0 : volume);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+function setStoredAudioMuted(muted) {
+  try { localStorage.setItem(AUDIO_MUTED_KEY, muted ? 'true' : 'false'); } catch (e) { /* ignore */ }
+  applyGameMediaSettings(true);
+}
+
+function setStoredAudioVolume(volume) {
+  const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
+  try { localStorage.setItem(AUDIO_VOLUME_KEY, String(v)); } catch (e) { /* ignore */ }
+  if (v > 0.001) {
+    setStoredAudioMuted(false);
+  } else {
+    applyGameMediaSettings(true);
+  }
+}
+
+function getGameAudioState() {
+  const state = gameAudioBridge.getState();
+  return {
+    available: !!state.available,
+    muted: !!state.muted,
+    volume: Math.max(0, Math.min(GAME_AUDIO_MAX, Number.isFinite(state.volume) ? state.volume : 0)),
+    reason: state.reason || ''
+  };
+}
+
+function getAudioSyncState(audio) {
+  if (!audio) return null;
+  if (!audioSyncStateByEl.has(audio)) {
+    audioSyncStateByEl.set(audio, createAudioSyncState());
+  }
+  return audioSyncStateByEl.get(audio);
+}
+
 function syncAudioToVideo(video, audio) {
   if (!video || !audio) return;
-  const syncMs = getStoredSyncMs();
-  const syncSec = syncMs / 1000;
-  let target = video.currentTime - syncSec;
-  if (target < 0) target = 0;
-  if (Math.abs(audio.currentTime - target) > 0.1) {
-    try { audio.currentTime = target; } catch (e) { /* ignore */ }
-  }
+  const state = getAudioSyncState(audio);
+  const uiState = player ? player.uiState : null;
+  const rates = player ? player.playbackRates : null;
+  pllSyncAudioToVideo(video, audio, state, {
+    syncMs: getStoredSyncMs(),
+    uiState,
+    rates,
+    allowSound: true
+  });
 }
 
 function startAudioForVideo(video, audio) {
@@ -164,6 +246,14 @@ let reelVideo = null;
 let reelAudio = null;
 let reelReady = false;
 let reelSource = '';
+const audioSyncStateByEl = new WeakMap();
+let sharedControlsUi = null;
+let sharedControlsAdapter = null;
+let sharedControlsActive = null;
+let lastControlsDrawLog = 0;
+let sharedControlsVideo = null;
+let activeVideoRect = null;
+let gameUiLayout = null;
 
 let gameContainer = null;
 let gameIframe = null;
@@ -178,6 +268,8 @@ let loggedCanvasAttach = false;
 let loggedCanvasLoss = false;
 let loggedDrawError = false;
 let loggedDrawSuccess = false;
+let loggedReelRect = false;
+let loggedGameRect = false;
 let cssGameObject = null;
 let cssGameElement = null;
 let cssGameActive = false;
@@ -186,6 +278,16 @@ let lastGameCanvasByUrl = new Map();
 let overlayContainer = null;
 let overlayActive = false;
 let overlayRect = null;
+let gameMediaCache = [];
+let gameMediaLastScan = 0;
+let lastGameAudioSync = 0;
+let gameAudioUi = null;
+const gameAudioBridge = createGameAudioBridge({
+  onStatus: () => {
+    updateGameAudioControlsState();
+  }
+});
+let gameVolumeDrag = false;
 let splashRafId = null;
 let splashPlayBtn = null;
 let splashProgressFill = null;
@@ -226,6 +328,10 @@ let cameraPanelText = null;
 let cameraPanelZoomBtn = null;
 let cameraZoomAlt = false;
 let cameraZoomUserEnabled = false;
+let cameraAnimId = null;
+let cameraAnimStart = 0;
+let cameraAnimFrom = null;
+let cameraAnimTo = null;
 let previousCameraZoomAlt = false;
 let autoZoomActive = false;
 
@@ -475,13 +581,12 @@ function setupScreenCanvas(mesh) {
   const bbox = mesh.geometry.boundingBox;
   const size = bbox.getSize(new THREE.Vector3());
   const center = bbox.getCenter(new THREE.Vector3());
-  const aspect = size.y > 0 ? size.x / size.y : 16 / 9;
   screenSizeLocal = size.clone();
   screenCenterLocal = center.clone();
 
   const base = 2048;
-  const w = aspect >= 1 ? base : Math.round(base * aspect);
-  const h = aspect >= 1 ? Math.round(base / aspect) : base;
+  const w = base;
+  const h = Math.round(base / TARGET_SCREEN_AR);
 
   screenCanvas = document.createElement('canvas');
   screenCanvas.width = w;
@@ -514,7 +619,27 @@ function setupScreenCanvas(mesh) {
   mesh.material = mat;
   mesh.renderOrder = 10;
 
+  setupPlayer();
   drawScreen();
+  if (USE_SHARED_CONTROLS_GAMES) {
+    sharedControlsAdapter = createGamesVideoAdapter({
+      getViewportRect: getSharedControlsViewportRect,
+      getScreenRect: getSharedControlsScreenRect,
+      getActiveVideo: getSharedActiveVideo,
+      getActiveAudio: getSharedActiveAudio,
+      getContentMode: () => contentMode,
+      setVolume: setSharedVolume,
+      toggleMute: toggleSharedMute,
+      setPlaybackRate: setSharedPlaybackRate,
+      exit: exitSharedControls
+    });
+    sharedControlsUi = createVideoControlsUI();
+    sharedControlsUi.setViewportRectProvider(sharedControlsAdapter.getViewportRect);
+    sharedControlsUi.onAction = (action) => sharedControlsAdapter.dispatch(action);
+    console.log('%c[games] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
+  } else {
+    console.log('%c[games] legacy controls ENABLED', 'color:#ffaa00;font-weight:bold');
+  }
 }
 
 function applyDefaultCameraTransform() {
@@ -530,6 +655,17 @@ function applyDefaultCameraTransform() {
     activeCamera.fov = DEFAULT_CAMERA.fov;
     activeCamera.updateProjectionMatrix();
   }
+}
+
+function getDefaultCameraSnapshot() {
+  const quat = DEFAULT_CAMERA.rot
+    ? new THREE.Quaternion().setFromEuler(DEFAULT_CAMERA.rot)
+    : DEFAULT_CAMERA.quat.clone();
+  return {
+    position: DEFAULT_CAMERA.pos.clone(),
+    quaternion: quat,
+    fov: DEFAULT_CAMERA.fov
+  };
 }
 
 function applyAlternateCameraTransform() {
@@ -548,12 +684,55 @@ function applyAlternateCameraTransform() {
   }
 }
 
-function applyCameraMode(altView) {
+function getAlternateCameraSnapshot() {
+  const pos = new THREE.Vector3(1.152, 0.832, 0.001);
+  const rot = new THREE.Euler(
+    THREE.MathUtils.degToRad(-89.7),
+    THREE.MathUtils.degToRad(79.2),
+    THREE.MathUtils.degToRad(89.7),
+    'XYZ'
+  );
+  const quat = new THREE.Quaternion().setFromEuler(rot);
+  return { position: pos, quaternion: quat, fov: 22.9 };
+}
+
+function animateCameraTo(target, durationMs = CAMERA_ZOOM_DURATION) {
+  if (!activeCamera || !target) return;
+  if (cameraAnimId) cancelAnimationFrame(cameraAnimId);
+  cameraAnimStart = performance.now();
+  cameraAnimFrom = captureCameraSnapshot();
+  cameraAnimTo = target;
+
+  const step = (now) => {
+    const t = Math.min(1, (now - cameraAnimStart) / durationMs);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const pos = cameraAnimFrom.position.clone().lerp(cameraAnimTo.position, ease);
+    const quat = cameraAnimFrom.quaternion.clone().slerp(cameraAnimTo.quaternion, ease);
+    activeCamera.position.copy(pos);
+    activeCamera.quaternion.copy(quat);
+    activeCamera.rotation.setFromQuaternion(quat, 'XYZ');
+    if (activeCamera.isPerspectiveCamera && typeof cameraAnimTo.fov === 'number') {
+      const fov = cameraAnimFrom.fov + (cameraAnimTo.fov - cameraAnimFrom.fov) * ease;
+      activeCamera.fov = fov;
+      activeCamera.updateProjectionMatrix();
+    }
+    if (t < 1) {
+      cameraAnimId = requestAnimationFrame(step);
+    } else {
+      cameraAnimId = null;
+    }
+  };
+  cameraAnimId = requestAnimationFrame(step);
+}
+
+function applyCameraMode(altView, opts = {}) {
   cameraZoomAlt = altView;
-  if (cameraZoomAlt) {
-    applyAlternateCameraTransform();
+  const animate = opts.animate !== false;
+  const target = cameraZoomAlt ? getAlternateCameraSnapshot() : getDefaultCameraSnapshot();
+  if (animate) {
+    animateCameraTo(target, CAMERA_ZOOM_DURATION);
   } else {
-    applyDefaultCameraTransform();
+    applyCameraSnapshot(target);
   }
   setExitControlVisible(contentMode !== 'menu');
   updateControlsForContent(contentMode);
@@ -586,12 +765,40 @@ function applyCameraSnapshot(snapshot) {
 }
 
 function setupPlayer() {
+  if (player) return;
   if (!screenCanvas) return;
-  player = VideoPlayer.create(screenCanvas, {
-    allowSound: true,
-    controlsHideDelay: 1800,
-    controlsFadeDuration: 200
-  });
+    player = VideoPlayer.create(screenCanvas, {
+      allowSound: true,
+      controlsOnlyWhenPlaying: false,
+      controlsHideDelay: 2000,
+      controlsFadeDuration: 200,
+      onBackClick: () => {
+        if (contentMode === 'video') stopVideoReel();
+      },
+      onPitchToggle: (preserve) => {
+        const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+        if (audio) setPreservePitchFlag(audio, preserve);
+      },
+      getAudioState: () => {
+        const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+        if (!audio) return null;
+        return {
+          muted: !!audio.muted,
+          volume: Number.isFinite(audio.volume) ? audio.volume : 0
+        };
+      },
+      onVolumeChange: (volume) => {
+        const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+        if (!audio || !Number.isFinite(volume)) return;
+        audio.volume = Math.max(0, Math.min(1, volume));
+        audio.muted = audio.volume <= 0.001;
+      },
+      onToggleMute: () => {
+        const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+        if (!audio) return;
+        audio.muted = !audio.muted;
+      }
+    });
   player.loadVideos([VIDEO_SRC]);
   player.setActiveVideo(0, { showControls: true });
 
@@ -602,7 +809,7 @@ function setupPlayer() {
     playerVideo.playsInline = true;
     playerVideo.setAttribute('playsinline', '');
     playerVideo.preload = 'metadata';
-    playerVideo.muted = true;
+    forceHideVideoElement(playerVideo);
     playerAudio = createAudioElement(VIDEO_AUDIO.reel);
     playerVideo.addEventListener('loadedmetadata', () => {
       videoReady = true;
@@ -626,6 +833,7 @@ function setupPlayer() {
 
 function bindPlayerToVideo(video, showControls = true) {
   if (!player || !video) return;
+  forceHideVideoElement(video);
   player.loadVideos([video]);
   player.setActiveVideo(0, { showControls });
 }
@@ -642,7 +850,15 @@ function setupMenu() {
   needsRedraw = true;
 }
 
-function startGame(url, renderMode = GAME_RENDER_MODE) {
+  function startGame(url, renderMode = GAME_RENDER_MODE) {
+    // DevTools check for Construct audio bridge:
+    // document.querySelector('#gameFrame')?.contentWindow?.C3Audio_DOMInterface
+    try {
+      const target = new URL(url, window.location.href);
+      if (target.origin !== window.location.origin) {
+        console.warn('[games] game iframe is cross-origin; audio bridge disabled', target.origin);
+      }
+    } catch (e) { /* ignore */ }
   stopVideoReel();
   destroyGameIframe();
   setHoveredVideo(null);
@@ -655,6 +871,7 @@ function startGame(url, renderMode = GAME_RENDER_MODE) {
   loggedCanvasLoss = false;
   loggedDrawError = false;
   loggedDrawSuccess = false;
+  loggedGameRect = false;
   currentGameId = gameMeta ? gameMeta.id : null;
   contentMode = 'game';
   if (gameMeta && gameMeta.id && GAME_SPLASH_DURATIONS_MS[gameMeta.id]) {
@@ -671,10 +888,19 @@ function startGame(url, renderMode = GAME_RENDER_MODE) {
     ensureGameContainer();
   }
 
-  gameIframe = document.createElement('iframe');
-  gameIframe.src = url;
-  gameIframe.allow = 'fullscreen; gamepad';
-  gameIframe.referrerPolicy = 'no-referrer-when-downgrade';
+    gameIframe = document.createElement('iframe');
+    gameIframe.id = 'gameFrame';
+    gameIframe.src = url;
+    gameIframe.addEventListener('load', () => {
+      applyGameMediaSettings(true);
+      gameAudioBridge.attach(gameIframe);
+      const { muted, volume } = getStoredAudioSettings();
+      gameAudioBridge.setVolume01(volume);
+      gameAudioBridge.setMuted(muted);
+      updateGameAudioControlsState();
+    }, { once: true });
+    gameIframe.allow = 'fullscreen; gamepad; autoplay';
+    gameIframe.referrerPolicy = 'no-referrer-when-downgrade';
   gameIframe.style.border = '0';
   gameIframe.style.background = 'transparent';
   gameIframe.style.width = '100%';
@@ -694,11 +920,17 @@ function startGame(url, renderMode = GAME_RENDER_MODE) {
     gameContainer.appendChild(gameIframe);
   }
   gameFocusPending = true;
-  setGameInputEnabled(cssGameActive ? !DEBUG_ALLOW_CONTROLS_WITH_GAMES : false);
-  setScreenMeshHidden(false);
-  setExitControlVisible(true);
-  showGameSplash();
-}
+    setGameInputEnabled(cssGameActive ? !DEBUG_ALLOW_CONTROLS_WITH_GAMES : false);
+    setScreenMeshHidden(false);
+    setExitControlVisible(true);
+    setGameAudioControlsVisible(true);
+    gameAudioBridge.attach(gameIframe);
+    const { muted, volume } = getStoredAudioSettings();
+    gameAudioBridge.setVolume01(volume);
+    gameAudioBridge.setMuted(muted);
+    updateGameAudioControlsState();
+    showGameSplash();
+  }
 
 function ensureGameContainer() {
   if (gameContainer) return;
@@ -733,6 +965,83 @@ function ensureOverlayContainer() {
   overlayContainer.style.overflow = 'hidden';
   overlayContainer.style.display = 'none';
   document.body.appendChild(overlayContainer);
+}
+
+function ensureGameAudioControls() {
+  if (!SHOW_GAME_AUDIO_PANEL) return;
+  if (gameAudioUi) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'game-audio-controls';
+
+  const label = document.createElement('div');
+  label.className = 'game-audio-label';
+  label.textContent = 'Game Audio';
+  wrap.appendChild(label);
+
+  const row = document.createElement('div');
+  row.className = 'game-audio-row';
+
+  const muteBtn = document.createElement('button');
+  muteBtn.type = 'button';
+  muteBtn.className = 'game-audio-mute';
+  muteBtn.textContent = 'Mute';
+  row.appendChild(muteBtn);
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.min = '0';
+  slider.max = '100';
+  slider.step = '1';
+  slider.value = '100';
+  slider.className = 'game-audio-slider';
+  row.appendChild(slider);
+
+  wrap.appendChild(row);
+
+  const status = document.createElement('div');
+  status.className = 'game-audio-status';
+  status.textContent = '';
+  wrap.appendChild(status);
+
+  wrap.style.display = 'none';
+  stage.appendChild(wrap);
+
+  muteBtn.addEventListener('click', () => {
+    const state = gameAudioBridge.getState();
+    if (!state.available) return;
+    gameAudioBridge.setMuted(!state.muted);
+    updateGameAudioControlsState();
+  });
+
+  slider.addEventListener('input', () => {
+    const state = gameAudioBridge.getState();
+    if (!state.available) return;
+    const val = Math.max(0, Math.min(100, parseInt(slider.value, 10) || 0));
+    const next = val / 100;
+    if (state.muted && next > 0) gameAudioBridge.setMuted(false);
+    gameAudioBridge.setVolume01(next);
+    updateGameAudioControlsState();
+  });
+
+  gameAudioUi = { wrap, label, muteBtn, slider, status };
+}
+
+function setGameAudioControlsVisible(visible) {
+  if (!SHOW_GAME_AUDIO_PANEL) return;
+  ensureGameAudioControls();
+  if (!gameAudioUi) return;
+  gameAudioUi.wrap.style.display = visible ? 'flex' : 'none';
+}
+
+function updateGameAudioControlsState() {
+  if (!SHOW_GAME_AUDIO_PANEL) return;
+  if (!gameAudioUi) return;
+  const state = gameAudioBridge.getState();
+  gameAudioUi.muteBtn.disabled = !state.available;
+  gameAudioUi.slider.disabled = !state.available;
+  gameAudioUi.slider.value = Math.round(Math.max(0, Math.min(1, state.volume || 0)) * 100).toString();
+  gameAudioUi.muteBtn.textContent = state.muted ? 'Unmute' : 'Mute';
+  gameAudioUi.status.textContent = state.available ? '' : 'Volume controls unavailable for this embed.';
 }
 
 function setOverlayActive(active) {
@@ -855,7 +1164,7 @@ function ensurePreviewVideo(videoId) {
   if (!src) return null;
   const v = document.createElement('video');
   v.src = src;
-  v.muted = true;
+  forceHideVideoElement(v);
   v.loop = true;
   v.playsInline = true;
   v.setAttribute('playsinline', '');
@@ -949,12 +1258,90 @@ function getScreenMeshRect() {
   return { x: minX, y: minY, w: Math.max(0, maxX - minX), h: Math.max(0, maxY - minY) };
 }
 
-function destroyGameIframe() {
-  if (gameIframe) {
-    gameIframe.src = 'about:blank';
-    gameIframe.remove();
+function getSharedControlsViewportRect() {
+  const rect = getScreenMeshRect();
+  if (!rect) return null;
+  return { left: rect.x, top: rect.y, width: rect.w, height: rect.h };
+}
+
+function getSharedControlsScreenRect() {
+  if (!screenCanvas) return null;
+  return { x: 0, y: 0, w: screenCanvas.width, h: screenCanvas.height };
+}
+
+function forceHideVideoElement(video) {
+  if (!video) return;
+  try {
+    video.controls = false;
+    video.removeAttribute('controls');
+    video.playsInline = true;
+    video.muted = true;
+    video.style.display = 'none';
+  } catch (e) { /* ignore */ }
+}
+
+function getSharedActiveVideo() {
+  if (contentMode !== 'video') return null;
+  return reelVideo || null;
+}
+
+function getSharedActiveAudio() {
+  if (contentMode !== 'video') return null;
+  return reelAudio || null;
+}
+
+function setSharedVolume(value) {
+  const audio = getSharedActiveAudio();
+  if (!audio || !Number.isFinite(value)) return;
+  audio.volume = Math.max(0, Math.min(1, value));
+  if (audio.volume > 0.001) audio.muted = false;
+}
+
+function toggleSharedMute() {
+  const audio = getSharedActiveAudio();
+  if (!audio) return;
+  audio.muted = !audio.muted;
+}
+
+function setSharedPlaybackRate(rate) {
+  const video = getSharedActiveVideo();
+  if (!video || !Number.isFinite(rate)) return;
+  video.playbackRate = rate;
+}
+
+function exitSharedControls() {
+  if (contentMode === 'game') {
+    exitGameImmediate();
+  } else if (contentMode === 'video') {
+    stopVideoReel();
   }
-  gameIframe = null;
+}
+
+function mapPointerToScreenPixels(ev) {
+  const hit = raycastScreen(ev);
+  if (!hit) return null;
+  return { x: hit.displayX, y: hit.displayY };
+}
+
+function mapControlsPoint(pt) {
+  const rect = sharedControlsAdapter?.getScreenRect?.() || contentRect;
+  if (!pt || !rect || !screenCanvas) return pt;
+  if (!CONTROLS_INPUT_FLIP_Y) return pt;
+  const y = rect.y + rect.h - (pt.y - rect.y);
+  return { x: pt.x, y };
+}
+
+function getUiPointFromHit(hit) {
+  if (!hit) return null;
+  return mapControlsPoint({ x: hit.displayX, y: hit.displayY });
+}
+
+  function destroyGameIframe() {
+    if (gameIframe) {
+      gameIframe.src = 'about:blank';
+      gameIframe.remove();
+    }
+    gameIframe = null;
   gameCanvas = null;
   gameReady = false;
   gameFocusPending = false;
@@ -975,9 +1362,10 @@ function destroyGameIframe() {
   clearSplashAnimation();
   splashActive = false;
   splashReady = false;
-  splashPlayRect = null;
-  setScreenMeshHidden(false);
-}
+    splashPlayRect = null;
+    setScreenMeshHidden(false);
+    setGameAudioControlsVisible(false);
+  }
 
 function exitGameImmediate() {
   if (!gameIframe) return;
@@ -993,14 +1381,18 @@ function startVideoReel(entry) {
   stopVideoReel();
   setHoveredVideo(null);
   contentMode = 'video';
+  loggedReelRect = false;
+  console.log(`[games-reel] canvas=${screenCanvas.width}x${screenCanvas.height} screenAR=${(screenCanvas.width / screenCanvas.height).toFixed(3)} targetAR=${TARGET_SCREEN_AR.toFixed(3)}`);
   reelSource = entry && entry.src ? entry.src : '';
   const audioSrc = entry && entry.id ? VIDEO_AUDIO[entry.id] : null;
   enterContentView();
   reelVideo = document.createElement('video');
   reelVideo.src = reelSource;
-  reelVideo.loop = true;
+  reelVideo.dataset.title = (entry && entry.title) ? entry.title : 'Game Reel';
+  reelVideo.loop = false;
   reelVideo.playsInline = true;
   reelVideo.setAttribute('playsinline', '');
+  forceHideVideoElement(reelVideo);
   reelVideo.preload = 'metadata';
   reelVideo.muted = true;
   if (audioSrc) {
@@ -1011,8 +1403,8 @@ function startVideoReel(entry) {
     needsRedraw = true;
   });
   reelVideo.addEventListener('play', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
-  reelVideo.addEventListener('pause', () => { needsRedraw = true; });
-  reelVideo.addEventListener('ended', () => { needsRedraw = true; });
+  reelVideo.addEventListener('pause', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
+  reelVideo.addEventListener('ended', () => { stopVideoReel(); });
   reelVideo.addEventListener('play', () => { startAudioForVideo(reelVideo, reelAudio); });
   reelVideo.addEventListener('pause', () => { if (reelAudio) reelAudio.pause(); });
   reelVideo.addEventListener('seeking', () => { syncAudioToVideo(reelVideo, reelAudio); });
@@ -1040,6 +1432,8 @@ function stopVideoReel() {
   reelVideo = null;
   reelReady = false;
   reelSource = '';
+  loggedReelRect = false;
+  loggedGameRect = false;
   contentMode = 'menu';
   if (playerBaseVideo) {
     bindPlayerToVideo(playerBaseVideo, false);
@@ -1095,31 +1489,168 @@ function drawScreen() {
 
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingEnabled = true;
 
-  ctx.fillStyle = letterboxColor;
+  ctx.fillStyle = (contentMode === 'video') ? '#000' : letterboxColor;
   ctx.fillRect(0, 0, W, H);
 
   const surface = { x: 0, y: 0, w: W, h: H };
-  const aspect = (contentMode === 'video' && reelReady && reelVideo && reelVideo.videoWidth && reelVideo.videoHeight)
-    ? reelVideo.videoWidth / reelVideo.videoHeight
-    : (videoReady && playerVideo && playerVideo.videoWidth && playerVideo.videoHeight)
-      ? playerVideo.videoWidth / playerVideo.videoHeight
-      : 16 / 9;
+  let videoRect = null;
   if (contentMode === 'menu') {
     contentRect = surface;
   } else if (contentMode === 'game') {
     contentRect = surface;
   } else {
-    contentRect = fitRectToAspect(surface, aspect);
+    contentRect = surface;
+    if (contentMode === 'video' && reelReady && reelVideo) {
+      const srcW = reelVideo.videoWidth || 16;
+      const srcH = reelVideo.videoHeight || 9;
+      videoRect = rectRound(fitRectContain(srcW, srcH, surface));
+    } else {
+      const activeAspect = (videoReady && playerVideo && playerVideo.videoWidth && playerVideo.videoHeight)
+        ? playerVideo.videoWidth / playerVideo.videoHeight
+        : 16 / 9;
+      videoRect = fitRectToAspect(surface, activeAspect);
+    }
   }
+  activeVideoRect = (contentMode === 'video') ? videoRect : null;
 
-  const canDrawGame = contentMode === 'game' && !cssGameActive && !overlayActive && !splashActive && isCanvasUsable(gameCanvas);
-  if (splashActive) {
-    drawGameSplash(ctx, contentRect, now);
-  } else if (canDrawGame) {
-    try {
-      ctx.drawImage(gameCanvas, 0, 0, W, H);
+    const canDrawGame = contentMode === 'game' && !cssGameActive && !overlayActive && !splashActive && isCanvasUsable(gameCanvas);
+    if (splashActive) {
+      const screenRect = surface;
+      const uiLayout = computeGameUiLayout(screenRect, GAME_FRAME_ASPECT);
+      gameUiLayout = uiLayout;
+      if ((now - lastGameAudioSync) > 1000) {
+        lastGameAudioSync = now;
+        applyGameMediaSettings();
+      }
+      drawGameSplash(ctx, uiLayout.gameRect, now);
+
+    const theme = { bg: getCssVar('--controls-bg', '#0b0f1a'), fg: getCssVar('--controls-fg', '#fff'), alpha: parseFloat(getCssVar('--controls-bg-alpha', '0.9')) };
+    ctx.save();
+    ctx.globalAlpha = Number.isFinite(theme.alpha) ? theme.alpha : 0.9;
+    ctx.fillStyle = theme.bg;
+    ctx.fillRect(uiLayout.top.x, uiLayout.top.y, uiLayout.top.w, uiLayout.top.h);
+    if (uiLayout.bottom) {
+      ctx.fillRect(uiLayout.bottom.x, uiLayout.bottom.y, uiLayout.bottom.w, uiLayout.bottom.h);
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = theme.fg;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${Math.round(uiLayout.top.h * 0.42)}px "Source Sans 3","Segoe UI",sans-serif`;
+    ctx.fillText(getCurrentGameTitle(), uiLayout.titleRect.x + uiLayout.titleRect.w / 2, uiLayout.titleRect.y + uiLayout.titleRect.h / 2 + 1);
+    ctx.restore();
+
+      const audioState = getGameAudioState();
+      if (player) {
+        player.drawBackButton(uiLayout.backRect, theme.fg);
+        if (audioState.available) {
+          player.drawMuteButton(uiLayout.muteRect, audioState.muted, theme.fg, audioState.volume);
+        }
+      }
+      if (audioState.available) {
+        const vol = audioState.muted ? 0 : Math.max(0, Math.min(1, (audioState.volume || 0) / GAME_AUDIO_MAX));
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = theme.fg;
+        ctx.fillRect(uiLayout.sliderRect.x, uiLayout.sliderRect.y, uiLayout.sliderRect.w, uiLayout.sliderRect.h);
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = theme.fg;
+        ctx.fillRect(uiLayout.sliderRect.x, uiLayout.sliderRect.y, uiLayout.sliderRect.w * vol, uiLayout.sliderRect.h);
+        const dotX = uiLayout.sliderRect.x + uiLayout.sliderRect.w * vol;
+        ctx.beginPath();
+        ctx.arc(dotX, uiLayout.sliderRect.y + uiLayout.sliderRect.h / 2, Math.max(4, Math.round(uiLayout.sliderRect.h * 0.6)), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.75;
+        ctx.fillStyle = theme.fg;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = `${Math.round(uiLayout.bottom ? uiLayout.bottom.h * 0.35 : uiLayout.top.h * 0.3)}px "Source Sans 3","Segoe UI",sans-serif`;
+        const msg = 'Volume controls unavailable for this embed.';
+        const msgY = (uiLayout.bottom ? uiLayout.bottom.y + uiLayout.bottom.h / 2 : uiLayout.top.y + uiLayout.top.h / 2);
+        ctx.fillText(msg, uiLayout.sliderRect.x, msgY);
+        ctx.restore();
+      }
+    } else if (canDrawGame) {
+      try {
+        const screenRect = surface;
+        const uiLayout = computeGameUiLayout(screenRect, GAME_FRAME_ASPECT);
+        gameUiLayout = uiLayout;
+        if ((now - lastGameAudioSync) > 1000) {
+          lastGameAudioSync = now;
+          applyGameMediaSettings();
+        }
+        const gameRect = rectRound(fitRectContain(gameCanvas.width || GAME_FRAME_WIDTH, gameCanvas.height || GAME_FRAME_HEIGHT, uiLayout.gameRect));
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(gameCanvas, gameRect.x, gameRect.y, gameRect.w, gameRect.h);
+        ctx.imageSmoothingEnabled = true;
+
+      const theme = { bg: getCssVar('--controls-bg', '#0b0f1a'), fg: getCssVar('--controls-fg', '#fff'), alpha: parseFloat(getCssVar('--controls-bg-alpha', '0.9')) };
+      ctx.save();
+      ctx.globalAlpha = Number.isFinite(theme.alpha) ? theme.alpha : 0.9;
+      ctx.fillStyle = theme.bg;
+      ctx.fillRect(uiLayout.top.x, uiLayout.top.y, uiLayout.top.w, uiLayout.top.h);
+      if (uiLayout.bottom) {
+        ctx.fillRect(uiLayout.bottom.x, uiLayout.bottom.y, uiLayout.bottom.w, uiLayout.bottom.h);
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.fillStyle = theme.fg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(uiLayout.top.h * 0.42)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.fillText(getCurrentGameTitle(), uiLayout.titleRect.x + uiLayout.titleRect.w / 2, uiLayout.titleRect.y + uiLayout.titleRect.h / 2 + 1);
+      ctx.restore();
+
+        if (player) {
+          player.drawBackButton(uiLayout.backRect, theme.fg);
+        }
+
+        const audioState = getGameAudioState();
+        if (audioState.available && player) {
+          player.drawMuteButton(uiLayout.muteRect, audioState.muted, theme.fg, audioState.volume);
+        }
+      if (audioState.available) {
+          const vol = audioState.muted ? 0 : Math.max(0, Math.min(1, (audioState.volume || 0) / GAME_AUDIO_MAX));
+          ctx.save();
+          ctx.globalAlpha = 0.35;
+          ctx.fillStyle = theme.fg;
+          ctx.fillRect(uiLayout.sliderRect.x, uiLayout.sliderRect.y, uiLayout.sliderRect.w, uiLayout.sliderRect.h);
+          ctx.restore();
+          ctx.save();
+          ctx.fillStyle = theme.fg;
+          ctx.fillRect(uiLayout.sliderRect.x, uiLayout.sliderRect.y, uiLayout.sliderRect.w * vol, uiLayout.sliderRect.h);
+          const dotX = uiLayout.sliderRect.x + uiLayout.sliderRect.w * vol;
+          ctx.beginPath();
+          ctx.arc(dotX, uiLayout.sliderRect.y + uiLayout.sliderRect.h / 2, Math.max(4, Math.round(uiLayout.sliderRect.h * 0.6)), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        } else {
+          ctx.save();
+          ctx.globalAlpha = 0.75;
+          ctx.fillStyle = theme.fg;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.font = `${Math.round(uiLayout.bottom.h * 0.35)}px "Source Sans 3","Segoe UI",sans-serif`;
+          ctx.fillText('Volume controls unavailable for this embed.', uiLayout.sliderRect.x, uiLayout.bottom.y + uiLayout.bottom.h / 2);
+          ctx.restore();
+        }
+      if (!loggedGameRect) {
+        loggedGameRect = true;
+        const gw = gameCanvas.width || GAME_FRAME_WIDTH;
+        const gh = gameCanvas.height || GAME_FRAME_HEIGHT;
+        const cw = screenCanvas.width;
+        const ch = screenCanvas.height;
+        console.log(`[games-game] gameCanvas=${gw}x${gh} gameAR=${(gw / gh).toFixed(3)} screenCanvas=${cw}x${ch} screenAR=${(cw / ch).toFixed(3)} gameRect=${JSON.stringify(gameRect)}`);
+      }
       if (!loggedDrawSuccess) {
         console.log('[games] drawImage ok', { size: `${gameCanvas.width}x${gameCanvas.height}` });
         loggedDrawSuccess = true;
@@ -1130,19 +1661,95 @@ function drawScreen() {
         loggedDrawError = true;
       }
     }
-  } else if (contentMode === 'video' && reelReady && reelVideo) {
-    try {
-      ctx.drawImage(reelVideo, contentRect.x, contentRect.y, contentRect.w, contentRect.h);
-    } catch (e) { /* ignore */ }
-  } else if (contentMode === 'menu') {
-    drawMenu(ctx, contentRect);
-  } else if (videoReady && playerVideo) {
-    try {
-      ctx.drawImage(playerVideo, contentRect.x, contentRect.y, contentRect.w, contentRect.h);
-    } catch (e) { /* ignore */ }
+    } else if (contentMode === 'video' && reelReady && reelVideo) {
+      try {
+        const screenRect = surface;
+        const target = videoRect || contentRect;
+        ctx.drawImage(reelVideo, target.x, target.y, target.w, target.h);
+
+        if (!loggedReelRect) {
+          loggedReelRect = true;
+          console.log('[games-reel] screenRect', screenRect, 'screenAR=' + (screenRect.w / screenRect.h).toFixed(3));
+          console.log('[games-reel] videoRect', target, 'videoAR=' + (target.w / target.h).toFixed(3));
+        }
+      } catch (e) { /* ignore */ }
+    } else if (contentMode === 'menu') {
+      drawMenu(ctx, contentRect);
+    } else if (videoReady && playerVideo) {
+      try {
+        const target = videoRect || contentRect;
+        ctx.drawImage(playerVideo, target.x, target.y, target.w, target.h);
+      } catch (e) { /* ignore */ }
+    }
+
+  const isVideoContent = sharedControlsAdapter ? sharedControlsAdapter.isActive() : (contentMode === 'video' && !!getSharedActiveVideo());
+  if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && sharedControlsAdapter) {
+    if (sharedControlsActive !== isVideoContent) {
+      sharedControlsActive = isVideoContent;
+      if (sharedControlsActive) {
+        const screenRect = sharedControlsAdapter.getScreenRect?.();
+        console.log('%c[games-controls] ACTIVE screenRect=' + JSON.stringify(screenRect), 'color:#00ffd5;font-weight:bold');
+      } else {
+        console.log('%c[games-controls] INACTIVE', 'color:#b000ff;font-weight:bold');
+      }
+    }
+  }
+  if (isVideoContent) {
+    const rect = videoRect || contentRect;
+    if (!getSharedActiveVideo() || getSharedActiveVideo().paused || getSharedActiveVideo().ended) {
+      drawPlayOverlay(ctx, rect);
+    }
   }
 
-  if (player) {
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && sharedControlsAdapter && isVideoContent) {
+      const now = performance.now();
+      if ((now - lastControlsDrawLog) >= 1000) {
+        lastControlsDrawLog = now;
+        const screenRect = sharedControlsAdapter.getScreenRect?.();
+        console.log('%c[games-controls] draw using screenRect ' + JSON.stringify(screenRect), 'color:#00ccff');
+      }
+      if (player && getSharedActiveVideo()) {
+        if (sharedControlsVideo !== getSharedActiveVideo()) {
+          sharedControlsVideo = getSharedActiveVideo();
+          bindPlayerToVideo(sharedControlsVideo, true);
+        }
+        if (player.state) {
+          if (!player.state.playingFull) {
+            player.state.playingFull = true;
+            player.state.fullIndex = 0;
+            player.state.activeIndex = 0;
+            player.showControlsTemporarily();
+          }
+          if (getSharedActiveVideo().paused || getSharedActiveVideo().ended) {
+            player.state.controlsVisible = 1;
+            player.state.controlsTarget = 1;
+          }
+        }
+      }
+    sharedControlsUi.setState(sharedControlsAdapter.getState());
+    sharedControlsUi.draw(ctx, {
+      drawLegacy: () => {
+        if (!player) return;
+        const bounds = sharedControlsAdapter.getScreenRect?.() || { x: 0, y: 0, w: W, h: H };
+        player.setControlsBounds(bounds);
+        if (CONTROLS_DRAW_FLIP_Y) {
+          ctx.save();
+          ctx.translate(0, bounds.y * 2 + bounds.h);
+          ctx.scale(1, -1);
+          player.updateControls();
+          player.drawControls();
+          ctx.restore();
+        } else {
+          player.updateControls();
+          player.drawControls();
+        }
+      }
+    });
+  } else if (!USE_SHARED_CONTROLS_GAMES && player) {
     player.setControlsBounds(contentRect || { x: 0, y: 0, w: W, h: H });
     const showControls = (contentMode !== 'menu') ||
       (playerVideo && !playerVideo.paused && !playerVideo.ended) ||
@@ -1151,11 +1758,8 @@ function drawScreen() {
       player.updateControls();
       player.drawControls();
     }
-    drawSpeedBadge(ctx, contentRect);
-    if (!playerVideo || playerVideo.paused || playerVideo.ended) {
-      drawPlayOverlay(ctx, contentRect);
-    }
   }
+  ctx.restore();
 
   screenTexture.needsUpdate = true;
   needsRedraw = false;
@@ -1165,13 +1769,14 @@ function drawPlayOverlay(ctx, rect) {
   const size = Math.min(rect.w, rect.h) * 0.22;
   const x = rect.x + (rect.w - size) / 2;
   const y = rect.y + (rect.h - size) / 2;
+  const fg = getCssVar('--controls-fg', '#fff');
   ctx.save();
-  ctx.strokeStyle = '#fff';
+  ctx.strokeStyle = fg;
   ctx.lineWidth = Math.max(3, Math.round(size * 0.08));
   ctx.beginPath();
   ctx.arc(x + size / 2, y + size / 2, size * 0.45, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#fff';
+  ctx.fillStyle = fg;
   ctx.beginPath();
   ctx.moveTo(x + size * 0.46, y + size * 0.32);
   ctx.lineTo(x + size * 0.46, y + size * 0.68);
@@ -1216,7 +1821,8 @@ function drawGameSplash(ctx, rect, nowMs) {
     const imgAspect = splashImage.naturalWidth && splashImage.naturalHeight
       ? splashImage.naturalWidth / splashImage.naturalHeight
       : 16 / 9;
-    const imgRect = fitRectToAspect(box, imgAspect);
+    const targetRect = rectRound(fitRectContain(16, 9, box));
+    const imgRect = fitRectToAspect(targetRect, imgAspect);
     ctx.drawImage(splashImage, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
   }
 
@@ -1285,21 +1891,8 @@ function drawMenu(ctx, rect) {
     // Pill behind the circle (angled end)
     const drawAngledPill = () => {
       const p = slot.pill;
-      const angle = p.h * 0.45;
       ctx.beginPath();
-      if (p.angleSide === 'left') {
-        ctx.moveTo(p.x + angle, p.y);
-        ctx.lineTo(p.x + p.w, p.y);
-        ctx.lineTo(p.x + p.w, p.y + p.h);
-        ctx.lineTo(p.x + angle, p.y + p.h);
-        ctx.lineTo(p.x, p.y + p.h * 0.5);
-      } else {
-        ctx.moveTo(p.x, p.y);
-        ctx.lineTo(p.x + p.w - angle, p.y);
-        ctx.lineTo(p.x + p.w, p.y + p.h * 0.5);
-        ctx.lineTo(p.x + p.w - angle, p.y + p.h);
-        ctx.lineTo(p.x, p.y + p.h);
-      }
+      ctx.rect(p.x, p.y, p.w, p.h);
       ctx.closePath();
     };
 
@@ -1415,6 +2008,26 @@ function handlePointerMove(ev) {
     updateHoveredVideo(hit.x, hit.y);
     return;
   }
+  if (contentMode === 'game' && gameUiLayout && gameVolumeDrag) {
+    const uiPt = getUiPointFromHit(hit);
+    if (!uiPt) return;
+    const audioState = getGameAudioState();
+    if (audioState.available) {
+      const ratio = Math.max(0, Math.min(1, (uiPt.x - gameUiLayout.sliderRect.x) / gameUiLayout.sliderRect.w));
+      const volume = ratio * GAME_AUDIO_MAX;
+      if (audioState.muted && volume > 0) gameAudioBridge.setMuted(false);
+      gameAudioBridge.setVolume01(volume);
+      updateGameAudioControlsState();
+    }
+    return;
+  }
+  if (USE_SHARED_CONTROLS_GAMES && contentMode === 'video' && getSharedActiveVideo() && player && cameraZoomAlt) {
+    const mapped = mapControlsPoint({ x: hit.displayX, y: hit.displayY });
+    const event = toCanvasEvent(mapped.x, mapped.y);
+    player.handlePointerMove(event);
+    player.keepControlsVisible();
+    return;
+  }
   if (isGameActive()) {
     dispatchGameMouseMove(hit);
     return;
@@ -1428,12 +2041,66 @@ function handlePointerMove(ev) {
 function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
+  if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
+    const screenPt = mapPointerToScreenPixels(ev);
+      if (screenPt && player) {
+        if (player.state) {
+          player.state.playingFull = true;
+          player.state.fullIndex = 0;
+          player.state.activeIndex = 0;
+          player.state.controlsVisible = 1;
+          player.state.controlsTarget = 1;
+        }
+        const mapped = mapControlsPoint(screenPt);
+        const event = toCanvasEvent(mapped.x, mapped.y);
+        player.handleClick(event);
+        player.handlePointerDown(event);
+        player.keepControlsVisible();
+        console.log('[games] screen click px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', true);
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+  }
   const hit = raycastScreen(ev);
   if (!hit) {
     controls.enabled = true;
     return;
   }
   lastScreenHit = hit;
+
+    if (contentMode === 'game' && gameUiLayout) {
+      const uiPt = getUiPointFromHit(hit);
+      if (!uiPt) return;
+      const px = uiPt.x;
+      const py = uiPt.y;
+      if (pointInRect(px, py, gameUiLayout.backRect)) {
+        exitGameImmediate();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      const audioState = getGameAudioState();
+      if (audioState.available && pointInRect(px, py, gameUiLayout.muteRect)) {
+        gameAudioBridge.setMuted(!audioState.muted);
+        updateGameAudioControlsState();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+      if (audioState.available && pointInRect(px, py, gameUiLayout.sliderRect)) {
+        const ratio = Math.max(0, Math.min(1, (px - gameUiLayout.sliderRect.x) / gameUiLayout.sliderRect.w));
+        const volume = ratio * GAME_AUDIO_MAX;
+        if (audioState.muted && volume > 0) gameAudioBridge.setMuted(false);
+        gameAudioBridge.setVolume01(volume);
+        gameVolumeDrag = true;
+        try { renderer.domElement.setPointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
+        updateGameAudioControlsState();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+    }
 
   ev.preventDefault();
   ev.stopPropagation();
@@ -1455,9 +2122,10 @@ function handlePointerDown(ev) {
   }
 
   if (splashActive) {
-    if (splashReady && splashPlayRect) {
-      const dx = hit.x - splashPlayRect.x;
-      const dy = hit.y - splashPlayRect.y;
+    const uiPt = getUiPointFromHit(hit);
+    if (uiPt && splashReady && splashPlayRect) {
+      const dx = uiPt.x - splashPlayRect.x;
+      const dy = uiPt.y - splashPlayRect.y;
       const dist = Math.hypot(dx, dy);
       if (dist <= splashPlayRect.r) {
         hideGameSplash();
@@ -1518,6 +2186,10 @@ function handleContextMenu(ev) {
 function updateHoveredVideo(xCanvas, yCanvas) {
   if (!contentRect) return;
   const action = getMenuAction(xCanvas, yCanvas, contentRect);
+  if (renderer && renderer.domElement) {
+    const isHover = !!action;
+    renderer.domElement.style.cursor = isHover ? 'pointer' : '';
+  }
   if (action && action.type === 'video') {
     setHoveredVideo(VIDEO_LIST[action.index]?.id || null);
   } else {
@@ -1558,6 +2230,10 @@ function handlePointerUp(ev) {
     if (controls) controls.enabled = (contentMode === 'menu');
     try { renderer.domElement.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
   }
+  gameVolumeDrag = false;
+  if (contentMode === 'video' && player) {
+    player.handlePointerUp();
+  }
   if (isGameActive() && lastScreenHit) {
     dispatchGamePointerUp(lastScreenHit, ev.button);
   }
@@ -1582,8 +2258,8 @@ function handleKeyDown(ev) {
   const activeAudio = (contentMode === 'video' && reelVideo) ? reelAudio : playerAudio;
   if (!activeVideo) return;
 
-  const shift = ev.shiftKey;
-  const prevent = () => { try { ev.preventDefault(); } catch (e) { /* ignore */ } };
+    const shift = ev.shiftKey;
+    const prevent = () => { try { ev.preventDefault(); } catch (e) { /* ignore */ } };
 
   const seekBy = (delta) => {
     if (!activeVideo.duration || !isFinite(activeVideo.duration)) return;
@@ -1597,31 +2273,59 @@ function handleKeyDown(ev) {
     if (player) player.showControlsTemporarily();
     return;
   }
-  if (key === 'm') {
-    prevent();
-    if (activeAudio) activeAudio.muted = !activeAudio.muted;
-    if (player) player.showControlsTemporarily();
-    return;
-  }
+    if (key === 'm') {
+      prevent();
+      const next = !getStoredAudioSettings().muted;
+      setStoredAudioMuted(next);
+      if (activeAudio) applyAudioSettings(activeAudio);
+      if (activeVideo) {
+        try { activeVideo.muted = next; } catch (e) { /* ignore */ }
+      }
+      if (player) player.showControlsTemporarily();
+      return;
+    }
   if (key === 'j') { prevent(); seekBy(-10); if (player) player.showControlsTemporarily(); return; }
   if (key === 'l') { prevent(); seekBy(10); if (player) player.showControlsTemporarily(); return; }
   if (key === 'arrowleft') { prevent(); seekBy(-5); if (player) player.showControlsTemporarily(); return; }
   if (key === 'arrowright') { prevent(); seekBy(5); if (player) player.showControlsTemporarily(); return; }
-  if (key === 'arrowup') {
-    prevent();
-    if (activeAudio) activeAudio.volume = Math.max(0, Math.min(1, (activeAudio.volume || 0) + 0.05));
-    if (player) player.showControlsTemporarily();
-    return;
+    if (key === 'arrowup') {
+      prevent();
+      const { volume } = getStoredAudioSettings();
+      const next = Math.max(0, Math.min(1, (volume || 0) + 0.05));
+      setStoredAudioVolume(next);
+      if (activeAudio) applyAudioSettings(activeAudio);
+      if (activeVideo) {
+        try { activeVideo.volume = next; activeVideo.muted = next <= 0.001; } catch (e) { /* ignore */ }
+      }
+      if (player) player.showControlsTemporarily();
+      return;
+    }
+    if (key === 'arrowdown') {
+      prevent();
+      const { volume } = getStoredAudioSettings();
+      const next = Math.max(0, Math.min(1, (volume || 0) - 0.05));
+      setStoredAudioVolume(next);
+      if (activeAudio) applyAudioSettings(activeAudio);
+      if (activeVideo) {
+        try { activeVideo.volume = next; activeVideo.muted = next <= 0.001; } catch (e) { /* ignore */ }
+      }
+      if (player) player.showControlsTemporarily();
+      return;
+    }
+    if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
+    if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
+    if (key === ',' && activeVideo.paused) { prevent(); seekBy(-1 / 30); if (player) player.showControlsTemporarily(); return; }
+    if (key === '.' && activeVideo.paused) { prevent(); seekBy(1 / 30); if (player) player.showControlsTemporarily(); return; }
+    if ('0123456789'.includes(key)) {
+      prevent();
+      const digit = parseInt(key, 10);
+      if (activeVideo.duration && isFinite(activeVideo.duration)) {
+        const pct = digit === 0 ? 0 : digit / 10;
+        try { activeVideo.currentTime = activeVideo.duration * pct; } catch (e) { /* ignore */ }
+      }
+      return;
+    }
   }
-  if (key === 'arrowdown') {
-    prevent();
-    if (activeAudio) activeAudio.volume = Math.max(0, Math.min(1, (activeAudio.volume || 0) - 0.05));
-    if (player) player.showControlsTemporarily();
-    return;
-  }
-  if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
-  if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
-}
 
 function enterContentView() {
   if (!cameraZoomUserEnabled) {
@@ -1656,6 +2360,7 @@ function updateControlsForContent(mode) {
   controls.enableRotate = allowTransform;
   controls.enableZoom = allowTransform;
   controls.enabled = allowTransform;
+  setGameAudioControlsVisible(mode === 'game');
 }
 
 function setGameInputEnabled(enabled) {
@@ -1787,13 +2492,19 @@ function isGameActive() {
 }
 
 function mapHitToClient(hit) {
-  if (!hit || !hit.uv || !gameCanvas) return null;
-  let u = hit.uv.x;
-  let v = hit.uv.y;
-  if (INPUT_FLIP_U) u = 1 - u;
-  if (INPUT_FLIP_V) v = 1 - v;
-  const xCanvasPx = u * gameCanvas.width;
-  const yCanvasPx = (1 - v) * gameCanvas.height;
+  if (!hit || !gameCanvas) return null;
+  if (!screenCanvas) return null;
+  const gameRect = gameUiLayout?.gameRect;
+  if (!gameRect) return null;
+  const px = hit.x;
+  const py = hit.y;
+  if (!Number.isFinite(px) || !Number.isFinite(py)) return null;
+  const inputRect = { ...gameRect };
+  if (INPUT_FLIP_U) inputRect.x = screenCanvas.width - (inputRect.x + inputRect.w);
+  if (INPUT_FLIP_V) inputRect.y = screenCanvas.height - (inputRect.y + inputRect.h);
+  if (px < inputRect.x || px > inputRect.x + inputRect.w || py < inputRect.y || py > inputRect.y + inputRect.h) return null;
+  const xCanvasPx = ((px - inputRect.x) / inputRect.w) * gameCanvas.width;
+  const yCanvasPx = ((py - inputRect.y) / inputRect.h) * gameCanvas.height;
   const rect = gameCanvas.getBoundingClientRect();
   const rectW = rect.width || gameCanvas.width || GAME_FRAME_WIDTH;
   const rectH = rect.height || gameCanvas.height || GAME_FRAME_HEIGHT;
@@ -2053,6 +2764,69 @@ function cycleSpeed() {
 
 function pointInRect(x, y, r) {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
+function getCurrentGameTitle() {
+  if (!currentGameId) return 'Game';
+  const entry = GAME_LIST.find((g) => g.id === currentGameId);
+  return entry && entry.title ? entry.title : currentGameId;
+}
+
+function computeGameUiLayout(screenRect, gameAspect = 16 / 9) {
+  const gameH = Math.round(screenRect.w / gameAspect);
+  const remaining = Math.max(0, screenRect.h - gameH);
+  const topH = Math.floor(remaining * 0.5);
+  const bottomH = remaining - topH;
+
+  const top = { x: screenRect.x, y: screenRect.y, w: screenRect.w, h: topH };
+  const bottom = { x: screenRect.x, y: screenRect.y + screenRect.h - bottomH, w: screenRect.w, h: bottomH };
+  const gameRect = {
+    x: screenRect.x,
+    y: screenRect.y + topH,
+    w: screenRect.w,
+    h: Math.min(gameH, screenRect.h - topH - bottomH)
+  };
+
+  const safeTopH = Math.max(1, top.h);
+  const safeBottomH = Math.max(1, bottom.h);
+  const padTop = Math.round(Math.max(12, safeTopH * 0.22));
+  const iconTop = Math.round(Math.min(safeTopH * 0.72, screenRect.w * 0.09));
+  const backRect = { x: top.x + padTop, y: top.y + (safeTopH - iconTop) / 2, w: iconTop, h: iconTop };
+  const titleRect = { x: backRect.x + iconTop + padTop * 0.6, y: top.y, w: top.w - (padTop + iconTop + padTop * 0.6) - padTop, h: safeTopH };
+
+  const pad = Math.round(Math.max(12, safeBottomH * 0.18));
+  const icon = Math.round(Math.min(safeBottomH * 0.72, bottom.w * 0.085));
+  const sliderW = Math.min(bottom.w * 0.35, Math.max(180, bottom.w * 0.24));
+  const sliderH = Math.max(6, Math.round(safeBottomH * 0.18));
+  const muteRect = { x: bottom.x + pad, y: bottom.y + (safeBottomH - icon) / 2, w: icon, h: icon };
+  const sliderRect = { x: muteRect.x + icon + pad * 0.6, y: bottom.y + (safeBottomH - sliderH) / 2, w: sliderW, h: sliderH };
+
+  return { top, bottom, backRect, titleRect, muteRect, sliderRect, gameRect, singlePanel: false };
+}
+function fitRectContain(srcW, srcH, dst) {
+  const srcAR = srcW / srcH;
+  const dstAR = dst.w / dst.h;
+  let w = dst.w;
+  let h = dst.h;
+  if (dstAR > srcAR) {
+    h = dst.h;
+    w = h * srcAR;
+  } else {
+    w = dst.w;
+    h = w / srcAR;
+  }
+  const x = dst.x + (dst.w - w) * 0.5;
+  const y = dst.y + (dst.h - h) * 0.5;
+  return { x, y, w, h };
+}
+
+function rectRound(r) {
+  return {
+    x: Math.round(r.x),
+    y: Math.round(r.y),
+    w: Math.round(r.w),
+    h: Math.round(r.h)
+  };
 }
 
 function fitRectToAspect(rect, aspect = 16 / 9) {

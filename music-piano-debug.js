@@ -291,7 +291,13 @@ let topPadCanvas = null;
 let topPadCtx = null;
 let topPadTexture = null;
 let topPadHoverCell = null;
-let topPadUvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0 };
+// Manual overrides for UV orientation if needed.
+const TOPPAD_FORCE_SWAP = false;
+const TOPPAD_FORCE_MIRROR_V = true;
+const TOPPAD_UV_OVERRIDE = { umin: 0.004085332155227661, umax: 1.0, vmin: 0.3804967403411865, vmax: 0.6195032596588135 };
+let topPadSurfaceAspect = 1;
+let topPadUvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0, swap: false, mirrorU: false, mirrorV: false };
+let topPadUvDebugLogged = false;
 // Backboard redraw throttle / dirty flag to avoid per-frame canvas uploads
 let backboardDirty = true;
 let lastBackboardDrawMs = 0;
@@ -783,8 +789,15 @@ function updateTopPadHover(clientX, clientY){
     }
     return;
   }
-  const u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
-  const v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
+  let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
+  let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
+  if(topPadUvRemap.swap){
+    const tmp = u;
+    u = v;
+    v = tmp;
+  }
+  if(topPadUvRemap.mirrorU) u = 1 - u;
+  if(topPadUvRemap.mirrorV) v = 1 - v;
   const clampedU = Math.max(0, Math.min(1, u));
   const clampedV = Math.max(0, Math.min(1, v));
   const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
@@ -870,14 +883,37 @@ function remapTextureToUvBounds(mesh, texture){
   if(!mesh || !mesh.geometry || !texture) return;
   const uv = mesh.geometry.attributes && mesh.geometry.attributes.uv;
   if(!uv || uv.count < 1) return;
+  const pos = mesh.geometry.attributes && mesh.geometry.attributes.position;
   let umin = 1, vmin = 1, umax = 0, vmax = 0;
+  let uminIdx = 0, umaxIdx = 0, vminIdx = 0, vmaxIdx = 0;
+  let iMinX = 0, iMaxX = 0, iMinY = 0, iMaxY = 0, iMinZ = 0, iMaxZ = 0;
+  let minX = Infinity, minY = Infinity, minZ = Infinity;
+  let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for(let i=0;i<uv.count;i++){
     const u = uv.getX(i);
     const v = uv.getY(i);
-    if(u < umin) umin = u;
-    if(u > umax) umax = u;
-    if(v < vmin) vmin = v;
-    if(v > vmax) vmax = v;
+    if(u < umin){ umin = u; uminIdx = i; }
+    if(u > umax){ umax = u; umaxIdx = i; }
+    if(v < vmin){ vmin = v; vminIdx = i; }
+    if(v > vmax){ vmax = v; vmaxIdx = i; }
+    if(pos){
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      if(x < minX){ minX = x; iMinX = i; }
+      if(x > maxX){ maxX = x; iMaxX = i; }
+      if(y < minY){ minY = y; iMinY = i; }
+      if(y > maxY){ maxY = y; iMaxY = i; }
+      if(z < minZ){ minZ = z; iMinZ = i; }
+      if(z > maxZ){ maxZ = z; iMaxZ = i; }
+    }
+  }
+  if(TOPPAD_UV_OVERRIDE && Number.isFinite(TOPPAD_UV_OVERRIDE.umin) && Number.isFinite(TOPPAD_UV_OVERRIDE.umax) &&
+     Number.isFinite(TOPPAD_UV_OVERRIDE.vmin) && Number.isFinite(TOPPAD_UV_OVERRIDE.vmax)){
+    umin = TOPPAD_UV_OVERRIDE.umin;
+    umax = TOPPAD_UV_OVERRIDE.umax;
+    vmin = TOPPAD_UV_OVERRIDE.vmin;
+    vmax = TOPPAD_UV_OVERRIDE.vmax;
   }
   const ur = Math.max(1e-4, umax - umin);
   const vr = Math.max(1e-4, vmax - vmin);
@@ -885,9 +921,57 @@ function remapTextureToUvBounds(mesh, texture){
   const repeatV = 1 / vr;
   const offsetU = -umin / ur;
   const offsetV = -vmin / vr;
-  texture.repeat.set(repeatU, repeatV);
-  texture.offset.set(offsetU, offsetV);
-  topPadUvRemap = { repeatU, repeatV, offsetU, offsetV };
+  let swap = false;
+  let mirrorU = false;
+  let mirrorV = false;
+  if(pos && pos.count >= 2){
+    const spans = [
+      { axis: 'X', span: Math.abs(maxX - minX), iMin: iMinX, iMax: iMaxX },
+      { axis: 'Y', span: Math.abs(maxY - minY), iMin: iMinY, iMax: iMaxY },
+      { axis: 'Z', span: Math.abs(maxZ - minZ), iMin: iMinZ, iMax: iMaxZ },
+    ].sort((a, b) => b.span - a.span);
+    const widthAxis = spans[0];
+    const heightAxis = spans[1];
+    const uAtMinW = uv.getX(widthAxis.iMin);
+    const uAtMaxW = uv.getX(widthAxis.iMax);
+    mirrorU = (uAtMaxW < uAtMinW);
+    const vAtMinH = uv.getY(heightAxis.iMin);
+    const vAtMaxH = uv.getY(heightAxis.iMax);
+    mirrorV = (vAtMaxH < vAtMinH);
+    const du = Math.abs(uAtMaxW - uAtMinW);
+    const dv = Math.abs(uv.getY(widthAxis.iMax) - uv.getY(widthAxis.iMin));
+    swap = (dv > du);
+  }
+  if(isFinite(topPadSurfaceAspect) && topPadSurfaceAspect > 0){
+    const uvAspect = ur / vr;
+    const invUvAspect = 1 / Math.max(1e-6, uvAspect);
+    swap = (Math.abs(invUvAspect - topPadSurfaceAspect) < Math.abs(uvAspect - topPadSurfaceAspect));
+  }
+  if(TOPPAD_FORCE_SWAP) swap = true;
+  if(!topPadUvDebugLogged){
+    topPadUvDebugLogged = true;
+    console.log('[TopPad] UV bounds', { umin, umax, vmin, vmax, ur, vr, swap, mirrorU, mirrorV, surfaceAspect: topPadSurfaceAspect });
+  }
+  let repU = repeatU;
+  let repV = repeatV;
+  let offU = offsetU;
+  let offV = offsetV;
+  if(swap){
+    const tmpR = repU; repU = repV; repV = tmpR;
+    const tmpO = offU; offU = offV; offV = tmpO;
+  }
+  if(mirrorU){
+    repU = -repU;
+    offU = 1 - offU;
+  }
+  if(TOPPAD_FORCE_MIRROR_V) mirrorV = !mirrorV;
+  if(mirrorV){
+    repV = -repV;
+    offV = 1 - offV;
+  }
+  texture.repeat.set(repU, repV);
+  texture.offset.set(offU, offV);
+  topPadUvRemap = { repeatU, repeatV, offsetU, offsetV, swap, mirrorU, mirrorV };
   texture.needsUpdate = true;
 }
 
@@ -1738,29 +1822,39 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
         sustainPedalMesh = o;
       }
       if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
-      if(!topPadMesh && /(perpad_screen|pe'rpad_screen)/i.test(o.name)){
-        topPadMesh = o;
-        console.log('Top pad mesh found:', topPadMesh?.name, topPadMesh?.type);
-        try{
-          let size = new THREE.Vector3(1,1,1);
+        if(!topPadMesh && /(perpad_screen|pe'rpad_screen)/i.test(o.name)){
+          topPadMesh = o;
+          console.log('Top pad mesh found:', topPadMesh?.name, topPadMesh?.type);
           try{
-            if(o.geometry){
-              if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
-              const bb = o.geometry.boundingBox;
-              if(bb){ bb.getSize(size); }
-            }
-          }catch(e){}
-          if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
+            let size = new THREE.Vector3(1,1,1);
             try{
-              o.updateMatrixWorld(true);
-              size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+              if(o.geometry){
+                if(!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+                const bb = o.geometry.boundingBox;
+                if(bb){ bb.getSize(size); }
+              }
             }catch(e){}
-          }
-          const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
-          const planeH = dims[1];
-          const planeW = dims[2];
-          const aspect = planeW / planeH;
-          createTopPadCanvas(aspect);
+            if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
+              try{
+                o.updateMatrixWorld(true);
+                size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+              }catch(e){}
+            } else {
+              try{
+                o.updateMatrixWorld(true);
+                const _p = new THREE.Vector3();
+                const _q = new THREE.Quaternion();
+                const _s = new THREE.Vector3(1,1,1);
+                o.matrixWorld.decompose(_p, _q, _s);
+                size.multiply(new THREE.Vector3(Math.abs(_s.x), Math.abs(_s.y), Math.abs(_s.z)));
+              }catch(e){}
+            }
+            const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
+            const planeH = dims[1];
+            const planeW = dims[2];
+            const aspect = planeW / planeH;
+            topPadSurfaceAspect = aspect;
+            createTopPadCanvas(aspect);
           const mats = Array.isArray(topPadMesh.material) ? topPadMesh.material : [topPadMesh.material];
           mats.forEach(m => {
             if(!m) return;

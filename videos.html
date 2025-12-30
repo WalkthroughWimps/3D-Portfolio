@@ -168,10 +168,19 @@
             <!-- Edge reveal overlays -->
             <div class="edge-reveal left" aria-hidden="true"></div>
             <div class="edge-reveal right" aria-hidden="true"></div>
+            <button id="introSkip" class="intro-skip" type="button">Skip animation - S</button>
 
                                 <!-- Tablet intro video overlayed on the 3D model; swaps to GLB when finished -->
             <div class="tablet-stage" aria-label="Tablet stage">
                 <div class="viewer-wrap">
+                    <video id="tabletIntro" class="tablet-intro" muted playsinline preload="auto"></video>
+                    <div id="introGate" class="intro-gate" aria-live="polite">
+                        <button id="introPlay" class="intro-play" type="button">Play</button>
+                        <div class="intro-load">
+                            <div id="introLoadBar" class="intro-load-bar"></div>
+                        </div>
+                        <div id="introLoadText" class="intro-load-text">Loading…</div>
+                    </div>
                     <canvas id="glCanvas" class="gl-canvas" aria-label="3D tablet canvas"></canvas>
                 </div>
             </div>

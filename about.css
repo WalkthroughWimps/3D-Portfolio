@@ -32,9 +32,48 @@ body {
 .ref-card footer { opacity: 0.8; font-size: 0.9em; }
 
 /* Skills */
-.skill-cols { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
-.skill-cols ul { margin: 0; padding-left: 18px; }
-.skill-cols li { margin: 6px 0; color: var(--text-color); }
+.skills-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 18px 20px;
+    align-items: center;
+    justify-items: center;
+    padding: 6px 0 4px;
+}
+.skill-icon {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    display: grid;
+    place-items: center;
+    transform-style: preserve-3d;
+}
+.skill-icon::after {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 16px;
+    background: color-mix(in oklab, var(--primary-color) 65%, transparent);
+    transform: translate3d(4px, 4px, -1px);
+    filter: blur(0.2px);
+    opacity: 0.65;
+}
+.skill-icon img {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    filter: drop-shadow(0 6px 8px rgba(0,0,0,0.35));
+    transform: translateZ(6px);
+    transition: transform 400ms ease;
+}
+.skill-icon:hover img {
+    animation: skill-spin 700ms ease;
+}
+@keyframes skill-spin {
+    0% { transform: translateZ(6px) rotateY(0deg); }
+    60% { transform: translateZ(6px) rotateY(360deg); }
+    100% { transform: translateZ(6px) rotateY(0deg); }
+}
 
 /* Side gear rails removed */
 
@@ -46,11 +85,11 @@ body {
 /* Responsive tweaks */
 @media (max-width: 900px) {
     .refs-grid { grid-template-columns: 1fr; }
-    .skill-cols { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .skills-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
         /* rails removed */
 }
 @media (max-width: 620px) {
-    .skill-cols { grid-template-columns: 1fr; }
+    .skills-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
         /* rails removed */
 }
 

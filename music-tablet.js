@@ -38,8 +38,18 @@ export function setupMusicTabletScreen(rootObject3D) {
 
   if (!screenMesh || !screenMesh.material) return null;
 
-  const CW = 2048;
-  const CH = 1280; // ~16:10 canvas to better match tablet
+  const screenAspect = (() => {
+    try {
+      const box = new THREE.Box3().setFromObject(screenMesh);
+      const size = box.getSize(new THREE.Vector3());
+      const dims = [size.x, size.y, size.z].filter(v => isFinite(v) && v > 1e-6).sort((a, b) => b - a);
+      if (dims.length >= 2) return Math.max(0.01, dims[0] / dims[1]);
+    } catch (e) { /* ignore */ }
+    return 16 / 10;
+  })();
+  const MAX_DIM = 2048;
+  const CW = screenAspect >= 1 ? MAX_DIM : Math.round(MAX_DIM * screenAspect);
+  const CH = screenAspect >= 1 ? Math.round(MAX_DIM / screenAspect) : MAX_DIM;
   const canvas = document.createElement('canvas');
   canvas.width = CW;
   canvas.height = CH;
@@ -61,12 +71,13 @@ export function setupMusicTabletScreen(rootObject3D) {
   material.needsUpdate = true;
 
   // If the tablet only uses a subset of UVs, remap so our
-  // full 0..1 canvas fills that region.
-  const uvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0 };
+  // full 0..1 canvas fills that region, and correct orientation.
+  const uvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0, rotation: 0 };
   try {
     const geo = screenMesh.geometry;
-    if (geo && geo.attributes && geo.attributes.uv) {
+    if (geo && geo.attributes && geo.attributes.uv && geo.attributes.position) {
       const uv = geo.attributes.uv;
+      const pos = geo.attributes.position;
       let umin = 1, vmin = 1, umax = 0, vmax = 0;
       for (let i = 0; i < uv.count; i++) {
         const u = uv.getX(i);
@@ -86,8 +97,46 @@ export function setupMusicTabletScreen(rootObject3D) {
       uvRemap.repeatV = repV;
       uvRemap.offsetU = offU;
       uvRemap.offsetV = offV;
-      texture.repeat.set(repU, repV);
-      texture.offset.set(offU, offV);
+
+      // Detect UV orientation vs mesh axes to correct sideways screens.
+      let minX = 0, maxX = 0, minY = 0, maxY = 0;
+      for (let i = 1; i < pos.count; i++) {
+        if (pos.getX(i) < pos.getX(minX)) minX = i;
+        if (pos.getX(i) > pos.getX(maxX)) maxX = i;
+        if (pos.getY(i) < pos.getY(minY)) minY = i;
+        if (pos.getY(i) > pos.getY(maxY)) maxY = i;
+      }
+      const duX = uv.getX(maxX) - uv.getX(minX);
+      const dvX = uv.getY(maxX) - uv.getY(minX);
+      const duY = uv.getX(maxY) - uv.getX(minY);
+      const dvY = uv.getY(maxY) - uv.getY(minY);
+      const swapUV = Math.abs(dvX) > Math.abs(duX);
+      let flipU = false;
+      let flipV = false;
+      if (!swapUV) {
+        flipU = duX < 0;
+        flipV = dvY < 0;
+      } else {
+        uvRemap.rotation = dvX >= 0 ? -Math.PI / 2 : Math.PI / 2;
+        flipV = (uvRemap.rotation < 0) ? (duY > 0) : (duY < 0);
+      }
+      if (flipU) {
+        uvRemap.repeatU *= -1;
+        uvRemap.offsetU = 1 - uvRemap.offsetU;
+      }
+      if (flipV) {
+        uvRemap.repeatV *= -1;
+        uvRemap.offsetV = 1 - uvRemap.offsetV;
+      }
+
+      texture.repeat.set(uvRemap.repeatU, uvRemap.repeatV);
+      texture.offset.set(uvRemap.offsetU, uvRemap.offsetV);
+      if (uvRemap.rotation) {
+        texture.center.set(0.5, 0.5);
+        texture.rotation = uvRemap.rotation;
+      } else {
+        texture.rotation = 0;
+      }
       texture.needsUpdate = true;
     }
   } catch (e) {
@@ -253,8 +302,20 @@ export function setupMusicTabletScreen(rootObject3D) {
   }
 
   function uvToCanvas(uv) {
-    const u = uv.x * uvRemap.repeatU + uvRemap.offsetU;
-    const v = uv.y * uvRemap.repeatV + uvRemap.offsetV;
+    let u = uv.x * uvRemap.repeatU + uvRemap.offsetU;
+    let v = uv.y * uvRemap.repeatV + uvRemap.offsetV;
+    if (uvRemap.rotation) {
+      const cx = 0.5;
+      const cy = 0.5;
+      const du = u - cx;
+      const dv = v - cy;
+      const c = Math.cos(uvRemap.rotation);
+      const s = Math.sin(uvRemap.rotation);
+      const ru = du * c - dv * s;
+      const rv = du * s + dv * c;
+      u = ru + cx;
+      v = rv + cy;
+    }
     return {
       x: THREE.MathUtils.clamp(u, 0, 1) * CW,
       y: THREE.MathUtils.clamp(v, 0, 1) * CH,

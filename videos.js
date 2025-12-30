@@ -2,10 +2,23 @@
 /* eslint-disable no-unused-vars */
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
 import VideoPlayer from './video-player-controls.js?v=tablet-ui-1';
+import { createVideoControlsUI } from './shared-video-controls.js';
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
+import { createVideosVideoAdapter } from './videos-video-adapter.js';
+
+console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
+
+const USE_SHARED_CONTROLS = true;
 
 const videosPageConfig = {
-  intro: { enabled: false, video: 'Renders/tablet-animation.webm', maxWaitMs: 6000 },
+  intro: {
+    enabled: true,
+    video: 'Renders/tablet-animation.webm',
+    audio: 'Renders/tablet_animation_1.opus',
+    maxWaitMs: 12000,
+    dropDurationMs: 1200,
+    dropOffsetFactor: 2.2
+  },
   tabletAlignment: {
     enabled: true,
     autoFlip: false,
@@ -40,6 +53,259 @@ try {
     try { videosPageConfig.tabletAlignment.tabletWorld = JSON.parse(saved); console.log('[videos] Loaded saved tablet pose'); } catch (e) { console.warn('Failed parse saved pose', e); }
   }
 } catch (e) { /* ignore */ }
+
+const introState = {
+  enabled: !!(videosPageConfig && videosPageConfig.intro && videosPageConfig.intro.enabled),
+  done: !(videosPageConfig && videosPageConfig.intro && videosPageConfig.intro.enabled),
+  videoEl: null,
+  audioEl: null,
+  timeoutId: null,
+  audioTimer: null,
+  audioStarted: false,
+  skipBtn: null,
+  gateEl: null,
+  playBtn: null,
+  loadBar: null,
+  loadText: null,
+  gateShown: false
+};
+
+const dropAnim = {
+  active: false,
+  ready: false,
+  start: 0,
+  durationMs: (videosPageConfig && videosPageConfig.intro && videosPageConfig.intro.dropDurationMs) || 1200,
+  fromY: 0,
+  toY: 0,
+  group: null
+};
+
+function tryStartDrop() {
+  if (!introState.done || !dropAnim.ready || dropAnim.active || !dropAnim.group) return;
+  dropAnim.active = true;
+  dropAnim.start = performance.now();
+}
+
+function markIntroDone() {
+  if (introState.done) return;
+  introState.done = true;
+  if (introState.timeoutId) {
+    clearTimeout(introState.timeoutId);
+    introState.timeoutId = null;
+  }
+  if (introState.audioTimer) {
+    clearTimeout(introState.audioTimer);
+    introState.audioTimer = null;
+  }
+  if (introState.videoEl) {
+    introState.videoEl.classList.remove('visible');
+    introState.videoEl.classList.add('hidden');
+    try {
+      introState.videoEl.pause();
+    } catch (e) { /* ignore */ }
+  }
+  if (introState.audioEl) {
+    try { introState.audioEl.pause(); } catch (e) { /* ignore */ }
+  }
+  if (introState.skipBtn) {
+    introState.skipBtn.classList.add('hidden');
+  }
+  if (introState.gateEl) {
+    introState.gateEl.classList.add('hidden');
+  }
+  tryStartDrop();
+}
+
+function getStoredSyncMs() {
+  try {
+    const v = localStorage.getItem('site.audio.sync');
+    const n = parseInt(v, 10);
+    return Number.isFinite(n) ? n : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+
+function getStoredAudioSettings() {
+  const AUDIO_VOLUME_KEY = 'site.audio.volume';
+  const AUDIO_MUTED_KEY = 'site.audio.muted';
+  try {
+    const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
+    const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true';
+    return { volume, muted };
+  } catch (e) {
+    return { volume: 1, muted: false };
+  }
+}
+
+function startIntroAudio(videoEl) {
+  if (!introState.audioEl || introState.audioStarted) return;
+  const audioEl = introState.audioEl;
+  const stored = getStoredAudioSettings();
+  const safeVol = Math.max(0, Math.min(1, stored.volume || 0));
+  try { audioEl.volume = stored.muted ? 0 : safeVol; } catch (e) { /* ignore */ }
+  try { audioEl.muted = !!stored.muted; } catch (e) { /* ignore */ }
+  if (stored.muted || safeVol <= 0.001) return;
+  const syncMs = getStoredSyncMs();
+  const ct = videoEl && Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
+  introState.audioStarted = true;
+  if (syncMs >= 0) {
+    if (audioEl.readyState >= 1) {
+      try { audioEl.currentTime = ct; } catch (e) { /* ignore */ }
+    }
+    introState.audioTimer = setTimeout(() => {
+      try {
+        const p = audioEl.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => { introState.audioStarted = false; });
+        }
+      } catch (e) { introState.audioStarted = false; }
+    }, syncMs);
+  } else {
+    const offset = Math.abs(syncMs) / 1000;
+    if (audioEl.readyState >= 1) {
+      try { audioEl.currentTime = ct + offset; } catch (e) { /* ignore */ }
+    }
+    try {
+      const p = audioEl.play();
+      if (p && typeof p.catch === 'function') {
+        p.catch(() => { introState.audioStarted = false; });
+      }
+    } catch (e) { introState.audioStarted = false; }
+  }
+}
+
+function setupIntroVideo() {
+  if (!introState.enabled) return;
+  const videoEl = document.getElementById('tabletIntro');
+  if (!videoEl) {
+    markIntroDone();
+    return;
+  }
+  let allowSound = false;
+  try {
+    allowSound = (new URLSearchParams(location.search)).get('sound') === '1'
+      || localStorage.getItem('site.audio.allowed') === 'true';
+  } catch (e) { /* ignore */ }
+  introState.videoEl = videoEl;
+  videoEl.src = videosPageConfig.intro.video;
+  videoEl.muted = true;
+  videoEl.playsInline = true;
+  videoEl.setAttribute('playsinline', '');
+  videoEl.classList.add('visible');
+  videoEl.load();
+  if (allowSound && videosPageConfig.intro && videosPageConfig.intro.audio) {
+    const audioEl = document.createElement('audio');
+    audioEl.preload = 'auto';
+    audioEl.src = videosPageConfig.intro.audio;
+    audioEl.crossOrigin = 'anonymous';
+    introState.audioEl = audioEl;
+    document.body.appendChild(audioEl);
+    try { audioEl.load(); } catch (e) { /* ignore */ }
+  }
+  const finishOnce = () => markIntroDone();
+  videoEl.addEventListener('ended', finishOnce, { once: true });
+  videoEl.addEventListener('error', finishOnce, { once: true });
+  videoEl.addEventListener('play', () => {
+    startIntroAudio(videoEl);
+    if (!introState.timeoutId) {
+      introState.timeoutId = setTimeout(finishOnce, videosPageConfig.intro.maxWaitMs || 6000);
+    }
+  }, { once: true });
+  videoEl.addEventListener('timeupdate', () => {
+    if (!introState.audioStarted) startIntroAudio(videoEl);
+  });
+  const gate = document.getElementById('introGate');
+  const playBtn = document.getElementById('introPlay');
+  const loadBar = document.getElementById('introLoadBar');
+  const loadText = document.getElementById('introLoadText');
+  introState.gateEl = gate || null;
+  introState.playBtn = playBtn || null;
+  introState.loadBar = loadBar || null;
+  introState.loadText = loadText || null;
+  if (gate) {
+    gate.classList.remove('hidden');
+    introState.gateShown = true;
+  }
+  if (playBtn) {
+    playBtn.disabled = true;
+    playBtn.addEventListener('click', () => {
+      if (introState.done) return;
+      if (playBtn.disabled) return;
+      try { videoEl.play(); } catch (e) { /* ignore */ }
+      startIntroAudio(videoEl);
+      if (!introState.timeoutId) {
+        introState.timeoutId = setTimeout(finishOnce, videosPageConfig.intro.maxWaitMs || 6000);
+      }
+      if (introState.gateEl) introState.gateEl.classList.add('hidden');
+    });
+  }
+  const updateLoad = () => {
+    if (!introState.loadBar || !introState.loadText) return;
+    const duration = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
+    let ratio = 0;
+    let ready = false;
+    if (duration > 0 && videoEl.buffered && videoEl.buffered.length) {
+      const end = videoEl.buffered.end(videoEl.buffered.length - 1);
+      ratio = Math.max(0, Math.min(1, end / duration));
+      ready = ratio >= 0.98;
+    } else if (videoEl.readyState >= 3) {
+      ratio = 1;
+      ready = true;
+    } else if (videoEl.readyState >= 1) {
+      ratio = 0.35;
+    }
+    introState.loadBar.style.width = `${Math.round(ratio * 100)}%`;
+    if (introState.playBtn) introState.playBtn.disabled = !ready;
+    introState.loadText.textContent = ready ? 'Ready' : 'Loading…';
+  };
+  videoEl.addEventListener('progress', updateLoad);
+  videoEl.addEventListener('loadedmetadata', updateLoad);
+  videoEl.addEventListener('canplay', updateLoad);
+  updateLoad();
+}
+
+function setupIntroSkip() {
+  const btn = document.getElementById('introSkip');
+  introState.skipBtn = btn || null;
+  if (!btn) return;
+  if (!introState.enabled) {
+    btn.classList.add('hidden');
+    return;
+  }
+  btn.addEventListener('click', () => {
+    markIntroDone();
+  });
+  const placeNearNav = () => {
+    const navBg = document.querySelector('.navigation-bg');
+    if (!navBg || !introState.skipBtn) return false;
+    const rect = navBg.getBoundingClientRect();
+    const btnRect = introState.skipBtn.getBoundingClientRect();
+    const gap = Math.max(10, Math.round(rect.height * 0.12));
+    const left = Math.max(8, Math.round(rect.left - btnRect.width - gap));
+    const top = Math.round(rect.top + (rect.height - btnRect.height) / 2);
+    introState.skipBtn.style.left = `${left}px`;
+    introState.skipBtn.style.top = `${Math.max(8, top)}px`;
+    return true;
+  };
+  const startPlacement = () => {
+    if (!placeNearNav()) {
+      const timer = setInterval(() => {
+        if (placeNearNav()) clearInterval(timer);
+      }, 250);
+      setTimeout(() => clearInterval(timer), 6000);
+    }
+  };
+  startPlacement();
+  window.addEventListener('resize', () => placeNearNav());
+  window.addEventListener('keydown', (e) => {
+    if (introState.done) return;
+    if (e.key === 's' || e.key === 'S') {
+      e.preventDefault();
+      markIntroDone();
+    }
+  });
+}
 
 function onReady(fn) {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
@@ -105,10 +371,20 @@ onReady(() => {
   }
   window.addEventListener('resize', resizeRenderer);
   resizeRenderer();
+  setupIntroVideo();
+  setupIntroSkip();
 
   function animate() {
     try { if (controls && typeof controls.update === 'function') controls.update(); if (camera) renderer.render(scene, camera); }
     catch (e) { /* ignore */ }
+    if (dropAnim.active && dropAnim.group) {
+      const t = Math.min(1, (performance.now() - dropAnim.start) / dropAnim.durationMs);
+      const k = 1 - Math.pow(1 - t, 3);
+      const y = dropAnim.fromY + (dropAnim.toY - dropAnim.fromY) * k;
+      dropAnim.group.position.y = y;
+      dropAnim.group.updateMatrixWorld(true);
+      if (t >= 1) dropAnim.active = false;
+    }
     // update debug UI
     try {
       const camEl = document.getElementById('tp_camera');
@@ -210,7 +486,26 @@ onReady(() => {
             } catch (e) { /* ignore orientation check errors */ }
 
             if (VideoPlayer && typeof VideoPlayer.createGrid === 'function') {
-              VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true });
+              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true });
+              if (USE_SHARED_CONTROLS && gridApi) {
+                const adapter = createVideosVideoAdapter({
+                  getActiveVideo: () => gridApi.getActiveVideo?.(),
+                  getActiveAudio: () => gridApi.getActiveAudio?.(),
+                  getViewportRect: () => gridApi.getViewportRect?.(),
+                  getAudioSettings: () => gridApi.getAudioSettings?.(),
+                  setVolume: (v) => gridApi.setVolumeRatio?.(v),
+                  toggleMute: () => gridApi.toggleMute?.(),
+                  setPlaybackRate: (rate) => gridApi.setPlaybackRate?.(rate),
+                  exit: () => gridApi.exitPlayback?.()
+                });
+                const ui = createVideoControlsUI({ enablePointer: false });
+                ui.setViewportRectProvider(adapter.getViewportRect);
+                ui.onAction = (action) => adapter.dispatch(action);
+                gridApi.setSharedControls?.(ui, adapter);
+                console.log('%c[videos] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
+              } else {
+                console.log('%c[videos] legacy controls ENABLED', 'color:#ffaa00;font-weight:bold');
+              }
 
               // Detect whether the screen is upside-down relative to the
               // camera (screen local +Y should point roughly toward camera
@@ -330,6 +625,26 @@ onReady(() => {
         } catch (e) { /* ignore debug panel errors */ }
 
         try { applyBlenderAlignment({ tabletGroupRef: refs.tabletGroup, camera: refs.camera, controls, renderer, videosPageConfig }); } catch (e) { /* ignore */ }
+        try {
+          if (introState.enabled && refs && refs.tabletGroup) {
+            const box = new THREE.Box3().setFromObject(refs.tabletGroup);
+            const size = new THREE.Vector3();
+            box.getSize(size);
+            const offsetFactor = (videosPageConfig.intro && Number.isFinite(videosPageConfig.intro.dropOffsetFactor))
+              ? videosPageConfig.intro.dropOffsetFactor
+              : 0.85;
+            const finalY = refs.tabletGroup.position.y;
+            const startY = finalY + size.y * offsetFactor;
+            dropAnim.group = refs.tabletGroup;
+            dropAnim.fromY = startY;
+            dropAnim.toY = finalY;
+            dropAnim.durationMs = videosPageConfig.intro.dropDurationMs || dropAnim.durationMs;
+            dropAnim.ready = true;
+            refs.tabletGroup.position.y = startY;
+            refs.tabletGroup.updateMatrixWorld(true);
+            tryStartDrop();
+          }
+        } catch (e) { console.warn('[videos] intro drop setup failed', e); }
 
       } catch (e) { console.warn('loadTabletGlb init failed', e); }
     }, undefined, (err) => { console.warn('Failed to load GLB', err); });

@@ -11,6 +11,8 @@ body {
     --hl-tertiary-color: var(--orange-tertiary);
     --hl-dark-color: var(--orange-dark);
     --hl-text-color: var(--orange-text-color);
+    --controls-bg: var(--primary-color);
+    --controls-fg: var(--hl-primary-color);
 
     /* Videos page font hooks */
     --videos-heading-font: var(--reel-heading-font, 'Fascinate Inline', system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
@@ -126,6 +128,81 @@ body {
     pointer-events: none;
     z-index: 2;
 }
+.intro-skip {
+    position: fixed;
+    top: 92px;
+    left: 24px;
+    z-index: 12;
+    font-family: var(--videos-info-font);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--hl-tertiary-color);
+    background: color-mix(in oklab, var(--primary-color) 82%, transparent);
+    border: 2px solid color-mix(in oklab, var(--hl-secondary-color) 70%, transparent);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    transition: opacity 240ms ease, transform 240ms ease;
+}
+.intro-skip:hover { transform: translateY(-1px); }
+.intro-skip.hidden { opacity: 0; pointer-events: none; }
+
+.intro-gate {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.55));
+    color: var(--hl-tertiary-color);
+    text-align: center;
+    font-family: var(--videos-info-font);
+    opacity: 1;
+    transition: opacity 360ms ease;
+}
+.intro-gate.hidden { opacity: 0; pointer-events: none; }
+.intro-play {
+    border: 2px solid var(--hl-secondary-color);
+    background: color-mix(in oklab, var(--primary-color) 78%, transparent);
+    color: var(--hl-tertiary-color);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    padding: 10px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.35);
+}
+.intro-play[disabled] {
+    color: var(--hl-secondary-color);
+    border-color: color-mix(in oklab, var(--hl-secondary-color) 80%, transparent);
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+.intro-load {
+    width: min(420px, 70vw);
+    height: 8px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--primary-color) 50%, transparent);
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35);
+}
+.intro-load-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--hl-primary-color);
+    transition: width 160ms ease;
+}
+.intro-load-text {
+    font-size: 0.95rem;
+    color: var(--hl-text-color);
+    opacity: 0.9;
+}
 
 /* Tablet intro stage: video overlays the GLB, then fades out to reveal the model */
 .tablet-stage { position: fixed; inset: 0; z-index: 0; }
@@ -135,6 +212,19 @@ body {
     overflow: hidden;
     background: transparent; /* body's overlay provides the background */
 }
+.tablet-intro {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 600ms ease;
+}
+.tablet-intro.visible { opacity: 1; }
+.tablet-intro.hidden { opacity: 0; }
 .gl-canvas {
     position: absolute; inset: 0; width: 100%; height: 100%; display: block;
     opacity: 1; z-index: 1; /* visible by default */

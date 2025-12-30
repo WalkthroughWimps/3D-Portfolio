@@ -4,6 +4,7 @@
  * Usage: import VideoPlayer from './video-player-controls.js'; then VideoPlayer.create(canvas, options)
  */
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+import * as SharedVC from './shared-video-controls.js';
 import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from './videos-tablet.js';
 
 // Player state management
@@ -38,15 +39,191 @@ class PlayerState {
       this.zoomingOut = false;
       console.log('[VideoPlayer] State reset complete, playingFull after:', this.playingFull);
     }
+}
+
+function getCssVar(name, fallback) {
+  try {
+    const root = document.body || document.documentElement;
+    const raw = getComputedStyle(root).getPropertyValue(name);
+    const trimmed = raw ? raw.trim() : '';
+    return trimmed || fallback;
+  } catch (e) {
+    return fallback;
   }
+}
+
+function getControlsTheme() {
+  const bg = getCssVar('--controls-bg', '#0b0f1a');
+  const fg = getCssVar('--controls-fg', '#f4b34a');
+  const alphaRaw = getCssVar('--controls-bg-alpha', '0.9');
+  const bgAlpha = Number.isFinite(parseFloat(alphaRaw)) ? parseFloat(alphaRaw) : 0.9;
+  return { bg, fg, bgAlpha };
+}
+
+const ICON_SVG_PATHS = {
+  back: 'assets/video-playback-icons/arrow_back_2.svg',
+  volume_on: 'assets/video-playback-icons/volume_high.svg',
+  volume_off: 'assets/video-playback-icons/no_sound.svg',
+  volume_low: 'assets/video-playback-icons/volume_low.svg',
+  volume_medium: 'assets/video-playback-icons/volume_medium.svg',
+  volume_high: 'assets/video-playback-icons/volume_high.svg'
+};
+const AUDIO_SYNC_KEY = 'site.audio.sync';
+const SYNC_RANGE_MS = 3000;
+const svgTextCache = new Map();
+const iconImageCache = new Map();
+
+function buildInlineSvg(name, color) {
+  if (name === 'play') {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="${color}"><polygon points="22,14 22,50 50,32"/></svg>`;
+  }
+  if (name === 'pause') {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="${color}"><rect x="18" y="14" width="10" height="36"/><rect x="36" y="14" width="10" height="36"/></svg>`;
+  }
+  return null;
+}
+
+function colorizeSvg(svgText, color) {
+  if (!svgText) return svgText;
+  if (svgText.includes('fill=')) {
+    return svgText.replace(/fill=\"[^\"]*\"/g, `fill="${color}"`);
+  }
+  return svgText.replace('<svg', `<svg fill="${color}"`);
+}
+
+function ensureSvgText(path) {
+  if (svgTextCache.has(path)) return svgTextCache.get(path);
+  fetch(path).then((res) => res.text()).then((text) => {
+    svgTextCache.set(path, text);
+  }).catch(() => {
+    svgTextCache.set(path, null);
+  });
+  svgTextCache.set(path, null);
+  return null;
+}
+
+function getIconImage(name, color) {
+  const key = `${name}|${color}`;
+  const cached = iconImageCache.get(key);
+  if (cached) {
+    if (!cached.ready && ICON_SVG_PATHS[name] && !cached.img.src) {
+      const raw = svgTextCache.get(ICON_SVG_PATHS[name]);
+      if (raw) {
+        const colored = colorizeSvg(raw, color);
+        cached.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(colored)}`;
+      }
+    }
+    return cached.ready ? cached.img : null;
+  }
+
+  const entry = { img: new Image(), ready: false };
+  iconImageCache.set(key, entry);
+  entry.img.onload = () => { entry.ready = true; };
+
+  if (ICON_SVG_PATHS[name]) {
+    const raw = ensureSvgText(ICON_SVG_PATHS[name]);
+    if (raw) {
+      const colored = colorizeSvg(raw, color);
+      entry.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(colored)}`;
+    }
+  } else {
+    const inline = buildInlineSvg(name, color);
+    if (inline) {
+      entry.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(inline)}`;
+    }
+  }
+  return null;
+}
+
+function drawIconAsset(ctx, rect, name, color) {
+  const img = getIconImage(name, color);
+  if (img && img.complete) {
+    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+    return true;
+  }
+  return false;
+}
+
+function getStoredSyncMsLocal() {
+  if (SharedVC.getStoredSyncMs) return SharedVC.getStoredSyncMs();
+  const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
+  return Number.isFinite(raw) ? raw : 0;
+}
+
+function setStoredSyncMsLocal(ms) {
+  const step = 10;
+  const snapped = Math.round((Number.isFinite(ms) ? ms : 0) / step) * step;
+  const clamped = Math.max(-SYNC_RANGE_MS, Math.min(SYNC_RANGE_MS, snapped));
+  try { localStorage.setItem(AUDIO_SYNC_KEY, String(clamped)); } catch (e) { /* ignore */ }
+  try {
+    window.dispatchEvent(new CustomEvent('syncOffsetChanged', { detail: { offsetMs: clamped } }));
+  } catch (e) { /* ignore */ }
+  return clamped;
+}
+
+function drawClockIcon(ctx, rect, color, fontFamily) {
+  ctx.save();
+  ctx.fillStyle = color || '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const size = Math.round(rect.h * 0.9);
+  const font = fontFamily || '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
+  ctx.font = `${size}px ${font}`;
+  ctx.fillText('schedule', rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+  ctx.restore();
+}
+
+function drawCenterPlayOverlay(ctx, rect, color, alpha = 1) {
+  const size = Math.min(rect.w, rect.h) * 0.22;
+  const x = rect.x + (rect.w - size) / 2;
+  const y = rect.y + (rect.h - size) / 2;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color || '#fff';
+  ctx.lineWidth = Math.max(3, Math.round(size * 0.08));
+  ctx.beginPath();
+  ctx.arc(x + size / 2, y + size / 2, size * 0.45, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = color || '#fff';
+  ctx.beginPath();
+  ctx.moveTo(x + size * 0.46, y + size * 0.32);
+  ctx.lineTo(x + size * 0.46, y + size * 0.68);
+  ctx.lineTo(x + size * 0.72, y + size * 0.50);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function getVolumeIconName(volume, muted) {
+  const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
+  if (muted || level <= 0.0001) return 'volume_off';
+  if (level <= 0.3) return 'volume_low';
+  if (level <= 0.7) return 'volume_medium';
+  return 'volume_high';
+}
+
+function formatTime(t) {
+  if (!isFinite(t) || t < 0) return '0:00';
+  const minutes = Math.floor(t / 60);
+  const seconds = Math.floor(t % 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
   // Video player instance
   class Player {
     constructor(canvas, options = {}) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
-      this.state = new PlayerState();
+      this.state = new SharedVC.PlayerState();
       this.controlsBounds = null;
+      this.playbackRates = SharedVC.playbackRates || [0.5, 0.75, 1, 1.25, 1.5, 2];
+      this.uiState = {
+        playbackRateIndex: (this.playbackRates.indexOf(1) >= 0) ? this.playbackRates.indexOf(1) : 0,
+        preservePitch: true,
+        lastVolume: 0.6
+      };
+      this._seekToken = 0;
+      this.dragState = null;
       
       // Configuration
       this.config = {
@@ -56,6 +233,10 @@ class PlayerState {
         controlsHideDelay: options.controlsHideDelay || 3000,
         onBackClick: options.onBackClick || null,
         onVideoEnd: options.onVideoEnd || null,
+        onPitchToggle: options.onPitchToggle || null,
+        onVolumeChange: options.onVolumeChange || null,
+        onToggleMute: options.onToggleMute || null,
+        getAudioState: options.getAudioState || null,
         getGridRect: options.getGridRect || null, // function(index) -> {x, y, w, h}
         getControlsBounds: options.getControlsBounds || null, // function() -> {x, y, w, h}
         controlsOnlyWhenPlaying: options.controlsOnlyWhenPlaying !== false,
@@ -71,7 +252,9 @@ class PlayerState {
       this.boundHandlers = {
         click: this.handleClick.bind(this),
         pointerMove: this.handlePointerMove.bind(this),
-        pointerDown: this.handlePointerDown.bind(this)
+        pointerDown: this.handlePointerDown.bind(this),
+        pointerUp: this.handlePointerUp.bind(this),
+        pointerLeave: this.handlePointerLeave.bind(this)
       };
 
       this.setupEventListeners();
@@ -83,6 +266,38 @@ class PlayerState {
       this.canvas.addEventListener('click', this.boundHandlers.click);
       this.canvas.addEventListener('pointermove', this.boundHandlers.pointerMove);
       this.canvas.addEventListener('pointerdown', this.boundHandlers.pointerDown);
+      this.canvas.addEventListener('pointerup', this.boundHandlers.pointerUp);
+      this.canvas.addEventListener('pointerleave', this.boundHandlers.pointerLeave);
+    }
+
+      keepControlsVisible() {
+        const now = performance.now();
+        this.state.lastPointerMoveTs = now;
+        if (this.state.controlsTarget === 0) {
+          this.state.controlsTarget = 1;
+          this.state.controlsAnimStart = now;
+        }
+        if (this.state.controlsVisible < 1) {
+          this.state.controlsVisible = 1;
+        }
+      }
+
+    seekWithFreeze(video, time) {
+      if (!video || !isFinite(time)) return;
+      const wasPlaying = !video.paused && !video.ended;
+      const token = ++this._seekToken;
+      const resumeIfCurrent = () => {
+        if (token !== this._seekToken) return;
+        if (wasPlaying) {
+          try { video.play().catch(() => {}); } catch (e) { /* ignore */ }
+        }
+      };
+      const onSeeked = () => resumeIfCurrent();
+      const onCanPlay = () => resumeIfCurrent();
+      video.addEventListener('seeked', onSeeked, { once: true });
+      video.addEventListener('canplay', onCanPlay, { once: true });
+      try { video.pause(); } catch (e) { /* ignore */ }
+      try { video.currentTime = time; } catch (e) { /* ignore */ }
     }
 
     _createPreviewElements() {
@@ -106,6 +321,8 @@ class PlayerState {
       this.canvas.removeEventListener('click', this.boundHandlers.click);
       this.canvas.removeEventListener('pointermove', this.boundHandlers.pointerMove);
       this.canvas.removeEventListener('pointerdown', this.boundHandlers.pointerDown);
+      this.canvas.removeEventListener('pointerup', this.boundHandlers.pointerUp);
+      this.canvas.removeEventListener('pointerleave', this.boundHandlers.pointerLeave);
       this.stopAllVideos();
     }
 
@@ -274,6 +491,7 @@ class PlayerState {
       if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
         console.log('[VideoPlayer] Back button clicked');
         this.exitPlayer();
+        this.keepControlsVisible();
         return;
       }
 
@@ -288,50 +506,191 @@ class PlayerState {
         } else {
           video.pause();
         }
-        this.showControlsTemporarily();
+        this.keepControlsVisible();
         return;
       }
 
       // Mute button
       const mb = ui.bottom.mute;
       if (pt.x >= mb.x && pt.x <= mb.x + mb.w && pt.y >= mb.y && pt.y <= mb.y + mb.h) {
-        video.muted = !video.muted;
-        this.showControlsTemporarily();
+        if (this.config.onToggleMute) {
+          this.config.onToggleMute(video);
+        } else {
+          video.muted = !video.muted;
+          if (!video.muted && video.volume > 0.001) {
+            this.uiState.lastVolume = video.volume;
+          }
+        }
+        this.keepControlsVisible();
         return;
       }
 
-      // Progress bar seek
-      const pr = ui.bottom.progress;
-      if (pt.x >= pr.x && pt.x <= pr.x + pr.w && pt.y >= pr.y - 16 && pt.y <= pr.y + pr.h + 16) {
-        if (video && video.duration) {
-          const t = Math.max(0, Math.min(1, (pt.x - pr.x) / pr.w)) * video.duration;
-          try {
-            video.currentTime = t;
-          } catch (e) {
-            console.warn('[VideoPlayer] Seek failed:', e);
+        // Progress bar seek
+        const pr = ui.bottom.progress;
+        if (pt.x >= pr.x && pt.x <= pr.x + pr.w && pt.y >= pr.y - 16 && pt.y <= pr.y + pr.h + 16) {
+          if (video && video.duration) {
+            const t = Math.max(0, Math.min(1, (pt.x - pr.x) / pr.w)) * video.duration;
+            this.seekWithFreeze(video, t);
+            this.keepControlsVisible();
           }
-          this.showControlsTemporarily();
         }
+
+        // Sync slider
+        const ss = ui.top.syncSlider;
+        if (pt.x >= ss.x && pt.x <= ss.x + ss.w && pt.y >= ss.y - 8 && pt.y <= ss.y + ss.h + 8) {
+          const ratio = Math.max(0, Math.min(1, (pt.x - ss.x) / ss.w));
+          const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+          setStoredSyncMsLocal(ms);
+          this.keepControlsVisible();
+          return;
+        }
+
+      // Volume slider
+      const vs = ui.bottom.volumeSlider;
+      if (pt.x >= vs.x && pt.x <= vs.x + vs.w && pt.y >= vs.y - 8 && pt.y <= vs.y + vs.h + 8) {
+        const ratio = Math.max(0, Math.min(1, (pt.x - vs.x) / vs.w));
+        if (this.config.onVolumeChange) {
+          this.config.onVolumeChange(ratio, video);
+        } else {
+          try { video.volume = ratio; } catch (e) { /* ignore */ }
+          video.muted = ratio <= 0.001;
+          if (ratio > 0.001) this.uiState.lastVolume = ratio;
+        }
+        this.keepControlsVisible();
+        return;
+      }
+
+      // Speed toggle
+      const sr = ui.bottom.speed;
+      if (pt.x >= sr.x && pt.x <= sr.x + sr.w && pt.y >= sr.y && pt.y <= sr.y + sr.h) {
+        this.uiState.playbackRateIndex = (this.uiState.playbackRateIndex + 1) % this.playbackRates.length;
+        SharedVC.applyPlaybackSettings(video, this.uiState, this.playbackRates);
+        this.keepControlsVisible();
+        return;
+      }
+
+      // Pitch/time toggle
+      const pr2 = ui.bottom.pitch;
+      if (pt.x >= pr2.x && pt.x <= pr2.x + pr2.w && pt.y >= pr2.y && pt.y <= pr2.y + pr2.h) {
+        this.uiState.preservePitch = !this.uiState.preservePitch;
+        SharedVC.setPreservePitchFlag(video, this.uiState.preservePitch);
+        if (this.config.onPitchToggle) {
+          this.config.onPitchToggle(this.uiState.preservePitch, video);
+        }
+        this.keepControlsVisible();
+        return;
+      }
+
+      // Toggle playback when clicking the video surface.
+      const bounds = this.controlsBounds || { x: 0, y: 0, w: this.canvas.width, h: this.canvas.height };
+      if (pt.x >= bounds.x && pt.x <= bounds.x + bounds.w && pt.y >= bounds.y && pt.y <= bounds.y + bounds.h) {
+        if (video.paused) {
+          video.play().catch(e => console.warn('[VideoPlayer] Play failed:', e));
+        } else {
+          video.pause();
+        }
+        this.keepControlsVisible();
       }
     }
 
-    handlePointerMove(event) {
-      if (!this.state.playingFull) return;
-      this.state.lastPointerMoveTs = performance.now();
-      if (this.state.controlsTarget === 0) {
-        this.state.controlsTarget = 1;
-        this.state.controlsAnimStart = performance.now();
+      handlePointerMove(event) {
+        if (!this.state.playingFull) return;
+        this.keepControlsVisible();
+        if (this.dragState) {
+          const pt = this.getCanvasPoint(event);
+          const ui = this.getControlsLayout();
+          const video = this.getActiveVideo();
+          if (!pt || !video) return;
+        if (this.dragState.type === 'progress') {
+          const pr = ui.bottom.progress;
+          const ratio = Math.max(0, Math.min(1, (pt.x - pr.x) / pr.w));
+          if (video.duration) this.seekWithFreeze(video, ratio * video.duration);
+          this.keepControlsVisible();
+          return;
+        }
+        if (this.dragState.type === 'volume') {
+          const vs = ui.bottom.volumeSlider;
+          const ratio = Math.max(0, Math.min(1, (pt.x - vs.x) / vs.w));
+          if (this.config.onVolumeChange) {
+            this.config.onVolumeChange(ratio, video);
+          } else {
+            try { video.volume = ratio; } catch (e) { /* ignore */ }
+            video.muted = ratio <= 0.001;
+            if (ratio > 0.001) this.uiState.lastVolume = ratio;
+          }
+          this.keepControlsVisible();
+          return;
+        }
+        if (this.dragState.type === 'sync') {
+          const ss = ui.top.syncSlider;
+          const ratio = Math.max(0, Math.min(1, (pt.x - ss.x) / ss.w));
+          const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+          setStoredSyncMsLocal(ms);
+          this.keepControlsVisible();
+          return;
+        }
       }
-      // update hover preview if over progress bar
-      try { this._updateHoverPreview(event); } catch (e) { /* ignore */ }
-    }
+        this.state.lastPointerMoveTs = performance.now();
+        // update hover preview if over progress bar
+        try { this._updateHoverPreview(event); } catch (e) { /* ignore */ }
+      }
 
     handlePointerDown(event) {
       // Reset interactions if not in full player mode
       if (!this.state.playingFull) {
         this.state.reset();
+        return;
+      }
+      const pt = this.getCanvasPoint(event);
+      const ui = this.getControlsLayout();
+      const video = this.getActiveVideo();
+      if (!pt || !video) return;
+
+      const inProgress = pt.x >= ui.bottom.progress.x && pt.x <= ui.bottom.progress.x + ui.bottom.progress.w &&
+        pt.y >= ui.bottom.progress.y - 16 && pt.y <= ui.bottom.progress.y + ui.bottom.progress.h + 16;
+      if (inProgress) {
+        this.dragState = { type: 'progress' };
+        const ratio = Math.max(0, Math.min(1, (pt.x - ui.bottom.progress.x) / ui.bottom.progress.w));
+        if (video.duration) this.seekWithFreeze(video, ratio * video.duration);
+        this.keepControlsVisible();
+        return;
+      }
+
+      const inVolume = pt.x >= ui.bottom.volumeSlider.x && pt.x <= ui.bottom.volumeSlider.x + ui.bottom.volumeSlider.w &&
+        pt.y >= ui.bottom.volumeSlider.y - 8 && pt.y <= ui.bottom.volumeSlider.y + ui.bottom.volumeSlider.h + 8;
+      if (inVolume) {
+        this.dragState = { type: 'volume' };
+        const ratio = Math.max(0, Math.min(1, (pt.x - ui.bottom.volumeSlider.x) / ui.bottom.volumeSlider.w));
+        if (this.config.onVolumeChange) {
+          this.config.onVolumeChange(ratio, video);
+        } else {
+          try { video.volume = ratio; } catch (e) { /* ignore */ }
+          video.muted = ratio <= 0.001;
+          if (ratio > 0.001) this.uiState.lastVolume = ratio;
+        }
+        this.keepControlsVisible();
+        return;
+      }
+
+      const inSync = pt.x >= ui.top.syncSlider.x && pt.x <= ui.top.syncSlider.x + ui.top.syncSlider.w &&
+        pt.y >= ui.top.syncSlider.y - 8 && pt.y <= ui.top.syncSlider.y + ui.top.syncSlider.h + 8;
+      if (inSync) {
+        this.dragState = { type: 'sync' };
+        const ratio = Math.max(0, Math.min(1, (pt.x - ui.top.syncSlider.x) / ui.top.syncSlider.w));
+        const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+        setStoredSyncMsLocal(ms);
+        this.keepControlsVisible();
+        return;
       }
     }
+
+      handlePointerUp() {
+        this.dragState = null;
+      }
+
+      handlePointerLeave() {
+        this.dragState = null;
+      }
 
     showControlsTemporarily() {
       this.state.lastPointerMoveTs = performance.now();
@@ -405,35 +764,103 @@ class PlayerState {
         }
         return this.controlsBounds || { x: 0, y: 0, w: CW, h: CH };
       })();
-      const BAR_H = Math.max(24, Math.round(bounds.h * 0.08));
-      const ICON_SIZE = Math.round(BAR_H * 0.5);
-      const PAD = Math.round(BAR_H * 0.25);
 
-      return {
-        top: {
-          x: bounds.x,
-          y: bounds.y,
-          w: bounds.w,
-          h: BAR_H,
-          back: { x: bounds.x + PAD, y: bounds.y + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE }
-        },
-        bottom: {
-          x: bounds.x,
-          y: bounds.y + bounds.h - BAR_H,
-          w: bounds.w,
-          h: BAR_H,
-          play: { x: bounds.x + PAD, y: bounds.y + bounds.h - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
-          mute: { x: bounds.x + PAD * 2 + ICON_SIZE, y: bounds.y + bounds.h - BAR_H + (BAR_H - ICON_SIZE) / 2, w: ICON_SIZE, h: ICON_SIZE },
-          progress: { x: bounds.x + PAD * 3 + ICON_SIZE * 2, y: bounds.y + bounds.h - BAR_H + BAR_H / 2 - 2, w: bounds.w - (PAD * 4 + ICON_SIZE * 2), h: 4 }
-        }
+      const TOP_H = Math.max(24, Math.round(bounds.h * 0.08));
+      const BOTTOM_H = Math.max(32, Math.round(bounds.h * 0.12));
+      const TOP_PAD = Math.round(Math.max(14, TOP_H * 0.22));
+      const TOP_ICON = Math.round(Math.min(TOP_H * 0.72, bounds.w * 0.09));
+      const sliderW = Math.min(bounds.w * 0.45, Math.max(600, bounds.w * 0.35));
+      const syncSliderW = sliderW;
+      const syncSliderH = Math.max(4, Math.round(TOP_H * 0.16));
+      const syncIcon = Math.round(TOP_ICON * 0.85);
+      const top = {
+        x: bounds.x,
+        y: bounds.y,
+        w: bounds.w,
+        h: TOP_H,
+        back: { x: bounds.x + TOP_PAD, y: bounds.y + (TOP_H - TOP_ICON) / 2, w: TOP_ICON, h: TOP_ICON }
       };
-    }
+      const syncSliderY = bounds.y + Math.round(TOP_H * 0.62);
+      const syncSlider = {
+        x: bounds.x + bounds.w - TOP_PAD - syncSliderW,
+        y: syncSliderY,
+        w: syncSliderW,
+        h: syncSliderH
+      };
+      const syncTextY = Math.round(syncSliderY - TOP_H * 0.18);
+      const syncRect = {
+        x: syncSlider.x - syncIcon - Math.round(TOP_PAD * 0.4),
+        y: bounds.y + (TOP_H - syncIcon) / 2,
+        w: syncIcon,
+        h: syncIcon
+      };
+      const titleX = top.back.x + top.back.w + TOP_PAD * 0.6;
+      const titleRight = syncRect.x - TOP_PAD * 0.6;
+      top.title = { x: titleX, y: bounds.y, w: Math.max(80, titleRight - titleX), h: TOP_H };
+      top.sync = syncRect;
+      top.syncSlider = syncSlider;
+      top.syncTextY = syncTextY;
+
+      const bottom = {
+        x: bounds.x,
+        y: bounds.y + bounds.h - BOTTOM_H,
+        w: bounds.w,
+        h: BOTTOM_H
+      };
+      const PAD = Math.round(Math.max(12, BOTTOM_H * 0.18));
+      const ICON = Math.round(Math.min(BOTTOM_H * 0.72, bottom.w * 0.085));
+      const progressH = Math.max(4, Math.round(BOTTOM_H * 0.14));
+      const progress = { x: bottom.x + PAD, y: bottom.y + Math.round(PAD * 0.55), w: bottom.w - PAD * 2, h: progressH };
+
+      const iconRowY = Math.round(progress.y + progress.h + (BOTTOM_H - (progress.y - bottom.y + progress.h) - ICON) * 0.55);
+      const play = { x: bottom.x + PAD, y: iconRowY, w: ICON, h: ICON };
+      const mute = { x: play.x + ICON + Math.round(PAD * 0.55), y: iconRowY, w: ICON, h: ICON };
+      const volumeSlider = { x: mute.x + ICON + Math.round(PAD * 0.5), y: iconRowY + (ICON - BOTTOM_H * 0.22) / 2, w: sliderW, h: BOTTOM_H * 0.22 };
+
+      const timeH = Math.round(BOTTOM_H * 0.38);
+      const timeW = Math.max(160, Math.round(bottom.w * 0.2));
+      const time = { x: bottom.x + (bottom.w - timeW) / 2, y: iconRowY + (ICON - timeH) / 2, w: timeW, h: timeH };
+
+      const clusterGapSmall = Math.max(4, Math.round(PAD * 0.24));
+      const boxW = Math.round(ICON * 1.4);
+      const boxH = Math.round(ICON * 0.95);
+      const dividerW = Math.max(4, Math.round(PAD * 0.35));
+      let cursor = bottom.x + bottom.w - PAD;
+      cursor -= boxW;
+      const pitch = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
+      cursor -= clusterGapSmall + boxW;
+      const speed = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
+      const divider = { x: speed.x + speed.w + Math.round(clusterGapSmall / 2), y: iconRowY + Math.round(ICON * 0.15), w: dividerW, h: Math.round(ICON * 0.7) };
+
+        return {
+          top,
+          bottom: {
+            ...bottom,
+            play,
+            mute,
+            progress,
+            volumeSlider,
+            time,
+            speed,
+            pitch,
+            divider
+          }
+        };
+      }
 
     updateControls() {
       const video = this.getActiveVideo();
       if (!video) return;
       if (this.config.controlsOnlyWhenPlaying && (video.paused || video.ended)) {
         this.state.controlsVisible = 0;
+        return;
+      }
+      if (video.paused && !video.ended) {
+        // Keep controls fully visible when paused.
+        this.state.controlsTarget = 1;
+        this.state.controlsVisible = 1;
+        this.state.controlsAnimStart = 0;
+        this.state.lastPointerMoveTs = performance.now();
         return;
       }
       if (!this.state.controlsAnimStart) {
@@ -464,114 +891,162 @@ class PlayerState {
       if (!video) return;
 
       const finalAlpha = alpha * this.state.controlsVisible;
+      const theme = getControlsTheme();
+      const audioState = this.config.getAudioState ? this.config.getAudioState(video) : null;
+      const displayMuted = audioState ? !!audioState.muted : !!video.muted;
+      const displayVolume = audioState ? (audioState.volume || 0) : (video.volume || 0);
+      const bgAlpha = theme.bgAlpha;
+      const iconAlpha = finalAlpha;
       ctx.save();
       ctx.globalAlpha = finalAlpha;
 
       // Top bar with back button
-      ctx.fillStyle = 'rgba(12,12,12,0.92)';
+      ctx.fillStyle = theme.bg;
+      ctx.globalAlpha = finalAlpha * bgAlpha;
       ctx.fillRect(ui.top.x, ui.top.y, ui.top.w, ui.top.h);
+      ctx.globalAlpha = iconAlpha;
 
       // Back button (chevron)
-      this.drawBackButton(ui.top.back);
+      this.drawBackButton(ui.top.back, theme.fg);
 
-      // Bottom bar
-      ctx.fillStyle = 'rgba(12,12,12,0.92)';
-      ctx.fillRect(ui.bottom.x, ui.bottom.y, ui.bottom.w, ui.bottom.h);
+        // Title text
+        const title = (video && video.dataset && video.dataset.title) || this.config.title || 'Video';
+        ctx.save();
+        ctx.fillStyle = theme.fg;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = `${Math.round(ui.top.h * 0.42)}px "Source Sans 3","Segoe UI",sans-serif`;
+        ctx.fillText(title, ui.top.title.x + ui.top.title.w / 2, ui.top.title.y + ui.top.title.h / 2 + 1);
+        ctx.restore();
+
+        // Sync slider (clock icon + bar)
+        const syncMs = getStoredSyncMsLocal();
+        const syncRatio = Math.max(0, Math.min(1, (syncMs + SYNC_RANGE_MS) / (SYNC_RANGE_MS * 2)));
+        drawClockIcon(ctx, ui.top.sync, theme.fg);
+        ctx.save();
+        ctx.globalAlpha = iconAlpha;
+        ctx.fillStyle = theme.fg;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.font = `${Math.round(ui.top.h * 0.28)}px "Source Sans 3","Segoe UI",sans-serif`;
+        ctx.fillText(`${syncMs}ms`, ui.top.syncSlider.x + ui.top.syncSlider.w / 2, ui.top.syncTextY);
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = iconAlpha * 0.35;
+        ctx.fillStyle = theme.fg;
+        ctx.fillRect(ui.top.syncSlider.x, ui.top.syncSlider.y, ui.top.syncSlider.w, ui.top.syncSlider.h);
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = iconAlpha;
+        ctx.fillStyle = theme.fg;
+        ctx.fillRect(ui.top.syncSlider.x, ui.top.syncSlider.y, ui.top.syncSlider.w * syncRatio, ui.top.syncSlider.h);
+        const syncDot = ui.top.syncSlider.x + ui.top.syncSlider.w * syncRatio;
+        ctx.beginPath();
+        ctx.arc(syncDot, ui.top.syncSlider.y + ui.top.syncSlider.h / 2, Math.max(4, Math.round(ui.top.syncSlider.h * 0.7)), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Bottom bar
+        ctx.fillStyle = theme.bg;
+        ctx.globalAlpha = finalAlpha * bgAlpha;
+        ctx.fillRect(ui.bottom.x, ui.bottom.y, ui.bottom.w, ui.bottom.h);
+        ctx.globalAlpha = iconAlpha;
 
       // Play/pause button
-      this.drawPlayButton(ui.bottom.play, video.paused);
+      this.drawPlayButton(ui.bottom.play, video.paused, theme.fg);
 
       // Mute button
-      this.drawMuteButton(ui.bottom.mute, video.muted);
+        this.drawMuteButton(ui.bottom.mute, displayMuted, theme.fg, displayVolume);
 
-      // Progress bar
-      this.drawProgressBar(ui.bottom.progress, video);
+      // Progress bar (top of bottom bar)
+      this.drawProgressBar(ui.bottom.progress, video, theme.fg);
+
+        // Volume slider
+        const vs = ui.bottom.volumeSlider;
+        const volume = displayMuted ? 0 : Math.max(0, Math.min(1, displayVolume || 0));
+        ctx.save();
+      ctx.globalAlpha = iconAlpha * 0.35;
+      ctx.fillStyle = theme.fg;
+      ctx.fillRect(vs.x, vs.y, vs.w, vs.h);
+      ctx.restore();
+
+      ctx.save();
+      ctx.globalAlpha = iconAlpha;
+      ctx.fillStyle = theme.fg;
+      ctx.fillRect(vs.x, vs.y, vs.w * volume, vs.h);
+      const dotX = vs.x + vs.w * volume;
+      ctx.beginPath();
+      ctx.arc(dotX, vs.y + vs.h / 2, Math.max(4, Math.round(vs.h * 0.6)), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        if (video.paused || video.ended) {
+          const rect = { x: ui.top.x, y: ui.top.y, w: ui.top.w, h: (ui.bottom.y + ui.bottom.h) - ui.top.y };
+          drawCenterPlayOverlay(ctx, rect, theme.fg, finalAlpha);
+        }
+
+      // Time text
+      const timeStr = `${formatTime(video.currentTime || 0)} / ${formatTime(video.duration || 0)}`;
+      ctx.save();
+      ctx.globalAlpha = finalAlpha;
+      ctx.fillStyle = theme.fg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(ui.bottom.time.h * 0.9)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.fillText(timeStr, ui.bottom.time.x + ui.bottom.time.w / 2, ui.bottom.time.y + ui.bottom.time.h / 2 + 1);
+      ctx.restore();
+
+      // Speed / pitch labels
+      const rate = this.playbackRates[Math.max(0, Math.min(this.playbackRates.length - 1, this.uiState.playbackRateIndex))];
+      ctx.save();
+      ctx.globalAlpha = finalAlpha;
+      ctx.fillStyle = theme.fg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(ui.bottom.speed.h * 0.5)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.fillText(`${rate}x`, ui.bottom.speed.x + ui.bottom.speed.w / 2, ui.bottom.speed.y + ui.bottom.speed.h / 2 + 1);
+      ctx.restore();
+
+      const pitchLabel = this.uiState.preservePitch ? ['Pitch', 'Shift'] : ['Time', 'Stretch'];
+      ctx.save();
+      ctx.globalAlpha = finalAlpha;
+      ctx.fillStyle = theme.fg;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${Math.round(ui.bottom.pitch.h * 0.40)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.fillText(pitchLabel[0], ui.bottom.pitch.x + ui.bottom.pitch.w / 2, ui.bottom.pitch.y + ui.bottom.pitch.h * 0.38);
+      ctx.fillText(pitchLabel[1], ui.bottom.pitch.x + ui.bottom.pitch.w / 2, ui.bottom.pitch.y + ui.bottom.pitch.h * 0.78);
+      ctx.restore();
+
+      // Divider between pitch/speed and right edge
+      ctx.save();
+      ctx.globalAlpha = finalAlpha * 0.65;
+      ctx.fillStyle = theme.fg;
+      ctx.fillRect(ui.bottom.divider.x, ui.bottom.divider.y, ui.bottom.divider.w, ui.bottom.divider.h);
+      ctx.restore();
 
       ctx.restore();
     }
 
-    drawBackButton(rect) {
-      const ctx = this.ctx;
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(rect.x + rect.w * 0.68, rect.y + rect.h * 0.22);
-      ctx.lineTo(rect.x + rect.w * 0.32, rect.y + rect.h * 0.50);
-      ctx.lineTo(rect.x + rect.w * 0.68, rect.y + rect.h * 0.78);
-      ctx.stroke();
+    drawBackButton(rect, color) {
+      if (drawIconAsset(this.ctx, rect, 'back', color)) return;
+      SharedVC.drawBackButton(this.ctx, rect, color);
     }
 
-    drawPlayButton(rect, paused) {
-      const ctx = this.ctx;
-      ctx.fillStyle = '#fff';
-      if (paused) {
-        // Play triangle
-        ctx.beginPath();
-        ctx.moveTo(rect.x + rect.w * 0.30, rect.y + rect.h * 0.20);
-        ctx.lineTo(rect.x + rect.w * 0.30, rect.y + rect.h * 0.80);
-        ctx.lineTo(rect.x + rect.w * 0.80, rect.y + rect.h * 0.50);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        // Pause bars
-        ctx.fillRect(rect.x + rect.w * 0.25, rect.y + rect.h * 0.20, rect.w * 0.20, rect.h * 0.60);
-        ctx.fillRect(rect.x + rect.w * 0.55, rect.y + rect.h * 0.20, rect.w * 0.20, rect.h * 0.60);
-      }
+    drawPlayButton(rect, paused, color) {
+      const name = paused ? 'play' : 'pause';
+      if (drawIconAsset(this.ctx, rect, name, color)) return;
+      SharedVC.drawPlayButton(this.ctx, rect, paused, color);
     }
 
-    drawMuteButton(rect, muted) {
-      const ctx = this.ctx;
-      ctx.fillStyle = '#fff';
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      
-      // Speaker icon
-      ctx.beginPath();
-      ctx.moveTo(rect.x + rect.w * 0.20, rect.y + rect.h * 0.35);
-      ctx.lineTo(rect.x + rect.w * 0.40, rect.y + rect.h * 0.35);
-      ctx.lineTo(rect.x + rect.w * 0.60, rect.y + rect.h * 0.15);
-      ctx.lineTo(rect.x + rect.w * 0.60, rect.y + rect.h * 0.85);
-      ctx.lineTo(rect.x + rect.w * 0.40, rect.y + rect.h * 0.65);
-      ctx.lineTo(rect.x + rect.w * 0.20, rect.y + rect.h * 0.65);
-      ctx.closePath();
-      ctx.fill();
-
-      if (muted) {
-        // X mark
-        ctx.beginPath();
-        ctx.moveTo(rect.x + rect.w * 0.70, rect.y + rect.h * 0.30);
-        ctx.lineTo(rect.x + rect.w * 0.94, rect.y + rect.h * 0.70);
-        ctx.moveTo(rect.x + rect.w * 0.94, rect.y + rect.h * 0.30);
-        ctx.lineTo(rect.x + rect.w * 0.70, rect.y + rect.h * 0.70);
-        ctx.stroke();
-      } else {
-        // Sound waves
-        ctx.beginPath();
-        ctx.arc(rect.x + rect.w * 0.70, rect.y + rect.h * 0.50, rect.w * 0.15, -Math.PI/4, Math.PI/4);
-        ctx.stroke();
-      }
+    drawMuteButton(rect, muted, color, volume = 1) {
+      const name = getVolumeIconName(volume, muted);
+      if (drawIconAsset(this.ctx, rect, name, color)) return;
+      SharedVC.drawMuteButton(this.ctx, rect, muted, color);
     }
 
-    drawProgressBar(rect, video) {
-      const ctx = this.ctx;
-      
-      // Background track
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-
-      // Progress fill
-      const progress = video.duration > 0 ? video.currentTime / video.duration : 0;
-      ctx.fillStyle = '#1e90ff';
-      ctx.fillRect(rect.x, rect.y, rect.w * progress, rect.h);
-
-      // Scrubber dot
-      const dotX = rect.x + rect.w * progress;
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(dotX, rect.y + rect.h / 2, 6, 0, Math.PI * 2);
-      ctx.fill();
+    drawProgressBar(rect, video, color) {
+      SharedVC.drawProgressBar(this.ctx, rect, video, color);
     }
 
     // Hover preview helpers
@@ -778,6 +1253,7 @@ class PlayerState {
       controlsCanvas.height = requestedH;
       const ctx = gridCanvas.getContext('2d');
       const ctrlCtx = controlsCanvas.getContext('2d');
+      let sharedControls = null;
 
       const syncControlCanvasSize = () => {
         controlsCanvas.width = gridCanvas.width;
@@ -919,7 +1395,7 @@ class PlayerState {
       const iconColor = '#ffa94d';
       const iconFont = '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
 
-      const playbackRates = [0.5, 0.75, 1, 1.25, 1.5, 2];
+      const playbackRates = SharedVC.playbackRates;
       const uiState = {
         playbackRateIndex: playbackRates.indexOf(1) >= 0 ? playbackRates.indexOf(1) : 0,
         preservePitch: true, // time-stretch default
@@ -973,8 +1449,7 @@ class PlayerState {
       }
 
       function getStoredSyncMs() {
-        const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
-        return Number.isFinite(raw) ? raw : 0;
+        return SharedVC.getStoredSyncMs();
       }
 
       function isAudioDebugEnabled() {
@@ -1018,38 +1493,33 @@ class PlayerState {
         pendingClickPos = null;
       }
 
+      function setSharedControls(ui, adapter) {
+        if (ui && adapter) {
+          sharedControls = { ui, adapter };
+          try {
+            if (sharedControls.ui.setViewportRectProvider) {
+              sharedControls.ui.setViewportRectProvider(sharedControls.adapter.getViewportRect);
+            }
+          } catch (e) { /* ignore */ }
+        } else {
+          sharedControls = null;
+        }
+      }
+
       function setPreservePitchFlag(video, preserve) {
-        if (!video) return;
-        try { video.preservesPitch = preserve; } catch (e) { /* ignore */ }
-        try { video.mozPreservesPitch = preserve; } catch (e) { /* ignore */ }
-        try { video.webkitPreservesPitch = preserve; } catch (e) { /* ignore */ }
+        SharedVC.setPreservePitchFlag(video, preserve);
       }
 
       function applyPlaybackSettings(video) {
-        if (!video) return;
-        const rate = playbackRates[Math.max(0, Math.min(playbackRates.length - 1, uiState.playbackRateIndex))];
-        try { video.playbackRate = rate; } catch (e) { /* ignore */ }
-        setPreservePitchFlag(video, uiState.preservePitch);
+        SharedVC.applyPlaybackSettings(video, uiState, playbackRates);
       }
 
       function applyAudioPlaybackSettings(audio) {
-        if (!audio) return;
-        const rate = playbackRates[Math.max(0, Math.min(playbackRates.length - 1, uiState.playbackRateIndex))];
-        try { audio.playbackRate = rate; } catch (e) { /* ignore */ }
-        setPreservePitchFlag(audio, uiState.preservePitch);
+        SharedVC.applyAudioPlaybackSettings(audio, uiState, playbackRates);
       }
 
       function toggleMute(video) {
-        if (!video) return;
-        if (video.muted || video.volume <= 0.0001) {
-          const target = uiState.lastVolume > 0.001 ? uiState.lastVolume : 0.5;
-          video.muted = false;
-          try { video.volume = target; } catch (e) { /* ignore */ }
-        } else {
-          uiState.lastVolume = video.volume || uiState.lastVolume || 0.5;
-          video.muted = true;
-          try { video.volume = 0; } catch (e) { /* ignore */ }
-        }
+        SharedVC.toggleMute(video, uiState);
       }
 
       function saveCamPose() {
@@ -1329,11 +1799,19 @@ class PlayerState {
       } catch (e) { /* ignore */ }
 
       function canUseAudio() {
-        return !!opts.allowSound && localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+        return SharedVC.canUseAudio(!!opts.allowSound);
       }
 
       function getFullAudio(idx) {
         return fullAudios[idx];
+      }
+
+      function getActiveVideo() {
+        return (fullIndex >= 0 && fullIndex < fullVideos.length) ? fullVideos[fullIndex] : null;
+      }
+
+      function getActiveAudio() {
+        return (fullIndex >= 0 && fullIndex < fullAudios.length) ? fullAudios[fullIndex] : null;
       }
 
       function ensureVideoMuted(video) {
@@ -1359,6 +1837,30 @@ class PlayerState {
           setStoredVolumeFromRatio(0);
         }
         applyAudioSettings(getFullAudio(fullIndex));
+      }
+
+      function setVolumeRatio(ratio) {
+        setStoredVolumeFromRatio(ratio);
+        applyAudioSettings(getFullAudio(fullIndex));
+      }
+
+      function setPlaybackRate(rate) {
+        const r = Number(rate);
+        if (!Number.isFinite(r) || r <= 0) return;
+        const nearest = playbackRates.reduce((best, v, i) => {
+          const d = Math.abs(v - r);
+          return d < best.d ? { i, d } : best;
+        }, { i: uiState.playbackRateIndex, d: Infinity });
+        uiState.playbackRateIndex = nearest.i;
+        applySettingsToAllVideos();
+      }
+
+      function getAudioSettings() {
+        return getEffectiveAudioSettings();
+      }
+
+      function exitPlayback() {
+        if (fullIndex >= 0) startZoomOut(fullIndex);
       }
 
       function startFullPlayback(idx) {
@@ -1388,18 +1890,7 @@ class PlayerState {
         try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
       }
 
-      const audioSyncState = fullAudios.map(() => ({
-        driftEma: 0,
-        lastAdjustTs: 0,
-        lastHardTs: 0,
-        rateAdjusted: false,
-        lastDrift: 0,
-        lastDriftSmooth: 0,
-        lastAheadA: 0,
-        lastAheadV: 0,
-        didHardSeek: false,
-        didSoftAdjust: false
-      }));
+      const audioSyncState = fullAudios.map(() => SharedVC.createAudioSyncState());
       const debugOverlayState = { lastDrawTs: 0, snapshot: null };
 
       function resetAudioSyncState(idx) {
@@ -1417,99 +1908,19 @@ class PlayerState {
         audioSyncState[idx] = state;
       }
 
-      function syncAudioToVideo(video, audio, idx, opts = {}) {
-        if (!video || !audio) return;
-        if (!canUseAudio()) return;
-        if (video.paused || audio.paused) return;
-        if (video.seeking || audio.seeking) return;
-        if (!Number.isFinite(video.currentTime)) return;
-        if (audio.readyState < 2) return; // wait for enough data
-        const syncMs = getStoredSyncMs();
-        const syncSec = syncMs / 1000;
-        let target = video.currentTime - syncSec;
-        if (target < 0) target = 0;
-        const drift = audio.currentTime - target;
-        const absDrift = Math.abs(drift);
-        const now = Number.isFinite(opts.now) ? opts.now : performance.now();
-        const state = audioSyncState[idx] || (audioSyncState[idx] = {
-          driftEma: 0,
-          lastAdjustTs: 0,
-          lastHardTs: 0,
-          rateAdjusted: false,
-          lastDrift: 0,
-          lastDriftSmooth: 0,
-          lastAheadA: 0,
-          lastAheadV: 0,
-          didHardSeek: false,
-          didSoftAdjust: false
+      function syncAudioToVideo(video, audio, idx, syncOpts = {}) {
+        const state = audioSyncState[idx] || (audioSyncState[idx] = SharedVC.createAudioSyncState());
+        SharedVC.syncAudioToVideo(video, audio, state, {
+          ...syncOpts,
+          allowSound: !!opts.allowSound,
+          uiState,
+          rates: playbackRates,
+          syncMs: getStoredSyncMs()
         });
-
-        state.didHardSeek = false;
-        state.didSoftAdjust = false;
-
-        const aAhead = getBufferedAhead(audio);
-        const vAhead = getBufferedAhead(video);
-        state.lastAheadA = aAhead;
-        state.lastAheadV = vAhead;
-        if (aAhead < 0.15) return;
-        if (vAhead < 0.10) return;
-
-        const alpha = 0.15;
-        const prevEma = Number.isFinite(state.driftEma) ? state.driftEma : 0;
-        state.driftEma = prevEma * (1 - alpha) + drift * alpha;
-        const driftSmooth = state.driftEma;
-
-        state.lastDrift = drift;
-        state.lastDriftSmooth = driftSmooth;
-
-        const hardThreshold = opts.force ? 0 : 0.9;
-        const hardCooldown = 1500;
-        const canHardSeek = absDrift > hardThreshold &&
-          aAhead >= 1.0 && vAhead >= 0.5 &&
-          (now - state.lastHardTs) > hardCooldown;
-
-        if (canHardSeek) {
-          try { audio.currentTime = target; } catch (e) { /* ignore */ }
-          state.driftEma = 0;
-          applyAudioPlaybackSettings(audio);
-          state.lastHardTs = now;
-          state.rateAdjusted = false;
-          state.didHardSeek = true;
-          return;
-        }
-
-        const softThreshold = 0.08;
-        const maxAdjust = 0.012; // +/-1.2%
-        const adjustInterval = 120;
-        const kP = 0.35;
-        if (Math.abs(driftSmooth) > softThreshold && (now - state.lastAdjustTs) > adjustInterval) {
-          const baseRate = video.playbackRate || 1;
-          const adjust = Math.max(-maxAdjust, Math.min(maxAdjust, -driftSmooth * kP));
-          try { audio.playbackRate = baseRate * (1 + adjust); } catch (e) { /* ignore */ }
-          setPreservePitchFlag(audio, uiState.preservePitch);
-          state.lastAdjustTs = now;
-          state.rateAdjusted = true;
-          state.didSoftAdjust = true;
-          return;
-        }
-
-        if (state.rateAdjusted && (now - state.lastAdjustTs) > 400) {
-          applyAudioPlaybackSettings(audio);
-          state.rateAdjusted = false;
-        }
       }
 
       function getBufferedAhead(media) {
-        try {
-          if (!media || !media.buffered || media.buffered.length === 0) return 0;
-          const t = media.currentTime || 0;
-          for (let i = 0; i < media.buffered.length; i++) {
-            const start = media.buffered.start(i);
-            const end = media.buffered.end(i);
-            if (t >= start && t <= end) return Math.max(0, end - t);
-          }
-        } catch (e) { /* ignore */ }
-        return 0;
+        return SharedVC.getBufferedAhead(media);
       }
 
       function drawSyncDebugOverlay(ctx, video, audio, idx, surfaceRect, now) {
@@ -1770,6 +2181,16 @@ class PlayerState {
 
       const rayHelper = createTabletRaycaster(camera, overlayMesh || screenMesh);
       const canvasRect = () => renderer.domElement.getBoundingClientRect();
+      const getViewportRect = () => {
+        try {
+          if (gridCanvas && gridCanvas.getBoundingClientRect) {
+            const r = gridCanvas.getBoundingClientRect();
+            if (r && r.width > 0 && r.height > 0) return r;
+          }
+        } catch (e) { /* ignore */ }
+        try { return canvasRect(); } catch (e) { /* ignore */ }
+        return null;
+      };
 
       const multiRaycaster = new THREE.Raycaster();
       const multiNdc = new THREE.Vector2();
@@ -2127,7 +2548,29 @@ class PlayerState {
         const bottomBar = { x: surfaceRect.x, y: surfaceRect.y + surfaceRect.h - BAR_H - bottomOffset, w: surfaceRect.w, h: BAR_H };
 
         const backRect = { x: topBar.x + PAD * 0.6, y: topBar.y + (BAR_H - ICON * 1.05) / 2, w: ICON * 1.05, h: ICON * 1.05 };
-        const titleRect = { x: topBar.x + PAD * 2, y: surfaceRect.y, w: topBar.w - PAD * 4, h: topBar.y + topBar.h - surfaceRect.y };
+        const sliderWTop = Math.min(topBar.w * 0.45, Math.max(600, topBar.w * 0.35));
+        const syncSliderW = sliderWTop;
+        const syncSliderH = Math.max(4, Math.round(BAR_H * 0.16));
+        const syncSliderY = topBar.y + Math.round(BAR_H * 0.62);
+        const syncSliderRect = {
+          x: topBar.x + topBar.w - PAD - syncSliderW,
+          y: syncSliderY,
+          w: syncSliderW,
+          h: syncSliderH
+        };
+        const syncTextY = Math.round(syncSliderY - BAR_H * 0.18);
+        const syncRect = {
+          x: syncSliderRect.x - ICON - Math.round(PAD * 0.4),
+          y: topBar.y + (BAR_H - ICON) / 2,
+          w: ICON,
+          h: ICON
+        };
+        const titleRect = {
+          x: topBar.x + PAD * 2,
+          y: surfaceRect.y,
+          w: Math.max(80, syncRect.x - (topBar.x + PAD * 2) - PAD),
+          h: topBar.y + topBar.h - surfaceRect.y
+        };
 
         const progressH = Math.max(4, Math.round(BAR_H * 0.16));
         const progressW = Math.min(bottomBar.w - PAD * 4, videoRect.w - PAD * 2);
@@ -2143,11 +2586,11 @@ class PlayerState {
         const iconRowY = progressRect.y + progressRect.h + totalBottomSpace * 0.5 - ICON / 2;
         const playRect = { x: bottomBar.x + PAD, y: iconRowY, w: ICON, h: ICON };
         const volumeRect = { x: playRect.x + ICON + PAD * 0.5, y: iconRowY, w: ICON, h: ICON };
-          const sliderW = Math.min(bottomBar.w * 0.22, Math.max(180, videoRect.w * 0.2));
+        const sliderWBottom = Math.min(bottomBar.w * 0.45, Math.max(600, bottomBar.w * 0.35));
         const volumeSliderRect = {
           x: volumeRect.x + ICON + PAD * 0.4,
           y: iconRowY + (ICON - BAR_H * 0.26) / 2,
-          w: sliderW,
+          w: sliderWBottom,
           h: BAR_H * 0.26
         };
 
@@ -2206,6 +2649,9 @@ class PlayerState {
           fullscreenRect,
           dividerRect,
           progressRect,
+          syncRect,
+          syncSliderRect,
+          syncTextY,
           fontFamily: '"Source Sans 3","Segoe UI",sans-serif',
           surfaceRect,
           videoRect
@@ -2255,15 +2701,21 @@ class PlayerState {
         return `${minutes}:${seconds.toString().padStart(2, '0')}`;
       }
 
-      function buildTopPanelLayout() {
-        const CW = topPanelCanvas ? topPanelCanvas.width : gridCanvas.width;
-        const CH = topPanelCanvas ? topPanelCanvas.height : Math.round(gridCanvas.height * 0.12);
-        const PAD = Math.round(Math.max(14, CH * 0.22));
-        const ICON = Math.round(Math.min(CH * 0.72, CW * 0.09));
-        const backRect = { x: PAD, y: (CH - ICON) / 2, w: ICON, h: ICON };
-        const titleRect = { x: PAD + ICON + PAD * 0.6, y: 0, w: CW - (PAD + ICON + PAD * 0.6) - PAD, h: CH };
-        return { surface: { x: 0, y: 0, w: CW, h: CH }, backRect, titleRect, barH: CH };
-      }
+        function buildTopPanelLayout() {
+          const CW = topPanelCanvas ? topPanelCanvas.width : gridCanvas.width;
+          const CH = topPanelCanvas ? topPanelCanvas.height : Math.round(gridCanvas.height * 0.12);
+          const PAD = Math.round(Math.max(14, CH * 0.22));
+          const ICON = Math.round(Math.min(CH * 0.72, CW * 0.09));
+          const backRect = { x: PAD, y: (CH - ICON) / 2, w: ICON, h: ICON };
+          const syncSliderW = Math.min(CW * 0.45, Math.max(600, CW * 0.35));
+          const syncSliderH = Math.max(4, Math.round(CH * 0.16));
+          const syncSliderY = Math.round(CH * 0.62);
+          const syncSliderRect = { x: CW - PAD - syncSliderW, y: syncSliderY, w: syncSliderW, h: syncSliderH };
+          const syncRect = { x: syncSliderRect.x - ICON - Math.round(PAD * 0.4), y: (CH - ICON) / 2, w: ICON, h: ICON };
+          const titleRect = { x: PAD + ICON + PAD * 0.6, y: 0, w: Math.max(80, syncRect.x - (PAD + ICON + PAD * 0.6) - PAD), h: CH };
+          const syncTextY = Math.round(syncSliderY - CH * 0.18);
+          return { surface: { x: 0, y: 0, w: CW, h: CH }, backRect, titleRect, syncRect, syncSliderRect, syncTextY, barH: CH };
+        }
 
       function buildBottomPanelLayout() {
         const CW = bottomPanelCanvas ? bottomPanelCanvas.width : gridCanvas.width;
@@ -2386,13 +2838,39 @@ class PlayerState {
         topPanelCtx.textAlign = 'center';
         topPanelCtx.textBaseline = 'middle';
         topPanelCtx.font = `${Math.round(topUI.barH * 0.42)}px "Source Sans 3","Segoe UI",sans-serif`;
-        topPanelCtx.fillText(entry ? entry.title : '', topUI.titleRect.x + topUI.titleRect.w / 2, topUI.titleRect.y + topUI.titleRect.h / 2 + 1);
-        topPanelCtx.restore();
+          topPanelCtx.fillText(entry ? entry.title : '', topUI.titleRect.x + topUI.titleRect.w / 2, topUI.titleRect.y + topUI.titleRect.h / 2 + 1);
+          topPanelCtx.restore();
 
-        if (video) {
-          // Bottom panel content
-          const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
-          drawPanelIcon(bottomPanelCtx, botUI.playRect, playGlyph, a);
+          const syncMs = getStoredSyncMs();
+          const syncRatio = Math.max(0, Math.min(1, (syncMs + SYNC_RANGE_MS) / (SYNC_RANGE_MS * 2)));
+          drawPanelIcon(topPanelCtx, topUI.syncRect, 'schedule', a);
+          topPanelCtx.save();
+          topPanelCtx.globalAlpha = a;
+          topPanelCtx.fillStyle = iconColor;
+          topPanelCtx.textAlign = 'center';
+          topPanelCtx.textBaseline = 'bottom';
+          topPanelCtx.font = `${Math.round(topUI.barH * 0.28)}px "Source Sans 3","Segoe UI",sans-serif`;
+          topPanelCtx.fillText(`${syncMs}ms`, topUI.syncSliderRect.x + topUI.syncSliderRect.w / 2, topUI.syncTextY);
+          topPanelCtx.restore();
+          topPanelCtx.save();
+          topPanelCtx.globalAlpha = a * 0.35;
+          topPanelCtx.fillStyle = iconColor;
+          topPanelCtx.fillRect(topUI.syncSliderRect.x, topUI.syncSliderRect.y, topUI.syncSliderRect.w, topUI.syncSliderRect.h);
+          topPanelCtx.restore();
+          topPanelCtx.save();
+          topPanelCtx.globalAlpha = a;
+          topPanelCtx.fillStyle = iconColor;
+          topPanelCtx.fillRect(topUI.syncSliderRect.x, topUI.syncSliderRect.y, topUI.syncSliderRect.w * syncRatio, topUI.syncSliderRect.h);
+          const syncDot = topUI.syncSliderRect.x + topUI.syncSliderRect.w * syncRatio;
+          topPanelCtx.beginPath();
+          topPanelCtx.arc(syncDot, topUI.syncSliderRect.y + topUI.syncSliderRect.h / 2, Math.max(4, Math.round(topUI.syncSliderRect.h * 0.7)), 0, Math.PI * 2);
+          topPanelCtx.fill();
+          topPanelCtx.restore();
+
+          if (video) {
+            // Bottom panel content
+            const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
+            drawPanelIcon(bottomPanelCtx, botUI.playRect, playGlyph, a);
 
           const { muted: effMuted, volume: effVolume } = getEffectiveAudioSettings();
           const volumeLevel = effMuted ? 0 : (effVolume || 0);
@@ -2417,6 +2895,10 @@ class PlayerState {
             bottomPanelCtx.arc(dotX, botUI.volumeSliderRect.y + botUI.volumeSliderRect.h / 2, Math.max(4, Math.round(botUI.volumeSliderRect.h * 0.6)), 0, Math.PI * 2);
             bottomPanelCtx.fill();
             bottomPanelCtx.restore();
+          }
+
+          if (video && (video.paused || video.ended)) {
+            drawCenterPlayOverlay(ctrlCtx, ui.videoRect || ui.surfaceRect, iconColor, a);
           }
               // Draw divider between speed/pitch cluster and right-side icons
               try {
@@ -2494,15 +2976,42 @@ class PlayerState {
 
         // Top bar content
         ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.backRect, 'arrow_back_2'); ctrlCtx.restore();
-        ctrlCtx.save();
-        ctrlCtx.fillStyle = textColor;
-        ctrlCtx.textAlign = 'center';
-        ctrlCtx.textBaseline = 'middle';
-        ctrlCtx.font = `${Math.round(ui.barH * 0.5)}px ${ui.fontFamily || '"Source Sans 3", "Segoe UI", sans-serif'}`;
-        const title = entry ? entry.title : '';
-        ctrlCtx.globalAlpha = alpha;
-        ctrlCtx.fillText(title, ui.titleRect.x + ui.titleRect.w / 2, ui.titleRect.y + ui.titleRect.h / 2 + 1);
-        ctrlCtx.restore();
+          ctrlCtx.save();
+          ctrlCtx.fillStyle = textColor;
+          ctrlCtx.textAlign = 'center';
+          ctrlCtx.textBaseline = 'middle';
+          ctrlCtx.font = `${Math.round(ui.barH * 0.5)}px ${ui.fontFamily || '"Source Sans 3", "Segoe UI", sans-serif'}`;
+          const title = entry ? entry.title : '';
+          ctrlCtx.globalAlpha = alpha;
+          ctrlCtx.fillText(title, ui.titleRect.x + ui.titleRect.w / 2, ui.titleRect.y + ui.titleRect.h / 2 + 1);
+          ctrlCtx.restore();
+
+          // Sync slider (clock icon + bar)
+          const syncMs = getStoredSyncMs();
+          const syncRatio = Math.max(0, Math.min(1, (syncMs + SYNC_RANGE_MS) / (SYNC_RANGE_MS * 2)));
+          ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.syncRect, 'schedule'); ctrlCtx.restore();
+          ctrlCtx.save();
+          ctrlCtx.globalAlpha = alpha;
+          ctrlCtx.fillStyle = textColor;
+          ctrlCtx.textAlign = 'center';
+          ctrlCtx.textBaseline = 'bottom';
+          ctrlCtx.font = `${Math.round(ui.barH * 0.28)}px "Source Sans 3","Segoe UI",sans-serif`;
+          ctrlCtx.fillText(`${syncMs}ms`, ui.syncSliderRect.x + ui.syncSliderRect.w / 2, ui.syncTextY);
+          ctrlCtx.restore();
+          ctrlCtx.save();
+          ctrlCtx.globalAlpha = alpha * 0.35;
+          ctrlCtx.fillStyle = textColor;
+          ctrlCtx.fillRect(ui.syncSliderRect.x, ui.syncSliderRect.y, ui.syncSliderRect.w, ui.syncSliderRect.h);
+          ctrlCtx.restore();
+          ctrlCtx.save();
+          ctrlCtx.globalAlpha = alpha;
+          ctrlCtx.fillStyle = textColor;
+          ctrlCtx.fillRect(ui.syncSliderRect.x, ui.syncSliderRect.y, ui.syncSliderRect.w * syncRatio, ui.syncSliderRect.h);
+          const syncDot = ui.syncSliderRect.x + ui.syncSliderRect.w * syncRatio;
+          ctrlCtx.beginPath();
+          ctrlCtx.arc(syncDot, ui.syncSliderRect.y + ui.syncSliderRect.h / 2, Math.max(4, Math.round(ui.syncSliderRect.h * 0.7)), 0, Math.PI * 2);
+          ctrlCtx.fill();
+          ctrlCtx.restore();
 
         // Bottom left cluster: play + volume
         const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
@@ -2545,6 +3054,11 @@ class PlayerState {
         ctrlCtx.globalAlpha = alpha;
         ctrlCtx.fillText(timeStr, ui.timeRect.x + ui.timeRect.w / 2, ui.timeRect.y + ui.timeRect.h / 2 + 1);
         ctrlCtx.restore();
+
+        if (video.paused || video.ended) {
+          const overlayRect = ui.videoRect || ui.surfaceRect;
+          drawCenterPlayOverlay(ctrlCtx, overlayRect, iconColor, alpha);
+        }
 
         // Right cluster: speed, pitch/time toggle, tablet view, fullscreen
         ctrlCtx.save();
@@ -2644,14 +3158,23 @@ class PlayerState {
           } catch (e) { /* ignore */ }
         }
         drawElementInRect(video || thumbs[fullIndex], rect);
-        const usePanels = (!uiState.fullscreen);
-        if (usePanels) {
-          ensureTabletPanels();
-          const panelsReady = !!(topPanelMesh && bottomPanelMesh && topPanelCtx && bottomPanelCtx && topPanelCanvas && bottomPanelCanvas);
-          if (panelsReady) {
-            if (topPanelMesh) topPanelMesh.visible = true;
-            if (bottomPanelMesh) bottomPanelMesh.visible = true;
-            drawTabletPanels(chromeVisible, entries[fullIndex], video);
+        const drawLegacyControls = () => {
+          const usePanels = (!uiState.fullscreen);
+          if (usePanels) {
+            ensureTabletPanels();
+            const panelsReady = !!(topPanelMesh && bottomPanelMesh && topPanelCtx && bottomPanelCtx && topPanelCanvas && bottomPanelCanvas);
+            if (panelsReady) {
+              if (topPanelMesh) topPanelMesh.visible = true;
+              if (bottomPanelMesh) bottomPanelMesh.visible = true;
+              drawTabletPanels(chromeVisible, entries[fullIndex], video);
+            } else {
+              if (topPanelMesh) topPanelMesh.visible = false;
+              if (bottomPanelMesh) bottomPanelMesh.visible = false;
+              const ui = buildControlsLayout(frames.surfaceRect, targetRect, uiScale);
+              ctrlCtx.clearRect(0, 0, controlsCanvas.width, controlsCanvas.height);
+              drawControls(ui, video, entries[fullIndex], chromeVisible);
+              ctx.drawImage(controlsCanvas, 0, 0);
+            }
           } else {
             if (topPanelMesh) topPanelMesh.visible = false;
             if (bottomPanelMesh) bottomPanelMesh.visible = false;
@@ -2660,13 +3183,13 @@ class PlayerState {
             drawControls(ui, video, entries[fullIndex], chromeVisible);
             ctx.drawImage(controlsCanvas, 0, 0);
           }
+        };
+
+        if (sharedControls && sharedControls.ui && sharedControls.adapter) {
+          try { sharedControls.ui.setState(sharedControls.adapter.getState()); } catch (e) { /* ignore */ }
+          try { sharedControls.ui.draw(ctrlCtx, { drawLegacy: drawLegacyControls, alpha: chromeVisible }); } catch (e) { /* ignore */ }
         } else {
-          if (topPanelMesh) topPanelMesh.visible = false;
-          if (bottomPanelMesh) bottomPanelMesh.visible = false;
-          const ui = buildControlsLayout(frames.surfaceRect, targetRect, uiScale);
-          ctrlCtx.clearRect(0, 0, controlsCanvas.width, controlsCanvas.height);
-          drawControls(ui, video, entries[fullIndex], chromeVisible);
-          ctx.drawImage(controlsCanvas, 0, 0);
+          drawLegacyControls();
         }
         drawSyncDebugOverlay(ctx, video, getFullAudio(fullIndex), fullIndex, frames.surfaceRect, now);
         ctx.restore();
@@ -2811,6 +3334,12 @@ class PlayerState {
 
       function handlePointerMove(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
+        if (sharedControls && sharedControls.ui && sharedControls.adapter) {
+          try {
+            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+            if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
+          } catch (e) { /* ignore */ }
+        }
         const pt = pointFromEvent(ev);
         lastMouseMoveTs = performance.now();
         // If a pending single-click is scheduled, cancel it when the pointer
@@ -2827,8 +3356,8 @@ class PlayerState {
         } catch (e) { /* ignore */ }
         const frames = getActiveRects();
         if (chromeTarget === 0) { chromeTarget = 1; chromeAnimStart = lastMouseMoveTs; }
-        if (playingFull) {
-          if (!uiState.fullscreen && pt && pt.target === 'bottom') {
+          if (playingFull) {
+            if (!uiState.fullscreen && pt && pt.target === 'bottom') {
             const botUI = buildBottomPanelLayout();
             const video = fullVideos[fullIndex];
             if (!video) return;
@@ -2855,25 +3384,38 @@ class PlayerState {
 
             const inVol = (pt.x >= botUI.volumeRect.x && pt.x <= botUI.volumeRect.x + botUI.volumeRect.w && pt.y >= botUI.volumeRect.y && pt.y <= botUI.volumeRect.y + botUI.volumeRect.h) ||
               (pt.x >= botUI.volumeSliderRect.x && pt.x <= botUI.volumeSliderRect.x + botUI.volumeSliderRect.w && pt.y >= botUI.volumeSliderRect.y && pt.y <= botUI.volumeSliderRect.y + botUI.volumeSliderRect.h);
-            uiState.volumeHover = !!inVol;
-            return;
-          }
+              uiState.volumeHover = !!inVol;
+              return;
+            }
+            if (!uiState.fullscreen && pt && pt.target === 'top') {
+              const topUI = buildTopPanelLayout();
+              if (dragState && dragState.type === 'sync') {
+                const ratio = Math.max(0, Math.min(1, (pt.x - topUI.syncSliderRect.x) / topUI.syncSliderRect.w));
+                const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+                setStoredSyncMsLocal(ms);
+                ev.stopImmediatePropagation?.();
+                ev.stopPropagation?.();
+                ev.preventDefault?.();
+                return;
+              }
+              return;
+            }
 
           const video = fullVideos[fullIndex];
           const targetRect = computeVideoRect(frames.videoRect, video);
           lastFullRect = targetRect || lastFullRect || animation.to;
           const uiScale = uiState.fullscreen ? fullscreenScale() : 1;
           const ui = (lastFullRect && frames) ? buildControlsLayout(frames.surfaceRect, lastFullRect, uiScale) : null;
-          if (dragState && ui) {
-            if (dragState.type === 'progress') {
+            if (dragState && ui) {
+              if (dragState.type === 'progress') {
               const ratio = Math.max(0, Math.min(1, (pt.x - ui.progressRect.x) / ui.progressRect.w));
               try { const v = fullVideos[fullIndex]; if (v && v.duration) v.currentTime = v.duration * ratio; } catch (e) { /* ignore */ }
               ev.stopImmediatePropagation?.();
               ev.stopPropagation?.();
-              ev.preventDefault?.();
-              return;
-            }
-            if (dragState.type === 'volume') {
+                ev.preventDefault?.();
+                return;
+              }
+              if (dragState.type === 'volume') {
               const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
               uiState.lastVolume = ratio;
               setStoredVolumeFromRatio(ratio);
@@ -2881,10 +3423,19 @@ class PlayerState {
               uiState.volumeHover = true;
               ev.stopImmediatePropagation?.();
               ev.stopPropagation?.();
-              ev.preventDefault?.();
-              return;
+                ev.preventDefault?.();
+                return;
+              }
+              if (dragState.type === 'sync') {
+                const ratio = Math.max(0, Math.min(1, (pt.x - ui.syncSliderRect.x) / ui.syncSliderRect.w));
+                const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+                setStoredSyncMsLocal(ms);
+                ev.stopImmediatePropagation?.();
+                ev.stopPropagation?.();
+                ev.preventDefault?.();
+                return;
+              }
             }
-          }
           if (ui) {
             const inVol = pt && ((pt.x >= ui.volumeRect.x && pt.x <= ui.volumeRect.x + ui.volumeRect.w && pt.y >= ui.volumeRect.y && pt.y <= ui.volumeRect.y + ui.volumeRect.h) ||
               (pt.x >= ui.volumeSliderRect.x && pt.x <= ui.volumeSliderRect.x + ui.volumeSliderRect.w && pt.y >= ui.volumeSliderRect.y && pt.y <= ui.volumeSliderRect.y + ui.volumeSliderRect.h));
@@ -2907,6 +3458,12 @@ class PlayerState {
 
       function handleClick(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
+        if (sharedControls && sharedControls.ui && sharedControls.adapter) {
+          try {
+            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+            if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
+          } catch (e) { /* ignore */ }
+        }
         const pt = pointFromEvent(ev);
         if (!pt) return;
         const frames = getActiveRects();
@@ -2963,6 +3520,12 @@ class PlayerState {
 
       function handlePointerDown(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
+        if (sharedControls && sharedControls.ui && sharedControls.adapter) {
+          try {
+            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+            if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
+          } catch (e) { /* ignore */ }
+        }
         const pt = pointFromEvent(ev);
         lastMouseMoveTs = performance.now();
         if (!pt || !playingFull || fullIndex < 0) return;
@@ -2996,6 +3559,20 @@ class PlayerState {
           }
           return;
         }
+        if (!uiState.fullscreen && pt.target === 'top') {
+          const topUI = buildTopPanelLayout();
+          const within = (r) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+          if (within(topUI.syncSliderRect)) {
+            dragState = { type: 'sync' };
+            const ratio = Math.max(0, Math.min(1, (pt.x - topUI.syncSliderRect.x) / topUI.syncSliderRect.w));
+            const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+            setStoredSyncMsLocal(ms);
+            ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.();
+            return;
+          }
+          dragState = null;
+          return;
+        }
 
         const frames = getActiveRects();
         const video = fullVideos[fullIndex];
@@ -3017,6 +3594,14 @@ class PlayerState {
           setStoredVolumeFromRatio(ratio);
           applyAudioSettings(getFullAudio(fullIndex));
           uiState.volumeHover = true;
+          ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.();
+          return;
+        }
+        if (within(ui.syncSliderRect)) {
+          dragState = { type: 'sync' };
+          const ratio = Math.max(0, Math.min(1, (pt.x - ui.syncSliderRect.x) / ui.syncSliderRect.w));
+          const ms = Math.round((ratio * 2 - 1) * SYNC_RANGE_MS);
+          setStoredSyncMsLocal(ms);
           ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.();
           return;
         }
@@ -3181,13 +3766,21 @@ class PlayerState {
       const api = {
         canvas: gridCanvas,
         texture,
-        setPlaybackRate(rate) { return rate; },
+        setPlaybackRate,
         setPreservePitch(v) { return !!v; },
         reset() { description = 'Hover a thumbnail to preview a random snippet.'; },
         applyToMesh,
         applyToMeshById,
         isScreenPointInteractive,
         isPlayingFull() { return !!playingFull; },
+        getActiveVideo,
+        getActiveAudio,
+        getViewportRect,
+        getAudioSettings,
+        setVolumeRatio,
+        toggleMute: toggleStoredMute,
+        exitPlayback,
+        setSharedControls,
         restoreOriginalMaterial,
         destroy() {
           dom.removeEventListener('pointermove', handlePointerMove);
@@ -3207,6 +3800,8 @@ class PlayerState {
 
     version: '1.0.0'
   };
+
+  export { createVideoControlsUI } from './shared-video-controls.js';
 
   // Export as ES6 module
   export default VideoPlayer;
