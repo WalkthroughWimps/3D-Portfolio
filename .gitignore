@@ -31,11 +31,10 @@ unused/*
 
 # Large media and intermediate render outputs (host externally)
 /music/
+/midi/
 /glb/
 /Renders/
 /Videos/
-Videos/videos-page/Old-uns/
-Videos/videos-page/Staging-Zone/
 
 # Staging and export helpers
 /Renders/**/webm_alpha_out/
