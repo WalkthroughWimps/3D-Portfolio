@@ -1,64 +1,94 @@
-# OS
+########################################
+# OS / File Explorer
+########################################
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# Node
-node_modules/
-
-# Python
-.venv/
-
-# VSCode
+########################################
+# Editors / IDEs
+########################################
 .vscode/
+.vs/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.code-workspace
 
-# Python
+########################################
+# Python (if any scripts/tools)
+########################################
+.venv/
+venv/
 __pycache__/
+*.py[cod]
 
-# Mac
-*.swp
+########################################
+# Node / JS
+########################################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npmrc
+.pnpm-debug.log*
+.cache/
+.parcel-cache/
+.vite/
+dist/
+build/
+out/
 
-# Temp
+########################################
+# Logs / Crash dumps
+########################################
 *.log
+*.stackdump
 
-# Ignore editor tidy folder for repo cleanup
-unused/
-unused/*
+########################################
+# Media / Large assets (serve via R2)
+# (Keep local copies, don't deploy from Git)
+########################################
+glb/
+midi/
+music/
+Renders/
+Videos/
+soundfonts/
 
-# Places where scripts are stored or worked on
-/backups/
-/Combiners/
-
-
-# Large media and intermediate render outputs (host externally)
-/music/
-/midi/
-/glb/
-/Renders/
-/Videos/
-/games/
-
-# Staging and export helpers
-/Renders/**/webm_alpha_out/
-
-# Common large media file types (ignore across repo)
-*.mp3
-*.mp4
-*.aiff
+########################################
+# Common large media file types (repo-wide)
+########################################
+*.psd
+*.ai
+*.aep
+*.prproj
 *.mov
-*.webm
+*.mp4
+*.m4v
 *.mkv
 *.avi
-*.flac
+*.webm
 *.wav
+*.flac
+*.zip
+*.7z
+*.rar
 
-# ffmpeg/ffprobe outputs
+########################################
+# ffmpeg / ffprobe outputs
+########################################
 ffmpeg_extracted_frame*.png
 ffprobe*.json
 
-# Rename / dryrun artifacts
+########################################
+# One-off / local reports & backups
+########################################
 rename-*.txt
 rename-*.log
-
-# Local backups
 *.BACKUP
-
+assets-move-report.txt
+console-export-*.log
