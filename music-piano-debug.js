@@ -27,10 +27,12 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs } from './global-sync.js';
+import { createVideoControlsUI, syncAudioToVideo } from './shared-video-controls.js';
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
 const USE_TOPPAD_GRID = true;
+let showTopPadGrid = false;
 window.addEventListener('DOMContentLoaded', ()=>{
   instrumentPickerEl = document.getElementById('instrumentPicker');
   if(instrumentPickerEl){
@@ -291,6 +293,193 @@ let topPadCanvas = null;
 let topPadCtx = null;
 let topPadTexture = null;
 let topPadHoverCell = null;
+let topPadHoverUi = null;
+let topPadUiRects = { speedButtons: [], playRect: null };
+const topPadIconSources = [
+  'Videos/music-page/baby-just-shut-up-a-lullaby.png',
+  'Videos/music-page/those-raisins-are-mine.png',
+  'Videos/music-page/no-forests-left-to-give.png'
+];
+const topPadIconImages = topPadIconSources.map((src) => {
+  const img = new Image();
+  img.src = src;
+  img.onload = () => { try { renderTopPadGrid(); } catch (e) {} };
+  return img;
+});
+const topPadVideo = {
+  thumbImg: (() => { const img = new Image(); img.src = 'Videos/music-page/sunil-video.jpg'; img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
+  lqVideo: (() => { const v = document.createElement('video'); v.src = 'Videos/music-page/sunil-video_lq.webm'; v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
+  hqVideo: (() => { const v = document.createElement('video'); v.src = 'Videos/music-page/sunil-video_hq.webm'; v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
+  audio: (() => { const a = document.createElement('audio'); a.src = 'Videos/music-page/sunil-video.opus'; a.preload = 'auto'; return a; })(),
+  mode: 'idle',
+  previewTimer: null,
+  playing: false,
+  ui: null,
+  uiCanvas: null,
+  uiCtx: null,
+  syncState: { driftEma: 0, lastAdjustTs: 0, lastHardTs: 0, rateAdjusted: false },
+  midRect: null,
+  thumbRect: null,
+  infoRect: null,
+  videoRect: null,
+  hoverThumb: false,
+  zoom: null,
+  cameraRestore: null
+};
+const TOPPAD_PREVIEW_MS = 2400;
+const TOPPAD_PREVIEW_SEEK_PAD = 0.6;
+const TOPPAD_ZOOM_MS = 700;
+const AUDIO_VOLUME_KEY = 'site.audio.volume';
+const AUDIO_MUTED_KEY = 'site.audio.muted';
+
+function clamp01(value){
+  if(!Number.isFinite(value)) return 1;
+  return Math.max(0, Math.min(1, value));
+}
+
+function getStoredAudioSettings(){
+  const raw = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1');
+  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true';
+  return { volume: clamp01(raw), muted };
+}
+
+function applyStoredAudioSettings(media){
+  if(!media) return;
+  const { volume, muted } = getStoredAudioSettings();
+  try{ media.volume = muted ? 0 : volume; }catch(e){}
+  try{ media.muted = !!muted; }catch(e){}
+}
+
+function startTopPadPreview(){
+  if(topPadVideo.mode === 'playing') return;
+  const v = topPadVideo.lqVideo;
+  if(!v) return;
+  topPadVideo.mode = 'preview';
+  try{ v.pause(); }catch(e){}
+  let start = 0;
+  const dur = Number.isFinite(v.duration) ? v.duration : 0;
+  if(dur > TOPPAD_PREVIEW_MS / 1000 + TOPPAD_PREVIEW_SEEK_PAD){
+    const maxStart = Math.max(0, dur - (TOPPAD_PREVIEW_MS / 1000) - TOPPAD_PREVIEW_SEEK_PAD);
+    start = Math.random() * maxStart;
+  }
+  try{ v.currentTime = Math.max(0, start); }catch(e){}
+  try{ v.play().catch(() => {}); }catch(e){}
+  if(topPadVideo.previewTimer) clearTimeout(topPadVideo.previewTimer);
+  topPadVideo.previewTimer = setTimeout(() => {
+    if(topPadVideo.mode === 'preview'){
+      try{ v.pause(); }catch(e){}
+    }
+  }, TOPPAD_PREVIEW_MS);
+  topPadLastDrawMs = 0;
+  renderTopPadGrid();
+}
+
+function stopTopPadPreview(){
+  if(topPadVideo.previewTimer){ clearTimeout(topPadVideo.previewTimer); topPadVideo.previewTimer = null; }
+  if(topPadVideo.mode === 'preview'){
+    try{ topPadVideo.lqVideo.pause(); }catch(e){}
+    topPadVideo.mode = 'idle';
+    renderTopPadGrid();
+  }
+}
+
+function startTopPadZoom(to){
+  if(!to || !topPadMesh) return;
+  const now = performance.now();
+  const fromPos = cam.position.clone();
+  const fromTarget = controls.target.clone();
+  topPadVideo.zoom = {
+    startMs: now,
+    durationMs: TOPPAD_ZOOM_MS,
+    fromPos,
+    fromTarget,
+    toPos: to.position.clone(),
+    toTarget: to.target.clone(),
+    onComplete: to.onComplete || null
+  };
+}
+
+function updateTopPadZoom(){
+  if(!topPadVideo.zoom) return;
+  const z = topPadVideo.zoom;
+  const t = Math.max(0, Math.min(1, (performance.now() - z.startMs) / Math.max(1, z.durationMs)));
+  cam.position.lerpVectors(z.fromPos, z.toPos, t);
+  controls.target.lerpVectors(z.fromTarget, z.toTarget, t);
+  controls.update();
+  if(t >= 1){
+    const cb = z.onComplete;
+    topPadVideo.zoom = null;
+    if(typeof cb === 'function') cb();
+  }
+}
+
+function computeTopPadZoomTarget(){
+  if(!topPadMesh) return null;
+  const box = new THREE.Box3().setFromObject(topPadMesh);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const fov = THREE.MathUtils.degToRad(cam.fov);
+  const aspect = cam.aspect || 1;
+  const fitHeightDist = (size.y * 0.5) / Math.tan(fov * 0.5);
+  const fitWidthDist = (size.x * 0.5) / Math.tan(fov * 0.5) / Math.max(0.001, aspect);
+  const dist = Math.max(fitHeightDist, fitWidthDist) * 1.35;
+  const dir = cam.position.clone().sub(controls.target).normalize();
+  const pos = center.clone().add(dir.multiplyScalar(dist));
+  return { position: pos, target: center };
+}
+
+function startTopPadVideoPlayback(){
+  stopTopPadPreview();
+  if(topPadVideo.mode === 'playing') return;
+  const target = computeTopPadZoomTarget();
+  if(!target) return;
+  topPadVideo.cameraRestore = {
+    pos: cam.position.clone(),
+    target: controls.target.clone(),
+    enabled: controls.enabled
+  };
+  controls.enabled = false;
+  startTopPadZoom({
+    position: target.position,
+    target: target.target,
+    onComplete: () => {
+      topPadVideo.mode = 'playing';
+      topPadVideo.syncState = { driftEma: 0, lastAdjustTs: 0, lastHardTs: 0, rateAdjusted: false };
+      applyStoredAudioSettings(topPadVideo.audio);
+      try{
+        topPadVideo.hqVideo.currentTime = 0;
+      }catch(e){}
+      topPadVideo.hqVideo.onended = () => { stopTopPadVideoPlayback(); };
+      const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
+      const syncSec = syncMs / 1000;
+      const targetTime = Math.max(0, (topPadVideo.hqVideo.currentTime || 0) - syncSec);
+      try{ topPadVideo.audio.currentTime = targetTime; }catch(e){}
+      try{ topPadVideo.audio.play().catch(() => {}); }catch(e){}
+      try{ topPadVideo.hqVideo.play().catch(() => {}); }catch(e){}
+      renderTopPadGrid();
+    }
+  });
+}
+
+function stopTopPadVideoPlayback(){
+  if(topPadVideo.mode === 'idle') return;
+  try{ topPadVideo.hqVideo.pause(); }catch(e){}
+  try{ topPadVideo.audio.pause(); }catch(e){}
+  topPadVideo.mode = 'idle';
+  if(topPadVideo.cameraRestore){
+    const restore = topPadVideo.cameraRestore;
+    startTopPadZoom({
+      position: restore.pos,
+      target: restore.target,
+      onComplete: () => {
+        controls.enabled = restore.enabled;
+      }
+    });
+  } else {
+    controls.enabled = true;
+  }
+  renderTopPadGrid();
+}
 // Manual overrides for UV orientation if needed.
 const TOPPAD_FORCE_SWAP = false;
 const TOPPAD_FORCE_MIRROR_V = true;
@@ -298,6 +487,8 @@ const TOPPAD_UV_OVERRIDE = { umin: 0.004085332155227661, umax: 1.0, vmin: 0.3804
 let topPadSurfaceAspect = 1;
 let topPadUvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0, swap: false, mirrorU: false, mirrorV: false };
 let topPadUvDebugLogged = false;
+let topPadLastDrawMs = 0;
+const TOPPAD_MAX_FPS = 24;
 // Backboard redraw throttle / dirty flag to avoid per-frame canvas uploads
 let backboardDirty = true;
 let lastBackboardDrawMs = 0;
@@ -787,6 +978,14 @@ function updateTopPadHover(clientX, clientY){
       topPadHoverCell = null;
       renderTopPadGrid();
     }
+    if(topPadHoverUi){
+      topPadHoverUi = null;
+      renderTopPadGrid();
+    }
+    if(topPadVideo.hoverThumb){
+      topPadVideo.hoverThumb = false;
+      stopTopPadPreview();
+    }
     return;
   }
   let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
@@ -800,12 +999,75 @@ function updateTopPadHover(clientX, clientY){
   if(topPadUvRemap.mirrorV) v = 1 - v;
   const clampedU = Math.max(0, Math.min(1, u));
   const clampedV = Math.max(0, Math.min(1, v));
-  const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
-  const row = Math.floor(clampedV * TOPPAD_GRID_ROWS);
-  const next = { col: Math.max(0, Math.min(TOPPAD_GRID_COLS - 1, col)), row: Math.max(0, Math.min(TOPPAD_GRID_ROWS - 1, row)) };
-  if(!topPadHoverCell || topPadHoverCell.col !== next.col || topPadHoverCell.row !== next.row){
-    topPadHoverCell = next;
+  const pt = { px: clampedU * topPadCanvas.width, py: clampedV * topPadCanvas.height };
+  if(showTopPadGrid){
+    const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
+    const row = Math.floor(clampedV * TOPPAD_GRID_ROWS);
+    const next = { col: Math.max(0, Math.min(TOPPAD_GRID_COLS - 1, col)), row: Math.max(0, Math.min(TOPPAD_GRID_ROWS - 1, row)) };
+    if(!topPadHoverCell || topPadHoverCell.col !== next.col || topPadHoverCell.row !== next.row){
+      topPadHoverCell = next;
+      renderTopPadGrid();
+    }
+  } else if(topPadHoverCell){
+    topPadHoverCell = null;
     renderTopPadGrid();
+  }
+  let nextUi = null;
+  if(topPadUiRects && topPadUiRects.speedButtons && topPadUiRects.speedButtons.length){
+    for(let i=0;i<topPadUiRects.speedButtons.length;i++){
+      const r = topPadUiRects.speedButtons[i];
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'speed', index: i };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.gridToggle){
+    const r = topPadUiRects.gridToggle;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'gridToggle' };
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackCircles && topPadUiRects.trackCircles.length){
+    for(let i=0;i<topPadUiRects.trackCircles.length;i++){
+      const c = topPadUiRects.trackCircles[i];
+      const dx = pt.px - c.x;
+      const dy = pt.py - c.y;
+      if((dx * dx + dy * dy) <= (c.r * c.r)){
+        nextUi = { type: 'track', index: i };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.playRect){
+    const r = topPadUiRects.playRect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'play' };
+    }
+  }
+  if(!nextUi && topPadVideo.thumbRect){
+    const r = topPadVideo.thumbRect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'thumb' };
+    }
+  }
+  if((!topPadHoverUi && nextUi) || (topPadHoverUi && (!nextUi || topPadHoverUi.type !== nextUi.type || topPadHoverUi.index !== nextUi.index))){
+    topPadHoverUi = nextUi;
+    renderTopPadGrid();
+  }
+  const overThumb = nextUi && nextUi.type === 'thumb';
+  if(overThumb && !topPadVideo.hoverThumb){
+    topPadVideo.hoverThumb = true;
+    startTopPadPreview();
+  } else if(!overThumb && topPadVideo.hoverThumb){
+    topPadVideo.hoverThumb = false;
+    stopTopPadPreview();
+  }
+  if(canvas){
+    const overVideoRect = topPadVideo.videoRect
+      && pt.px >= topPadVideo.videoRect.x && pt.px <= topPadVideo.videoRect.x + topPadVideo.videoRect.w
+      && pt.py >= topPadVideo.videoRect.y && pt.py <= topPadVideo.videoRect.y + topPadVideo.videoRect.h;
+    canvas.style.cursor = (nextUi || overVideoRect) ? 'pointer' : '';
   }
 }
 
@@ -985,59 +1247,256 @@ function renderTopPadGrid(){
   ctx.fillRect(0,0,W,H);
   const cellW = W / TOPPAD_GRID_COLS;
   const cellH = H / TOPPAD_GRID_ROWS;
-  ctx.strokeStyle = 'rgba(210, 210, 210, 0.35)';
-  ctx.lineWidth = 2;
-  for(let c=0;c<=TOPPAD_GRID_COLS;c++){
-    const x = c * cellW;
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-  }
-  for(let r=0;r<=TOPPAD_GRID_ROWS;r++){
-    const y = r * cellH;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(W, y);
-    ctx.stroke();
-  }
-  const dotRadius = Math.max(3, cellH * 0.5);
-  ctx.fillStyle = 'rgba(255, 220, 70, 0.7)';
-  for(let r=0;r<=TOPPAD_GRID_ROWS;r++){
-    const y = r * cellH;
+  const leftW = cellW * 3;
+  const midW = cellW * 6;
+  const rightX = leftW + midW;
+  ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
+  ctx.fillRect(0, 0, leftW, H);
+  ctx.fillStyle = 'rgba(30, 30, 30, 0.25)';
+  ctx.fillRect(leftW, 0, midW, H);
+  ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
+  ctx.fillRect(rightX, 0, W - rightX, H);
+  if(showTopPadGrid){
+    ctx.strokeStyle = 'rgba(210, 210, 210, 0.35)';
+    ctx.lineWidth = 2;
     for(let c=0;c<=TOPPAD_GRID_COLS;c++){
-      if(((c + r) % 2) !== 0) continue;
       const x = c * cellW;
       ctx.beginPath();
-      ctx.arc(x, y, dotRadius, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for(let r=0;r<=TOPPAD_GRID_ROWS;r++){
+      const y = r * cellH;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
     }
   }
-  const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
-  ctx.fillStyle = 'rgba(220, 220, 220, 0.9)';
-  ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.strokeStyle = 'rgba(255, 220, 70, 0.9)';
+  ctx.lineWidth = Math.max(2, Math.round(cellW * 0.06));
+  ctx.beginPath();
+  ctx.moveTo(leftW, 0);
+  ctx.lineTo(leftW, H);
+  ctx.moveTo(rightX, 0);
+  ctx.lineTo(rightX, H);
+  ctx.stroke();
+  const getCssVar = (name, fallback) => {
+    try{
+      const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
+      if(val && val.trim()) return val.trim();
+    }catch(e){}
+    return fallback;
+  };
+  const greenPrimary = getCssVar('--green-primary', '#3fda84');
+  const greenSecondary = getCssVar('--green-secondary', '#1f8f4a');
+  const textLight = '#f1fff6';
+  const uiPadX = Math.round(cellW * 0.12);
+  const uiWidth = leftW - uiPadX * 2;
+  const titleY = Math.round(cellH * 0.75);
+  ctx.fillStyle = textLight;
+  ctx.font = `700 ${Math.max(14, Math.round(cellH * 0.7))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const baseChar = 'A'.charCodeAt(0);
-  for(let r=0;r<TOPPAD_GRID_ROWS;r++){
-    const rowNum = r + 1;
-    const cy = (r + 0.5) * cellH;
-    for(let c=0;c<TOPPAD_GRID_COLS;c++){
-      const label = String.fromCharCode(baseChar + c) + rowNum;
-      const cx = (c + 0.5) * cellW;
-      ctx.fillText(label, cx, cy);
+  ctx.fillText('Play Tracks', leftW / 2, titleY);
+
+  const gridBtnW = Math.round(uiWidth * 0.5);
+  const gridBtnH = Math.round(cellH * 0.45);
+  const gridBtnX = uiPadX + (uiWidth - gridBtnW) / 2;
+  const gridBtnY = Math.round(titleY + cellH * 0.55);
+  ctx.fillStyle = showTopPadGrid ? greenSecondary : 'rgba(255,255,255,0.12)';
+  ctx.fillRect(gridBtnX, gridBtnY, gridBtnW, gridBtnH);
+  ctx.strokeStyle = greenPrimary;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(gridBtnX + 0.5, gridBtnY + 0.5, gridBtnW - 1, gridBtnH - 1);
+  ctx.fillStyle = showTopPadGrid ? '#ffffff' : greenPrimary;
+  ctx.font = `700 ${Math.max(10, Math.round(gridBtnH * 0.55))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.fillText(showTopPadGrid ? 'Grid: On' : 'Grid: Off', gridBtnX + gridBtnW / 2, gridBtnY + gridBtnH / 2);
+
+  const circleR = Math.min(leftW * 0.24, cellH * 0.9);
+  const circleGap = Math.max(10, Math.round((leftW - circleR * 4) / 3));
+  const circleYTop = Math.round(cellH * 2.3);
+  const circleYRow = Math.round(cellH * 4.0);
+  const circleLeftX = circleGap + circleR;
+  const circleRightX = leftW - circleGap - circleR;
+  const circleTopX = leftW / 2;
+  const circleRects = [
+    { x: circleTopX, y: circleYTop, r: circleR },
+    { x: circleLeftX, y: circleYRow, r: circleR },
+    { x: circleRightX, y: circleYRow, r: circleR }
+  ];
+  topPadUiRects = { speedButtons: [], playRect: null, trackCircles: circleRects, gridToggle: { x: gridBtnX, y: gridBtnY, w: gridBtnW, h: gridBtnH } };
+  circleRects.forEach((c, idx) => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.6)';
+    ctx.fill();
+    const hover = topPadHoverUi && topPadHoverUi.type === 'track' && topPadHoverUi.index === idx;
+    ctx.strokeStyle = hover ? greenPrimary : greenSecondary;
+    ctx.lineWidth = Math.max(2, Math.round(c.r * (hover ? 0.16 : 0.12)));
+    ctx.stroke();
+    ctx.clip();
+    const img = topPadIconImages[idx];
+    if(img && img.complete && img.naturalWidth){
+      const size = c.r * 1.7;
+      ctx.drawImage(img, c.x - size/2, c.y - size/2, size, size);
+    }
+    ctx.restore();
+  });
+
+  const playH = Math.round(cellH * 0.95);
+  const playW = Math.round(uiWidth * 0.82);
+  const playX = uiPadX + (uiWidth - playW) / 2;
+  const playY = Math.round(H - cellH * 2.6 - playH);
+  const playLabel = (audioPlaying || playingMIDI) ? 'Pause' : 'Play';
+  ctx.fillStyle = greenSecondary;
+  ctx.fillRect(playX, playY, playW, playH);
+  ctx.strokeStyle = greenPrimary;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(playX + 0.5, playY + 0.5, playW - 1, playH - 1);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `800 ${Math.max(14, Math.round(playH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.fillText(playLabel, playX + playW / 2, playY + playH / 2);
+
+  const speedOptions = [0.75, 0.85, 1, 1.2, 1.6, 2];
+  const speedY = Math.round(playY + playH + cellH * 0.32);
+  const speedH = Math.round(cellH * 0.72);
+  const speedGap = Math.max(6, Math.round(cellW * 0.12));
+  const speedW = Math.max(28, Math.floor((uiWidth - speedGap * (speedOptions.length - 1)) / speedOptions.length));
+  topPadUiRects.playRect = { x: playX, y: playY, w: playW, h: playH };
+  speedOptions.forEach((rate, i) => {
+    const x = uiPadX + i * (speedW + speedGap);
+    const y = speedY;
+    const selected = Math.abs(currentPlaybackRate - rate) < 0.001;
+    const hovered = topPadHoverUi && topPadHoverUi.type === 'speed' && topPadHoverUi.index === i;
+    const bg = selected ? greenSecondary : '#ffffff';
+    ctx.fillStyle = bg;
+    ctx.fillRect(x, y, speedW, speedH);
+    ctx.strokeStyle = selected ? greenPrimary : greenSecondary;
+    ctx.lineWidth = hovered && !selected ? 2 : 1;
+    ctx.strokeRect(x + 0.5, y + 0.5, speedW - 1, speedH - 1);
+    ctx.fillStyle = selected ? '#ffffff' : greenSecondary;
+    if(hovered && !selected){
+      ctx.fillStyle = greenSecondary;
+      ctx.globalAlpha = 0.12;
+      ctx.fillRect(x, y, speedW, speedH);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = greenSecondary;
+    }
+    ctx.font = `700 ${Math.max(10, Math.round(speedH * 0.55))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.fillText(`${rate}x`, x + speedW / 2, y + speedH / 2);
+    topPadUiRects.speedButtons.push({ x, y, w: speedW, h: speedH });
+  });
+
+  // Middle section: thumbnail + info box
+  const midPad = Math.round(cellW * 0.4);
+  const midRect = { x: leftW + midPad, y: Math.round(cellH * 0.8), w: midW - midPad * 2, h: Math.round(cellH * 6) };
+  topPadVideo.midRect = midRect;
+  const thumbW = Math.round(midRect.w * 0.86);
+  const thumbH = Math.round(thumbW * 9 / 16);
+  const thumbX = midRect.x + Math.round((midRect.w - thumbW) / 2);
+  const thumbY = midRect.y;
+  const infoH = Math.round(cellH * 1.2);
+  const infoY = thumbY + thumbH + Math.round(cellH * 0.45);
+  topPadVideo.thumbRect = { x: thumbX, y: thumbY, w: thumbW, h: thumbH };
+  topPadVideo.infoRect = { x: thumbX, y: infoY, w: thumbW, h: infoH };
+  topPadVideo.videoRect = null;
+
+  if(topPadVideo.thumbImg && topPadVideo.thumbImg.complete && topPadVideo.thumbImg.naturalWidth){
+    ctx.drawImage(topPadVideo.thumbImg, thumbX, thumbY, thumbW, thumbH);
+  } else {
+    ctx.fillStyle = '#0f0f0f';
+    ctx.fillRect(thumbX, thumbY, thumbW, thumbH);
+  }
+  ctx.strokeStyle = greenSecondary;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(thumbX + 1, thumbY + 1, thumbW - 2, thumbH - 2);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(topPadVideo.infoRect.x, topPadVideo.infoRect.y, topPadVideo.infoRect.w, topPadVideo.infoRect.h);
+  ctx.strokeStyle = greenSecondary;
+  ctx.strokeRect(topPadVideo.infoRect.x + 0.5, topPadVideo.infoRect.y + 0.5, topPadVideo.infoRect.w - 1, topPadVideo.infoRect.h - 1);
+  ctx.fillStyle = textLight;
+  ctx.font = `600 ${Math.max(12, Math.round(infoH * 0.45))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.fillText('Sunil Track Preview', topPadVideo.infoRect.x + topPadVideo.infoRect.w / 2, topPadVideo.infoRect.y + topPadVideo.infoRect.h / 2);
+
+  if(topPadVideo.mode !== 'idle'){
+    const videoEl = topPadVideo.mode === 'playing' ? topPadVideo.hqVideo : topPadVideo.lqVideo;
+    if(videoEl && videoEl.readyState >= 2){
+      const vAR = (videoEl.videoWidth && videoEl.videoHeight) ? (videoEl.videoWidth / videoEl.videoHeight) : (16/9);
+      let vw = midRect.w;
+      let vh = vw / vAR;
+      if(vh > midRect.h){
+        vh = midRect.h;
+        vw = vh * vAR;
+      }
+      const vx = midRect.x + (midRect.w - vw) / 2;
+      const vy = midRect.y + (midRect.h - vh) / 2;
+      ctx.drawImage(videoEl, vx, vy, vw, vh);
+      topPadVideo.videoRect = { x: vx, y: vy, w: vw, h: vh };
+      if(topPadVideo.mode === 'playing'){
+        if(!topPadVideo.ui){
+          topPadVideo.ui = createVideoControlsUI({ enablePointer: true });
+          topPadVideo.ui.onAction = (action) => {
+            if(action.type === 'togglePlay'){
+              if(topPadVideo.hqVideo.paused) topPadVideo.hqVideo.play();
+              else topPadVideo.hqVideo.pause();
+            } else if(action.type === 'seekToRatio'){
+              const dur = topPadVideo.hqVideo.duration || 0;
+              if(dur > 0) topPadVideo.hqVideo.currentTime = dur * action.ratio;
+            } else if(action.type === 'toggleMute'){
+              topPadVideo.audio.muted = !topPadVideo.audio.muted;
+            } else if(action.type === 'exit'){
+              stopTopPadVideoPlayback();
+            }
+          };
+          topPadVideo.ui.setViewportRectProvider(() => ({
+            left: 0,
+            top: 0,
+            width: Math.max(1, Math.round(vw)),
+            height: Math.max(1, Math.round(vh))
+          }));
+        }
+        if(!topPadVideo.uiCanvas){
+          topPadVideo.uiCanvas = document.createElement('canvas');
+          topPadVideo.uiCtx = topPadVideo.uiCanvas.getContext('2d');
+        }
+        topPadVideo.uiCanvas.width = Math.max(1, Math.round(vw));
+        topPadVideo.uiCanvas.height = Math.max(1, Math.round(vh));
+        const s = {
+          playing: !topPadVideo.hqVideo.paused,
+          muted: !!topPadVideo.audio.muted,
+          volume: Number.isFinite(topPadVideo.audio.volume) ? topPadVideo.audio.volume : 1,
+          currentTime: topPadVideo.hqVideo.currentTime || 0,
+          duration: topPadVideo.hqVideo.duration || 0,
+          playbackRate: topPadVideo.hqVideo.playbackRate || 1,
+          canPlay: true,
+          canSeek: true
+        };
+        topPadVideo.ui.setState(s);
+        topPadVideo.ui.draw(topPadVideo.uiCtx, { alpha: 1 });
+        ctx.drawImage(topPadVideo.uiCanvas, vx, vy, vw, vh);
+      }
     }
   }
-  if(topPadHoverCell){
-    const { col, row } = topPadHoverCell;
-    if(col >= 0 && col < TOPPAD_GRID_COLS && row >= 0 && row < TOPPAD_GRID_ROWS){
-      const x = col * cellW;
-      const y = row * cellH;
-      ctx.fillStyle = 'rgba(255, 220, 70, 0.35)';
-      ctx.fillRect(x, y, cellW, cellH);
-      ctx.strokeStyle = 'rgba(255, 235, 120, 0.9)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 1, y + 1, Math.max(0, cellW - 2), Math.max(0, cellH - 2));
+  if(showTopPadGrid){
+    const fontSize = Math.max(12, Math.round(Math.min(cellW, cellH) * 0.4));
+    ctx.fillStyle = 'rgba(220, 220, 220, 0.9)';
+    ctx.font = `${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const baseChar = 'A'.charCodeAt(0);
+    for(let r=0;r<TOPPAD_GRID_ROWS;r++){
+      const rowNum = r + 1;
+      const cy = (r + 0.5) * cellH;
+      for(let c=0;c<TOPPAD_GRID_COLS;c++){
+        const label = String.fromCharCode(baseChar + c) + rowNum;
+        const cx = (c + 0.5) * cellW;
+        ctx.fillText(label, cx, cy);
+      }
     }
   }
   topPadTexture.needsUpdate = true;
@@ -1730,6 +2189,7 @@ function animate(){
   requestAnimationFrame(animate);
   controls.update();
   const dt = clock.getDelta();
+  updateTopPadZoom();
   if(animationMixer) animationMixer.update(dt);
   renderer.render(scene, cam);
   if(root){
@@ -1786,6 +2246,20 @@ function animate(){
       if(elapsedMidiSec >= 0) advanceMIDI(elapsedMidiSec * 1000);
     }
     updateKeyAnimations();
+    if(topPadVideo.mode !== 'idle'){
+      const nowMs = performance.now();
+      if((nowMs - topPadLastDrawMs) >= (1000 / TOPPAD_MAX_FPS)){
+        renderTopPadGrid();
+        topPadLastDrawMs = nowMs;
+      }
+    }
+    if(topPadVideo.mode === 'playing'){
+      try{
+        syncAudioToVideo(topPadVideo.hqVideo, topPadVideo.audio, topPadVideo.syncState, {
+          syncMs: getSyncOffsetMs()
+        });
+      }catch(e){}
+    }
       // update backboard overlay
       try{
         const nowMs = performance.now();
@@ -4200,6 +4674,7 @@ function updatePlayButton(){
   btn.disabled = !midiLoaded || !audioReady;
 }
 function togglePlayPause(){
+  try{ ensureAudio(); }catch(e){}
   if(!audioCtx || !audioReady || !midiLoaded){ return; }
   if(audioPlaying){
     // Pause: capture position, stop source, freeze MIDI index and clock origin
@@ -4664,6 +5139,91 @@ function findKeyFromObject(obj){
 }
 let suppressRotate = false;
 function onPointerDown(e){
+  // Top pad UI hit test (track icons + play + speed buttons)
+  try{
+    if(topPadMesh && topPadCanvas && topPadUiRects){
+      const uv = raycastTopPadForUv(e.clientX, e.clientY);
+      if(uv){
+        let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
+        let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
+        if(topPadUvRemap.swap){ const tmp = u; u = v; v = tmp; }
+        if(topPadUvRemap.mirrorU) u = 1 - u;
+        if(topPadUvRemap.mirrorV) v = 1 - v;
+        const px = Math.max(0, Math.min(1, u)) * topPadCanvas.width;
+        const py = Math.max(0, Math.min(1, v)) * topPadCanvas.height;
+        let handled = false;
+        if(topPadUiRects.gridToggle){
+          const r = topPadUiRects.gridToggle;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            showTopPadGrid = !showTopPadGrid;
+            renderTopPadGrid();
+            handled = true;
+          }
+        }
+        if(topPadUiRects.trackCircles && topPadUiRects.trackCircles.length){
+          const trackKeys = ['baby', 'raisins', 'forests'];
+          for(let i=0;i<topPadUiRects.trackCircles.length;i++){
+            const c = topPadUiRects.trackCircles[i];
+            const dx = px - c.x;
+            const dy = py - c.y;
+            if((dx * dx + dy * dy) <= (c.r * c.r)){
+              const key = trackKeys[i] || null;
+              if(key) selectTrack(key);
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.playRect){
+          const r = topPadUiRects.playRect;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            togglePlayPause();
+            handled = true;
+          }
+        }
+        if(!handled && topPadVideo.thumbRect){
+          const r = topPadVideo.thumbRect;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            startTopPadVideoPlayback();
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.speedButtons && topPadUiRects.speedButtons.length){
+          const speeds = [0.75, 0.85, 1, 1.2, 1.6, 2];
+          for(let i=0;i<topPadUiRects.speedButtons.length;i++){
+            const r = topPadUiRects.speedButtons[i];
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              const rate = speeds[i];
+              if(Number.isFinite(rate)) setPlaybackRate(rate);
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadVideo.mode === 'playing' && topPadVideo.videoRect && topPadVideo.ui){
+          const vr = topPadVideo.videoRect;
+          if(px >= vr.x && px <= vr.x + vr.w && py >= vr.y && py <= vr.y + vr.h){
+            const lx = px - vr.x;
+            const ly = py - vr.y;
+            topPadVideo.ui.setViewportRectProvider(() => ({
+              left: 0,
+              top: 0,
+              width: Math.max(1, Math.round(vr.w)),
+              height: Math.max(1, Math.round(vr.h))
+            }));
+            const ev = { clientX: lx, clientY: ly };
+            handled = !!topPadVideo.ui.handlePointerEvent(ev, { canvasWidth: vr.w, canvasHeight: vr.h });
+          }
+        }
+        if(handled){
+          updateTopPadHover(e.clientX, e.clientY);
+          try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+  }catch(err){ /* ignore top pad UI hit errors */ }
   // Ignore right-clicks
   if(e.button === 2) return;
   // Check backboard instrument UI first
@@ -4816,7 +5376,7 @@ window.addEventListener('pointermove', onGlobalPointerMove);
 canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
 canvas.addEventListener('pointermove', (e)=>updateTopPadHover(e.clientX, e.clientY));
 // Keep pointer-down glissando active even if cursor leaves the canvas
-canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(canvas) canvas.style.cursor = ''; });
+canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 

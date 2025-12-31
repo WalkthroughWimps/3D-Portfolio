@@ -152,20 +152,98 @@
         </div>
 
         <section class="skills">
-            <h2>Skills</h2>
+            <div class="skills-head">
+                <h2>Skills</h2>
+                <label class="skills-toggle">
+                    <input id="skillsBackToggle" type="checkbox">
+                    <span>Back Images</span>
+                </label>
+            </div>
             <div class="skills-grid" aria-label="Software skills">
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-acrobat-reader.png" alt="Adobe Acrobat Reader" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-after-effects.png" alt="Adobe After Effects" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-audition.png" alt="Adobe Audition" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-illustrator.png" alt="Adobe Illustrator" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-indesign.png" alt="Adobe InDesign" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/adobe-premiere-pro.png" alt="Adobe Premiere Pro" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/blender.png" alt="Blender" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/microsoft-excel.png" alt="Microsoft Excel" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/microsoft-powerpoint.png" alt="Microsoft PowerPoint" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/microsoft-word.png" alt="Microsoft Word" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/visual-studio-code.png" alt="Visual Studio Code" loading="lazy"></div>
-                <div class="skill-icon"><img src="assets/computer-app-icons/visual-studio.png" alt="Visual Studio" loading="lazy"></div>
+                <div class="skill-card" data-icon="Ableton Live" title="Ableton Live">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Ableton%20Live.png" alt="Ableton Live" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Acrobat Reader" title="Adobe Acrobat Reader">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Acrobat%20Reader.png" alt="Adobe Acrobat Reader" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe After Effects" title="Adobe After Effects">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20After%20Effects.png" alt="Adobe After Effects" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Animate" title="Adobe Animate">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Animate.png" alt="Adobe Animate" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Audition" title="Adobe Audition">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Audition.png" alt="Adobe Audition" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Bridge" title="Adobe Bridge">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Bridge.png" alt="Adobe Bridge" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Capture" title="Adobe Capture">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Capture.png" alt="Adobe Capture" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Character Animator" title="Adobe Character Animator">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Character%20Animator.png" alt="Adobe Character Animator" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Illustrator" title="Adobe Illustrator">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Illustrator.png" alt="Adobe Illustrator" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe InDesign" title="Adobe InDesign">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20InDesign.png" alt="Adobe InDesign" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Media Encoder" title="Adobe Media Encoder">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Media%20Encoder.png" alt="Adobe Media Encoder" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Adobe Premiere Pro" title="Adobe Premiere Pro">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Premiere%20Pro.png" alt="Adobe Premiere Pro" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="blender" title="Blender">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/blender.png" alt="Blender" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="DaVinci Resolve" title="DaVinci Resolve">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/DaVinci%20Resolve.png" alt="DaVinci Resolve" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Finale" title="Finale">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Finale.png" alt="Finale" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Microsoft Excel" title="Microsoft Excel">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20Excel.png" alt="Microsoft Excel" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Microsoft PowerPoint" title="Microsoft PowerPoint">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20PowerPoint.png" alt="Microsoft PowerPoint" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Microsoft Word" title="Microsoft Word">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20Word.png" alt="Microsoft Word" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="REAPER" title="REAPER">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/REAPER.png" alt="REAPER" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Visual Studio Code" title="Visual Studio Code">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Visual%20Studio%20Code.png" alt="Visual Studio Code" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
+                <div class="skill-card" data-icon="Visual Studio" title="Visual Studio">
+                    <div class="skill-face front"><img src="assets/computer-app-icons/Visual%20Studio.png" alt="Visual Studio" loading="lazy"></div>
+                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                </div>
             </div>
         </section>
     </main>

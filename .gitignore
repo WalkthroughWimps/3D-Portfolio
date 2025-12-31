@@ -35,6 +35,7 @@ unused/*
 /glb/
 /Renders/
 /Videos/
+/games/
 
 # Staging and export helpers
 /Renders/**/webm_alpha_out/
