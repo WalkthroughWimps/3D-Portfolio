@@ -6,6 +6,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs } from './global-sync.js';
+import { assetUrl } from './assets-config.js';
 const canvas = document.getElementById('pianoCanvas');
 if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
@@ -23,19 +24,18 @@ cam.lookAt(0,0,0);
 const hemi = new THREE.HemisphereLight(0xffffff, 0x222244, 0.6); scene.add(hemi);
 const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(3,5,4); scene.add(dir);
 const loader = new GLTFLoader();
+loader.setCrossOrigin('anonymous');
 const draco = new DRACOLoader(); draco.setDecoderPath('https://unpkg.com/three@0.159.0/examples/jsm/libs/draco/');
 loader.setDRACOLoader(draco); loader.setMeshoptDecoder(MeshoptDecoder);
-const HUD = document.createElement('div');
-HUD.style.cssText='position:absolute;left:8px;top:8px;padding:6px 10px;background:rgba(0,0,0,.6);color:#d0ffe4;font:12px monospace;z-index:10;border-radius:6px;white-space:pre;';
-canvas.parentElement?.appendChild(HUD);
+const HUD = null;
 let root=null; let keyMeshes=[];
 let selectedKey=null; // middle key chosen for demo animation
 const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
 // Orbit controls
 const controls = new OrbitControls(cam, renderer.domElement);
-// User-specified mouse button mapping
-controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
+// User-specified mouse button mapping (RMB rotate only)
+controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
 controls.enablePan = true;
@@ -209,30 +209,30 @@ const TRACKS = {
   baby: {
     label: 'Baby',
     audioCandidates: [
-      './music/Baby,-Just-Shut-Up!,-A-Lullaby.wav',
-      './music/Baby,-Just-Shut-Up!,-A-Lullaby.mp3'
+      assetUrl('./music/Baby,-Just-Shut-Up!,-A-Lullaby.wav'),
+      assetUrl('./music/Baby,-Just-Shut-Up!,-A-Lullaby.mp3')
     ],
-    midi: './midi/babyshutup.mid'
+    midi: assetUrl('./midi/babyshutup.mid')
   },
   raisins: {
     label: 'Raisins',
     audioCandidates: [
-      './music/Those-Raisins-Are-Mine!.wav', // preferred if added later
-      './music/Those-Raisins-Are-Mine!.mp3'
+      assetUrl('./music/Those-Raisins-Are-Mine!.wav'), // preferred if added later
+      assetUrl('./music/Those-Raisins-Are-Mine!.mp3')
     ],
-    midi: './midi/raisins.mid'
+    midi: assetUrl('./midi/raisins.mid')
   },
   forests: {
     label: 'Forests',
     audioCandidates: [
-      './music/No-Forests-Left-to-Give.wav',
-      './music/No-Forests-Left-to-Give.mp3'
+      assetUrl('./music/No-Forests-Left-to-Give.wav'),
+      assetUrl('./music/No-Forests-Left-to-Give.mp3')
     ],
     // Supports multiple MIDI parts to be merged
     midi: [
-      './midi/Forests-Accomp.mid',
-      './midi/Forests-Harmony.mid',
-      './midi/Forests-Melody.mid'
+      assetUrl('./midi/Forests-Accomp.mid'),
+      assetUrl('./midi/Forests-Harmony.mid'),
+      assetUrl('./midi/Forests-Melody.mid')
     ]
   }
 };
@@ -395,7 +395,9 @@ function animate(){
     const driftMs = elapsedMidiMs - elapsedAudioMs;
     driftLine = ` drift:${driftMs.toFixed(1)}ms`;
   }
-  HUD.textContent = `children:${root.children.length}\nsize:${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}\nkeys:${keyMeshes.length}\n${midiLine}\n${audioLine}${trimInfo}${driftLine}\ntempos:${tempoMap.length} sentinels:${sentinelFilteredCount}\ncam:${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}`;
+  if (HUD) {
+    HUD.textContent = `children:${root.children.length}\nsize:${s.x.toFixed(3)},${s.y.toFixed(3)},${s.z.toFixed(3)}\nkeys:${keyMeshes.length}\n${midiLine}\n${audioLine}${trimInfo}${driftLine}\ntempos:${tempoMap.length} sentinels:${sentinelFilteredCount}\ncam:${cam.position.x.toFixed(2)},${cam.position.y.toFixed(2)},${cam.position.z.toFixed(2)}`;
+  }
     // Demo animation for selected key or fallback
     // Always update view-driven transforms (e.g., tablet stand)
     updateViewDrivenTransforms();
@@ -409,7 +411,7 @@ function animate(){
 animate();
 // Proper signature: (url, onLoad, onProgress, onError)
 const MODEL_VERSION = 'v20251115a'; // bump to bust cache when GLB updated
-loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') + `?${MODEL_VERSION}` : `glb/toy-piano.glb?${MODEL_VERSION}`,
+loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
   gltf => {
     root = gltf.scene;
     scene.add(root);
@@ -500,11 +502,11 @@ loader.load((window && window.mediaUrl) ? window.mediaUrl('glb/toy-piano.glb') +
   },
   prog => {
     const pct = prog.total ? (prog.loaded / prog.total) * 100 : 0;
-    HUD.textContent = `Loading GLB: ${pct.toFixed(1)}%`;
+    if (HUD) HUD.textContent = `Loading GLB: ${pct.toFixed(1)}%`;
   },
   err => {
     console.error('GLB load FAILED', err);
-    HUD.textContent = 'GLB load FAILED';
+    if (HUD) HUD.textContent = 'GLB load FAILED';
   }
 );
 // Resize listener
@@ -921,7 +923,7 @@ async function loadTrackAudio(candidates){
   console.log('[loadTrackAudio] candidates=', candidates);
   for(let i=0;i<candidates.length;i++){
     const url = candidates[i];
-    const resolved = (window && window.mediaUrl) ? window.mediaUrl(url) : url;
+    const resolved = assetUrl(url);
     audioReady=false; audioError=false;
     try {
       await loadAudio(resolved);

@@ -66,11 +66,17 @@
         .settings-box { background:#0f1115; border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:10px; width:720px; max-width:95%; }
         .settings-tab { padding:8px 12px; border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.04); }
         .settings-tab.active { background:rgba(42,161,152,.12); }
+        .page-note {
+            --primary-color: #1d2730;
+            --hl-secondary-color: #7dd3c7;
+            --hl-tertiary-color: #d4fff2;
+        }
     </style>
     <script src="a11y.js" defer></script>
 </head>
 <body>
     <a href="#main" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Skip to content</a>
+    <div class="page-note">Right Mouse Button<br>Rotate</div>
     <button id="settingsBtn" class="settings-overlay-btn" aria-haspopup="dialog" aria-controls="settingsModal">⚙</button>
     <main id="main" class="wrap" aria-labelledby="title">
         <header>
@@ -245,7 +251,23 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        import { assetUrl, isLocalDev } from "./assets-config.js";
+        const isLocalHost = isLocalDev();
+        if (isLocalHost) {
+            window.setAssetsBase = (urlOrBlank) => {
+                if (!urlOrBlank) {
+                    localStorage.removeItem("ASSETS_BASE");
+                } else {
+                    localStorage.setItem("ASSETS_BASE", String(urlOrBlank));
+                }
+                location.reload();
+            };
+            window.clearAssetsBase = () => {
+                localStorage.removeItem("ASSETS_BASE");
+                location.reload();
+            };
+        }
         // Bind controls to SiteA11y and implement jump UI with visualizer
         (function(){
             // Helper storage keys
@@ -257,12 +279,12 @@
             // File paths (relative to site root)
             const MEDIA = {
                 counts: {
-                    video: 'Videos/start-page/counting-hq.webm',
-                    audio: 'Videos/start-page/counting.opus'
+                    video: assetUrl('Videos/start-page/counting-hq.webm'),
+                    audio: assetUrl('Videos/start-page/counting.opus')
                 },
                 alphabet: {
-                    video: 'Videos/start-page/alphabet-hq.webm',
-                    audio: 'Videos/start-page/alphabet.opus'
+                    video: assetUrl('Videos/start-page/alphabet-hq.webm'),
+                    audio: assetUrl('Videos/start-page/alphabet.opus')
                 }
             };
 
@@ -794,6 +816,23 @@
                 }
             });
         })();
+
+        if ("serviceWorker" in navigator) {
+            if (isLocalHost) {
+                const clearedKey = "sw_cleared_once";
+                if (!sessionStorage.getItem(clearedKey)) {
+                    navigator.serviceWorker.getRegistrations().then((regs) => {
+                        if (!regs || !regs.length) return;
+                        return Promise.all(regs.map((r) => r.unregister())).then(() => {
+                            sessionStorage.setItem(clearedKey, "true");
+                            location.reload();
+                        });
+                    }).catch(() => {});
+                }
+            } else {
+                navigator.serviceWorker.register("/sw.js").catch(() => {});
+            }
+        }
     </script>
 </body>
 </html>

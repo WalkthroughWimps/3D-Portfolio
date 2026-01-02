@@ -199,9 +199,9 @@ export function setupTabletControls({ camera, domElement, tabletGroup, modelCent
     controls.enablePan = !!(config && config.enablePan);
       try {
         controls.mouseButtons = {
-          LEFT: THREE.MOUSE.ROTATE,
+          LEFT: THREE.MOUSE.PAN,
           MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.PAN
+          RIGHT: THREE.MOUSE.ROTATE
         };
         controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
         // Use camera-space panning behavior (matches `stupid.js`) so pan moves
@@ -832,6 +832,7 @@ export function applyBlenderAlignment({tabletGroupRef, camera, controls, rendere
 export function loadTabletGlb(path, onLoaded, onProgress, onError) {
   try {
     const loader = new GLTFLoader();
+    loader.setCrossOrigin('anonymous');
     const enc = (p) => encodeURI(p);
     loader.load(enc(path), onLoaded, onProgress, onError || (() => {}));
   } catch (e) {

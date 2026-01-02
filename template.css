@@ -154,6 +154,26 @@ body.videos-page {
     align-items: center;
 }
 
+.page-note {
+    position: fixed;
+    top: 92px;
+    left: 24px;
+    z-index: 12;
+    font-family: var(--videos-info-font, "Source Sans 3", "Segoe UI", Tahoma, Geneva, Verdana, system-ui, sans-serif);
+    font-size: 0.95rem;
+    font-weight: 600;
+    line-height: 1.15;
+    text-align: center;
+    color: var(--hl-tertiary-color);
+    background: color-mix(in oklab, var(--primary-color) 82%, transparent);
+    border: 2px solid color-mix(in oklab, var(--hl-secondary-color) 70%, transparent);
+    border-radius: 999px;
+    padding: 6px 14px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    letter-spacing: 0.02em;
+    pointer-events: none;
+}
+
 .nav-icon {
     width: var(--nav-icon-size);
     height: var(--nav-icon-size);

@@ -26,11 +26,11 @@
   <script>
     (function tryLoadSoundfont(){
       const urls = [
-        'https://cdn.jsdelivr.net/npm/soundfont-player@0.15.0/dist/soundfont-player.js',
-        'https://unpkg.com/soundfont-player@0.15.0/dist/soundfont-player.js',
-        'https://ga.jspm.io/npm:soundfont-player@0.15.0/dist/soundfont-player.js',
-        'https://cdn.skypack.dev/soundfont-player@0.15.0',
-        'https://esm.sh/soundfont-player@0.15.0',
+        'https://cdn.jsdelivr.net/npm/soundfont-player@0.8.1/dist/soundfont-player.js',
+        'https://unpkg.com/soundfont-player@0.8.1/dist/soundfont-player.js',
+        'https://ga.jspm.io/npm:soundfont-player@0.8.1/dist/soundfont-player.js',
+        'https://cdn.skypack.dev/soundfont-player@0.8.1',
+        'https://esm.sh/soundfont-player@0.8.1',
         '/assets/vendor/soundfont-player.js' // local fallback - place file here if CDNs are blocked
       ];
       window.SOUNDFONT_LOADED = null;
@@ -117,6 +117,7 @@
 
     <div id="header-placeholder"></div> <!-- Placeholder for header -->
   </div>
+  <div class="page-note">Right Mouse Button<br>Rotate</div>
 
   <!-- Controls moved into separate fixed overlay (see bottom of file) -->
 
@@ -124,7 +125,6 @@
     <section aria-label="3D Toy Piano" class="piano-stage">
         <div class="piano-canvas-wrap">
         <canvas id="pianoCanvas" aria-label="3D toy piano"></canvas>
-        <button id="playPerformance" class="piano-play">Play / Pause</button>
       </div>
       <div class="piano-notes" aria-live="polite" aria-atomic="true"></div>
     </section>
@@ -159,14 +159,6 @@
           <button id="uvCheckerBtn" title="Show checkerboard UV map">UV Checker</button>
         </div>
       </div>
-      <div class="sync-offset-wrap">
-        <label for="syncOffset" class="sync-label">Audio Sync Offset:
-          <input id="syncOffset" type="range" min="-3000" max="3000" step="10" value="0" aria-label="Audio sync offset slider (-3000ms to +3000ms)">
-          <span id="syncOffsetValue" class="sync-value">0 ms</span>
-        </label>
-        <small class="sync-hint">(-3s leads MIDI → +3s lags)</small>
-      </div>
-      <button id="playPerformance" class="piano-play">Play / Pause</button>
     </div>
     <!-- Left-side backend picker (choose library) -->
     <div class="instrument-backend-picker" id="instrumentBackendPicker" aria-hidden="false" role="toolbar" aria-label="Instrument backend picker"></div>
@@ -211,18 +203,26 @@
         // Build instrument picker buttons and hook to sampler
         (function(){
           const list = [
-            ['acoustic_grand_piano','Acoustic Piano'],
-            ['bright_acoustic_piano','Bright Piano'],
-            ['electric_piano_1','Electric Piano 1'],
-            ['electric_piano_2','Electric Piano 2'],
-            ['honkytonk','Honky-Tonk'],
-            ['harpsichord','Harpsichord'],
-            ['vibraphone','Vibraphone'],
-            ['church_organ','Organ'],
-            ['accordion','Accordion'],
-            ['string_ensemble_1','Strings'],
-            ['pad_1','Pad'],
-            ['choir_aahs','Choir']
+            ['keys_acoustic_piano','Grand Piano'],
+            ['keys_bright_piano','Bright Piano'],
+            ['keys_honky_tonk','Honky-Tonk'],
+            ['keys_harpsichord','Harpsichord'],
+            ['electric_piano','Electric Piano'],
+            ['electric_fm_piano','FM Piano'],
+            ['electric_vibraphone','Vibraphone'],
+            ['electric_clav','Clav'],
+            ['pad_string','String Pad'],
+            ['pad_brass','Brass Pad'],
+            ['pad_choir','Choir Pad'],
+            ['pad_synth','Synth Pad'],
+            ['solo_string','Solo String'],
+            ['solo_brass','Solo Brass'],
+            ['solo_wind','Solo Wind'],
+            ['solo_lead','Lead Synth'],
+            ['fx_drums','Drums'],
+            ['fx_dog','Dog'],
+            ['fx_telephone','Telephone'],
+            ['fx_odd','Odd FX']
           ];
           const wrap = document.getElementById('instrumentPicker');
           if(!wrap) return;

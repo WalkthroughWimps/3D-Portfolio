@@ -7,8 +7,10 @@
 import * as THREE from 'three';
 
 // Path to the HQ video and its thumbnail. Resolve via mediaUrl when MEDIA_BASE set.
-const TABLET_VIDEO_SRC = (window && window.mediaUrl) ? window.mediaUrl('Videos/videos-page/music-videos-hq.webm') : 'Videos/videos-page/music-videos-hq.webm';
-const TABLET_THUMB_SRC = (window && window.mediaUrl) ? window.mediaUrl('Videos/videos-page/music-videos.jpg') : 'Videos/videos-page/music-videos.jpg';
+import { assetUrl } from './assets-config.js';
+
+const TABLET_VIDEO_SRC = assetUrl('Videos/videos-page/music-videos-hq.webm');
+const TABLET_THUMB_SRC = assetUrl('Videos/videos-page/music-videos.jpg');
 
 // Public entry point used by `music-piano.js` / `music-piano-debug.js`.
 // It is safe if the tablet mesh is not found; it will just return null.
@@ -173,6 +175,7 @@ export function setupMusicTabletScreen(rootObject3D) {
   };
 
   const videoEl = document.createElement('video');
+  videoEl.crossOrigin = 'anonymous';
   videoEl.src = encodeURI(TABLET_VIDEO_SRC);
   videoEl.playsInline = true;
   videoEl.muted = false;

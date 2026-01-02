@@ -148,6 +148,7 @@ body {
 }
 .intro-skip:hover { transform: translateY(-1px); }
 .intro-skip.hidden { opacity: 0; pointer-events: none; }
+.page-note { left: 198px; }
 
 .intro-gate {
     position: absolute;

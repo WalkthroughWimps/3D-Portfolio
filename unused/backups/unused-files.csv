@@ -1,0 +1,27 @@
+Path,Type,Status,Notes
+backups\,folder,unused/redundant,Legacy backups not referenced by site runtime
+deleted\,folder,unused/redundant,Old assets marked deleted
+garbage\,folder,unused/redundant,Scratch files not referenced
+carousel.css,css,unused,No references found in site
+carousel.js,js,unused,No references found in site
+graphics-elements.html,html,unused,Standalone experiment; not linked
+Music Notes Tester\notes.css,css,unused/test,Only for tester
+Music Notes Tester\notes.html,html,unused/test,Standalone tester not linked
+Music Notes Tester\notes.js,js,unused/test,Only for tester
+music2.css,css,unused,Only for music2.html
+music2.html,html,unused,Superseded by music.html; not linked
+music2.js,js,unused,Only for music2.html
+music-piano.js,js,unused,Debug/alt version; music-piano-debug.js used
+site-modelviewer.js,js,test-only,Only used by videos-tablet.html
+template-loader.js,js,unused,Only referenced by garbage/template.html
+template-swup.css,css,unused,No references found in site
+video-lane-carousel.css,css,unused/legacy,Not included by current pages
+video-lane-carousel.js,js,unused/legacy,Not included by current pages
+video-lanes.json,json,unused/legacy,Not consumed by current pages
+videos.original.css,css,unused,Legacy variant not linked
+videos.original.html,html,unused,Legacy variant not linked
+videos-tablet.css,css,test-only,Only used by videos-tablet.html
+videos-tablet.html,html,test-only,Standalone demo page
+videos-tablet.js,js,test-only,Only used by videos-tablet.html
+video-tablet-standalone.html,html,test-only,Standalone demo page
+video-viewer.html,html,test-only,Standalone demo page

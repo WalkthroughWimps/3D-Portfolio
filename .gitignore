@@ -58,6 +58,8 @@ music/
 Renders/
 Videos/
 soundfonts/
+soundfont-staging/
+Combiners/
 
 ########################################
 # Common large media file types (repo-wide)

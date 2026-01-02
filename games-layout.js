@@ -1,3 +1,5 @@
+import { assetUrl } from './assets-config.js';
+
 export const GAME_LIST = [
   { id: 'battleship', label: 'Battleship', url: './games/battleship/index.html', renderMode: 'blit' },
   { id: 'plinko', label: 'Plinko', url: './games/plinko/index.html', renderMode: 'blit' },
@@ -7,8 +9,8 @@ export const GAME_LIST = [
 ];
 
 export const VIDEO_LIST = [
-  { id: 'reel', label: 'Game Reel', src: './Videos/games-page/video-games-reel-hq.webm' },
-  { id: 'christmas', label: 'Christmas', src: './Videos/games-page/christmas-games-hq.webm' }
+  { id: 'reel', label: 'Game Reel', src: assetUrl('./Videos/games-page/video-games-reel-hq.webm') },
+  { id: 'christmas', label: 'Christmas', src: assetUrl('./Videos/games-page/christmas-games-hq.webm') }
 ];
 
 export const MENU_LAYOUT = Object.freeze({

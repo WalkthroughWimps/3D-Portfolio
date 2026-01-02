@@ -1,0 +1,133 @@
+Videos page – tablet GLB not visible / “no camera provided” – summary + VS GPT instructions
+
+Context / symptom
+- Page: videos.html (Videos page of resume site).
+- GLB: /glb/video-tablet.glb, loaded by videos-tablet.js using three.js GLTFLoader.
+- Canvas: <canvas id="glCanvas" class="gl-canvas">, created in videos.html and initialized in videos.js.
+- Console output currently shows:
+  - “[videos-tablet] Using screenMesh: tablet_screen003”
+  - “[videos-tablet] Using GLB dolly rig camera position and orientation”
+  - “[videos] initTabletFromGltf refs: { tabletGroup: {...}, screenMesh: {...}, controls: {...}, uvRemap: {...} }”
+  - “[videos] No camera available to pass into VideoPlayer.createGrid – grid will be skipped.”
+  - “[VideoPlayer] createGrid: no camera provided – skipping grid creation.”
+- You also no longer see the 3D tablet at all.
+
+High‑level diagnosis
+1) videos-tablet.js is successfully loading the GLB and finding the screen mesh, but is NOT exposing a usable camera reference back to videos.js.
+2) videos.js is calling VideoPlayer.createGrid(...) without a valid camera argument (or before refs.camera is filled), so the video-player-controls.js module logs “no camera provided” and refuses to build the thumbnail grid.
+3) If the GLB disappears entirely, there may also be an initialization ordering issue: the three.js scene for the tablet is only built inside videos-tablet.js, and if initTabletFromGltf doesn’t attach its renderer to #glCanvas at the right time, you will just see a blank tablet stage.
+
+What “refs” is supposed to contain
+- initTabletFromGltf (in videos-tablet.js) should return an object, e.g.:
+    {
+        tabletGroup,   // THREE.Group for the whole tablet
+        screenMesh,    // front screen mesh with UVs
+        controls,      // OrbitControls instance bound to the tablet camera
+        camera,        // the active THREE.Camera you want to use for raycasts & grid
+        uvRemap        // optional UV remap info (min/max + repeat/offset)
+    }
+- videos.js should store that object in something like window.__videos_refs and pass refs.camera into VideoPlayer.createGrid.
+
+Concrete checklist (what VS GPT must verify and/or fix)
+Files to edit ONLY in the root of c:\Dropbox\Resume Website\:
+- videos.html
+- videos.js
+- videos-tablet.js
+- video-player-controls.js
+(Do not edit backups/* or copies like videos-copy.js or videos-fix.patch.)
+
+1) videos-tablet.js – ensure camera is exported in refs
+- Find the GLB init function (currently named initTabletFromGltf).
+- Inside it, after the GLB is loaded and the dolly rig / camera are resolved:
+  - Identify the actual THREE.Camera you want to use (the dolly rig child camera). Call it activeCamera.
+  - Make sure the function’s returned object includes camera: activeCamera.
+  - Example shape (pseudo-code, not exact):
+        const refs = {
+            tabletGroup,
+            screenMesh,
+            controls,
+            camera: activeCamera,
+            uvRemap
+        };
+        return refs;
+- Ensure the console log “[videos-tablet] Using GLB dolly rig camera position and orientation” runs after activeCamera is resolved, not before.
+
+2) videos.js – store refs and pass refs.camera into VideoPlayer.createGrid
+- At the top‑level module scope, ensure there is a variable to hold refs, e.g.:
+      window.__videos_refs = { tablet: null, camera: null, screen: null };
+- Where initTabletFromGltf is awaited or then(...)’d:
+      const refs = await initTabletFromGltf(glCanvas);
+      window.__videos_refs.tablet = refs.tabletGroup || refs.tabletGroupMain || null;
+      window.__videos_refs.camera = refs.camera || null;
+      window.__videos_refs.screen = refs.screenMesh || null;
+- When creating the thumbnail grid (where VideoPlayer.createGrid is called):
+  - Replace any call like:
+        VideoPlayer.createGrid({...optionsWithoutCamera});
+    with:
+        const cam = window.__videos_refs.camera || refs.camera || null;
+        if (cam) {
+            VideoPlayer.createGrid({
+                ...options,
+                camera: cam
+            });
+        } else {
+            console.warn("[videos] createGrid skipped – no camera available");
+        }
+
+3) video-player-controls.js – require camera and log clearly
+- Confirm that createGrid(options) EXPECTS a camera:
+      function createGrid(options) {
+          const { camera, renderer, ...rest } = options || {};
+          if (!camera) {
+              console.warn("[VideoPlayer] createGrid: no camera provided – skipping grid creation.");
+              return;
+          }
+          // continue building thumbnail mesh / raycaster wiring using this camera
+      }
+- No further change needed here once videos.js actually passes a camera.
+
+4) Ensure the GLB renderer is attached to #glCanvas
+- In videos-tablet.js, confirm that the THREE.WebGLRenderer is created using the same canvas as in videos.html:
+      const canvas = document.getElementById("glCanvas");
+      const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+- Make sure the render loop / animation frame uses this renderer and that the camera you returned in refs.camera is the same camera you pass to renderer.render(scene, camera).
+
+5) Confirm that the tablet is visible again
+After the edits:
+- Reload the page with a hard refresh (Ctrl+F5 in Chrome/Edge/Firefox).
+- In devtools console, you should see:
+  - “[videos-tablet] Using screenMesh: tablet_screen003”
+  - “[videos-tablet] Using GLB dolly rig camera position and orientation”
+  - “[videos] initTabletFromGltf refs: { …, camera: PerspectiveCamera {...} }”
+  - No warnings about “no camera provided to VideoPlayer.createGrid”.
+- The tablet GLB should be visible on the #glCanvas and the thumbnail grid should be interactive on the front screen (not on the back).
+
+Short instruction block to paste for VS GPT 5 mini (Codex) in VS Code
+(You can paste this as a single message in the Chat sidebar.)
+
+---
+You are editing a local project at: c:\Dropbox\Resume Website\
+
+1) ALWAYS edit the root files, not backups:
+   - videos.html
+   - videos.js
+   - videos-tablet.js
+   - video-player-controls.js
+   Ignore any files under a “backups” folder and ignore videos-copy.js or videos-fix.patch.
+
+2) Goal: fix the videos page so the tablet GLB is visible and VideoPlayer.createGrid receives a valid THREE.Camera.
+   - In videos-tablet.js:
+     - In initTabletFromGltf, resolve the dolly rig camera used to render the GLB.
+     - Return it from the function as camera: <thatCamera> in the refs object.
+   - In videos.js:
+     - Store the refs from initTabletFromGltf into window.__videos_refs.{tablet, camera, screen}.
+     - When calling VideoPlayer.createGrid, pass camera: window.__videos_refs.camera.
+     - If no camera is available, log a warning and do NOT call createGrid.
+   - In video-player-controls.js:
+     - Ensure createGrid(options) requires options.camera; if camera is missing, log the existing “[VideoPlayer] createGrid: no camera provided – skipping grid creation.” and exit.
+   - Ensure videos-tablet.js uses the #glCanvas element for its THREE.WebGLRenderer and that the same camera returned via refs.camera is used in renderer.render(scene, camera).
+
+3) After making edits, do not stage or commit anything with git; just save the files on disk.
+---
+
+End of instructions.

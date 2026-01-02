@@ -40,3 +40,23 @@ html, body {
 .ui-btn:hover {
 	background: rgba(255,255,255,0.06);
 }
+
+.page-note {
+	position: fixed;
+	top: 16px;
+	left: 16px;
+	z-index: 12;
+	font-family: "Source Sans 3", "Segoe UI", Tahoma, Geneva, Verdana, system-ui, sans-serif;
+	font-size: 0.95rem;
+	font-weight: 600;
+	line-height: 1.15;
+	text-align: center;
+	color: #d4fff2;
+	background: rgba(10, 32, 30, 0.85);
+	border: 2px solid rgba(125, 211, 199, 0.7);
+	border-radius: 999px;
+	padding: 6px 14px;
+	box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+	letter-spacing: 0.02em;
+	pointer-events: none;
+}

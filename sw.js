@@ -1,7 +1,31 @@
 // Minimal service worker to cache intro assets for seamless playback
 const CACHE_NAME = 'intro-cache-v2';
+
+function normalizeBase(base) {
+  if (!base) return "";
+  return base.endsWith("/") ? base.slice(0, -1) : base;
+}
+
+function normalizePath(p) {
+  if (!p) return "";
+  return p.startsWith("/") ? p : `/${p}`;
+}
+
+const ASSETS_BASE = (() => {
+  const host = self.location.hostname;
+  if (host === "localhost" || host === "127.0.0.1") return "";
+  return "https://assets.matthallportfolio.com";
+})();
+
+function assetUrl(path) {
+  if (typeof path === "string" && /^https?:\/\//i.test(path)) return path;
+  const base = normalizeBase(ASSETS_BASE);
+  if (!base) return path;
+  return `${base}${normalizePath(path)}`;
+}
+
 const INTRO_ASSETS = [
-  '/Renders/tablet-animation.webm'
+  assetUrl('/Renders/tablet-animation.webm')
 ];
 
 self.addEventListener('install', (event) => {

@@ -6,6 +6,7 @@
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
 import * as SharedVC from './shared-video-controls.js';
 import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from './videos-tablet.js';
+import { assetUrl } from './assets-config.js';
 
 // Player state management
 class PlayerState {
@@ -337,6 +338,7 @@ function formatTime(t) {
           return item;
         }
         const video = document.createElement('video');
+        video.crossOrigin = 'anonymous';
         video.src = item;
         video.preload = 'metadata';
         return video;
@@ -355,6 +357,7 @@ function formatTime(t) {
             if (!u) return null;
             if (u instanceof HTMLVideoElement) return u;
             const v = document.createElement('video');
+            v.crossOrigin = 'anonymous';
             v.src = u;
             v.muted = true;
             v.preload = 'metadata';
@@ -1426,9 +1429,9 @@ function formatTime(t) {
 
       function resolveMediaUrl(path) {
         if (!path) return null;
-        if (/^https?:\/\//i.test(path) || path.startsWith('/') || path.startsWith('data:')) return path;
-        const srcPath = base + path;
-        return encodeURI((window && window.mediaUrl) ? window.mediaUrl(srcPath) : srcPath);
+        if (/^https?:\/\//i.test(path) || path.startsWith('data:')) return path;
+        const srcPath = path.startsWith('/') ? path : (base + path);
+        return encodeURI(assetUrl(srcPath));
       }
 
       function getStoredAudioSettings() {
@@ -1698,6 +1701,7 @@ function formatTime(t) {
       function createVideo(srcs = [], muted = true) {
         const v = document.createElement('video');
         v.crossOrigin = 'anonymous';
+        v.crossOrigin = 'anonymous';
         v.playsInline = true;
         v.preload = 'auto';
         v.loop = false;
@@ -1729,6 +1733,7 @@ function formatTime(t) {
 
       function createAudio(srcs = []) {
         const a = document.createElement('audio');
+        a.crossOrigin = 'anonymous';
         a.crossOrigin = 'anonymous';
         a.preload = 'auto';
         a.loop = false;

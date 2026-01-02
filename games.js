@@ -7,20 +7,21 @@ import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyn
 import { createGameAudioBridge } from './game-audio-bridge.js';
 import { createGamesVideoAdapter } from './games-video-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
+import { assetUrl } from './assets-config.js';
 
 const STAGE_ID = 'model-stage';
-const GLB_URL = './glb/Arcade-Console.glb';
+const GLB_URL = assetUrl('./glb/Arcade-Console.glb');
 const SCREEN_MESH_CANDIDATES = ['arcade_screen_surface', 'arcade_screen'];
 const TARGET_SCREEN_AR = 0.693 / 0.449;
 
-const VIDEO_SRC = './Videos/games-page/video-games-reel-hq.webm';
+const VIDEO_SRC = assetUrl('./Videos/games-page/video-games-reel-hq.webm');
 const SPEED_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const DEFAULT_GAME_URL = './games/battleship/index.html';
 const GAME_RENDER_MODE = 'blit'; // 'overlay', 'blit', or 'css3d'
 const GAME_FRAME_WIDTH = 1280;
 const GAME_FRAME_HEIGHT = 720;
 const GAME_FRAME_ASPECT = GAME_FRAME_WIDTH / GAME_FRAME_HEIGHT;
-const DEBUG_SHOW_CSS3D_FRAME = true;
+const DEBUG_SHOW_CSS3D_FRAME = false;
 const GAME_SPLASH_DURATION_MS = 3000;
 const USE_SHARED_CONTROLS_GAMES = true;
 const SHOW_GAME_AUDIO_PANEL = false;
@@ -54,16 +55,16 @@ const GAME_LABEL_SVGS = {
   'big-bomb-blast': null
 };
 const VIDEO_THUMBS = {
-  reel: './Videos/games-page/video-games-reel.png',
-  christmas: './Videos/games-page/christmas-games.png'
+  reel: assetUrl('./Videos/games-page/video-games-reel.png'),
+  christmas: assetUrl('./Videos/games-page/christmas-games.png')
 };
 const VIDEO_LQ = {
-  reel: './Videos/games-page/video-games-reel-lq.webm',
-  christmas: './Videos/games-page/christmas-games-lq.webm'
+  reel: assetUrl('./Videos/games-page/video-games-reel-lq.webm'),
+  christmas: assetUrl('./Videos/games-page/christmas-games-lq.webm')
 };
 const VIDEO_AUDIO = {
-  reel: './Videos/games-page/video-games-reel.opus',
-  christmas: './Videos/games-page/christmas-games.opus'
+  reel: assetUrl('./Videos/games-page/video-games-reel.opus'),
+  christmas: assetUrl('./Videos/games-page/christmas-games.opus')
 };
 const GAME_SPLASH_FAST_PORTION = 0.78; // progress quickly then slow near the end
 const DEFAULT_CAMERA = {
@@ -408,6 +409,7 @@ function init() {
 
   controls = new OrbitControls(activeCamera, renderer.domElement);
   controls.enableDamping = true;
+  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
   controls.enablePan = false;
   controls.target.set(0, 1.1, 0);
 
@@ -460,29 +462,10 @@ function updateStageBounds() {
 }
 
 function initCameraPanel() {
-  cameraPanel = document.createElement('div');
-  cameraPanel.className = 'camera-panel';
-
-  cameraPanelText = document.createElement('div');
-  cameraPanel.appendChild(cameraPanelText);
-
-  cameraPanelZoomBtn = document.createElement('button');
-  cameraPanelZoomBtn.type = 'button';
-  cameraPanelZoomBtn.textContent = 'Zoom (dummy)';
-  cameraPanelZoomBtn.addEventListener('click', () => {
-    toggleCameraZoom();
-  });
-  cameraPanel.appendChild(cameraPanelZoomBtn);
-
-  cameraPanelInputBtn = document.createElement('button');
-  cameraPanelInputBtn.type = 'button';
-  cameraPanelInputBtn.textContent = 'Game input: on';
-  cameraPanelInputBtn.addEventListener('click', () => {
-    setGameInputEnabled(!gameInputEnabled);
-  });
-  cameraPanel.appendChild(cameraPanelInputBtn);
-
-  document.body.appendChild(cameraPanel);
+  cameraPanel = null;
+  cameraPanelText = null;
+  cameraPanelZoomBtn = null;
+  cameraPanelInputBtn = null;
 }
 
 function toggleCameraZoom() {
@@ -502,6 +485,7 @@ function onResize() {
 
 function loadCabinet() {
   const loader = new GLTFLoader();
+  loader.setCrossOrigin('anonymous');
 
   loader.load(
     GLB_URL,
@@ -525,6 +509,7 @@ function loadCabinet() {
         controls.dispose();
         controls = new OrbitControls(activeCamera, renderer.domElement);
         controls.enableDamping = true;
+        controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
         controls.target.copy(center);
         updateControlsForContent(contentMode);
         console.log('Using GLB camera:', activeCamera.name || '(unnamed)');
@@ -1140,6 +1125,7 @@ function ensureSplashImage(gameId) {
     return;
   }
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.src = GAME_SPLASH_IMAGES[gameId] || 'games/game-splash-screen.png';
   splashImages.set(key, img);
@@ -1151,6 +1137,7 @@ function ensureVideoThumb(videoId) {
   const src = VIDEO_THUMBS[videoId];
   if (!src) return null;
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
@@ -1163,6 +1150,7 @@ function ensurePreviewVideo(videoId) {
   const src = VIDEO_LQ[videoId];
   if (!src) return null;
   const v = document.createElement('video');
+  v.crossOrigin = 'anonymous';
   v.src = src;
   forceHideVideoElement(v);
   v.loop = true;
@@ -1188,6 +1176,7 @@ function ensureGameThumb(gameId) {
   const src = GAME_THUMBS[gameId];
   if (!src) return null;
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
@@ -1203,6 +1192,7 @@ function ensureGameLabel(gameId) {
     return null;
   }
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.decoding = 'async';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
@@ -1947,37 +1937,11 @@ function drawMenu(ctx, rect) {
 }
 
 function ensureExitControl() {
-  if (exitControl) return exitControl;
-  exitControl = document.createElement('button');
-  exitControl.type = 'button';
-  exitControl.className = 'nav-icon nav-exit nav-exit--hidden';
-  exitControl.title = 'Exit';
-  exitControl.setAttribute('aria-label', 'Exit game or video');
-  exitControl.style.position = 'fixed';
-  exitControl.style.left = '96px';
-  exitControl.style.top = '50%';
-  exitControl.style.transform = 'translateY(-50%)';
-  exitControl.style.zIndex = '30';
-  const img = document.createElement('img');
-  img.src = 'assets/images/exit%20icon.png';
-  img.alt = 'Exit';
-  exitControl.appendChild(img);
-  exitControl.addEventListener('click', () => {
-    if (contentMode === 'game') {
-      exitGameImmediate();
-    } else if (contentMode === 'video') {
-      stopVideoReel();
-    }
-  });
-  document.body.appendChild(exitControl);
-  return exitControl;
+  return null;
 }
 
 function setExitControlVisible(visible) {
-  const control = ensureExitControl();
-  if (!control) return;
-  const shouldShow = visible && cameraZoomAlt && (contentMode === 'game' || contentMode === 'video');
-  control.classList.toggle('nav-exit--hidden', !shouldShow);
+  if (!ensureExitControl()) return;
 }
 
 function updateCameraPanel() {

@@ -1,6 +1,7 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.module.js';
 import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.153.0/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.153.0/examples/jsm/loaders/GLTFLoader.js';
+import { assetUrl } from './assets-config.js';
 
 (() => {
 	console.log('[stupid] init (module)');
@@ -77,6 +78,7 @@ function debugLog(...args) {
 	scene.add(camera);
 
 	const controls = new OrbitControls(camera, renderer.domElement);
+	controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 	controls.enableDamping = true;
 	controls.dampingFactor = 0.05;
 	controls.screenSpacePanning = false;
@@ -117,6 +119,7 @@ function debugLog(...args) {
 	};
 
 	const loader = new GLTFLoader();
+	loader.setCrossOrigin('anonymous');
 
 // Helper: determine a sensible canvas size based on the screen mesh's original texture
 function getScreenTextureSize(mesh) {
@@ -142,7 +145,7 @@ function getScreenTextureSize(mesh) {
 
 	debugLog('starting GLTF load');
 	setDebugField('gltfStatus', 'loading');
-	loader.load((window && window.mediaUrl) ? window.mediaUrl('video_tablet.glb') : 'video_tablet.glb', (gltf) => {
+	loader.load(assetUrl('video_tablet.glb'), (gltf) => {
 		console.log('[stupid] gltf loaded', gltf);
 		const model = gltf.scene || gltf.scenes && gltf.scenes[0];
 		loadedModel = model;
@@ -413,6 +416,7 @@ function playVideoOnScreen(url) {
 	// stop any existing video
 	stopVideoOnScreen();
 	currentVideo = document.createElement('video');
+	currentVideo.crossOrigin = 'anonymous';
 	currentVideo.src = url;
 	currentVideo.crossOrigin = 'anonymous';
 	currentVideo.muted = false;

@@ -5,6 +5,7 @@ import VideoPlayer from './video-player-controls.js?v=tablet-ui-1';
 import { createVideoControlsUI } from './shared-video-controls.js';
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
 import { createVideosVideoAdapter } from './videos-video-adapter.js';
+import { assetUrl } from './assets-config.js';
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
@@ -13,8 +14,8 @@ const USE_SHARED_CONTROLS = true;
 const videosPageConfig = {
   intro: {
     enabled: true,
-    video: 'Renders/tablet-animation.webm',
-    audio: 'Renders/tablet_animation_1.opus',
+    video: assetUrl('Renders/tablet-animation.webm'),
+    audio: assetUrl('Renders/tablet_animation_1.opus'),
     maxWaitMs: 12000,
     dropDurationMs: 1200,
     dropOffsetFactor: 2.2
@@ -61,6 +62,7 @@ const introState = {
   audioEl: null,
   timeoutId: null,
   audioTimer: null,
+  forceReadyTimer: null,
   audioStarted: false,
   skipBtn: null,
   gateEl: null,
@@ -96,6 +98,10 @@ function markIntroDone() {
   if (introState.audioTimer) {
     clearTimeout(introState.audioTimer);
     introState.audioTimer = null;
+  }
+  if (introState.forceReadyTimer) {
+    clearTimeout(introState.forceReadyTimer);
+    introState.forceReadyTimer = null;
   }
   if (introState.videoEl) {
     introState.videoEl.classList.remove('visible');
@@ -196,6 +202,7 @@ function setupIntroVideo() {
   videoEl.load();
   if (allowSound && videosPageConfig.intro && videosPageConfig.intro.audio) {
     const audioEl = document.createElement('audio');
+    audioEl.crossOrigin = 'anonymous';
     audioEl.preload = 'auto';
     audioEl.src = videosPageConfig.intro.audio;
     audioEl.crossOrigin = 'anonymous';
@@ -263,6 +270,14 @@ function setupIntroVideo() {
   videoEl.addEventListener('loadedmetadata', updateLoad);
   videoEl.addEventListener('canplay', updateLoad);
   updateLoad();
+  if (!introState.forceReadyTimer) {
+    introState.forceReadyTimer = setTimeout(() => {
+      if (introState.done) return;
+      if (introState.loadBar) introState.loadBar.style.width = '100%';
+      if (introState.loadText) introState.loadText.textContent = 'Ready';
+      if (introState.playBtn) introState.playBtn.disabled = false;
+    }, 10000);
+  }
 }
 
 function setupIntroSkip() {
@@ -385,27 +400,10 @@ onReady(() => {
       dropAnim.group.updateMatrixWorld(true);
       if (t >= 1) dropAnim.active = false;
     }
-    // update debug UI
-    try {
-      const camEl = document.getElementById('tp_camera');
-      const tabEl = document.getElementById('tp_tablet');
-      if (camEl && camera) {
-        const x = (Math.abs(camera.position.x) < 0.5) ? 0 : Number(camera.position.x.toFixed(1));
-        camEl.textContent = `cam: ${x}, ${camera.position.y.toFixed(1)}, ${camera.position.z.toFixed(1)}`;
-      }
-      try {
-        const refs = window.__videos_debug && window.__videos_debug._refs ? window.__videos_debug._refs : null;
-        if (tabEl && refs && refs.tabletGroup) {
-          const p = refs.tabletGroup.position; const ry = (refs.tabletGroup.rotation && refs.tabletGroup.rotation.y) ? (refs.tabletGroup.rotation.y * 180 / Math.PI) : 0;
-          tabEl.textContent = `tablet: ${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}  rotY:${ry.toFixed(1)}°`;
-        }
-      } catch (e) { /* ignore */ }
-    } catch (e) { /* ignore */ }
-
     animId = requestAnimationFrame(animate);
   }
 
-  const primaryPath = (window && window.mediaUrl) ? window.mediaUrl('glb/video-tablet.glb') : 'glb/video-tablet.glb';
+  const primaryPath = assetUrl('glb/video-tablet.glb');
   const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || localStorage.getItem('site.audio.allowed') === 'true';
 
   // load GLB and init
@@ -537,92 +535,6 @@ onReady(() => {
             }
           }
         } catch (e) { console.warn('createGrid failed', e); }
-
-        // minimal debug panel: camera + tablet + enable-pan (tablet pan)
-        try {
-          if (!document.getElementById('tablet-debug-panel')) {
-            const dp = document.createElement('div');
-            dp.id = 'tablet-debug-panel';
-            dp.style.cssText = 'position:fixed;right:12px;top:84px;z-index:80;background:rgba(0,0,0,0.6);color:#fff;padding:8px;border-radius:8px;font:12px/1.2 monospace;max-width:260px;';
-            dp.innerHTML = `
-              <div id="tp_camera">cam:</div>
-              <div id="tp_tablet" style="margin-top:6px">tablet:</div>
-              <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-                <button id="tp_toggle_pan">Enable Pan</button>
-                <button id="tp_toggle_underlight">UnderLight: On</button>
-              </div>`;
-            document.body.appendChild(dp);
-
-            // Underlight toggle: allow quick on/off for visual testing
-            try {
-              const underBtn = document.getElementById('tp_toggle_underlight');
-              if (underBtn && typeof underLight !== 'undefined') {
-                const prev = { intensity: underLight.intensity };
-                underBtn.addEventListener('click', () => {
-                  try {
-                    if ((underLight.intensity || 0) > 0.001) {
-                      underLight.intensity = 0.0;
-                      underBtn.textContent = 'UnderLight: Off';
-                    } else {
-                      underLight.intensity = prev.intensity || 0.35;
-                      underBtn.textContent = 'UnderLight: On';
-                    }
-                    // force update
-                    try { underLight.updateMatrixWorld && underLight.updateMatrixWorld(); } catch (e) {}
-                  } catch (e) { /* ignore */ }
-                });
-              }
-            } catch (e) { /* ignore underlight UI errors */ }
-
-            // tablet-pan implementation: raycast to plane and move tabletGroup
-            const toggle = document.getElementById('tp_toggle_pan');
-            const state = { enabled:false, dragging:false, startPoint:new THREE.Vector3(), startPos:new THREE.Vector3(), plane:null };
-            const domEl = renderer.domElement || document;
-
-            toggle.addEventListener('click', () => {
-              state.enabled = !state.enabled;
-              toggle.textContent = state.enabled ? 'Disable Pan' : 'Enable Pan';
-            });
-
-            const pointerDown = (ev) => {
-              try {
-                if (!state.enabled || !refs || !refs.tabletGroup || !refs.camera) return;
-                const rect = domEl.getBoundingClientRect();
-                const ndc = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
-                const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, refs.camera);
-                const worldPos = new THREE.Vector3(); refs.tabletGroup.getWorldPosition(worldPos);
-                const camDir = new THREE.Vector3(); refs.camera.getWorldDirection(camDir);
-                state.plane = new THREE.Plane().setFromNormalAndCoplanarPoint(camDir, worldPos);
-                const inter = new THREE.Vector3();
-                if (ray.ray.intersectPlane(state.plane, inter)) {
-                  state.dragging = true; state.startPoint.copy(inter); state.startPos.copy(refs.tabletGroup.position);
-                  ev.preventDefault();
-                }
-              } catch (e) { /* ignore */ }
-            };
-            const pointerMove = (ev) => {
-              try {
-                if (!state.dragging || !refs || !refs.tabletGroup || !refs.camera) return;
-                const rect = domEl.getBoundingClientRect();
-                const ndc = new THREE.Vector2(((ev.clientX-rect.left)/rect.width)*2-1, -((ev.clientY-rect.top)/rect.height)*2+1);
-                const ray = new THREE.Raycaster(); ray.setFromCamera(ndc, refs.camera);
-                const inter = new THREE.Vector3();
-                if (ray.ray.intersectPlane(state.plane, inter)) {
-                  const delta = new THREE.Vector3().subVectors(inter, state.startPoint);
-                  const newPos = new THREE.Vector3().addVectors(state.startPos, delta);
-                  refs.tabletGroup.position.copy(newPos); refs.tabletGroup.updateMatrixWorld(true);
-                  ev.preventDefault();
-                }
-              } catch (e) { /* ignore */ }
-            };
-            const pointerUp = () => { state.dragging = false; };
-
-            domEl.addEventListener('pointerdown', pointerDown);
-            domEl.addEventListener('pointermove', pointerMove);
-            domEl.addEventListener('pointerup', pointerUp);
-            domEl.addEventListener('pointercancel', pointerUp);
-          }
-        } catch (e) { /* ignore debug panel errors */ }
 
         try { applyBlenderAlignment({ tabletGroupRef: refs.tabletGroup, camera: refs.camera, controls, renderer, videosPageConfig }); } catch (e) { /* ignore */ }
         try {
