@@ -79,6 +79,8 @@ Combiners/
 *.zip
 *.7z
 *.rar
+**/ffmpeg.exe
+
 
 ########################################
 # ffmpeg / ffprobe outputs

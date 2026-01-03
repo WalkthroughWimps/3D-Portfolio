@@ -140,7 +140,35 @@ const loader = new GLTFLoader();
 loader.setCrossOrigin('anonymous');
 const draco = new DRACOLoader(); draco.setDecoderPath('https://unpkg.com/three@0.159.0/examples/jsm/libs/draco/');
 loader.setDRACOLoader(draco); loader.setMeshoptDecoder(MeshoptDecoder);
+<<<<<<< Updated upstream
 const HUD = null;
+=======
+const HUD = document.createElement('div');
+HUD.style.cssText='position:fixed;left:8px;top:calc(var(--header-height, 6rem) + 8px);padding:6px 10px;background:rgba(0,0,0,.6);color:#d0ffe4;font:12px monospace;z-index:100;border-radius:6px;white-space:pre;';
+document.body.appendChild(HUD);
+// Expose runtime debug toggles to the page so labels and guides can be toggled without editing files
+window.__KEYMAP_DEBUG_VIS__ = window.__KEYMAP_DEBUG_VIS__ || false;
+window.__FORCE_QWERTY__ = window.__FORCE_QWERTY__ || false;
+window.toggleKeymapDebug = function(v){
+  window.__KEYMAP_DEBUG_VIS__ = (typeof v === 'boolean') ? v : !window.__KEYMAP_DEBUG_VIS__;
+  try{
+    if(window.__KEYMAP_DEBUG_VIS__ && typeof loadKeymapFlipped === 'function') loadKeymapFlipped();
+    if(typeof requestBackboardRedraw === 'function') requestBackboardRedraw();
+    else setTimeout(()=>{ try{ if(typeof requestBackboardRedraw === 'function') requestBackboardRedraw(); }catch(e){} }, 200);
+  }catch(e){}
+  return window.__KEYMAP_DEBUG_VIS__;
+};
+window.toggleQwertyLabels = function(v){
+  window.__FORCE_QWERTY__ = (typeof v === 'boolean') ? v : !window.__FORCE_QWERTY__;
+  try{
+    // ensure keymap JSON is loaded so fallback labels are available
+    if(window.__FORCE_QWERTY__ && typeof loadKeymapFlipped === 'function') loadKeymapFlipped();
+    if(typeof requestBackboardRedraw === 'function') requestBackboardRedraw();
+    else setTimeout(()=>{ try{ if(typeof requestBackboardRedraw === 'function') requestBackboardRedraw(); }catch(e){} }, 200);
+  }catch(e){}
+  return window.__FORCE_QWERTY__;
+};
+>>>>>>> Stashed changes
 let root=null; let keyMeshes=[]; let stickerMeshes=[]; let userStickersGroup = null;
 let qwertyLabelsGroup = null;
 let selectedKey=null; // middle key chosen for demo animation
@@ -1244,6 +1272,9 @@ async function applyOddFxSelection(){
 const keymapFlippedPositions = [];
 const keymapFlippedNoteNames = new Map();
 let keymapFlippedLoaded = false;
+// Expose debug handles so dev console can inspect load state (module may be scoped)
+try{ window.keymapFlippedPositions = keymapFlippedPositions; }catch(e){}
+try{ window.keymapFlippedLoaded = keymapFlippedLoaded; }catch(e){}
 let keymapFlippedPromise = null;
 let keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
 const keymapLanePositions = [];
@@ -1275,7 +1306,7 @@ function getFlippedNoteName(midi){
 }
 function loadKeymapFlipped(){
   if(keymapFlippedPromise) return keymapFlippedPromise;
-  keymapFlippedPromise = fetch('keymap_flipped.json')
+  keymapFlippedPromise = fetch('keymap.json')
     .then(res => res.json())
     .then(data => {
       keymapFlippedPositions.length = 0;
@@ -1294,6 +1325,7 @@ function loadKeymapFlipped(){
           isBlack: cleanName.includes('#')
         });
       });
+<<<<<<< Updated upstream
       const uLeft = Number(data && data.uLeft);
       const uRight = Number(data && data.uRight);
       if(Number.isFinite(uLeft) && Number.isFinite(uRight) && uRight > uLeft){
@@ -1301,13 +1333,29 @@ function loadKeymapFlipped(){
       } else {
         updateKeymapFlippedBounds();
       }
+=======
+
+      // Prefer explicit uLeft/uRight from the JSON when available and valid.
+      if(data && Number.isFinite(Number(data.uLeft)) && Number.isFinite(Number(data.uRight))){
+        const uMin = Number(data.uLeft);
+        const uMax = Number(data.uRight);
+        const span = Math.max(1e-6, uMax - uMin);
+        keymapFlippedBounds = { uMin: uMin, uMax: uMax, uSpan: span };
+      } else {
+        updateKeymapFlippedBounds();
+      }
+
+>>>>>>> Stashed changes
       keymapFlippedLoaded = true;
+      try{ window.keymapFlippedLoaded = true; }catch(e){}
+      try{ window.keymapFlippedPositions = keymapFlippedPositions; }catch(e){}
       requestBackboardRedraw();
       return keymapFlippedPositions;
     })
     .catch(err => {
-      console.warn('Failed to load keymap_flipped.json', err);
+      console.warn('Failed to load keymap.json', err);
       keymapFlippedLoaded = false;
+      try{ window.keymapFlippedLoaded = false; }catch(e){}
       keymapFlippedBounds = { uMin: 0, uMax: 1, uSpan: 1 };
       return [];
     });
@@ -2636,6 +2684,21 @@ function absUToBackboardX(uAbs, W){
   return Math.round(((uAbs - uMin) / span) * W);
 }
 
+// Unified UV conversion helpers (use keymap.json bounds as authoritative)
+function uLocalToAbs(uLocal, uLeft, uRight){
+  const uL = Number(uLeft ?? 0);
+  const uR = Number(uRight ?? 1);
+  return uL + (Number(uLocal) || 0) * (uR - uL);
+}
+function uAbsToX(uAbs, W, uLeft, uRight){
+  const uL = Number(uLeft ?? 0);
+  const uR = Number(uRight ?? 1);
+  const denom = (uR - uL) || 1e-6;
+  const t = (Number(uAbs) - uL) / denom;
+  const clamped = Math.max(0, Math.min(1, t));
+  return Math.round(clamped * W);
+}
+
 // Compute approximate world-per-UV scale for the backboard mesh so markers draw with correct aspect
 function computeWorldPerUV(mesh){
   if(!mesh || !mesh.isMesh){ return null; }
@@ -2717,7 +2780,6 @@ function computeKeyLanesFromWorld(){
   keyLanesAbs = lanes;
   try{ requestBackboardRedraw(); }catch(e){}
 }
-
 
 // Draw V (vertical) color map
 function drawVMap(canvas){
@@ -3744,7 +3806,7 @@ loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
             default: return code;
           }
         };
-        CODE_TO_MIDI.forEach((v,k)=> midiToKey.set(Number(v), displayFromCode(k)));
+        CODE_TO_MIDI.forEach((v,k)=> midiToKeyLabel.set(Number(v), displayFromCode(k)));
       }
       // helper: find nearest key mesh to a sticker mesh
       const findNearestMidiForMesh = (mesh)=>{
@@ -3799,7 +3861,7 @@ loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
           ctx.fillStyle = '#000'; ctx.font = 'bold 92px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(String(keyChar).toUpperCase(), W/2, H/2 + 6);
 
-          const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+          const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.SRGBEncoding; }catch(e){}
           tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
 
           // Use sprite so it always faces camera and avoids complex UV/clipping
@@ -3827,10 +3889,21 @@ loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
           };
           CODE_TO_MIDI.forEach((midi, code)=> midiToKeyLabel.set(Number(midi), displayFromCode(code)));
         }
-        // Create a sprite per white key
-        midiToKeyLabel.forEach((label, midi)=>{
+        // Create a sprite per white key. If CODE_TO_MIDI mapping is absent, fall back to available key meshes or flipped keymap names.
+        const labelEntries = [];
+        if(midiToKeyLabel && midiToKeyLabel.size){
+          midiToKeyLabel.forEach((label, midi) => labelEntries.push({ midi: Number(midi), label }));
+        } else {
+          // fallback: use midiKeyMap keys (scene-derived) or keymapFlippedPositions if present
+          if(midiKeyMap && midiKeyMap.size){
+            midiKeyMap.forEach((mesh, midi) => labelEntries.push({ midi: Number(midi), label: null }));
+          } else if(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length){
+            keymapFlippedPositions.forEach(p => labelEntries.push({ midi: Number(p.note), label: (p.label || '').replace(/^\d+_/, '') }));
+          }
+        }
+        labelEntries.forEach(entry=>{
           try{
-            const mNum = Number(midi);
+            const mNum = Number(entry.midi);
             if(isBlackNoteByNumber(mNum)) return;
             const kMesh = midiKeyMap.get(mNum);
             if(!kMesh) return;
@@ -3847,13 +3920,37 @@ loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
             const baseScale = Math.max(0.03, (bsz.x || 0.04) * 0.9);
             const Wc = 128, Hc = 96; const c = document.createElement('canvas'); c.width = Wc; c.height = Hc;
             const ctx = c.getContext('2d'); ctx.clearRect(0,0,Wc,Hc);
-            // Draw transparent background and text with subtle shadow
+            // Draw rounded background and border, then text
             const fontPx = Math.max(18, Math.round(Math.min(48, Wc * 0.28)));
             ctx.font = `bold ${fontPx}px system-ui, Arial, sans-serif`;
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(String(label).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
-            ctx.fillStyle = 'white'; ctx.fillText(String(label).toUpperCase(), Wc/2, Hc/2);
-            const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+            const isBlack = isBlackNoteByNumber(mNum);
+            // Fill and text color per key type (white keys: white bg, green text; black keys: dark green bg, white text)
+            const bgFill = isBlack ? '#08320f' : 'rgba(255,255,255,0.98)';
+            const textColor = isBlack ? 'white' : '#0a8f3a';
+            const strokeColor = 'rgba(0,0,0,0.55)';
+            const pad = Math.max(6, Math.round(Wc * 0.06));
+            const r = Math.max(6, Math.round(Wc * 0.06));
+            const x0 = pad, x1 = Wc - pad, y0 = pad, y1 = Hc - pad;
+            // rounded rect path
+            ctx.beginPath();
+            ctx.moveTo(x0 + r, y0);
+            ctx.lineTo(x1 - r, y0);
+            ctx.quadraticCurveTo(x1, y0, x1, y0 + r);
+            ctx.lineTo(x1, y1 - r);
+            ctx.quadraticCurveTo(x1, y1, x1 - r, y1);
+            ctx.lineTo(x0 + r, y1);
+            ctx.quadraticCurveTo(x0, y1, x0, y1 - r);
+            ctx.lineTo(x0, y0 + r);
+            ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+            ctx.closePath();
+            ctx.fillStyle = bgFill; ctx.fill();
+            ctx.lineWidth = Math.max(2, Math.round(fontPx / 12)); ctx.strokeStyle = strokeColor; ctx.stroke();
+            // label text (fallback to entry.label or midiToName)
+            const labelText = entry.label || midiToKeyLabel.get(mNum) || (typeof getFlippedNoteName === 'function' ? getFlippedNoteName(mNum) : null) || midiToName(mNum);
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(String(labelText).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
+            ctx.fillStyle = textColor; ctx.fillText(String(labelText).toUpperCase(), Wc/2, Hc/2);
+            const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.SRGBEncoding; }catch(e){}
             tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
             const mat = new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false });
             const sprite = new THREE.Sprite(mat);
@@ -4738,6 +4835,7 @@ function renderBackboardOverlay(dt){
         ctx.fillText(label, cx, cy);
       }
     }
+<<<<<<< Updated upstream
     const laneData = buildLaneData();
     if(laneData){
       const { normX, sourceEntries, laneEntries, laneWhiteY, laneBlackY, laneUpperY } = laneData;
@@ -4765,6 +4863,19 @@ function renderBackboardOverlay(dt){
         rebuildQwertyMapping();
       } else if(qwertyDividerX == null){
         qwertyDividerX = getDividerX();
+=======
+    const usingFlippedKeymap = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
+    const overlayBounds = (usingFlippedKeymap && keymapFlippedBounds) ? keymapFlippedBounds : (backboardUVBounds || { uMin: 0, uMax: 1, uSpan: 1 });
+    const normX = (u) => {
+      const uMin = Number(overlayBounds.uMin ?? 0);
+      const span = Math.max(1e-6, Number(overlayBounds.uSpan ?? ((overlayBounds.uMax ?? (uMin + 1)) - uMin)));
+      const uMax = uMin + span;
+      let normalized = (Math.min(Math.max(u, uMin), uMax) - uMin) / span;
+      // keymap.json is already authored for the screen's left->right direction,
+      // so don't apply an additional mirror correction when using it.
+      if(!usingFlippedKeymap && backboardUVCorrection && backboardUVCorrection.mirrorU){
+        normalized = 1 - normalized;
+>>>>>>> Stashed changes
       }
       if(laneEntries && laneEntries.length){
         const laneMap = new Map();
@@ -4792,7 +4903,7 @@ function renderBackboardOverlay(dt){
       if(typeof CODE_TO_MIDI !== 'undefined'){
         const displayFromCode = (code)=>{
           if(!code) return '';
-          if(code.startsWith('Key')) return code.slice(3).toUpperCase();
+          if(code.startsWith('Key')) return code.slice(3).toLowerCase();
           if(code.startsWith('Digit')) return code.slice(5);
           switch(code){
             case 'Comma': return ',';
@@ -4809,6 +4920,7 @@ function renderBackboardOverlay(dt){
             default: return code;
           }
         };
+<<<<<<< Updated upstream
         CODE_TO_MIDI.forEach((midi, code)=>{
           const label = displayFromCode(code);
           if(!noteToCodes.has(Number(midi))) noteToCodes.set(Number(midi), []);
@@ -5042,6 +5154,104 @@ function renderBackboardOverlay(dt){
           ctx.fillStyle = 'rgba(90, 20, 30, 0.9)';
           ctx.fillRect(bgX + bgW - 1, bgY, 2, bgH);
         }
+=======
+        CODE_TO_MIDI.forEach((v,k)=> midiToKeyLabel.set(Number(v), displayFromCode(k)));
+      }
+      // Determine authoritative keymap bounds (use keymap.json loaded into keymapFlippedPositions)
+      const usingKeymapJson = !!(keymapFlippedLoaded && keymapFlippedPositions && keymapFlippedPositions.length);
+      const km = usingKeymapJson && keymapFlippedBounds ? (
+        { uLeft: Number(keymapFlippedBounds.uMin ?? 0), uRight: Number((keymapFlippedBounds.uMin ?? 0) + (keymapFlippedBounds.uSpan ?? 1)) }
+      ) : (backboardUVBounds ? { uLeft: Number(backboardUVBounds.uMin ?? 0), uRight: Number((backboardUVBounds.uMin ?? 0) + (backboardUVBounds.uSpan ?? 1)) } : { uLeft:0, uRight:1 });
+
+      // Build sourceEntries with absolute u coordinates (u0_abs/u1_abs)
+      const sourceEntries = [];
+      if(usingKeymapJson){
+        keymapFlippedPositions.forEach(entry => {
+          if(!entry) return;
+          sourceEntries.push({ note: Number(entry.note), u0_abs: Number(entry.u0), u1_abs: Number(entry.u1), isBlack: !!entry.isBlack, noteName: entry.label });
+        });
+      } else {
+        Array.from(keyByNote.entries()).forEach(([note, info]) => {
+          if(!info) return;
+          const rawU0 = Number(info.u0 ?? info.u0_abs ?? 0);
+          const rawU1 = Number(info.u1 ?? info.u1_abs ?? 0);
+          const u0_abs = (rawU0 >= 0 && rawU0 <= 1) ? uLocalToAbs(rawU0, km.uLeft, km.uRight) : rawU0;
+          const u1_abs = (rawU1 >= 0 && rawU1 <= 1) ? uLocalToAbs(rawU1, km.uLeft, km.uRight) : rawU1;
+          sourceEntries.push({ note: Number(note), u0_abs, u1_abs, isBlack: (info && typeof info.name === 'string') ? info.name.includes('#') : isBlackNoteByNumber(Number(note)), noteName: info && info.name ? info.name : undefined });
+        });
+      }
+
+      // Convert sourceEntries to drawable targets using clamped absolute->X converter
+      sourceEntries.forEach(entry => {
+        if(!entry || entry.u0_abs == null || entry.u1_abs == null) return;
+        let mapped = midiToKeyLabel.get(Number(entry.note));
+        if(!mapped){
+          if(window.__FORCE_QWERTY__){
+            mapped = entry.noteName ? String(entry.noteName).replace(/^\d+_/, '').replace(/_/g,'') : midiToName(Number(entry.note));
+          } else return; // QWERTY-only mode: hide raw note names
+        }
+        const uMidAbs = (Number(entry.u0_abs) + Number(entry.u1_abs)) * 0.5;
+        if(!isFinite(uMidAbs)) return;
+        const x = uAbsToX(uMidAbs, W, km.uLeft, km.uRight);
+        const target = { x, label: mapped, u0_abs: Number(entry.u0_abs), u1_abs: Number(entry.u1_abs), isBlack: !!entry.isBlack };
+        if(entry.isBlack) blackEntries.push(target); else whiteEntries.push(target);
+      });
+
+      // One-time clamp verification for A0 (21) and C8 (108)
+      try{
+        if(!window.__KEYMAP_CLAMP_LOGGED__){
+          const findByNote = (n) => sourceEntries.find(s => Number(s.note) === Number(n));
+          const a0 = findByNote(21);
+          const c8 = findByNote(108);
+          const A0_x = a0 ? uAbsToX((a0.u0_abs + a0.u1_abs) / 2, W, km.uLeft, km.uRight) : null;
+          const C8_x = c8 ? uAbsToX((c8.u0_abs + c8.u1_abs) / 2, W, km.uLeft, km.uRight) : null;
+          console.log('keymap clamp check', { W, km_uLeft: km.uLeft, km_uRight: km.uRight, A0_x, C8_x, A0_ok: A0_x !== null ? (A0_x >= 0 && A0_x <= W) : 'missing', C8_ok: C8_x !== null ? (C8_x >= 0 && C8_x <= W) : 'missing' });
+          window.__KEYMAP_CLAMP_LOGGED__ = true;
+        }
+      }catch(e){ /* ignore logging errors */ }
+      const drawNoteRow = (entries, rowIndex, color) => {
+        if(!entries.length) return;
+        entries.sort((a,b)=>a.x - b.x);
+        const yCenter = Math.min(H - cellH * 0.35, Math.max(cellH * 0.35, (rowIndex + 0.5) * cellH));
+        entries.forEach(entry => {
+          // compute left/right from u0/u1 mapped to canvas X
+          const leftX = Math.min(Math.max(0, normX(entry.u0)), W);
+          const rightX = Math.min(Math.max(0, normX(entry.u1)), W);
+          // ensure minimum width for very narrow keys
+          const minW = Math.max(cellW * 0.28, 18);
+          let x0 = Math.min(leftX, rightX);
+          let x1 = Math.max(leftX, rightX);
+          if(x1 - x0 < minW){
+            const cx = (x0 + x1) / 2;
+            x0 = cx - minW/2; x1 = cx + minW/2;
+          }
+          // vertical bounds inside the row cell
+          const topY = rowIndex * cellH + Math.max(2, cellH * 0.12);
+          const bottomY = (rowIndex + 1) * cellH - Math.max(2, cellH * 0.12);
+          const pad = Math.max(4, Math.round(cellW * 0.04));
+          const rx0 = x0 + pad; const rx1 = x1 - pad; const ry0 = topY + pad; const ry1 = bottomY - pad;
+          const borderRadius = Math.max(4, Math.round(Math.min((rx1 - rx0), (ry1 - ry0)) * 0.15));
+          // background and stroke based on key color
+          const bgFill = entry.isBlack ? '#08320f' : 'rgba(255,255,255,0.98)';
+          const strokeColor = 'rgba(0,0,0,0.55)';
+          ctx.beginPath();
+          ctx.moveTo(rx0 + borderRadius, ry0);
+          ctx.lineTo(rx1 - borderRadius, ry0);
+          ctx.quadraticCurveTo(rx1, ry0, rx1, ry0 + borderRadius);
+          ctx.lineTo(rx1, ry1 - borderRadius);
+          ctx.quadraticCurveTo(rx1, ry1, rx1 - borderRadius, ry1);
+          ctx.lineTo(rx0 + borderRadius, ry1);
+          ctx.quadraticCurveTo(rx0, ry1, rx0, ry1 - borderRadius);
+          ctx.lineTo(rx0, ry0 + borderRadius);
+          ctx.quadraticCurveTo(rx0, ry0, rx0 + borderRadius, ry0);
+          ctx.closePath();
+          ctx.fillStyle = bgFill; ctx.fill();
+          ctx.lineWidth = Math.max(2, Math.round(fontSize / 10)); ctx.strokeStyle = strokeColor; ctx.stroke();
+          // draw label text with subtle shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillText(entry.label, (rx0 + rx1)/2 + 1, yCenter + 1);
+          ctx.fillStyle = color; ctx.fillText(entry.label, (rx0 + rx1)/2, yCenter);
+        });
+>>>>>>> Stashed changes
       };
       const qwertyFontSize = Math.max(18, Math.round(fontSize * 2));
       const getCssVar = (name, fallback) => {
@@ -5442,7 +5652,6 @@ function updateViewDrivenTransforms(dt){
   // Hysteresis: only update target if camera movement produces a noticeable change
   // (helps when controls damping slightly toggles the desired angle back/forth)
   // Compute desired angle again for hysteresis check (re-evaluate from center/cam)
-  // (Note: 'angle' variable above is the freshly computed desired angle assigned to tabletStandTargetAngle)
   // Cap rate of change per frame to avoid overshoot/jitter
   const maxDelta = TABLET_MAX_ROT_SPEED * dtSafe;
   const delta = tabletStandCurrentAngle - tabletStandTargetAngle;
@@ -5781,11 +5990,27 @@ function selectTrack(key){
   // Stop current playback and reset state
   disposeAudioSource('selectTrack cleanup');
   audioPlaying=false; playingMIDI=false;
+<<<<<<< Updated upstream
   savedAudioPosSec=0; midiIndex=0; midiLoaded=false; audioReady=false; midiError=false; audioError=false;
   midiEvents=[]; midiFirstNoteMs=0; midiActiveDurationMs=0; midiStretch=1.0; sentinelFilteredCount=0;
   markMidiNoteSpansDirty();
   resetPlaybackVisuals();
   updatePlayButton(); resetKeys();
+=======
+  savedAudioPosSec=0;
+  midiIndex=0;
+  midiLoaded=false;
+  audioReady=false;
+  midiError=false;
+  audioError=false;
+  midiEvents=[];
+  midiFirstNoteMs=0;
+  midiActiveDurationMs=0;
+  midiStretch=1.0;
+  sentinelFilteredCount=0;
+  updatePlayButton();
+  resetKeys();
+>>>>>>> Stashed changes
   clearAllKeyGlow();
   // Load assets for track
   const t = TRACKS[key];
@@ -7017,6 +7242,7 @@ function onPointerUp(){
   }
   setBackboardDebug(null);
 }
+<<<<<<< Updated upstream
 canvas.addEventListener('pointerdown', onPointerDown);
 window.addEventListener('pointerup', onPointerUp);
 // Also handle pointercancel to avoid sticky state on unexpected cancels
@@ -7631,3 +7857,15 @@ window.addEventListener('keydown', handleKeyDown, { capture:true, passive:false 
 window.addEventListener('keyup', handleKeyUp, { capture:true, passive:false });
 window.addEventListener('blur', panicAllNotes);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) panicAllNotes(); });
+=======
+// DEBUG: draw key-edge guides (semi-transparent red/green)
+if(window.__KEYMAP_DEBUG_VIS__){
+  sourceEntries.forEach(e=>{
+    const x0 = normX(e.u0), x1 = normX(e.u1);
+    ctx.strokeStyle = 'rgba(255,0,0,0.18)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x0, 0); ctx.lineTo(x0, H); ctx.stroke();
+    ctx.strokeStyle = 'rgba(0,255,0,0.12)';
+    ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, H); ctx.stroke();
+  });
+}
+>>>>>>> Stashed changes
