@@ -595,7 +595,7 @@ const CLOUDFLARE_SOUNDFONT_BASE = (typeof window !== 'undefined' && window.CLOUD
   ? String(window.CLOUDFLARE_SOUNDFONT_BASE)
   : 'https://music-cdn.example.com/soundfonts/';
 const SOUNDFONT_FALLBACK_URL = 'https://gleitz.github.io/midi-js-soundfonts/MusyngKite/';
-const SOUND_FONT_BASE = '/soundfonts/MusyngKite/';
+const SOUND_FONT_BASE = '/soundfonts/musyngKite/';
 const LOCAL_SOUNDFONT_BASES = {
   musyngkite: '/soundfonts/musyngkite/',
   fluidr3_gm: '/soundfonts/fluidr3_gm/'
