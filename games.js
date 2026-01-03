@@ -1377,6 +1377,7 @@ function startVideoReel(entry) {
   const audioSrc = entry && entry.id ? VIDEO_AUDIO[entry.id] : null;
   enterContentView();
   reelVideo = document.createElement('video');
+  reelVideo.crossOrigin = 'anonymous';
   reelVideo.src = reelSource;
   reelVideo.dataset.title = (entry && entry.title) ? entry.title : 'Game Reel';
   reelVideo.loop = false;

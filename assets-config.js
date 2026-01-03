@@ -42,6 +42,21 @@ export const ASSETS_BASE = (() => {
 
 console.info('[assets] base =', ASSETS_BASE);
 
+let didLogAssetDiagnostics = false;
+export function logAssetDiagnosticsOnce(sampleVideoPath = "Videos/videos-page/music-videos-hq.webm", sampleAudioPath = "Renders/tablet_animation_1.opus") {
+  if (didLogAssetDiagnostics) return;
+  didLogAssetDiagnostics = true;
+  const isDev = isLocalDev() || new URLSearchParams(window.location.search || "").has("assetsDebug");
+  if (!isDev) return;
+  console.info('[assets] diagnostics', {
+    base: ASSETS_BASE,
+    video: assetUrl(sampleVideoPath),
+    audio: assetUrl(sampleAudioPath)
+  });
+}
+
+logAssetDiagnosticsOnce();
+
 export function assetUrl(path) {
   // Leave absolute URLs untouched
   if (typeof path === "string" && /^https?:\/\//i.test(path)) return path;

@@ -194,6 +194,7 @@ function setupIntroVideo() {
       || localStorage.getItem('site.audio.allowed') === 'true';
   } catch (e) { /* ignore */ }
   introState.videoEl = videoEl;
+  videoEl.crossOrigin = 'anonymous';
   videoEl.src = videosPageConfig.intro.video;
   videoEl.muted = true;
   videoEl.playsInline = true;
