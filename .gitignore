@@ -80,6 +80,10 @@ Combiners/
 *.7z
 *.rar
 **/ffmpeg.exe
+ffmpeg.exe
+games/**/convert_*.bat
+games/**/converter.bat
+games/**/test.bat
 
 
 ########################################
