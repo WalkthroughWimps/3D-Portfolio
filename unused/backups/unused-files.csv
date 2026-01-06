@@ -11,7 +11,6 @@ Music Notes Tester\notes.js,js,unused/test,Only for tester
 music2.css,css,unused,Only for music2.html
 music2.html,html,unused,Superseded by music.html; not linked
 music2.js,js,unused,Only for music2.html
-music-piano.js,js,unused,Debug/alt version; music-piano-debug.js used
 site-modelviewer.js,js,test-only,Only used by videos-tablet.html
 template-loader.js,js,unused,Only referenced by garbage/template.html
 template-swup.css,css,unused,No references found in site

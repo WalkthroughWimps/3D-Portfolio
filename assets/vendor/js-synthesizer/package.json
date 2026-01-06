@@ -1,0 +1,46 @@
+{
+  "name": "js-synthesizer",
+  "version": "1.11.0",
+  "author": "jet",
+  "description": "Synthesizer library for web-based JS program, using with Web Audio or etc.",
+  "engines": {
+    "node": ">=22",
+    "npm": ">=11"
+  },
+  "homepage": "https://github.com/jet2jet/js-synthesizer",
+  "keywords": [
+    "javascript",
+    "synthesizer",
+    "fluidsynth",
+    "midi",
+    "midi-player",
+    "sequencer",
+    "soundfont",
+    "audio",
+    "webaudio"
+  ],
+  "license": "BSD-3-Clause",
+  "main": "./dist/js-synthesizer.js",
+  "module": "./dist/lib/index.js",
+  "types": "./dist/lib/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jet2jet/js-synthesizer.git"
+  },
+  "scripts": {
+    "build": "npm run build:ts && npm run build:lib:dev",
+    "build:lib:dev": "webpack --config ./build/webpack.config.js",
+    "build:lib:minified": "webpack --config ./build/webpack.config.js --env minified",
+    "build:minified": "npm run build:ts && npm run build:lib:minified",
+    "build:ts": "tsc -p tsconfig.json",
+    "build-all": "npm run build:ts && npm run build:lib:dev && npm run build:lib:minified",
+    "version": "node ./tools/updateVersion.mjs ./src/main/version.ts && git add -A ./src/main/version.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "ts-loader": "^9.4.4",
+    "typescript": "^4.2.4",
+    "webpack": "^5.88.2",
+    "webpack-cli": "^4.10.0"
+  }
+}

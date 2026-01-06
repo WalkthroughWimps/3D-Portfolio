@@ -19,7 +19,7 @@
   }catch(e){ console.warn('[RESET-DEBUG] instrumentation failed', e); }
 })();
 
-// music-piano-debug.js
+// music-piano-controls.js
 // Fresh debug loader: isolates GLB visibility without previous logic
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -29,8 +29,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from './global-sync.js';
 import { createVideoControlsUI, syncAudioToVideo } from './shared-video-controls.js';
 import { assetUrl } from './assets-config.js';
-// Tablet helper currently a no-op; import kept so future
-// tablet code can be re-enabled without touching this file.
+// Tablet helper currently a no-op; import kept so future tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
 const USE_TOPPAD_GRID = true;
 let showTopPadGrid = false;
@@ -49,8 +48,11 @@ window.addEventListener('DOMContentLoaded', ()=>{
     if(e.code === 'F10'){
       showPanelHitRects = !showPanelHitRects;
       requestBackboardRedraw();
+    } else if(e.code === 'F9'){
+      logInstrumentMeterSnapshot();
     }
   });
+  setupInstrumentLevelUi();
 });
 
 // Label display mode: 'qwerty' | 'note' | 'none'
@@ -254,6 +256,8 @@ const VELOCITY_MAX = 127;     // MIDI max
 // NOTE fade / attack constants used for smoothing note start/stops
 const NOTE_FADE_SEC = 0.03; // 0.02–0.06 recommended
 const NOTE_ATTACK = 0.02;
+const NOTE_ATTACK_SCALE = 0.6;
+const NOTE_ATTACK_MIN = 0.003;
 const NOTE_DECAY = 0.22;
 const NOTE_SUSTAIN = 0.65;
 const NOTE_RELEASE = 0.18;
@@ -269,13 +273,24 @@ const INSTRUMENT_MIX = {
     fx: 0.9
   }
 };
+const INSTRUMENT_MASTER_STORAGE_KEY = 'music.instrument.master';
+const INSTRUMENT_CATEGORY_STORAGE_PREFIX = 'music.instrument.category.';
+const INSTRUMENT_MASTER_RANGE = { min: 0.2, max: 3.0 };
+const INSTRUMENT_CATEGORY_RANGE = { min: 0.2, max: 2.5 };
+const INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX = 'music.instrument.autogain.';
+const INSTRUMENT_AUTO_GAIN_RANGE = { min: 0.25, max: 4.0 };
+const INSTRUMENT_AUTO_LEVEL_TARGET_DB = -6;
+const INSTRUMENT_AUTO_LEVEL_WINDOW_MS = 420;
+const INSTRUMENT_AUTO_LEVEL_HOLD_MS = 520;
 const INSTRUMENT_LIMITER_SETTINGS = {
-  threshold: -6,
-  knee: 2,
-  ratio: 12,
-  attack: 0.003,
-  release: 0.12
+  threshold: -8,
+  knee: 6,
+  ratio: 4,
+  attack: 0.006,
+  release: 0.18
 };
+const INSTRUMENT_MASTER_BOOST = 3.16; // ~ +10 dB
+const INSTRUMENT_MASTER_GAIN_MAX = 4.2;
 const PAD_LOOP_SETTINGS = {
   startRatio: 0.25,
   endRatio: 0.75,
@@ -291,14 +306,58 @@ const FADE_SEC = NOTE_FADE_SEC; // backward-compatible alias used elsewhere
 const keyAnimState = new Map();
 // Audio context and sampler state
 let audioCtx=null, audioBuffer=null, audioSource=null; let audioReady=false, audioPlaying=false; let audioError=false; let midiError=false;
+const AUDIO_LATENCY_HINT = 'interactive';
+function createAudioContext(){
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if(!Ctx) return null;
+  try{
+    return new Ctx({ latencyHint: AUDIO_LATENCY_HINT });
+  }catch(e){
+    return new Ctx();
+  }
+}
+function ensureAudioContext(){
+  if(!audioCtx) audioCtx = createAudioContext();
+  return audioCtx;
+}
 let masterGain = null;
 let instrumentLimiter = null;
 let instrumentCategoryGains = null;
 let instrumentGainLogged = new Set();
+let instrumentAnalyser = null;
+let instrumentMeterEnabled = false;
+let audioMeterMix = null;
+let instrumentAutoGainById = new Map();
+let instrumentAutoLevelBtn = null;
+let instrumentAutoGainReadout = null;
+let lastInstrumentPanelId = null;
+let instrumentAutoLevelInProgress = false;
+let lastInstrumentMixLog = null;
+let instrumentVizCanvas = null;
+let instrumentVizCtx = null;
+let instrumentVizDb = null;
+let instrumentVizAnimation = null;
+let instrumentVizPeakDb = -Infinity;
+let instrumentVizPeakColor = '#2aa198';
+let instrumentSiteVolumeSlider = null;
+let instrumentSiteVolumeReadout = null;
+let instrumentMasterSlider = null;
+let instrumentMasterReadout = null;
+let instrumentCategorySelect = null;
+let instrumentCategorySlider = null;
+let instrumentCategoryReadout = null;
+let instrumentEffectiveReadout = null;
 // Sampler (SoundFont) support
 let instrumentPlayer = null; // Soundfont player instance for current instrument
 let currentInstrumentName = null;
 let currentInstrumentConfig = null;
+const sf2SynthState = {
+  loading: null,
+  synth: null,
+  node: null,
+  currentUrl: null,
+  apiLabel: null
+};
 const heldNotes = new Map(); // midiNum -> [ { src, gain, startedAt, releasedPending, releasing, releaseTime } ]
 let pianoLoadLoggedOk = false;
 let pianoLoadLoggedFail = false;
@@ -389,10 +448,72 @@ function clamp01(value){
   return Math.max(0, Math.min(1, value));
 }
 
+function clampRange(value, min, max){
+  if(!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
+function gainToDb(gain){
+  if(!Number.isFinite(gain) || gain <= 0) return -Infinity;
+  return 20 * Math.log10(gain);
+}
+
+function formatDb(db){
+  if(!Number.isFinite(db)) return '-inf';
+  return db.toFixed(1);
+}
+
+function formatGainWithDb(gain){
+  const safeGain = Number.isFinite(gain) ? gain : 0;
+  return `${safeGain.toFixed(2)} (${formatDb(gainToDb(safeGain))} dB)`;
+}
+
+function loadInstrumentMixFromStorage(){
+  try{
+    const storedMaster = parseFloat(localStorage.getItem(INSTRUMENT_MASTER_STORAGE_KEY) || '');
+    if(Number.isFinite(storedMaster)){
+      INSTRUMENT_MIX.master = clampRange(storedMaster, INSTRUMENT_MASTER_RANGE.min, INSTRUMENT_MASTER_RANGE.max);
+    }
+    Object.keys(INSTRUMENT_MIX.categories).forEach((key) => {
+      const stored = parseFloat(localStorage.getItem(INSTRUMENT_CATEGORY_STORAGE_PREFIX + key) || '');
+      if(Number.isFinite(stored)){
+        INSTRUMENT_MIX.categories[key] = clampRange(stored, INSTRUMENT_CATEGORY_RANGE.min, INSTRUMENT_CATEGORY_RANGE.max);
+      }
+    });
+  }catch(e){}
+}
+
 function getStoredAudioSettings(){
   const raw = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1');
   const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true';
   return { volume: clamp01(raw), muted };
+}
+
+function getInstrumentAutoGain(config){
+  const id = config && config.id ? String(config.id) : '';
+  if(!id) return 1;
+  if(instrumentAutoGainById.has(id)){
+    return instrumentAutoGainById.get(id);
+  }
+  let stored = 1;
+  try{
+    const raw = parseFloat(localStorage.getItem(INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX + id) || '');
+    if(Number.isFinite(raw)) stored = clampRange(raw, INSTRUMENT_AUTO_GAIN_RANGE.min, INSTRUMENT_AUTO_GAIN_RANGE.max);
+  }catch(e){}
+  instrumentAutoGainById.set(id, stored);
+  return stored;
+}
+
+function setInstrumentAutoGain(id, value){
+  if(!id) return;
+  const clamped = clampRange(value, INSTRUMENT_AUTO_GAIN_RANGE.min, INSTRUMENT_AUTO_GAIN_RANGE.max);
+  instrumentAutoGainById.set(String(id), clamped);
+  try{ localStorage.setItem(INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX + id, String(clamped)); }catch(e){}
+}
+
+function setStoredAudioSettings(volume, muted){
+  try{ localStorage.setItem(AUDIO_VOLUME_KEY, String(clamp01(volume))); }catch(e){}
+  try{ localStorage.setItem(AUDIO_MUTED_KEY, muted ? 'true' : 'false'); }catch(e){}
 }
 
 function applyStoredAudioSettings(media){
@@ -405,6 +526,400 @@ function applyStoredAudioSettings(media){
 function getSiteVolume01(){
   const { volume, muted } = getStoredAudioSettings();
   return muted ? 0 : clamp01(volume);
+}
+
+loadInstrumentMixFromStorage();
+
+function getSelectedInstrumentCategoryId(){
+  const fallback = Object.keys(INSTRUMENT_MIX.categories)[0] || 'keys';
+  if(!instrumentCategorySelect) return fallback;
+  const value = instrumentCategorySelect.value;
+  return INSTRUMENT_MIX.categories.hasOwnProperty(value) ? value : fallback;
+}
+
+function getActiveInstrumentConfigForUi(){
+  if(!dualInstrumentMode){
+    return getInstrumentConfigById(selectedSingleInstrumentId) || currentInstrumentConfig;
+  }
+  const panelId = lastInstrumentPanelId || 'left';
+  const slot = instrumentPlayersBySide[panelId];
+  return (slot && slot.config) ? slot.config : currentInstrumentConfig;
+}
+
+function applyInstrumentMix(){
+  if(!audioCtx || !masterGain) return;
+  const siteVolume = getSiteVolume01();
+  const boosted = siteVolume * INSTRUMENT_MIX.master * INSTRUMENT_MASTER_BOOST;
+  const finalGain = Math.min(INSTRUMENT_MASTER_GAIN_MAX, boosted);
+  masterGain.gain.value = finalGain;
+  if(instrumentCategoryGains){
+    Object.keys(instrumentCategoryGains).forEach((key) => {
+      if(INSTRUMENT_MIX.categories.hasOwnProperty(key)){
+        instrumentCategoryGains[key].gain.value = INSTRUMENT_MIX.categories[key];
+      }
+    });
+  }
+  const logSig = `${siteVolume.toFixed(3)}|${INSTRUMENT_MIX.master.toFixed(3)}|${finalGain.toFixed(3)}`;
+  if(logSig !== lastInstrumentMixLog){
+    lastInstrumentMixLog = logSig;
+    console.log('[InstrumentMixer] master', {
+      siteVolume: Number(siteVolume.toFixed(3)),
+      master: Number(INSTRUMENT_MIX.master.toFixed(3)),
+      boost: INSTRUMENT_MASTER_BOOST,
+      final: Number(finalGain.toFixed(3))
+    });
+  }
+  updateInstrumentMixReadouts();
+}
+
+function updateInstrumentMixReadouts(){
+  const settings = getStoredAudioSettings();
+  const siteVolume = settings.muted ? 0 : settings.volume;
+  if(instrumentSiteVolumeReadout){
+    instrumentSiteVolumeReadout.textContent = `${Math.round(siteVolume * 100)}% (${formatDb(gainToDb(siteVolume))} dB)`;
+  }
+  if(instrumentMasterReadout){
+    instrumentMasterReadout.textContent = formatGainWithDb(INSTRUMENT_MIX.master);
+  }
+  const categoryId = getSelectedInstrumentCategoryId();
+  const categoryGain = INSTRUMENT_MIX.categories[categoryId] ?? 1;
+  if(instrumentCategoryReadout){
+    instrumentCategoryReadout.textContent = formatGainWithDb(categoryGain);
+  }
+  if(instrumentEffectiveReadout){
+    const effective = siteVolume * INSTRUMENT_MIX.master * INSTRUMENT_MASTER_BOOST * categoryGain;
+    instrumentEffectiveReadout.textContent = `Effective: ${formatGainWithDb(effective)}`;
+  }
+  if(instrumentAutoGainReadout){
+    const cfg = getActiveInstrumentConfigForUi();
+    const autoGain = cfg ? getInstrumentAutoGain(cfg) : 1;
+    instrumentAutoGainReadout.textContent = `Auto gain: ${formatGainWithDb(autoGain)}`;
+  }
+}
+
+function ensureInstrumentAnalyser(){
+  if(!instrumentMeterEnabled) return;
+  ensureAudioContext();
+  if(!audioCtx) return;
+  if(!instrumentAnalyser){
+    instrumentAnalyser = audioCtx.createAnalyser();
+    instrumentAnalyser.fftSize = 256;
+  }
+}
+
+function ensureAudioMeterChain(){
+  ensureAudioContext();
+  if(!audioCtx) return;
+  if(!audioMeterMix){
+    audioMeterMix = audioCtx.createGain();
+    audioMeterMix.gain.value = 1;
+  }
+  if(instrumentMeterEnabled){
+    ensureInstrumentAnalyser();
+    if(instrumentAnalyser){
+      try{ audioMeterMix.disconnect(); }catch(e){}
+      try{ instrumentAnalyser.disconnect(); }catch(e){}
+      audioMeterMix.connect(instrumentAnalyser);
+      instrumentAnalyser.connect(audioCtx.destination);
+      startInstrumentMeter();
+    }
+  } else {
+    try{ audioMeterMix.disconnect(); }catch(e){}
+    audioMeterMix.connect(audioCtx.destination);
+  }
+}
+
+function startInstrumentMeter(){
+  if(!instrumentMeterEnabled || !instrumentAnalyser || !instrumentVizCtx || !instrumentVizCanvas) return;
+  if(instrumentVizAnimation) return;
+  const canvasCtx = instrumentVizCtx;
+  const canvas = instrumentVizCanvas;
+  const bufferLength = instrumentAnalyser.fftSize;
+  const dataArray = new Uint8Array(bufferLength);
+  const width = canvas.width;
+  const height = canvas.height;
+  const minDb = -54;
+  const gateDb = -20;
+  instrumentVizPeakDb = -Infinity;
+  instrumentVizPeakColor = '#2aa198';
+  function draw(){
+    instrumentAnalyser.getByteTimeDomainData(dataArray);
+    let peak = 0;
+    for(let i=0;i<dataArray.length;i++){
+      const centered = (dataArray[i] - 128) / 128;
+      const abs = Math.abs(centered);
+      if(abs > peak) peak = abs;
+    }
+    const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+    const belowGate = !(Number.isFinite(db)) || db < gateDb;
+    const gatedDb = belowGate ? gateDb : db;
+    const clampedDb = Math.max(minDb, Math.min(0, gatedDb));
+    const norm = (clampedDb - minDb) / Math.abs(minDb);
+    const level = norm * height;
+
+    let meterColor = '#2aa198';
+    if(db > -6){
+      meterColor = '#e44b4b';
+    }else if(db > -18){
+      meterColor = '#e3c14a';
+    }
+
+    if(!belowGate && db > instrumentVizPeakDb){
+      instrumentVizPeakDb = db;
+      instrumentVizPeakColor = meterColor;
+    }
+
+    canvasCtx.clearRect(0,0,width,height);
+    canvasCtx.fillStyle = meterColor;
+    canvasCtx.fillRect(0, height - level, width, level);
+
+    if(Number.isFinite(instrumentVizPeakDb)){
+      const peakClamped = Math.max(minDb, Math.min(0, instrumentVizPeakDb));
+      const peakNorm = (peakClamped - minDb) / Math.abs(minDb);
+      const peakY = height - (peakNorm * height);
+      canvasCtx.fillStyle = instrumentVizPeakColor;
+      canvasCtx.fillRect(0, Math.max(0, peakY - 1), width, 2);
+    }
+
+    if(instrumentVizDb){
+      instrumentVizDb.textContent = belowGate ? 'dB: < -20' : `dB: ${db.toFixed(1)}`;
+    }
+    instrumentVizAnimation = requestAnimationFrame(draw);
+  }
+  draw();
+}
+
+function logInstrumentMeterSnapshot(){
+  if(!instrumentAnalyser){
+    console.warn('[InstrumentMeter] analyser not ready');
+    return;
+  }
+  const data = new Uint8Array(instrumentAnalyser.fftSize);
+  instrumentAnalyser.getByteTimeDomainData(data);
+  let peak = 0;
+  let sumSq = 0;
+  for(let i=0;i<data.length;i++){
+    const centered = (data[i] - 128) / 128;
+    const abs = Math.abs(centered);
+    if(abs > peak) peak = abs;
+    sumSq += centered * centered;
+  }
+  const rms = Math.sqrt(sumSq / Math.max(1, data.length));
+  const peakDb = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+  const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+  console.log('[InstrumentMeter] snapshot', {
+    peakDb: Number.isFinite(peakDb) ? peakDb.toFixed(1) : '-inf',
+    rmsDb: Number.isFinite(rmsDb) ? rmsDb.toFixed(1) : '-inf'
+  });
+}
+
+function setupInstrumentLevelUi(){
+  instrumentVizCanvas = document.getElementById('instrumentVisualizer');
+  instrumentVizDb = document.getElementById('instrumentVizDb');
+  instrumentSiteVolumeSlider = document.getElementById('instrumentSiteVolume');
+  instrumentSiteVolumeReadout = document.getElementById('instrumentSiteVolumeReadout');
+  instrumentMasterSlider = document.getElementById('instrumentMasterGain');
+  instrumentMasterReadout = document.getElementById('instrumentMasterGainReadout');
+  instrumentCategorySelect = document.getElementById('instrumentCategorySelect');
+  instrumentCategorySlider = document.getElementById('instrumentCategoryGain');
+  instrumentCategoryReadout = document.getElementById('instrumentCategoryGainReadout');
+  instrumentEffectiveReadout = document.getElementById('instrumentEffectiveReadout');
+  instrumentAutoLevelBtn = document.getElementById('instrumentAutoLevelBtn');
+  instrumentAutoGainReadout = document.getElementById('instrumentAutoGainReadout');
+
+  if(instrumentCategorySelect){
+    instrumentCategorySelect.innerHTML = '';
+    Object.keys(INSTRUMENT_MIX.categories).forEach((key) => {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      instrumentCategorySelect.appendChild(opt);
+    });
+  }
+
+  if(instrumentSiteVolumeSlider){
+    const settings = getStoredAudioSettings();
+    const vol = settings.muted ? 0 : settings.volume;
+    instrumentSiteVolumeSlider.value = String(Math.round(vol * 100));
+    instrumentSiteVolumeSlider.addEventListener('input', (e) => {
+      const next = clamp01(Number(e.target.value || 0) / 100);
+      setStoredAudioSettings(next, next <= 0.001);
+      applyStoredAudioSettings(topPadVideo && topPadVideo.audio ? topPadVideo.audio : null);
+      ensureAudio();
+      applyInstrumentMix();
+    });
+  }
+
+  if(instrumentMasterSlider){
+    instrumentMasterSlider.value = String(INSTRUMENT_MIX.master);
+    instrumentMasterSlider.addEventListener('input', (e) => {
+      const next = clampRange(Number(e.target.value || 0), INSTRUMENT_MASTER_RANGE.min, INSTRUMENT_MASTER_RANGE.max);
+      INSTRUMENT_MIX.master = next;
+      try{ localStorage.setItem(INSTRUMENT_MASTER_STORAGE_KEY, String(next)); }catch(e){}
+      ensureAudio();
+      applyInstrumentMix();
+    });
+  }
+
+  if(instrumentCategorySelect){
+    const initialCategory = getSelectedInstrumentCategoryId();
+    instrumentCategorySelect.value = initialCategory;
+    instrumentCategorySelect.addEventListener('change', () => {
+      if(instrumentCategorySlider){
+        const cat = getSelectedInstrumentCategoryId();
+        instrumentCategorySlider.value = String(INSTRUMENT_MIX.categories[cat] ?? 1);
+      }
+      updateInstrumentMixReadouts();
+    });
+  }
+
+  if(instrumentCategorySlider){
+    const cat = getSelectedInstrumentCategoryId();
+    instrumentCategorySlider.value = String(INSTRUMENT_MIX.categories[cat] ?? 1);
+    instrumentCategorySlider.addEventListener('input', (e) => {
+      const categoryId = getSelectedInstrumentCategoryId();
+      const next = clampRange(Number(e.target.value || 0), INSTRUMENT_CATEGORY_RANGE.min, INSTRUMENT_CATEGORY_RANGE.max);
+      INSTRUMENT_MIX.categories[categoryId] = next;
+      try{ localStorage.setItem(INSTRUMENT_CATEGORY_STORAGE_PREFIX + categoryId, String(next)); }catch(e){}
+      ensureAudio();
+      applyInstrumentMix();
+    });
+  }
+
+  updateInstrumentMixReadouts();
+
+  if(instrumentVizCanvas){
+    instrumentVizCtx = instrumentVizCanvas.getContext('2d');
+    instrumentMeterEnabled = true;
+    ensureAudioMeterChain();
+  }
+
+  if(instrumentAutoLevelBtn){
+    instrumentAutoLevelBtn.addEventListener('click', () => {
+      if(instrumentAutoLevelInProgress) return;
+      autoLevelSelectedInstruments();
+    });
+  }
+}
+
+function getCalibrationMidiForConfigAndSide(config, side){
+  if(!config) return null;
+  if(config.isDrums && config.drumMap){
+    const drumKeys = Object.keys(config.drumMap).map(Number).filter(n => Number.isFinite(n));
+    if(drumKeys.length) return drumKeys.sort((a,b)=>a-b)[0];
+  }
+  if(config.isFxKeyZone && config.keyZoneMap){
+    const fxKeys = Object.keys(config.keyZoneMap).map(Number).filter(n => Number.isFinite(n));
+    if(fxKeys.length) return fxKeys.sort((a,b)=>a-b)[0];
+  }
+  const minNote = Number.isFinite(config.minNote) ? config.minNote : 21;
+  const maxNote = Number.isFinite(config.maxNote) ? config.maxNote : 108;
+  const candidates = keymapEntriesSorted
+    .map(entry => Number(entry.note))
+    .filter(note => Number.isFinite(note) && note >= minNote && note <= maxNote);
+  if(!candidates.length) return clampRange(60, minNote, maxNote);
+  if(dualInstrumentMode && side){
+    const filtered = candidates.filter(note => getOwnerSideForMidiNote(note) === side);
+    if(filtered.length){
+      return filtered[Math.floor(filtered.length / 2)];
+    }
+  }
+  return candidates[Math.floor(candidates.length / 2)];
+}
+
+function measurePeakDb(durationMs){
+  return new Promise((resolve) => {
+    if(!instrumentAnalyser){
+      resolve(null);
+      return;
+    }
+    const start = performance.now();
+    let peak = 0;
+    const data = new Uint8Array(instrumentAnalyser.fftSize);
+    const tick = () => {
+      instrumentAnalyser.getByteTimeDomainData(data);
+      for(let i=0;i<data.length;i++){
+        const centered = (data[i] - 128) / 128;
+        const abs = Math.abs(centered);
+        if(abs > peak) peak = abs;
+      }
+      if(performance.now() - start < durationMs){
+        requestAnimationFrame(tick);
+      } else {
+        const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+        resolve(db);
+      }
+    };
+    tick();
+  });
+}
+
+async function autoLevelInstrumentForSide(side){
+  const config = getInstrumentConfigForSide(side);
+  if(!config){
+    console.warn('[AutoLevel] missing instrument config', { side });
+    return null;
+  }
+  const note = getCalibrationMidiForConfigAndSide(config, side);
+  if(!Number.isFinite(note)){
+    console.warn('[AutoLevel] no calibration note', { side, id: config.id });
+    return null;
+  }
+  if(audioPlaying || (topPadVideo && topPadVideo.mode === 'playing')){
+    console.warn('[AutoLevel] stop track playback before calibrating');
+    return null;
+  }
+  if(!instrumentPlayer && !(instrumentPlayersBySide[side] && instrumentPlayersBySide[side].player)){
+    console.warn('[AutoLevel] instrument not loaded', { side, id: config.id });
+    return null;
+  }
+  const previousAuto = getInstrumentAutoGain(config);
+  const label = config.label || config.id || side;
+  console.log('[AutoLevel] start', { side, label, note, previousAuto });
+  try{ NoteEngine.noteOn(note); }catch(e){}
+  const measuredPromise = measurePeakDb(INSTRUMENT_AUTO_LEVEL_WINDOW_MS);
+  const holdMs = Math.max(INSTRUMENT_AUTO_LEVEL_WINDOW_MS, INSTRUMENT_AUTO_LEVEL_HOLD_MS);
+  await new Promise(resolve => setTimeout(resolve, holdMs));
+  try{ NoteEngine.noteOff(note); }catch(e){}
+  const measuredDb = await measuredPromise;
+  if(!Number.isFinite(measuredDb)){
+    console.warn('[AutoLevel] no audio detected', { side, label });
+    return null;
+  }
+  const deltaDb = INSTRUMENT_AUTO_LEVEL_TARGET_DB - measuredDb;
+  const factor = Math.pow(10, deltaDb / 20);
+  const nextAuto = clampRange(previousAuto * factor, INSTRUMENT_AUTO_GAIN_RANGE.min, INSTRUMENT_AUTO_GAIN_RANGE.max);
+  setInstrumentAutoGain(config.id, nextAuto);
+  console.log('[AutoLevel] set', { side, label, measuredDb: measuredDb.toFixed(2), targetDb: INSTRUMENT_AUTO_LEVEL_TARGET_DB, nextAuto });
+  return { id: config.id, label, measuredDb, nextAuto };
+}
+
+async function autoLevelSelectedInstruments(){
+  if(instrumentAutoLevelInProgress) return;
+  instrumentAutoLevelInProgress = true;
+  if(instrumentAutoLevelBtn) instrumentAutoLevelBtn.disabled = true;
+  ensureAudio();
+  ensureAudioMeterChain();
+  let results = [];
+  try{
+    if(dualInstrumentMode){
+      const leftResult = await autoLevelInstrumentForSide('left');
+      if(leftResult) results.push(leftResult);
+      const rightResult = await autoLevelInstrumentForSide('right');
+      if(rightResult) results.push(rightResult);
+    } else {
+      const singleResult = await autoLevelInstrumentForSide(SINGLE_INSTRUMENT_SIDE);
+      if(singleResult) results.push(singleResult);
+    }
+  }finally{
+    instrumentAutoLevelInProgress = false;
+    if(instrumentAutoLevelBtn) instrumentAutoLevelBtn.disabled = false;
+    updateInstrumentMixReadouts();
+  }
+  if(results.length){
+    const summary = results.map(r => `${r.label}:${r.measuredDb.toFixed(1)}dB -> auto ${r.nextAuto.toFixed(2)}`).join(' | ');
+    console.log('[AutoLevel] done', summary);
+  }
 }
 
 function clampSyncOffset(ms){
@@ -594,13 +1109,23 @@ const DEBUG_BEEP_FALLBACK = (typeof window !== 'undefined' && typeof window.DEBU
   : true;
 const CLOUDFLARE_SOUNDFONT_BASE = (typeof window !== 'undefined' && window.CLOUDFLARE_SOUNDFONT_BASE)
   ? String(window.CLOUDFLARE_SOUNDFONT_BASE)
-  : 'https://music-cdn.example.com/soundfonts/';
-const SOUNDFONT_FALLBACK_URL = 'https://gleitz.github.io/midi-js-soundfonts/MusyngKite/';
-const SOUND_FONT_BASE = '/soundfonts/MusyngKite/';
+  : '';
+const SOUNDFONT_FALLBACK_URL = '/soundfonts/musyngkite/';
+const SOUND_FONT_BASE = '/soundfonts/musyngkite/';
 const LOCAL_SOUNDFONT_BASES = {
   musyngkite: '/soundfonts/musyngkite/',
-  fluidr3_gm: '/soundfonts/fluidr3_gm/'
+  fluidr3_gm: '/soundfonts/fluidr3_gm/',
+  arachno: '/soundfonts/arachno/',
+  wappydog: '/soundfonts/wappydog/'
 };
+const SF2_ARACHNO_URL = '/soundfonts/arachno/Arachno%20SoundFont%20-%20Version%201.0.sf2';
+const SF2_HYPERSOUND_URL = '/soundfonts/hypersound/hypersound.sf2';
+const SF2_DRUMS_URL = '/soundfonts/drums/definitive-drums.sf2';
+const SF2_WAPPYDOG_URL = '/soundfonts/wappydog/WappyDog.sf2';
+const SF2_LIB_CANDIDATES = [
+  '/assets/vendor/js-synthesizer.js',
+  '/assets/vendor/js-synthesizer.min.js'
+];
 const SOUND_LIBRARY_READY = true;
 let loggedSoundfontShape = false;
 let loggedLocalSoundfontKeys = false;
@@ -875,6 +1400,339 @@ function syncQwertyRangesToPlayable(reason){
     rebuildQwertyMapping();
   }
 }
+
+const sf2NoteOffTimers = new Map(); // key -> timeout id
+const sf2PresetCache = new Map(); // url -> [{ name, preset, bank }]
+
+function normalizeSf2Name(name){
+  if(!name) return '';
+  return String(name).toUpperCase().replace(/\s+/g, '');
+}
+
+function readFourCC(view, offset){
+  return String.fromCharCode(
+    view.getUint8(offset),
+    view.getUint8(offset + 1),
+    view.getUint8(offset + 2),
+    view.getUint8(offset + 3)
+  );
+}
+
+function parseSf2PresetHeaders(view, start, size){
+  const list = [];
+  const recordSize = 38;
+  const count = Math.floor(size / recordSize);
+  for(let i=0;i<count;i++){
+    const base = start + (i * recordSize);
+    if(base + recordSize > view.byteLength) break;
+    let name = '';
+    for(let n=0;n<20;n++){
+      const c = view.getUint8(base + n);
+      if(c === 0) break;
+      name += String.fromCharCode(c);
+    }
+    const preset = view.getUint16(base + 20, true);
+    const bank = view.getUint16(base + 22, true);
+    const trimmed = name.trim();
+    if(trimmed && trimmed.toUpperCase() !== 'EOP'){
+      list.push({ name: trimmed, preset, bank });
+    }
+  }
+  return list;
+}
+
+function extractSf2PresetList(arrayBuffer){
+  if(!arrayBuffer) return [];
+  try{
+    const view = new DataView(arrayBuffer);
+    if(view.byteLength < 12) return [];
+    if(readFourCC(view, 0) !== 'RIFF') return [];
+    let offset = 12;
+    const end = view.byteLength;
+    while(offset + 8 <= end){
+      const id = readFourCC(view, offset);
+      const size = view.getUint32(offset + 4, true);
+      const chunkStart = offset + 8;
+      const chunkEnd = chunkStart + size;
+      if(id === 'LIST' && chunkStart + 4 <= end){
+        const listType = readFourCC(view, chunkStart);
+        if(listType === 'pdta'){
+          let subOffset = chunkStart + 4;
+          const subEnd = Math.min(chunkEnd, end);
+          while(subOffset + 8 <= subEnd){
+            const subId = readFourCC(view, subOffset);
+            const subSize = view.getUint32(subOffset + 4, true);
+            const subStart = subOffset + 8;
+            if(subId === 'phdr'){
+              return parseSf2PresetHeaders(view, subStart, subSize);
+            }
+            subOffset = subStart + subSize + (subSize % 2);
+          }
+        }
+      }
+      offset = chunkStart + size + (size % 2);
+    }
+  }catch(e){
+    console.warn('[SF2] preset parse failed', e);
+  }
+  return [];
+}
+
+function cacheSf2PresetList(url, arrayBuffer){
+  if(!url || !arrayBuffer) return [];
+  if(sf2PresetCache.has(url)) return sf2PresetCache.get(url);
+  const list = extractSf2PresetList(arrayBuffer);
+  sf2PresetCache.set(url, list);
+  return list;
+}
+
+function resolveSf2PresetByName(url, name){
+  if(!url || !name || !sf2PresetCache.has(url)) return null;
+  const list = sf2PresetCache.get(url) || [];
+  if(!list.length) return null;
+  const target = normalizeSf2Name(name);
+  let exact = null;
+  let partial = null;
+  for(const preset of list){
+    const norm = normalizeSf2Name(preset.name);
+    if(!norm) continue;
+    if(norm === target){
+      exact = preset;
+      break;
+    }
+    if(!partial && norm.includes(target)){
+      partial = preset;
+    }
+  }
+  return exact || partial;
+}
+
+function getSf2ApiCandidate(){
+  const candidates = [
+    ['JSSynthesizer', window.JSSynthesizer],
+    ['Synthesizer', window.Synthesizer],
+    ['JSSynth', window.JSSynth],
+    ['JSSynthesizer.Synthesizer', window.JSSynthesizer && window.JSSynthesizer.Synthesizer]
+  ];
+  for(const [label, api] of candidates){
+    if(!api) continue;
+    return { api, label };
+  }
+  return null;
+}
+
+function loadLocalScriptOnce(url){
+  if(!url) return Promise.resolve(false);
+  if(loadLocalScriptOnce._loaded && loadLocalScriptOnce._loaded.has(url)){
+    return Promise.resolve(true);
+  }
+  if(!loadLocalScriptOnce._loaded) loadLocalScriptOnce._loaded = new Set();
+  return new Promise((resolve) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.onload = () => { loadLocalScriptOnce._loaded.add(url); resolve(true); };
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+}
+
+async function ensureSf2SynthLibrary(){
+  if(getSf2ApiCandidate()) return true;
+  for(const url of SF2_LIB_CANDIDATES){
+    const ok = await loadLocalScriptOnce(url);
+    if(ok && getSf2ApiCandidate()) return true;
+  }
+  return false;
+}
+
+function createSf2SynthInstance(api){
+  if(!api) return null;
+  if(typeof api === 'function') return new api();
+  if(api && typeof api.Synthesizer === 'function') return new api.Synthesizer();
+  if(api && typeof api.createSynthesizer === 'function') return api.createSynthesizer();
+  return null;
+}
+
+async function initSf2SynthInstance(synth){
+  if(!synth) return null;
+  if(typeof synth.init === 'function'){
+    const res = (synth.init.length >= 1) ? synth.init(audioCtx.sampleRate) : synth.init();
+    if(res && typeof res.then === 'function') await res;
+  } else if(typeof synth.initialize === 'function'){
+    const res = (synth.initialize.length >= 1) ? synth.initialize(audioCtx.sampleRate) : synth.initialize();
+    if(res && typeof res.then === 'function') await res;
+  }
+  return synth;
+}
+
+function getSf2AudioNode(synth){
+  if(!synth) return null;
+  if(typeof synth.createAudioNode === 'function') return synth.createAudioNode(audioCtx);
+  if(typeof synth.getAudioNode === 'function') return synth.getAudioNode(audioCtx);
+  if(synth.output && typeof synth.output.connect === 'function') return synth.output;
+  if(synth.node && typeof synth.node.connect === 'function') return synth.node;
+  return null;
+}
+
+async function loadSf2IntoSynth(synth, arrayBuffer){
+  if(!synth) return false;
+  const loaders = ['loadSoundFont', 'loadSFont', 'loadSf2', 'loadSF2', 'loadSFontFromArrayBuffer'];
+  for(const fn of loaders){
+    if(typeof synth[fn] === 'function'){
+      const res = synth[fn](arrayBuffer);
+      if(res && typeof res.then === 'function') await res;
+      return true;
+    }
+  }
+  return false;
+}
+
+function sf2SendMidi(synth, bytes){
+  if(!synth || !bytes) return false;
+  if(typeof synth.send === 'function'){ synth.send(bytes); return true; }
+  if(typeof synth.midiMessage === 'function'){ synth.midiMessage(bytes); return true; }
+  return false;
+}
+
+function sf2ProgramChange(synth, channel, program){
+  if(!synth) return;
+  if(typeof synth.programChange === 'function'){ synth.programChange(channel, program); return; }
+  sf2SendMidi(synth, [0xC0 | (channel & 0x0f), program & 0x7f]);
+}
+
+function sf2BankSelect(synth, channel, bank){
+  if(!synth || !Number.isFinite(bank)) return;
+  const bankValue = Math.max(0, Math.min(16383, Math.round(bank)));
+  const msb = (bankValue >> 7) & 0x7f;
+  const lsb = bankValue & 0x7f;
+  sf2SendMidi(synth, [0xB0 | (channel & 0x0f), 0, msb]);
+  sf2SendMidi(synth, [0xB0 | (channel & 0x0f), 32, lsb]);
+}
+
+function sf2SelectPreset(synth, channel, program, bank){
+  if(!synth || !Number.isFinite(program)) return;
+  if(Number.isFinite(bank)) sf2BankSelect(synth, channel, bank);
+  sf2ProgramChange(synth, channel, program);
+}
+
+function sf2NoteOn(synth, channel, note, velocity){
+  if(!synth) return;
+  if(typeof synth.noteOn === 'function'){ synth.noteOn(channel, note, velocity); return; }
+  sf2SendMidi(synth, [0x90 | (channel & 0x0f), note & 0x7f, velocity & 0x7f]);
+}
+
+function sf2NoteOff(synth, channel, note){
+  if(!synth) return;
+  if(typeof synth.noteOff === 'function'){ synth.noteOff(channel, note); return; }
+  sf2SendMidi(synth, [0x80 | (channel & 0x0f), note & 0x7f, 0]);
+}
+
+async function loadSf2InstrumentForConfig(config){
+  if(!config || !config.sf2Url) return null;
+  ensureAudio();
+  const ok = await ensureSf2SynthLibrary();
+  if(!ok){
+    console.warn('[SF2] synth library missing. Provide assets/vendor/js-synthesizer(.min).js');
+    return null;
+  }
+  const apiInfo = getSf2ApiCandidate();
+  if(!apiInfo){
+    console.warn('[SF2] synth API not found after load');
+    return null;
+  }
+  if(!sf2SynthState.synth){
+    sf2SynthState.synth = createSf2SynthInstance(apiInfo.api);
+    sf2SynthState.apiLabel = apiInfo.label;
+    await initSf2SynthInstance(sf2SynthState.synth);
+  }
+  if(!sf2SynthState.synth){
+    console.warn('[SF2] synth init failed');
+    return null;
+  }
+  const url = String(config.sf2Url);
+  if(sf2SynthState.currentUrl !== url){
+    const res = await fetch(url);
+    if(!res.ok){
+      console.warn('[SF2] fetch failed', { url, status: res.status });
+      return null;
+    }
+    const buf = await res.arrayBuffer();
+    cacheSf2PresetList(url, buf);
+    const loaded = await loadSf2IntoSynth(sf2SynthState.synth, buf);
+    if(!loaded){
+      console.warn('[SF2] loadSoundFont failed', { url });
+      return null;
+    }
+    sf2SynthState.currentUrl = url;
+  }
+  sf2SynthState.node = getSf2AudioNode(sf2SynthState.synth);
+  if(sf2SynthState.node){
+    try{ sf2SynthState.node.disconnect(); }catch(e){}
+    sf2SynthState.node.connect(getInstrumentCategoryGain(config));
+  }
+  const channel = config.sf2IsDrum ? 9 : 0;
+  let program = Number.isFinite(config.sf2Program) ? config.sf2Program : null;
+  let bank = Number.isFinite(config.sf2Bank) ? config.sf2Bank : null;
+  if(config.sf2PresetName){
+    const preset = resolveSf2PresetByName(url, config.sf2PresetName);
+    if(preset){
+      program = preset.preset;
+      bank = Number.isFinite(preset.bank) ? preset.bank : bank;
+    } else {
+      if(Number.isFinite(config.sf2ProgramFallback)) program = config.sf2ProgramFallback;
+      if(Number.isFinite(config.sf2BankFallback)) bank = config.sf2BankFallback;
+      console.warn('[SF2] preset name not found', { label: config.label, preset: config.sf2PresetName });
+    }
+  }
+  if(Number.isFinite(program)){
+    sf2SelectPreset(sf2SynthState.synth, channel, program, bank);
+  }
+  instrumentPlayer = { _sf2: true };
+  currentInstrumentConfig = config;
+  updateNoteEngineMode(config);
+  currentInstrumentName = `${config.label} (SF2)`;
+  if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+  updateDisabledKeysForConfig();
+  return instrumentPlayer;
+}
+
+async function findFirstMp3PackInFolder(baseUrl){
+  if(!baseUrl) return null;
+  try{
+    const res = await fetch(baseUrl, { method: 'GET' });
+    if(!res.ok) return null;
+    const text = await res.text();
+    const match = text.match(/href=[\"']([^\"']+-mp3\\.js)[\"']/i);
+    if(match && match[1]) return match[1];
+  }catch(e){}
+  return null;
+}
+
+async function loadWappyDogInstrument(config){
+  const base = LOCAL_SOUNDFONT_BASES.wappydog;
+  const mappingFile = await findFirstMp3PackInFolder(base);
+  if(mappingFile){
+    const mappingUrl = `${base}${mappingFile}`;
+    try{
+      const info = await loadSoundfontMapFromJs(mappingUrl);
+      if(info && info.map){
+        instrumentPlayer = createLocalSoundfontPlayer(info.map);
+        currentInstrumentConfig = config;
+        updateNoteEngineMode(config);
+        currentInstrumentName = `${config.label} (WappyDog mp3)`;
+        if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+        console.log('[WappyDog] mp3 pack loaded', { patch: info.key, url: mappingUrl });
+        updateDisabledKeysForConfig();
+        return instrumentPlayer;
+      }
+    }catch(e){
+      console.warn('[WappyDog] mp3 pack load failed', e);
+    }
+  }
+  console.log('[WappyDog] mp3 pack not found; falling back to SF2');
+  return loadSf2InstrumentForConfig(config);
+}
 function updateDisabledKeysForConfig(){
   disabledKeySet.clear();
   const leftRange = getPlayableNoteRangeForSide('left');
@@ -1049,7 +1907,8 @@ function createLocalSoundfontPlayer(map){
   const pending = new Map(); // noteName -> Promise
   const player = {
     play: function(midiNum, whenSec, opts){
-      if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+      ensureAudioContext();
+      if(!audioCtx) return null;
       const noteKey = findNearestSoundfontKey(map, midiNum);
       if(!noteKey) return null;
       const dest = (opts && opts.gainNode) ? opts.gainNode : audioCtx.destination;
@@ -1237,35 +2096,36 @@ const SOUND_LIBRARY_CONFIG = {
   keys: {
     id: 'keys',
     sources: [
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: SOUND_FONT_BASE }
+      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: SOUND_FONT_BASE },
+      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm }
     ]
   },
   electric: {
     id: 'electric',
     sources: [
-      { name: 'cf-electric', soundfont: 'electric-keys', url: `${CLOUDFLARE_SOUNDFONT_BASE}electric/` },
-      { name: 'musyngkite', soundfont: 'MusyngKite', url: SOUNDFONT_FALLBACK_URL }
+      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
+      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
     ]
   },
   pads: {
     id: 'pads',
     sources: [
-      { name: 'cf-pads', soundfont: 'pads-ensemble', url: `${CLOUDFLARE_SOUNDFONT_BASE}pads/` },
-      { name: 'musyngkite', soundfont: 'MusyngKite', url: SOUNDFONT_FALLBACK_URL }
+      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
+      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
     ]
   },
   solo: {
     id: 'solo',
     sources: [
-      { name: 'cf-solo', soundfont: 'solo-voices', url: `${CLOUDFLARE_SOUNDFONT_BASE}solo/` },
-      { name: 'musyngkite', soundfont: 'MusyngKite', url: SOUNDFONT_FALLBACK_URL }
+      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
+      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
     ]
   },
   fx: {
     id: 'fx',
     sources: [
-      { name: 'cf-fx', soundfont: 'fx-vault', url: `${CLOUDFLARE_SOUNDFONT_BASE}fx/` },
-      { name: 'musyngkite', soundfont: 'MusyngKite', url: SOUNDFONT_FALLBACK_URL }
+      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
+      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
     ]
   }
 };
@@ -1286,10 +2146,10 @@ const INSTRUMENT_CONFIG = [
   { id: 'solo_brass', tab: 'solo', label: 'Solo Brass', library: 'solo', patch: 'trumpet', wafProgram: 57, minNote: 54, maxNote: 94, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_wind', tab: 'solo', label: 'Solo Wind', library: 'solo', patch: 'flute', wafProgram: 74, minNote: 60, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_lead', tab: 'solo', label: 'Lead Synth', library: 'solo', patch: 'lead_1_square', wafProgram: 81, minNote: 36, maxNote: 108, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.015, decay: 0.18, sustain: 0.6, release: 0.25 },
-  { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: 35, maxNote: 81, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.05, attack: 0.01, decay: 0.16, sustain: 0.5, release: 0.18, isDrums: true, drumMap: { 48: 36, 50: 38, 52: 42, 53: 46, 55: 45, 57: 49, 59: 51 } },
-  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'bird_tweet', wafProgram: 124, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.01, decay: 0.12, sustain: 0.45, release: 0.2 },
+  { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: 21, maxNote: 108, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.1, attack: 0.01, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: { min: 35, max: 81 }, engine: 'sf2', sf2Url: SF2_DRUMS_URL, sf2IsDrum: true, sf2Bank: 128, oneShotMs: 80 },
+  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'bird_tweet', wafProgram: 124, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'sf2', sf2Url: SF2_HYPERSOUND_URL, sf2PresetName: 'DOGBW60', sf2ProgramFallback: 0, oneShotMs: 160 },
   { id: 'fx_telephone', tab: 'fx', label: 'Telephone', library: 'fx', patch: 'telephone_ring', wafProgram: 125, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.01, decay: 0.18, sustain: 0.55, release: 0.2 },
-  { id: 'fx_odd', tab: 'fx', label: '???', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
+  { id: 'fx_odd', tab: 'fx', label: 'Odd FX', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
 ];
 const INSTRUMENT_BUTTONS = INSTRUMENT_CONFIG.map(item => ({ id: item.id, label: item.label }));
 const GRID_COLS = 24;
@@ -1318,6 +2178,133 @@ let oddFxPickerEl = null;
 let oddFxPickerSelect = null;
 let oddFxPickerClose = null;
 let oddFxPickerApply = null;
+const RANDOM_POOLS = {
+  keys: [
+    { patch: 'acoustic_grand_piano', label: 'Grand Piano' },
+    { patch: 'bright_acoustic_piano', label: 'Bright Piano' },
+    { patch: 'honkytonk_piano', label: 'Honky-Tonk' },
+    { patch: 'electric_piano_1', label: 'Electric Piano 1' },
+    { patch: 'electric_piano_2', label: 'Electric Piano 2' },
+    { patch: 'electric_grand_piano', label: 'Electric Grand' },
+    { patch: 'harpsichord', label: 'Harpsichord' },
+    { patch: 'celesta', label: 'Celesta' }
+  ],
+  electric: [
+    { patch: 'electric_piano_1', label: 'Electric Piano 1' },
+    { patch: 'electric_piano_2', label: 'Electric Piano 2' },
+    { patch: 'clavinet', label: 'Clavinet' },
+    { patch: 'drawbar_organ', label: 'Drawbar Organ' },
+    { patch: 'rock_organ', label: 'Rock Organ' }
+  ],
+  pads: [
+    { patch: 'pad_1_new_age', label: 'New Age Pad' },
+    { patch: 'pad_2_warm', label: 'Warm Pad' },
+    { patch: 'pad_3_polysynth', label: 'Polysynth Pad' },
+    { patch: 'pad_4_choir', label: 'Choir Pad' },
+    { patch: 'pad_5_bowed', label: 'Bowed Pad' },
+    { patch: 'pad_6_metallic', label: 'Metallic Pad' },
+    { patch: 'pad_7_halo', label: 'Halo Pad' },
+    { patch: 'pad_8_sweep', label: 'Sweep Pad' }
+  ],
+  solo: [
+    { patch: 'lead_1_square', label: 'Lead Square' },
+    { patch: 'lead_2_sawtooth', label: 'Lead Saw' },
+    { patch: 'lead_3_calliope', label: 'Lead Calliope' },
+    { patch: 'lead_4_chiff', label: 'Lead Chiff' },
+    { patch: 'lead_5_charang', label: 'Lead Charang' },
+    { patch: 'lead_6_voice', label: 'Lead Voice' },
+    { patch: 'lead_7_fifths', label: 'Lead Fifths' },
+    { patch: 'lead_8_bass__lead', label: 'Lead Bass' },
+    { patch: 'clarinet', label: 'Clarinet' },
+    { patch: 'oboe', label: 'Oboe' },
+    { patch: 'flute', label: 'Flute' },
+    { patch: 'alto_sax', label: 'Alto Sax' },
+    { patch: 'trumpet', label: 'Trumpet' }
+  ],
+  fx: [
+    { id: 'fx_drums', label: 'Arachno Drums' },
+    { id: 'fx_dog', label: 'WappyDog' },
+    { patch: 'applause', label: 'Applause' },
+    { patch: 'whistle', label: 'Whistle' },
+    { patch: 'tinkle_bell', label: 'Tinkle Bell' },
+    { patch: 'seashore', label: 'Seashore' },
+    { patch: 'breath_noise', label: 'Breath Noise' },
+    { patch: 'fx_1_rain', label: 'Rain FX' },
+    { patch: 'fx_3_crystal', label: 'Crystal FX' },
+    { patch: 'fx_4_atmosphere', label: 'Atmosphere FX' },
+    { patch: 'fx_5_brightness', label: 'Brightness FX' },
+    { patch: 'fx_8_scifi', label: 'Sci-Fi FX' }
+  ]
+};
+function getPreferredBasesForTab(tabId){
+  if(tabId === 'keys'){
+    return [LOCAL_SOUNDFONT_BASES.musyngkite, LOCAL_SOUNDFONT_BASES.fluidr3_gm];
+  }
+  return [LOCAL_SOUNDFONT_BASES.fluidr3_gm, LOCAL_SOUNDFONT_BASES.musyngkite];
+}
+function getDefaultConfigForTab(tabId){
+  return INSTRUMENT_CONFIG.find(cfg => cfg.tab === tabId) || INSTRUMENT_CONFIG[0] || null;
+}
+function buildRandomInstrumentConfig(tabId, patch, label, base){
+  const baseCfg = getDefaultConfigForTab(tabId) || {};
+  const id = `random:${tabId}:${patch}`;
+  const config = Object.assign({}, baseCfg);
+  config.id = id;
+  config.tab = tabId;
+  config.library = tabId;
+  config.patch = String(patch);
+  config.label = label || humanizePatchName(patch);
+  config.localSoundfont = true;
+  config.localBase = base || (getPreferredBasesForTab(tabId)[0] || SOUND_FONT_BASE);
+  config.stub = false;
+  config.isRandom = true;
+  return config;
+}
+async function loadRandomInstrumentConfig(panelId, tabId, entry){
+  if(!entry) return null;
+  if(entry.id && INSTRUMENT_CONFIG_BY_ID.has(entry.id)){
+    await triggerInstrumentButton(entry.id, panelId);
+    return { id: entry.id, label: entry.label || (instrumentById.get(entry.id)?.label || '') };
+  }
+  const bases = entry.base ? [entry.base].flat() : getPreferredBasesForTab(tabId);
+  const config = buildRandomInstrumentConfig(tabId, entry.patch, entry.label, bases[0]);
+  let loaded = null;
+  for(const base of bases){
+    config.localBase = base;
+    loaded = await loadLocalSoundfontForConfig(config);
+    if(loaded) break;
+  }
+  if(!loaded){
+    console.warn('[Random] load failed', { tabId, patch: entry.patch, label: entry.label });
+    return null;
+  }
+  if(panelId && instrumentPlayersBySide[panelId]){
+    instrumentPlayersBySide[panelId].player = instrumentPlayer;
+    instrumentPlayersBySide[panelId].name = currentInstrumentName;
+    instrumentPlayersBySide[panelId].id = config.id;
+    instrumentPlayersBySide[panelId].config = config;
+  }
+  return { id: config.id, label: entry.label || config.label };
+}
+async function triggerRandomInstrument(panelId, tabId){
+  const pool = RANDOM_POOLS[tabId] || [];
+  if(!pool.length) return;
+  const ps = panelState[panelId];
+  if(!ps) return;
+  lastInstrumentPanelId = panelId || lastInstrumentPanelId;
+  const choice = pool[Math.floor(Math.random() * pool.length)];
+  const result = await loadRandomInstrumentConfig(panelId, tabId, choice);
+  if(!result) return;
+  ps.selected = result.id;
+  ps.randomActiveTab = tabId;
+  if(!ps.randomByTab) ps.randomByTab = {};
+  ps.randomByTab[tabId] = { id: result.id, label: result.label };
+  if(!dualInstrumentMode){
+    selectedSingleInstrumentId = result.id;
+  }
+  updateInstrumentMixReadouts();
+  requestBackboardRedraw();
+}
 const SOUND_BANK_NAMES_URL = 'soundfont-staging/names.json';
 let oddFxAllPatches = null;
 
@@ -1378,6 +2365,41 @@ function buildOddFxOptions(panelId){
     base: getOddFxPreferredBase(patch)
   }));
 }
+function formatOddFxColumnList(items, columns){
+  const list = items.map(item => (item && item.label) ? item.label : String(item || ''));
+  if(!list.length) return '';
+  const cols = Math.max(1, Math.min(columns || 3, 6));
+  const rows = Math.ceil(list.length / cols);
+  const widths = new Array(cols).fill(0);
+  for(let i=0;i<list.length;i++){
+    const col = Math.floor(i / rows);
+    if(col >= cols) break;
+    widths[col] = Math.max(widths[col], list[i].length);
+  }
+  const lines = [];
+  for(let r=0;r<rows;r++){
+    const rowParts = [];
+    for(let c=0;c<cols;c++){
+      const idx = c * rows + r;
+      if(idx >= list.length) continue;
+      const label = list[idx];
+      const pad = (c === cols - 1) ? 0 : 2;
+      rowParts.push(label.padEnd(widths[c] + pad, ' '));
+    }
+    lines.push(rowParts.join(''));
+  }
+  return lines.join('\n');
+}
+function logOddFxList(options, panelId){
+  const opts = Array.isArray(options) ? options : [];
+  if(!opts.length){
+    console.log('[OddFX] no patches found');
+    return;
+  }
+  const columns = 3;
+  const table = formatOddFxColumnList(opts, columns);
+  console.log(`[OddFX] available patches (${opts.length})${panelId ? ` for ${panelId}` : ''}\n` + table);
+}
 function ensureOddFxPicker(){
   if(oddFxPickerEl) return;
   oddFxPickerEl = document.createElement('div');
@@ -1430,6 +2452,7 @@ function openOddFxPicker(panelId){
       o.textContent = opt.label;
       oddFxPickerSelect.appendChild(o);
     });
+    logOddFxList(oddFxPickerState.options, panelId);
     const custom = panelState[panelId] && panelState[panelId].customFx;
     if(custom && custom.patch){
       oddFxPickerSelect.value = custom.patch;
@@ -1618,6 +2641,26 @@ function getKeyUvSpanFromScreen(mesh, screenMesh, screenCenter, screenNormal, ra
     return { u0, u1, uMid: (u0 + u1) * 0.5 };
   }catch(e){
     return null;
+  }
+}
+async function loadSoundfontMapFromJs(url){
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`Soundfont mapping fetch failed: ${res.status} ${url}`);
+  const jsText = await res.text();
+  const getMap = new Function(`
+    "use strict";
+    var MIDI = { Soundfont: {} };
+    ${jsText}
+    if(!MIDI || !MIDI.Soundfont) return null;
+    const keys = Object.keys(MIDI.Soundfont);
+    const key = keys[0] || null;
+    return key ? { key, map: MIDI.Soundfont[key] } : null;
+  `);
+  try{
+    return getMap();
+  }catch(e){
+    console.error("[Soundfont] mapping eval failed", { url, err: e });
+    throw e;
   }
 }
 function computeScreenKeymapAnalysis(){
@@ -1858,8 +2901,8 @@ function loadKeymap(){
 }
 loadKeymap();
 const panelState = {
-  left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {} },
-  right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {} }
+  left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {}, randomByTab: {}, randomActiveTab: null },
+  right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {}, randomByTab: {}, randomActiveTab: null }
 };
 let dualInstrumentMode = true;
 const SINGLE_INSTRUMENT_SIDE = 'left';
@@ -1874,16 +2917,17 @@ function setPanelTabId(panelId, tabId){
   panelState[panelId].tab = next;
   return next;
 }
-function toggleInstrumentMode(){
-  dualInstrumentMode = !dualInstrumentMode;
-  if(!dualInstrumentMode){
-    const currentId = panelState[SINGLE_INSTRUMENT_SIDE] ? panelState[SINGLE_INSTRUMENT_SIDE].selected : null;
-    if(currentId) selectedSingleInstrumentId = currentId;
+  function toggleInstrumentMode(){
+    dualInstrumentMode = !dualInstrumentMode;
+    if(!dualInstrumentMode){
+      const currentId = panelState[SINGLE_INSTRUMENT_SIDE] ? panelState[SINGLE_INSTRUMENT_SIDE].selected : null;
+      if(currentId) selectedSingleInstrumentId = currentId;
+    }
+    updateDisabledKeysForConfig();
+    requestBackboardRedraw();
+    updateInstrumentMixReadouts();
+    return dualInstrumentMode;
   }
-  updateDisabledKeysForConfig();
-  requestBackboardRedraw();
-  return dualInstrumentMode;
-}
 function getFirstInstrumentIdForTab(tabId){
   for(const item of INSTRUMENT_LAYOUT){
     if(getInstrumentTabId(item) === tabId) return item.id;
@@ -1894,10 +2938,16 @@ function selectPanelInstrumentForTab(panelId, tabId){
   if(!panelState[panelId]) return;
   const nextTab = setPanelTabId(panelId, tabId);
   const ps = panelState[panelId];
+  if(ps.randomActiveTab === nextTab && ps.randomByTab && ps.randomByTab[nextTab]){
+    ps.selected = ps.randomByTab[nextTab].id;
+    requestBackboardRedraw();
+    return;
+  }
   if(!ps.lastByTab) ps.lastByTab = {};
   const nextId = ps.lastByTab[nextTab] || getFirstInstrumentIdForTab(nextTab);
   if(nextId && ps.selected !== nextId){
     ps.selected = nextId;
+    ps.randomActiveTab = null;
     if(!dualInstrumentMode){
       selectedSingleInstrumentId = nextId;
     }
@@ -3153,6 +4203,7 @@ function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
 
 async function triggerInstrumentButton(id, panelId){
   // keep selection per panel; caller sets desired panel before calling
+  lastInstrumentPanelId = panelId || SINGLE_INSTRUMENT_SIDE;
   requestBackboardRedraw();
   try{
     if(!dualInstrumentMode && id){
@@ -3184,6 +4235,34 @@ async function triggerInstrumentButton(id, panelId){
       }
     }
     const config = getInstrumentConfigById(id);
+    if(id === 'fx_drums' && config){
+      const ps = panelState[panelId] || panelState.left;
+      const maxPreset = 12;
+      const current = Number.isFinite(ps.drumPresetIndex) ? ps.drumPresetIndex : 0;
+      const next = (current % maxPreset) + 1;
+      ps.drumPresetIndex = next;
+      if(!ps.customLabels) ps.customLabels = {};
+      ps.customLabels[id] = `Drums ${next}`;
+      const customConfig = Object.assign({}, config, {
+        label: `Drums ${next}`,
+        sf2PresetName: `Perfect Drums ${next}`,
+        sf2Program: null,
+        sf2ProgramFallback: next - 1,
+        sf2Bank: Number.isFinite(config.sf2Bank) ? config.sf2Bank : 128,
+        sf2BankFallback: Number.isFinite(config.sf2Bank) ? config.sf2Bank : 128
+      });
+      await loadSf2InstrumentForConfig(customConfig);
+      if(panelId && instrumentPlayersBySide[panelId]){
+        instrumentPlayersBySide[panelId].player = instrumentPlayer;
+        instrumentPlayersBySide[panelId].name = currentInstrumentName;
+        instrumentPlayersBySide[panelId].id = id;
+        instrumentPlayersBySide[panelId].config = customConfig;
+      }
+      updateDisabledKeysForConfig();
+      updateInstrumentMixReadouts();
+      requestBackboardRedraw();
+      return;
+    }
     if(id === 'fx_odd' && panelId && panelState[panelId] && panelState[panelId].customFx){
       const custom = panelState[panelId].customFx;
       const customConfig = buildOddFxConfig(custom.patch, custom.label, custom.base);
@@ -3199,20 +4278,21 @@ async function triggerInstrumentButton(id, panelId){
     } else {
       await loadInstrument(id);
     }
-    if(panelId && instrumentPlayersBySide[panelId]){
-      instrumentPlayersBySide[panelId].player = instrumentPlayer;
-      instrumentPlayersBySide[panelId].name = currentInstrumentName;
-      instrumentPlayersBySide[panelId].id = id;
-      instrumentPlayersBySide[panelId].config = config || currentInstrumentConfig;
-      if(DEBUG_INSTRUMENTS && config){
-        console.log('[Instrument] selected', { side: panelId, label: config.label, id: config.id });
+      if(panelId && instrumentPlayersBySide[panelId]){
+        instrumentPlayersBySide[panelId].player = instrumentPlayer;
+        instrumentPlayersBySide[panelId].name = currentInstrumentName;
+        instrumentPlayersBySide[panelId].id = id;
+        instrumentPlayersBySide[panelId].config = config || currentInstrumentConfig;
+        if(DEBUG_INSTRUMENTS && config){
+          console.log('[Instrument] selected', { side: panelId, label: config.label, id: config.id });
+        }
       }
+      updateDisabledKeysForConfig();
+      updateInstrumentMixReadouts();
+    }catch(e){
+      console.warn('Instrument load via backboard UI failed', id, e);
     }
-    updateDisabledKeysForConfig();
-  }catch(e){
-    console.warn('Instrument load via backboard UI failed', id, e);
   }
-}
 
 // Backboard UV map mode: 'none' | 'u' | 'v'
 let backboardUVMapMode = 'none';
@@ -3561,7 +4641,8 @@ async function loadSoundfontInstrument(patch, sources, label){
     return null;
   }
   const SF = apiInfo.api;
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  ensureAudioContext();
+  if(!audioCtx) return null;
   for(const source of sources || []){
     try{
       const format = source.format || 'mp3';
@@ -3601,7 +4682,8 @@ async function loadSoundfontInstrument(patch, sources, label){
 }
 
 async function loadWebAudioFontProgram(program, label){
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  ensureAudioContext();
+  if(!audioCtx) return null;
   let wafScript = 'https://surikov.github.io/webaudiofont/npm/dist/WebAudioFontPlayer.js';
   if(window.PREFERRED_INSTRUMENT_BACKEND === 'webaudiofont-local'){
     wafScript = '/assets/vendor/WebAudioFontPlayer.js';
@@ -3660,6 +4742,19 @@ async function loadInstrument(id){
   const config = getInstrumentConfigById(id);
   if(!config){
     console.warn('[Instrument] unknown id', id);
+    return null;
+  }
+  if(config.engine === 'sf2'){
+    const loaded = await loadSf2InstrumentForConfig(config);
+    if(loaded){
+      if(config.id === 'fx_drums'){
+        console.log('[Instrument] Arachno SF2 loaded OK');
+        const range = config.drumNoteRange || { min: 35, max: 81 };
+        console.log('[Instrument] drum map', { range, tapTest: [36, 42, 49] });
+      }
+      return loaded;
+    }
+    console.warn('[SF2] load failed; skipping non-SF2 fallback', { id: config.id, label: config.label });
     return null;
   }
   if(config.localSoundfont){
@@ -3736,7 +4831,8 @@ async function loadInstrument(id){
 window.loadInstrument = loadInstrument;
 window.getCurrentInstrumentName = () => currentInstrumentName;
 function ensureAudio(){
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  ensureAudioContext();
+  if(!audioCtx) return;
   if(!instrumentLimiter){
     instrumentLimiter = audioCtx.createDynamicsCompressor();
     instrumentLimiter.threshold.value = INSTRUMENT_LIMITER_SETTINGS.threshold;
@@ -3757,10 +4853,17 @@ function ensureAudio(){
       instrumentCategoryGains[key] = gain;
     });
     instrumentLimiter.connect(masterGain);
-    masterGain.connect(audioCtx.destination);
   }
-  const siteVolume = getSiteVolume01();
-  masterGain.gain.value = siteVolume * INSTRUMENT_MIX.master;
+  if(masterGain){
+    try{ masterGain.disconnect(); }catch(e){}
+    ensureAudioMeterChain();
+    if(audioMeterMix){
+      masterGain.connect(audioMeterMix);
+    } else {
+      masterGain.connect(audioCtx.destination);
+    }
+  }
+  applyInstrumentMix();
 }
 function getInstrumentCategoryId(config){
   const tab = config && config.tab ? String(config.tab).toLowerCase() : 'keys';
@@ -3772,7 +4875,7 @@ function getInstrumentCategoryGain(config){
   const node = instrumentCategoryGains ? instrumentCategoryGains[id] : null;
   if(node && !instrumentGainLogged.has(id)){
     const siteVolume = getSiteVolume01();
-    const master = siteVolume * INSTRUMENT_MIX.master;
+    const master = siteVolume * INSTRUMENT_MIX.master * INSTRUMENT_MASTER_BOOST;
     const categoryGain = node.gain.value;
     console.log('[InstrumentMixer] gains', { category: id, master, categoryGain, effective: master * categoryGain });
     instrumentGainLogged.add(id);
@@ -6005,23 +7108,26 @@ function renderBackboardOverlay(dt){
         drawInstrumentTabs('left', centeredX, tabsY, panelW, tabH);
       }
       const drawInstrumentGrid = (panelId, layout, x, y, w, h)=>{
-        const cols = 2;
-        const rows = 2;
-        const cellW = w / cols;
-        const cellH = h / rows;
+        const ps = panelState[panelId] || {};
+        const gridCols = 2;
+        const gridRows = 2;
+        const gridW = Math.round(w * 0.67);
+        const randomW = Math.max(0, w - gridW);
+        const cellW = gridW / gridCols;
+        const cellH = h / gridRows;
         const list = layout.map(item => ({
           id: item.id || null,
           label: item.label || (item.id ? (instrumentById.get(item.id)?.label || '') : '')
         }));
         const activeTab = getPanelTabId(panelId);
         const visible = list.filter(item => getInstrumentTabId(item) === activeTab).slice(0, 4);
-        const rowsUsed = Math.max(1, Math.min(rows, Math.ceil(visible.length / cols)));
+        const rowsUsed = Math.max(1, Math.min(gridRows, Math.ceil(visible.length / gridCols)));
         const gridHeight = rowsUsed * cellH;
         const gridYOffset = Math.round((h - gridHeight) / 2);
-        for(let i=0;i<cols*rows;i++){
+        for(let i=0;i<gridCols*gridRows;i++){
           const item = visible[i] || null;
-          const col = i % cols;
-          const row = Math.floor(i / cols);
+          const col = i % gridCols;
+          const row = Math.floor(i / gridCols);
           const baseRect = {
             x: x + col * cellW,
             y: y + gridYOffset + row * cellH,
@@ -6037,10 +7143,13 @@ function renderBackboardOverlay(dt){
           };
           const instrumentInfo = item && item.id ? instrumentById.get(item.id) : null;
           let label = item ? item.label : '';
-          if(item && item.id === ODD_FX_ID && panelState[panelId] && panelState[panelId].customFx){
-            label = `??? [${panelState[panelId].customFx.label}]`;
+          const psCustom = panelState[panelId] && panelState[panelId].customLabels;
+          if(item && psCustom && psCustom[item.id]){
+            label = psCustom[item.id];
+          } else if(item && item.id === ODD_FX_ID && panelState[panelId] && panelState[panelId].customFx){
+            label = `Odd FX [${panelState[panelId].customFx.label}]`;
           } else if(item && item.id === ODD_FX_ID){
-            label = '???';
+            label = 'Odd FX';
           }
           if(instrumentInfo){
             const btn = instrumentInfo;
@@ -6067,6 +7176,47 @@ function renderBackboardOverlay(dt){
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(label || '', btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+        }
+        if(randomW > 0){
+          const randomRect = {
+            x: x + gridW,
+            y,
+            w: randomW,
+            h
+          };
+          const inset = Math.max(4, Math.min(randomRect.w, randomRect.h) * 0.06);
+          const btnRect = {
+            x: randomRect.x + inset,
+            y: randomRect.y + inset,
+            w: Math.max(0, randomRect.w - inset * 2),
+            h: Math.max(0, randomRect.h - inset * 2)
+          };
+          const hitKey = `${panelId}:random:${activeTab}`;
+          panelHitRects.push({ panel: panelId, type: 'random', id: activeTab, key: hitKey, rect: btnRect, tab: activeTab });
+          const randomInfo = (ps.randomByTab && ps.randomByTab[activeTab]) ? ps.randomByTab[activeTab] : null;
+          const isSelected = ps.randomActiveTab === activeTab && randomInfo;
+          const isHover = panelHover === hitKey;
+          const grad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
+          const base = isSelected ? 'rgba(120,200,255,0.85)' : (isHover ? 'rgba(110,185,255,0.75)' : 'rgba(20,60,120,0.95)');
+          grad.addColorStop(0, 'rgba(255,255,255,0.25)');
+          grad.addColorStop(0.45, base);
+          grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+          drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(12, btnRect.w * 0.2), grad, '#6ea4ff');
+          const labelTop = '???';
+          const labelBottom = randomInfo ? randomInfo.label : '';
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const topSize = Math.max(16, Math.round(btnRect.h * 0.28));
+          const bottomSize = Math.max(10, Math.round(btnRect.h * 0.16));
+          const centerX = btnRect.x + btnRect.w / 2;
+          const centerY = btnRect.y + btnRect.h / 2;
+          ctx.font = `700 ${topSize}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.fillText(labelTop, centerX, labelBottom ? (centerY - bottomSize * 0.6) : centerY);
+          if(labelBottom){
+            ctx.font = `600 ${bottomSize}px "Source Sans 3", system-ui, sans-serif`;
+            ctx.fillText(labelBottom, centerX, centerY + topSize * 0.45);
+          }
         }
       };
       if(dualInstrumentMode){
@@ -6295,7 +7445,8 @@ selectTrack(currentTrackKey);
 // ---- Audio loading ----
 async function loadAudio(url){
   try {
-    if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    ensureAudioContext();
+    if(!audioCtx) throw new Error('AudioContext unavailable');
     const resp = await fetch(encodeURI(url));
     if(!resp.ok) throw new Error('Audio HTTP '+resp.status);
     const arr = await resp.arrayBuffer();
@@ -6356,7 +7507,10 @@ function startAudio(delayMs=0){
   audioSource = audioCtx.createBufferSource();
   audioSource.buffer = audioBuffer;
   audioSource.playbackRate.setValueAtTime(currentPlaybackRate, audioCtx.currentTime);
-  audioSource.connect(audioCtx.destination);
+  ensureAudio();
+  ensureAudioMeterChain();
+  const audioOut = audioMeterMix || audioCtx.destination;
+  audioSource.connect(audioOut);
   const when = audioCtx.currentTime + Math.max(0, delayMs)/1000;
   const offset = Math.max(0, (audioTrimMs/1000) + savedAudioPosSec);
   audioSource.onended = ()=>{
@@ -6860,7 +8014,9 @@ function playHeldSample(midiNum, playMidi, envelope, config){
   const decay = (typeof env.decay === 'number') ? env.decay : NOTE_DECAY;
   const sustain = (typeof env.sustain === 'number') ? env.sustain : NOTE_SUSTAIN;
   const release = (typeof env.release === 'number') ? env.release : NOTE_RELEASE;
-  const gainScale = (config && typeof config.gainScale === 'number') ? config.gainScale : 1.0;
+  const baseGain = (config && typeof config.gainScale === 'number') ? config.gainScale : 1.0;
+  const autoGain = getInstrumentAutoGain(config);
+  const gainScale = baseGain * autoGain;
   const isPad = config && String(config.tab || '').toLowerCase() === 'pads';
   const gainNode = audioCtx.createGain();
   gainNode.gain.setValueAtTime(0.0001, now);
@@ -7048,7 +8204,8 @@ function onGlobalPointerMove(e){
 }
 
 function ensureAudioContextRunning(){
-  if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  ensureAudioContext();
+  if(!audioCtx) return;
   if(audioCtx.state !== 'running'){
     const before = audioCtx.state;
     safeRun(() => audioCtx.resume(), 'audioCtx resume');
@@ -7099,7 +8256,9 @@ function startOscillatorVoice(midiNum, playMidi, envelope, config){
   const decay = (typeof env.decay === 'number') ? env.decay : NOTE_DECAY;
   const sustain = (typeof env.sustain === 'number') ? env.sustain : NOTE_SUSTAIN;
   const release = (typeof env.release === 'number') ? env.release : NOTE_RELEASE;
-  const gainScale = (config && typeof config.gainScale === 'number') ? config.gainScale : 1.0;
+  const baseGain = (config && typeof config.gainScale === 'number') ? config.gainScale : 1.0;
+  const autoGain = getInstrumentAutoGain(config);
+  const gainScale = baseGain * autoGain;
   const gainNode = audioCtx.createGain();
   gainNode.gain.setValueAtTime(0.0001, now);
   gainNode.connect(getInstrumentCategoryGain(config));
@@ -7192,16 +8351,26 @@ function getInstrumentConfigForSide(side){
   const fallbackId = getSelectedInstrumentIdForSide(side);
   return getInstrumentConfigById(fallbackId);
 }
+function mapDrumMidiForInput(note, config){
+  const drumMin = config && config.drumNoteRange ? config.drumNoteRange.min : 35;
+  const drumMax = config && config.drumNoteRange ? config.drumNoteRange.max : 81;
+  const total = keymapEntriesSorted.length || keymapEntries.length || 0;
+  if(!total || !Number.isFinite(note)) return Math.max(drumMin, Math.min(drumMax, note));
+  const idx = getKeyIndexForMidi(note);
+  const t = (typeof idx === 'number' && total > 1) ? (idx / (total - 1)) : 0;
+  const mapped = Math.round(drumMin + t * (drumMax - drumMin));
+  return Math.max(drumMin, Math.min(drumMax, mapped));
+}
 function resolveInstrumentNoteRoute(midi, config){
   const note = Number(midi);
   if(Number.isNaN(note)) return null;
+  if(config && config.isDrums){
+    const mapped = mapDrumMidiForInput(note, config);
+    if(!Number.isFinite(mapped)) return null;
+    return { playMidi: Number(mapped), clamped: true };
+  }
   if(config && Number.isFinite(config.minNote) && Number.isFinite(config.maxNote)){
     if(note < config.minNote || note > config.maxNote) return null;
-  }
-  if(config && config.isDrums && config.drumMap){
-    const mapped = config.drumMap[note];
-    if(!Number.isFinite(mapped)) return null;
-    return { playMidi: Number(mapped), clamped: false };
   }
   if(!config || !Number.isFinite(config.minNote) || !Number.isFinite(config.maxNote)){
     return { playMidi: note, clamped: false };
@@ -7215,13 +8384,14 @@ function resolveInstrumentNoteRoute(midi, config){
   return { playMidi: note, clamped: false, sampleLabel };
 }
 function getEnvelopeForConfig(config){
-  if(!config) return { attack: NOTE_ATTACK, decay: NOTE_DECAY, sustain: NOTE_SUSTAIN, release: NOTE_RELEASE };
-  return {
-    attack: (typeof config.attack === 'number') ? config.attack : NOTE_ATTACK,
-    decay: (typeof config.decay === 'number') ? config.decay : NOTE_DECAY,
-    sustain: (typeof config.sustain === 'number') ? config.sustain : NOTE_SUSTAIN,
-    release: (typeof config.release === 'number') ? config.release : NOTE_RELEASE
-  };
+  const tab = config && config.tab ? String(config.tab).toLowerCase() : '';
+  const attackScale = (tab === 'pads') ? 1.0 : NOTE_ATTACK_SCALE;
+  const rawAttack = (config && typeof config.attack === 'number') ? config.attack : NOTE_ATTACK;
+  const attack = Math.max(NOTE_ATTACK_MIN, rawAttack * attackScale);
+  const decay = (config && typeof config.decay === 'number') ? config.decay : NOTE_DECAY;
+  const sustain = (config && typeof config.sustain === 'number') ? config.sustain : NOTE_SUSTAIN;
+  const release = (config && typeof config.release === 'number') ? config.release : NOTE_RELEASE;
+  return { attack, decay, sustain, release };
 }
 function forceStopNote(inputMidi, side){
   const routeKey = getNoteRouteKey(side, inputMidi);
@@ -7233,12 +8403,42 @@ function forceStopNote(inputMidi, side){
 }
 function resolveNoteEngineMode(config){
   if(config && config.engine === 'osc') return 'osc';
+  if(config && config.engine === 'sf2') return 'sf2';
   return 'sample';
 }
 function updateNoteEngineMode(config){
   if(typeof NoteEngine === 'object' && NoteEngine){
     NoteEngine.mode = resolveNoteEngineMode(config || currentInstrumentConfig);
   }
+}
+
+function playSf2NoteOn(inputMidi, playMidi, config){
+  if(!sf2SynthState.synth) return;
+  const target = Number.isFinite(Number(playMidi)) ? Number(playMidi) : Number(inputMidi);
+  const channel = config && config.sf2IsDrum ? 9 : 0;
+  const velocity = 100;
+  sf2NoteOn(sf2SynthState.synth, channel, target, velocity);
+  const oneShotMs = config && Number.isFinite(config.oneShotMs) ? config.oneShotMs : null;
+  if(oneShotMs && oneShotMs > 0){
+    const key = `${channel}:${target}`;
+    if(sf2NoteOffTimers.has(key)){
+      clearTimeout(sf2NoteOffTimers.get(key));
+    }
+    const timer = setTimeout(() => {
+      sf2NoteOffTimers.delete(key);
+      sf2NoteOff(sf2SynthState.synth, channel, target);
+    }, oneShotMs);
+    sf2NoteOffTimers.set(key, timer);
+  }
+}
+
+function stopSf2Note(midi, config){
+  if(!sf2SynthState.synth) return;
+  if(config && config.sf2IsDrum) return;
+  const target = Number.isFinite(Number(midi)) ? Number(midi) : null;
+  if(target == null) return;
+  const channel = config && config.sf2IsDrum ? 9 : 0;
+  sf2NoteOff(sf2SynthState.synth, channel, target);
 }
 
 const NoteEngine = {
@@ -7270,14 +8470,14 @@ const NoteEngine = {
     if(DEBUG_INSTRUMENTS && config){
       console.log('[Instrument] selection', { side, label: config.label, stub: isStub, bound: hasBound });
     }
-    if(route){
-      noteRoutingByInput.set(routeKey, { inputMidi: midi, playMidi: route.playMidi, config, side });
-      if(route.clamped && DEBUG_INSTRUMENTS){
-        console.log('[Instrument] clamp', { side, label: config ? config.label : '', input: midi, output: route.playMidi });
-      }
-      if(DEBUG_INSTRUMENTS && config){
-        console.log('[Instrument] note-on', { side, label: config.label, input: midi, play: route.playMidi });
-      }
+      if(route){
+        noteRoutingByInput.set(routeKey, { inputMidi: midi, playMidi: route.playMidi, config, side });
+        if(route.clamped && DEBUG_INSTRUMENTS){
+          console.log('[Instrument] clamp', { side, label: config ? config.label : '', input: midi, output: route.playMidi });
+        }
+        if(DEBUG_INSTRUMENTS && config){
+          console.log('[Instrument] note-on', { side, label: config.label, input: midi, play: route.playMidi });
+        }
       if(!instrumentPlayer && config && DEBUG_INSTRUMENTS){
         const localOk = (config.localSoundfont && hasLocalGrandPianoMap());
         if(!localOk){
@@ -7305,6 +8505,10 @@ const NoteEngine = {
           }
         }
         if(instrumentPlayer){ notifyInstrumentPicker(midi); }
+      } else if(this.mode === 'sf2'){
+        if(route){
+          playSf2NoteOn(midi, route.playMidi, config);
+        }
       } else {
         if(route) startOscillatorVoice(midi, route.playMidi, envelope, config);
       }
@@ -7326,8 +8530,9 @@ const NoteEngine = {
     if(Number.isNaN(midi)) return;
     const side = getInstrumentSideForNote(midi);
     const routeKey = getNoteRouteKey(side, midi);
+    let route = null;
     if(noteRoutingByInput.has(routeKey)){
-      const route = noteRoutingByInput.get(routeKey);
+      route = noteRoutingByInput.get(routeKey);
       if(DEBUG_INSTRUMENTS && route && route.config){
         console.log('[Instrument] note-off', { side, label: route.config.label, input: midi, play: route.playMidi });
       }
@@ -7345,6 +8550,9 @@ const NoteEngine = {
           releaseHeldSample(midi, { latest: true });
         }
       }
+    } else if(this.mode === 'sf2'){
+      const cfg = (route && route.config) ? route.config : getInstrumentConfigForSide(side);
+      stopSf2Note(route ? route.playMidi : midi, cfg);
     } else {
       const entry = activeVoices.get(midi);
       if(entry){
@@ -7566,20 +8774,26 @@ function onPointerDown(e){
   const uiUv = raycastBackboardForUv(e.clientX, e.clientY);
   const uiHit = uiUv ? hitTestPanelUI(uiUv) : null;
   if(uiUv) setBackboardDebug(uiUv);
-  if(uiHit){
-    if(uiHit.type === 'button'){
-      const ps = panelState[uiHit.panel];
-      ps.selected = uiHit.id;
-      if(!ps.lastByTab) ps.lastByTab = {};
-      ps.lastByTab[getPanelTabId(uiHit.panel)] = uiHit.id;
-      if(uiHit.id === ODD_FX_ID){
-        openOddFxPicker(uiHit.panel);
-      } else {
-        triggerInstrumentButton(uiHit.id, uiHit.panel);
-      }
-    } else if(uiHit.type === 'tab'){
-      selectPanelInstrumentForTab(uiHit.panel, uiHit.id);
-    } else if(uiHit.type === 'piano-shift'){
+    if(uiHit){
+      if(uiHit.type === 'button'){
+        const ps = panelState[uiHit.panel];
+        ps.selected = uiHit.id;
+        if(!ps.lastByTab) ps.lastByTab = {};
+        ps.lastByTab[getPanelTabId(uiHit.panel)] = uiHit.id;
+        ps.randomActiveTab = null;
+        if(uiHit.id === ODD_FX_ID){
+          openOddFxPicker(uiHit.panel);
+        } else {
+          triggerInstrumentButton(uiHit.id, uiHit.panel);
+        }
+      } else if(uiHit.type === 'random'){
+        const ps = panelState[uiHit.panel];
+        if(ps){
+          triggerRandomInstrument(uiHit.panel, uiHit.tab || uiHit.id);
+        }
+      } else if(uiHit.type === 'tab'){
+        selectPanelInstrumentForTab(uiHit.panel, uiHit.id);
+      } else if(uiHit.type === 'piano-shift'){
       const step = fitSizeY ? fitSizeY * 0.02 : 0.1;
       if(uiHit.id === 'up'){
         pianoYOffset += step;
@@ -7677,7 +8891,7 @@ function onPointerDown(e){
           }
         }
         pendingPlayTimer = null;
-      }, 40);
+      }, 15);
       e.preventDefault();
       return;
     }

@@ -44,8 +44,7 @@ export default defineConfig([
   {
     files: [
       "global-sync.js",
-      "music-piano.js",
-      "music-piano-debug.js",
+      "music-piano-controls.v2.js",
       "tablet_animation_test.js",
       "site-modelviewer.js",
       "videos.js",

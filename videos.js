@@ -91,6 +91,7 @@ function tryStartDrop() {
 function markIntroDone() {
   if (introState.done) return;
   introState.done = true;
+  try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
   if (introState.timeoutId) {
     clearTimeout(introState.timeoutId);
     introState.timeoutId = null;
@@ -125,10 +126,14 @@ function markIntroDone() {
 function getStoredSyncMs() {
   try {
     const v = localStorage.getItem('site.audio.sync');
+    if (v === null) {
+      localStorage.setItem('site.audio.sync', '-270');
+      return -270;
+    }
     const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : 0;
+    return Number.isFinite(n) ? n : -270;
   } catch (e) {
-    return 0;
+    return -270;
   }
 }
 
@@ -260,6 +265,9 @@ function setupIntroVideo() {
     } else if (videoEl.readyState >= 3) {
       ratio = 1;
       ready = true;
+    } else if (videoEl.readyState >= 2) {
+      ratio = Math.max(ratio, 0.7);
+      ready = true;
     } else if (videoEl.readyState >= 1) {
       ratio = 0.35;
     }
@@ -269,15 +277,20 @@ function setupIntroVideo() {
   };
   videoEl.addEventListener('progress', updateLoad);
   videoEl.addEventListener('loadedmetadata', updateLoad);
+  videoEl.addEventListener('loadeddata', updateLoad);
+  videoEl.addEventListener('durationchange', updateLoad);
   videoEl.addEventListener('canplay', updateLoad);
+  videoEl.addEventListener('canplaythrough', updateLoad);
+  videoEl.addEventListener('stalled', updateLoad);
   updateLoad();
   if (!introState.forceReadyTimer) {
+    const readyFallbackMs = 5000;
     introState.forceReadyTimer = setTimeout(() => {
       if (introState.done) return;
       if (introState.loadBar) introState.loadBar.style.width = '100%';
       if (introState.loadText) introState.loadText.textContent = 'Ready';
       if (introState.playBtn) introState.playBtn.disabled = false;
-    }, 10000);
+    }, readyFallbackMs);
   }
 }
 
@@ -329,6 +342,9 @@ function onReady(fn) {
 }
 
 onReady(() => {
+  if (!introState.enabled) {
+    try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
+  }
   // ensure canvas
   let canvas = document.getElementById('glCanvas');
   if (!canvas) {

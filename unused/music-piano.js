@@ -1,4 +1,4 @@
-// music-piano-debug.js
+// music-piano.js
 // Fresh debug loader: isolates GLB visibility without previous logic
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';

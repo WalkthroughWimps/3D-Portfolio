@@ -112,10 +112,16 @@ export function getBufferedAhead(media) {
 
 const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
 const AUDIO_SYNC_KEY = 'site.audio.sync';
+const DEFAULT_SYNC_MS = -270;
 
 export function getStoredSyncMs() {
-  const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
-  return Number.isFinite(raw) ? raw : 0;
+  const raw = localStorage.getItem(AUDIO_SYNC_KEY);
+  if (raw === null) {
+    try { localStorage.setItem(AUDIO_SYNC_KEY, String(DEFAULT_SYNC_MS)); } catch (e) { /* ignore */ }
+    return DEFAULT_SYNC_MS;
+  }
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_SYNC_MS;
 }
 
 export function canUseAudio(allowSound = true) {

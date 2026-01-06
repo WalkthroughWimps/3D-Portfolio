@@ -7,6 +7,8 @@ import { OrbitControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/cont
 const DEBUG_PINK_RECT = false; // draw a diagnostic 16:9 plane in front of the screen
 const SCREEN_W = 5.1520628;
 const SCREEN_H_TARGET = 2.898035369653893; // 16:9 height derived from screen width
+const NORMALIZE_SCREEN_UV = true;
+let didLogScreenUv = false;
 
 /* eslint-disable no-unused-vars */
 
@@ -276,20 +278,24 @@ export function applyScreenCanvasTexture({ screenMesh, gridCanvas, renderer } = 
 
     let uvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0 };
     try {
-      const geo = screenMesh.geometry;
-      if (geo && geo.attributes && geo.attributes.uv) {
-        const uv = geo.attributes.uv;
-        let umin = 1, vmin = 1, umax = 0, vmax = 0;
-        for (let i = 0; i < uv.count; i++) {
-          const u = uv.getX(i), v = uv.getY(i);
-          if (u < umin) umin = u; if (u > umax) umax = u; if (v < vmin) vmin = v; if (v > vmax) vmax = v;
-        }
-        const ur = Math.max(1e-4, umax - umin);
-        const vr = Math.max(1e-4, vmax - vmin);
-        const repU = 1 / ur, repV = 1 / vr;
-        const offU = -umin / ur, offV = -vmin / vr;
+      const bounds = computeScreenUvBounds(screenMesh);
+      if (bounds && Number.isFinite(bounds.spanU) && Number.isFinite(bounds.spanV) && bounds.spanU > 0 && bounds.spanV > 0) {
+        const repU = 1 / bounds.spanU;
+        const repV = 1 / bounds.spanV;
+        const offU = -bounds.umin / bounds.spanU;
+        const offV = -bounds.vmin / bounds.spanV;
         uvRemap = { repeatU: repU, repeatV: repV, offsetU: offU, offsetV: offV };
-        // Leave repeat/offset neutral; aspect handling is done by overlay plane sizing
+        if (NORMALIZE_SCREEN_UV) {
+          texture.wrapS = THREE.ClampToEdgeWrapping;
+          texture.wrapT = THREE.ClampToEdgeWrapping;
+          texture.repeat.set(repU, repV);
+          texture.offset.set(offU, offV);
+          texture.needsUpdate = true;
+          if (!didLogScreenUv) {
+            console.log('[ScreenUV]', bounds);
+            didLogScreenUv = true;
+          }
+        }
       }
     } catch (e) { /* ignore */ }
 

@@ -12,7 +12,7 @@ import { assetUrl } from './assets-config.js';
 const TABLET_VIDEO_SRC = assetUrl('Videos/videos-page/music-videos-hq.webm');
 const TABLET_THUMB_SRC = assetUrl('Videos/videos-page/music-videos.jpg');
 
-// Public entry point used by `music-piano.js` / `music-piano-debug.js`.
+// Public entry point used by `music-piano-controls.v2.js`.
 // It is safe if the tablet mesh is not found; it will just return null.
 export function setupMusicTabletScreen(rootObject3D) {
   if (!rootObject3D) return null;

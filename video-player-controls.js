@@ -1206,7 +1206,7 @@ function formatTime(t) {
         layout: options.layout || 'grid6',
         canvasWidth: 2048,
         canvasHeight: 1280,
-        zoomDuration: 420,
+        zoomDuration: 1000,
         descriptionLineHeight: 0.2,
         ...options
       };
@@ -1246,10 +1246,22 @@ function formatTime(t) {
       const gridCanvas = document.createElement('canvas');
       const controlsCanvas = document.createElement('canvas'); // separate layer for bars/icons
 
-      // Use a strict 16:9 backing canvas so the grid/video can fill the
-      // 16:9 wrapper plane without any resampling or stretch.
-      const requestedW = 2048;
-      const requestedH = 1152; // 16:9
+      // Match the screen mesh aspect so the canvas fills the screen without
+      // stretching. 16:9 content is letterboxed inside this canvas.
+      const screenAspect = (() => {
+        try {
+          const box = new THREE.Box3().setFromObject(screenMesh);
+          const size = box.getSize(new THREE.Vector3());
+          const dims = [size.x, size.y, size.z]
+            .filter((v) => Number.isFinite(v) && v > 1e-6)
+            .sort((a, b) => b - a);
+          if (dims.length >= 2) return Math.max(0.01, dims[0] / dims[1]);
+        } catch (e) { /* ignore */ }
+        return 16 / 9;
+      })();
+      const MAX_DIM = 2048;
+      const requestedW = screenAspect >= 1 ? MAX_DIM : Math.round(MAX_DIM * screenAspect);
+      const requestedH = screenAspect >= 1 ? Math.round(MAX_DIM / screenAspect) : MAX_DIM;
       gridCanvas.width = requestedW;
       gridCanvas.height = requestedH;
       controlsCanvas.width = requestedW;
@@ -1296,37 +1308,39 @@ function formatTime(t) {
         // Default 2x3 grid layout (legacy videos page)
         const rows = 2;
         const cols = 3;
-        const gap = Math.max(12, Math.round(contentSurfaceRect.w * 0.028));
-        const margin = Math.max(12, Math.round(gap * 0.55));
-        const centerGap = Math.max(Math.round(contentSurfaceRect.h * 0.30), gap * 2);
+        const margin = Math.max(16, Math.round(Math.min(contentSurfaceRect.w, contentSurfaceRect.h) * 0.03));
+        const gap = margin;
         const totalW = contentSurfaceRect.w - margin * 2;
         const slotW = Math.floor((totalW - gap * (cols - 1)) / cols);
-        const slotH = Math.floor((contentSurfaceRect.h - margin * 2 - centerGap) / rows);
         const ar = 16 / 9;
+        let slotH = Math.floor(slotW / ar);
+        const minDescH = Math.max(160, Math.round(contentSurfaceRect.h * 0.26));
+        let descH = contentSurfaceRect.h - (margin * 4) - (slotH * rows);
+        if (descH < minDescH) {
+          const shrink = Math.ceil((minDescH - descH) / rows);
+          slotH = Math.max(1, slotH - shrink);
+          descH = contentSurfaceRect.h - (margin * 4) - (slotH * rows);
+        }
         const cells = [];
-        const rowYs = [contentSurfaceRect.y + margin, contentSurfaceRect.y + contentSurfaceRect.h - margin - slotH];
-        const vBiasTop = 0.12;
-        const vBiasBottom = 0.88;
+        const rowYs = [
+          contentSurfaceRect.y + margin,
+          contentSurfaceRect.y + contentSurfaceRect.h - margin - slotH
+        ];
         for (let r = 0; r < rows; r++) {
           const rowY = rowYs[r];
-          const vBias = (r === 0) ? vBiasTop : vBiasBottom;
           for (let c = 0; c < cols; c++) {
-            let w = Math.round(slotW);
-            let h = Math.round(w / ar);
-            if (h > slotH) {
-              h = slotH;
-              w = Math.round(h * ar);
-            }
-            const x = contentSurfaceRect.x + margin + c * (slotW + gap) + Math.floor((slotW - w) / 2);
-            const y = rowY + Math.floor((slotH - h) * vBias);
+            const w = Math.round(slotW);
+            const h = Math.round(slotH);
+            const x = contentSurfaceRect.x + margin + c * (slotW + gap);
+            const y = rowY;
             cells.push({ x, y, w, h });
           }
         }
         const descBand = {
           x: contentSurfaceRect.x + margin,
-          y: rowYs[0] + slotH,
+          y: rowYs[0] + slotH + gap,
           w: contentSurfaceRect.w - margin * 2,
-          h: rowYs[1] - (rowYs[0] + slotH)
+          h: Math.max(1, descH)
         };
         return { gap, margin, descBand, cells, contentSurfaceRect };
       }
@@ -1394,6 +1408,16 @@ function formatTime(t) {
           if (cssVal && cssVal.trim()) return cssVal.trim();
         } catch (e) { /* ignore */ }
         return '#1e3a8a';
+      })();
+      const panelDarkColor = (() => {
+        try {
+          const root = document.body || document.documentElement;
+          const dark = getComputedStyle(root).getPropertyValue('--dark-color');
+          if (dark && dark.trim()) return dark.trim();
+          const blueDark = getComputedStyle(root).getPropertyValue('--blue-dark');
+          if (blueDark && blueDark.trim()) return blueDark.trim();
+        } catch (e) { /* ignore */ }
+        return '#03010f';
       })();
       const iconColor = '#ffa94d';
       const iconFont = '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
@@ -2021,12 +2045,32 @@ function formatTime(t) {
         if (!video || !audio) return;
         try { video.muted = true; video.volume = 0; } catch (e) { /* ignore */ }
         video.addEventListener('play', () => {
-          if (canUseAudio()) startAudioForVideo(video, audio);
+          if (canUseAudio()) {
+            if (video.readyState >= 2) {
+              startAudioForVideo(video, audio);
+            } else {
+              const onReady = () => {
+                video.removeEventListener('canplay', onReady);
+                startAudioForVideo(video, audio);
+              };
+              video.addEventListener('canplay', onReady, { once: true });
+            }
+          }
           else { try { audio.pause(); } catch (e) {} }
         });
         video.addEventListener('pause', () => { try { audio.pause(); } catch (e) {} });
         video.addEventListener('seeking', () => { resetAudioSyncState(idx); });
-        video.addEventListener('timeupdate', () => { syncAudioToVideo(video, audio, idx); });
+        video.addEventListener('timeupdate', () => {
+          syncAudioToVideo(video, audio, idx);
+          if (playingFull && fullIndex === idx && !autoZoomOutTriggered) {
+            const duration = video.duration || 0;
+            const remaining = duration - (video.currentTime || 0);
+            if (duration > 0 && remaining <= 1.0) {
+              autoZoomOutTriggered = true;
+              startZoomOut(idx);
+            }
+          }
+        });
         video.addEventListener('ratechange', () => {
           applyAudioPlaybackSettings(audio);
           resetAudioSyncState(idx);
@@ -2047,6 +2091,7 @@ function formatTime(t) {
       let playingFull = false;
       let fullIndex = -1;
       let lastFullRect = null;
+      let autoZoomOutTriggered = false;
       const previewWindows = entries.map(() => ({ until: 0 }));
       const animation = { phase: 'idle', start: 0, from: null, to: null };
       const cellsBounds = (() => {
@@ -2062,6 +2107,7 @@ function formatTime(t) {
 
       let texture = null;
       let overlayMesh = null;
+      let uvToCanvas = null;
 
       // Separate tablet-mode control panels (top/bottom) rendered on their own
       // overlay planes so controls can fill the space above/below the 16:9
@@ -2075,27 +2121,38 @@ function formatTime(t) {
       let topPanelMesh = null;
       let bottomPanelMesh = null;
 
-      // IMPORTANT: keep the Blender-authored screen material visible.
-      // We'll render the interactive UI onto a separate 16:9 overlay plane.
-      texture = new THREE.CanvasTexture(gridCanvas);
-      try { texture.colorSpace = THREE.SRGBColorSpace; } catch (e) { /* ignore */ }
-      // Reduce grazing-angle blur: increase anisotropy and set explicit filters
-      try { texture.anisotropy = Math.max(texture.anisotropy || 1, 16); } catch (e) { /* ignore */ }
-      try { texture.minFilter = THREE.LinearMipMapLinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = true; } catch (e) { /* ignore */ }
-      texture.flipY = true; // canvas->texture orientation for PlaneGeometry
-      try { texture.needsUpdate = true; } catch (e) { /* ignore */ }
+      if (opts.replaceScreenMaterial && screenMesh) {
+        if (!screenMesh.userData._origMaterial) {
+          screenMesh.userData._origMaterial = screenMesh.material;
+        }
+        const applied = applyScreenCanvasTexture({ screenMesh, gridCanvas, renderer });
+        if (applied && applied.texture) {
+          texture = applied.texture;
+          uvToCanvas = applied.uvToCanvas || null;
+        }
+      }
 
-      // Add a dedicated 16:9 overlay mesh (wrapper) that sits inside the screen.
-      try {
-        overlayMesh = createScreenOverlay({
-          screenMesh,
-          texture,
-          gridCanvas,
-          alwaysOnTop: true,
-          doubleSided: false,
-          camera
-        });
-      } catch (e) { /* ignore overlay creation errors */ }
+      // Fallback: dedicated 16:9 overlay mesh (wrapper) inside the screen.
+      if (!texture) {
+        texture = new THREE.CanvasTexture(gridCanvas);
+        try { texture.colorSpace = THREE.SRGBColorSpace; } catch (e) { /* ignore */ }
+        // Reduce grazing-angle blur: increase anisotropy and set explicit filters
+        try { texture.anisotropy = Math.max(texture.anisotropy || 1, 16); } catch (e) { /* ignore */ }
+        try { texture.minFilter = THREE.LinearMipMapLinearFilter; texture.magFilter = THREE.LinearFilter; texture.generateMipmaps = true; } catch (e) { /* ignore */ }
+        texture.flipY = true; // canvas->texture orientation for PlaneGeometry
+        try { texture.needsUpdate = true; } catch (e) { /* ignore */ }
+
+        try {
+          overlayMesh = createScreenOverlay({
+            screenMesh,
+            texture,
+            gridCanvas,
+            alwaysOnTop: true,
+            doubleSided: false,
+            camera
+          });
+        } catch (e) { /* ignore overlay creation errors */ }
+      }
 
       function ensureTabletPanels() {
         try {
@@ -2298,11 +2355,16 @@ function formatTime(t) {
             if (bad) return null;
             if (!hit) return null; // require an actual hit
             if (hit && hit.uv) {
-              // Three.js UV space: v=0 is bottom. Canvas space: y=0 is top.
-              pt = {
-                x: THREE.MathUtils.clamp(hit.uv.x, 0, 1) * gridCanvas.width,
-                y: (1 - THREE.MathUtils.clamp(hit.uv.y, 0, 1)) * gridCanvas.height
-              };
+              if (uvToCanvas) {
+                const mapped = uvToCanvas(hit.uv);
+                pt = { x: mapped.x, y: mapped.y };
+              } else {
+                // Three.js UV space: v=0 is bottom. Canvas space: y=0 is top.
+                pt = {
+                  x: THREE.MathUtils.clamp(hit.uv.x, 0, 1) * gridCanvas.width,
+                  y: (1 - THREE.MathUtils.clamp(hit.uv.y, 0, 1)) * gridCanvas.height
+                };
+              }
             }
             if (!pt) return null;
           } else {
@@ -2352,11 +2414,18 @@ function formatTime(t) {
       function easeInOutQuad(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
 
       function drawBackground() {
-        // Leave the base screen material visible (Blender screen background).
-        // Only draw a subtle band behind the description text.
+        // Solid background for the grid surface.
         ctx.clearRect(0, 0, gridCanvas.width, gridCanvas.height);
-        ctx.fillStyle = 'rgba(0,0,0,0.28)';
+        ctx.save();
+        ctx.globalAlpha = 0.94;
+        ctx.fillStyle = secondaryColor;
+        ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = 0.18;
+        ctx.fillStyle = panelDarkColor;
         ctx.fillRect(layout.descBand.x, layout.descBand.y, layout.descBand.w, layout.descBand.h);
+        ctx.restore();
         ctx.strokeStyle = 'rgba(255,255,255,0.10)';
         ctx.lineWidth = 2;
         ctx.strokeRect(layout.descBand.x, layout.descBand.y, layout.descBand.w, layout.descBand.h);
@@ -2367,8 +2436,13 @@ function formatTime(t) {
         // Keep a stable font size and wrap into multiple lines when needed.
         const band = layout.descBand;
         const maxW = band.w * 0.9;
+        const entry = (hoverIndex >= 0 && entries[hoverIndex]) ? entries[hoverIndex] : null;
+        const titleText = entry ? String(entry.title || '').toUpperCase() : '';
+        const bodyText = entry ? String(entry.description || '') : String(description || '');
         const baseFs = Math.round(gridCanvas.height * 0.045);
         const fs = Math.max(18, Math.min(46, baseFs));
+        const titleFs = Math.max(22, Math.min(64, Math.round(gridCanvas.height * 0.06)));
+        const titleFont = `"Impact","Arial Black","Segoe UI Black","Segoe UI",sans-serif`;
 
         ctx.save();
         ctx.fillStyle = 'rgba(255,255,255,0.88)';
@@ -2376,27 +2450,75 @@ function formatTime(t) {
         ctx.textBaseline = 'alphabetic';
         ctx.font = `${fs}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 
-        const words = String(description || '').split(/\s+/g).filter(Boolean);
-        const lines = [];
-        let line = '';
-        for (let i = 0; i < words.length; i++) {
-          const test = line ? `${line} ${words[i]}` : words[i];
-          if (ctx.measureText(test).width <= maxW || !line) {
-            line = test;
-          } else {
-            lines.push(line);
-            line = words[i];
+        const wrapLines = (text, maxWidth, font) => {
+          ctx.font = font;
+          const words = String(text || '').split(/\s+/g).filter(Boolean);
+          const lines = [];
+          let line = '';
+          for (let i = 0; i < words.length; i++) {
+            const test = line ? `${line} ${words[i]}` : words[i];
+            if (ctx.measureText(test).width <= maxWidth || !line) {
+              line = test;
+            } else {
+              lines.push(line);
+              line = words[i];
+            }
           }
-        }
-        if (line) lines.push(line);
-        const limited = lines.slice(0, 3);
+          if (line) lines.push(line);
+          return lines;
+        };
+
+        const titleLines = titleText ? wrapLines(titleText, maxW, `${titleFs}px ${titleFont}`) : [];
+        const bodyLines = wrapLines(bodyText, maxW, `${fs}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`);
+        const limitedBody = bodyLines.slice(0, 3);
+        const titleLineH = Math.round(titleFs * 1.1);
         const lineH = Math.round(fs * 1.25);
-        const totalH = limited.length * lineH;
-        const startY = band.y + (band.h - totalH) / 2 + fs; // baseline
-        const cx = band.x + band.w / 2;
-        for (let i = 0; i < limited.length; i++) {
-          ctx.fillText(limited[i], cx, startY + i * lineH);
+        const gapH = titleLines.length ? (lineH * 2) : 0; // two line breaks
+        const totalH = (titleLines.length * titleLineH) + gapH + (limitedBody.length * lineH);
+        const topY = band.y + (band.h - totalH) / 2;
+        let cursorY = topY + titleFs;
+
+        if (titleLines.length) {
+          ctx.font = `${titleFs}px ${titleFont}`;
+          for (let i = 0; i < titleLines.length; i++) {
+            ctx.fillText(titleLines[i], band.x + band.w / 2, cursorY + i * titleLineH);
+          }
+          cursorY = topY + (titleLines.length * titleLineH) + gapH + fs;
         }
+
+        ctx.font = `${fs}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+        const startY = cursorY;
+        const cx = band.x + band.w / 2;
+        for (let i = 0; i < limitedBody.length; i++) {
+          ctx.fillText(limitedBody[i], cx, startY + i * lineH);
+        }
+        ctx.restore();
+      }
+
+      function drawLoadProgress(video) {
+        if (!video) return;
+        const duration = video.duration || 0;
+        const isReady = video.readyState >= 2 && duration > 0;
+        if (isReady) return;
+        const frames = getActiveRects();
+        if (!frames || !frames.surfaceRect) return;
+        const barW = Math.min(frames.surfaceRect.w * 0.6, gridCanvas.width * 0.7);
+        const barH = Math.max(6, Math.round(gridCanvas.height * 0.012));
+        const x = frames.surfaceRect.x + (frames.surfaceRect.w - barW) / 2;
+        const y = frames.surfaceRect.y + frames.surfaceRect.h - barH - Math.max(16, Math.round(gridCanvas.height * 0.03));
+        let ratio = 0;
+        try {
+          if (duration && video.buffered && video.buffered.length) {
+            const end = video.buffered.end(video.buffered.length - 1);
+            ratio = Math.max(0, Math.min(1, end / duration));
+          }
+        } catch (e) { /* ignore */ }
+        ctx.save();
+        ctx.globalAlpha = 0.85;
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(x, y, barW, barH);
+        ctx.fillStyle = iconColor;
+        ctx.fillRect(x, y, barW * ratio, barH);
         ctx.restore();
       }
 
@@ -2440,15 +2562,22 @@ function formatTime(t) {
       function drawHoverOutline(idx) {
         if (idx < 0 || idx >= layout.cells.length) return;
         const rc = layout.cells[idx];
+        const scale = 1.04;
+        const cx = rc.x + rc.w / 2;
+        const cy = rc.y + rc.h / 2;
+        const w = rc.w * scale;
+        const h = rc.h * scale;
+        const sx = cx - w / 2;
+        const sy = cy - h / 2;
         ctx.save();
         ctx.strokeStyle = iconColor;
-        const baseWidth = Math.max(3, Math.round(Math.min(rc.w, rc.h) * 0.02));
-        ctx.lineWidth = baseWidth * 2;
-        ctx.shadowColor = 'rgba(255,169,77,0.55)';
-        ctx.shadowBlur = Math.max(16, Math.round(rc.w * 0.12));
+        const baseWidth = Math.max(2, Math.round(Math.min(rc.w, rc.h) * 0.012));
+        ctx.lineWidth = baseWidth * 1.2;
+        ctx.shadowColor = 'rgba(255,169,77,0.45)';
+        ctx.shadowBlur = Math.max(6, Math.round(rc.w * 0.045));
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
-        ctx.strokeRect(rc.x + 2, rc.y + 2, rc.w - 4, rc.h - 4);
+        ctx.strokeRect(sx + 2, sy + 2, w - 4, h - 4);
         ctx.restore();
       }
 
@@ -2497,6 +2626,7 @@ function formatTime(t) {
         if (!v) return;
         fullIndex = idx;
         playingFull = true;
+        autoZoomOutTriggered = false;
         lastMouseMoveTs = performance.now();
         chromeTarget = 1;
         chromeAnimStart = lastMouseMoveTs;
@@ -2504,9 +2634,11 @@ function formatTime(t) {
         try {
           ensureVideoMuted(v);
           v.currentTime = 0;
-          if (canUseAudio()) startAudioForVideo(v, getFullAudio(idx));
           v.play().catch(() => {});
         } catch (e) { /* ignore */ }
+        if (!uiState.fullscreen) {
+          setTabletView(true);
+        }
         animation.phase = 'in';
         animation.start = performance.now();
         animation.from = layout.cells[idx];
@@ -2518,6 +2650,7 @@ function formatTime(t) {
       function startZoomOut(idx) {
         if (idx === -1) return;
         pauseFullPlayback(idx);
+        if (uiState.tabletView) setTabletView(false);
         animation.phase = 'out';
         animation.start = performance.now();
         animation.from = lastFullRect || animation.to || layout.cells[idx];
@@ -2534,7 +2667,13 @@ function formatTime(t) {
             startPreview(idx);
           }
           // Thumbnails should be strict 16:9 tiles, filled edge-to-edge.
-          drawElementInRect(showPreview ? preview : thumb, rc, 'cover');
+          const scale = hoverIndex === idx ? 1.04 : 1;
+          const cx = rc.x + rc.w / 2;
+          const cy = rc.y + rc.h / 2;
+          const w = rc.w * scale;
+          const h = rc.h * scale;
+          const drawRc = { x: cx - w / 2, y: cy - h / 2, w, h };
+          drawElementInRect(showPreview ? preview : thumb, drawRc, 'cover');
         });
       }
 
@@ -2825,13 +2964,13 @@ function formatTime(t) {
         // Background bars (fill entire panels)
         topPanelCtx.save();
         topPanelCtx.globalAlpha = 0.9 * a;
-        topPanelCtx.fillStyle = 'rgba(12,12,12,0.82)';
+        topPanelCtx.fillStyle = panelDarkColor;
         topPanelCtx.fillRect(0, 0, topPanelCanvas.width, topPanelCanvas.height);
         topPanelCtx.restore();
 
         bottomPanelCtx.save();
         bottomPanelCtx.globalAlpha = 0.9 * a;
-        bottomPanelCtx.fillStyle = 'rgba(12,12,12,0.82)';
+        bottomPanelCtx.fillStyle = panelDarkColor;
         bottomPanelCtx.fillRect(0, 0, bottomPanelCanvas.width, bottomPanelCanvas.height);
         bottomPanelCtx.restore();
 
@@ -2973,7 +3112,7 @@ function formatTime(t) {
         // Bars (bottom bar visually extends to screen edge)
         ctrlCtx.save();
         ctrlCtx.globalAlpha = barAlpha * alpha;
-        ctrlCtx.fillStyle = 'rgba(12,12,12,0.82)';
+        ctrlCtx.fillStyle = panelDarkColor;
         ctrlCtx.fillRect(ui.topBar.x, ui.topBar.y, ui.topBar.w, ui.topBar.h);
         const bottomFillH = (ui.surfaceRect.y + ui.surfaceRect.h) - ui.bottomBar.y;
         ctrlCtx.fillRect(ui.bottomBar.x, ui.bottomBar.y, ui.bottomBar.w, bottomFillH);
@@ -3196,6 +3335,7 @@ function formatTime(t) {
         } else {
           drawLegacyControls();
         }
+        drawLoadProgress(video);
         drawSyncDebugOverlay(ctx, video, getFullAudio(fullIndex), fullIndex, frames.surfaceRect, now);
         ctx.restore();
       }
@@ -3719,6 +3859,7 @@ function formatTime(t) {
             screenMesh.material = screenMesh.userData._origMaterial;
             delete screenMesh.userData._origMaterial;
           }
+          uvToCanvas = null;
         } catch (e) { console.warn('[VideoPlayer] restoreOriginalMaterial failed', e); }
       }
 
@@ -3732,6 +3873,14 @@ function formatTime(t) {
           try { overlayMesh.geometry?.dispose?.(); } catch (e) { /* ignore */ }
           try { overlayMesh.material?.dispose?.(); } catch (e) { /* ignore */ }
           overlayMesh = null;
+        }
+        if (opts.replaceScreenMaterial) {
+          const applied = applyScreenCanvasTexture({ screenMesh: mesh, gridCanvas, renderer });
+          if (applied && applied.texture) {
+            texture = applied.texture;
+            uvToCanvas = applied.uvToCanvas || null;
+            return true;
+          }
         }
         // Create a dedicated overlay plane (16:9 fit) to avoid stretching
         try {
