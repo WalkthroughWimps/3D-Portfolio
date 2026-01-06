@@ -16,9 +16,17 @@ body {
 
 /* Page background overlay */
 body {
-    background-image: url('assets/overlays/overlay-graphics-dark.png');
-    background-repeat: repeat;
+    background-image: url('assets/images/graphics-page.png');
+    background-repeat: no-repeat;
+    background-position: center top;
+    background-size: auto 100vh !important;
     background-blend-mode: multiply;
+    min-height: 100vh;
+}
+
+html, body {
+    width: 100%;
+    min-height: 100%;
 }
 
 .gear-large {
@@ -35,6 +43,7 @@ body {
     align-items: center;
     justify-content: center;
     min-height: clamp(320px, 48vh, 520px);
+    width: 100%;
 }
 
 .coming-soon {
