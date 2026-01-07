@@ -426,6 +426,9 @@ function formatTime(t) {
       const video = this.videos[index];
       if (video) {
         try {
+          // If the HQ video wasn't warmed yet, ensure the source begins loading
+          try { video.__ensureSrc && video.__ensureSrc(); } catch (e) { /* ignore */ }
+          try { video.preload = 'auto'; } catch (e) { /* ignore */ }
           video.pause();
           video.currentTime = 0;
           video.muted = !this.config.allowSound;
@@ -1495,7 +1498,8 @@ function formatTime(t) {
         img.crossOrigin = 'anonymous';
         const imgPath = mediaThumbs[entry.id] || `${entry.id}.jpg`;
         const resolved = resolveMediaUrl(imgPath);
-        if (resolved) img.src = resolved;
+        // Defer assigning src until preload scheduler to avoid blocking initial paint
+        img.__deferredSrc = resolved || null;
         return img;
       });
 
@@ -1725,22 +1729,36 @@ function formatTime(t) {
       function createVideo(srcs = [], muted = true) {
         const v = document.createElement('video');
         v.crossOrigin = 'anonymous';
-        v.crossOrigin = 'anonymous';
         v.playsInline = true;
-        v.preload = 'auto';
+        // Default to none — actual preload will be controlled by the page-level scheduler
+        v.preload = 'none';
         v.loop = false;
         v.muted = muted;
-        let i = 0;
-        const list = Array.isArray(srcs) ? srcs : [srcs];
+
+        // Store normalized source list on the element for later controlled loading
+        const list = Array.isArray(srcs) ? srcs.slice() : [srcs];
+        const normalized = list.map((s) => s);
+        v.__srcList = normalized;
+        v.__srcIndex = 0;
+        v.__sourceLoaded = false;
+
+        // tryNext logic — picks the next viable source from the stored list
         const tryNext = () => {
-          if (i >= list.length) return;
-          const current = list[i++];
+          const i = v.__srcIndex || 0;
+          if (i >= (v.__srcList ? v.__srcList.length : 0)) return;
+          const current = v.__srcList[v.__srcIndex++];
           const srcPath = resolveMediaUrl(current);
           if (!srcPath) { tryNext(); return; }
-          v.src = srcPath;
-          v.load();
+          try {
+            v.src = srcPath;
+            v.load();
+          } catch (e) {
+            tryNext();
+          }
         };
+
         const onAbortLike = () => tryNext();
+        // keep fallback progression handlers attached so that failing sources are skipped
         v.addEventListener('error', tryNext);
         v.addEventListener('abort', onAbortLike);
         v.addEventListener('stalled', onAbortLike);
@@ -1750,27 +1768,53 @@ function formatTime(t) {
           v.removeEventListener('stalled', onAbortLike);
           applyPlaybackSettings(v);
         }, { once: true });
+
         applyPlaybackSettings(v);
-        tryNext();
+
+        // Exposed methods to control when the element actually begins loading
+        v.__ensureSrc = () => {
+          if (v.__sourceLoaded) return;
+          v.__sourceLoaded = true;
+          try {
+            v.preload = 'auto';
+          } catch (e) { /* ignore */ }
+          tryNext();
+          return v;
+        };
+
+        v.__warmMetadata = () => {
+          if (v.__sourceLoaded) return;
+          v.__sourceLoaded = true;
+          try {
+            v.preload = 'metadata';
+          } catch (e) { /* ignore */ }
+          tryNext();
+          return v;
+        };
+
         return v;
       }
 
       function createAudio(srcs = []) {
         const a = document.createElement('audio');
         a.crossOrigin = 'anonymous';
-        a.crossOrigin = 'anonymous';
-        a.preload = 'auto';
+        a.preload = 'none';
         a.loop = false;
         let i = 0;
         const list = Array.isArray(srcs) ? srcs : [srcs];
+        a.__srcList = list.slice();
+        a.__srcIndex = 0;
+        a.__sourceLoaded = false;
+
         const tryNext = () => {
-          if (i >= list.length) return;
-          const current = list[i++];
+          if (i >= a.__srcList.length) return;
+          const current = a.__srcList[i++];
           const srcPath = resolveMediaUrl(current);
           if (!srcPath) { tryNext(); return; }
           a.src = srcPath;
-          a.load();
+          try { a.load(); } catch (e) { tryNext(); }
         };
+
         const onAbortLike = () => tryNext();
         a.addEventListener('error', tryNext);
         a.addEventListener('abort', onAbortLike);
@@ -1780,7 +1824,24 @@ function formatTime(t) {
           a.removeEventListener('abort', onAbortLike);
           a.removeEventListener('stalled', onAbortLike);
         }, { once: true });
-        tryNext();
+
+        // Controlled start methods
+        a.__ensureSrc = () => {
+          if (a.__sourceLoaded) return;
+          a.__sourceLoaded = true;
+          try { a.preload = 'auto'; } catch (e) { /* ignore */ }
+          tryNext();
+          return a;
+        };
+
+        a.__warmMetadata = () => {
+          if (a.__sourceLoaded) return;
+          a.__sourceLoaded = true;
+          try { a.preload = 'metadata'; } catch (e) { /* ignore */ }
+          tryNext();
+          return a;
+        };
+
         return a;
       }
 
@@ -1802,26 +1863,84 @@ function formatTime(t) {
       // expose preview/full video element arrays so external player instances can reuse them
       try { window.__videoGridPreviewVideos = previewVideos; window.__videoGridFullVideos = fullVideos; } catch (e) { /* ignore */ }
 
-      // Kick off preloading after the intro gate is visible (deferred to avoid blocking first paint).
-      const schedulePreload = () => {
-        previewVideos.forEach((v) => {
-          if (!v) return;
-          try { v.muted = true; v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
-        });
-        fullVideos.forEach((v) => {
-          if (!v) return;
-          try { v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
-        });
-        fullAudios.forEach((a) => {
-          if (!a) return;
-          try { a.preload = 'auto'; a.load(); } catch (e) { /* ignore */ }
-        });
-      };
-      if (typeof requestIdleCallback === 'function') {
-        requestIdleCallback(() => schedulePreload(), { timeout: 800 });
-      } else {
-        setTimeout(schedulePreload, 250);
-      }
+      // Preload scheduling: defer all network-heavy loads until the page
+      // has finished loading. Provide a staged loader which first warms
+      // the tablet animation, then low-quality previews + audio (opus),
+      // then finally high-quality video files. This avoids a download
+      // storm and keeps the initial page quick so the progress bar shows.
+      const schedulePreload = (() => {
+        let _started = false;
+        const doSchedule = () => {
+          if (_started) return; _started = true;
+
+          // Helper: safe attempt to load a URL via a lightweight video element
+          const warmTabletAnimation = async () => {
+            try {
+              const path = resolveMediaUrl('tablet_animation.webm');
+              if (!path) return;
+              const v = document.createElement('video');
+              v.preload = 'auto';
+              v.muted = true;
+              v.playsInline = true;
+              v.crossOrigin = 'anonymous';
+              v.src = path;
+              // Fire load(); don't attach to DOM — just warm browser cache/connection
+              try { v.load(); } catch (e) { /* ignore */ }
+              // Wait briefly for network to start (or metadata) but don't block too long
+              await new Promise(r => setTimeout(r, 350));
+            } catch (e) { /* ignore */ }
+          };
+
+          const warmPreviewsAndAudio = async () => {
+            try {
+              // Assign deferred thumbnail src now (lightweight images)
+              thumbs.forEach((img) => {
+                try { if (img && img.__deferredSrc && !img.src) img.src = img.__deferredSrc; } catch (e) { /* ignore */ }
+              });
+              // Warm low-quality preview metadata (fast) and audio sources (opus)
+              previewVideos.forEach((pv) => {
+                try { pv && pv.__warmMetadata && pv.__warmMetadata(); } catch (e) { /* ignore */ }
+              });
+              fullAudios.forEach((a) => {
+                try { a && a.__ensureSrc && a.__ensureSrc(); } catch (e) { /* ignore */ }
+              });
+              // Give a small stagger to let sockets open without flooding
+              await new Promise(r => setTimeout(r, 450));
+            } catch (e) { /* ignore */ }
+          };
+
+          const warmHighQuality = async () => {
+            try {
+              fullVideos.forEach((fv) => {
+                try { fv && fv.__ensureSrc && fv.__ensureSrc(); } catch (e) { /* ignore */ }
+              });
+            } catch (e) { /* ignore */ }
+          };
+
+          (async () => {
+            // If page already loaded use immediate, otherwise wait for window load
+            if (document.readyState === 'complete') {
+              await warmTabletAnimation();
+              await warmPreviewsAndAudio();
+              await warmHighQuality();
+            } else {
+              const onLoad = async () => {
+                try { window.removeEventListener('load', onLoad); } catch (e) {}
+                await warmTabletAnimation();
+                await warmPreviewsAndAudio();
+                await warmHighQuality();
+              };
+              window.addEventListener('load', onLoad);
+            }
+          })();
+        };
+
+        // Expose as a function and attach to window so other modules can trigger
+        window.__videoGridSchedulePreload = doSchedule;
+          // Kick off scheduling immediately so the page can load quickly
+          try { doSchedule(); } catch (e) { /* ignore */ }
+          return doSchedule;
+      })();
 
       function applySettingsToAllVideos() {
         previewVideos.forEach(applyPlaybackSettings);

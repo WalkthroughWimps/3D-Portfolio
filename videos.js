@@ -360,6 +360,10 @@ function onReady(fn) {
 onReady(() => {
   showLoadingUIImmediately();
   requestAnimationFrame(() => {
+    // Delay heavy initialization slightly to allow first paint and make
+    // the page interactive immediately. This prevents blocking the UI
+    // when navigating from other pages.
+    setTimeout(() => {
   if (!introState.enabled) {
     try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
   }
@@ -593,6 +597,93 @@ onReady(() => {
           }
         } catch (e) { console.warn('[videos] intro drop setup failed', e); }
 
+        // --- Preload orchestration: staged LQ then HQ with concurrency control ---
+        try {
+          function createPreloadQueue({ concurrency = 2 } = {}) {
+            let running = 0;
+            const queue = [];
+            const runNext = () => {
+              if (running >= concurrency || queue.length === 0) return;
+              const fn = queue.shift();
+              running++;
+              Promise.resolve().then(() => fn()).then(() => {
+                running--;
+                setTimeout(runNext, 0);
+              }).catch(() => {
+                running--;
+                setTimeout(runNext, 0);
+              });
+            };
+            return {
+              enqueue(task, opts = {}) {
+                const wrapped = () => Promise.resolve().then(() => task());
+                if (opts && opts.priority) queue.unshift(wrapped); else queue.push(wrapped);
+                setTimeout(runNext, 0);
+                // return a promise that resolves when the task completes
+                return new Promise((resolve, reject) => {
+                  const idx = queue.indexOf(wrapped);
+                  // If task already running or consumed, we cannot easily map; simple approach: run wrapped and resolve
+                  wrapped().then(resolve).catch(reject);
+                });
+              }
+            };
+          }
+
+          function waitForCanPlayOrTimeout(v, ms = 1500) {
+            return new Promise((resolve) => {
+              if (!v) return resolve();
+              const onReady = () => {
+                cleanup();
+                resolve();
+              };
+              const cleanup = () => {
+                try { v.removeEventListener('loadeddata', onReady); } catch (e) {}
+                try { v.removeEventListener('canplay', onReady); } catch (e) {}
+              };
+              v.addEventListener('loadeddata', onReady, { once: true });
+              v.addEventListener('canplay', onReady, { once: true });
+              setTimeout(() => { cleanup(); resolve(); }, Math.max(200, ms || 1500));
+            });
+          }
+
+          const startStagedPreloads = () => {
+            try {
+              const lq = Array.isArray(window.__videoGridPreviewVideos) ? window.__videoGridPreviewVideos.slice() : [];
+              const hq = Array.isArray(window.__videoGridFullVideos) ? window.__videoGridFullVideos.slice() : [];
+
+              // LQ previews — low concurrency, warm until canplay or short timeout
+              const qLQ = createPreloadQueue({ concurrency: 2 });
+              lq.forEach((v) => {
+                if (!v) return;
+                qLQ.enqueue(() => { try { v.__ensureSrc && v.__ensureSrc(); } catch (e) {} ; return waitForCanPlayOrTimeout(v, 1500); });
+              });
+
+              // HQ warmups — concurrency=1, gentle metadata-only warmups, sequential
+              setTimeout(() => {
+                const qHQ = createPreloadQueue({ concurrency: 1 });
+                hq.forEach((v, idx) => {
+                  if (!v) return;
+                  qHQ.enqueue(() => {
+                    try { v.__warmMetadata && v.__warmMetadata(); } catch (e) {}
+                    // small gap between items to avoid hammering
+                    return new Promise(r => setTimeout(r, 400));
+                  });
+                });
+              }, 800);
+            } catch (e) { /* ignore preload orchestration errors */ }
+          };
+
+          // Start when intro gate is finished (or immediately if intro disabled)
+          (function waitForIntroThenStart() {
+            if (introState.done) { startStagedPreloads(); return; }
+            const poll = setInterval(() => {
+              if (introState.done) { clearInterval(poll); startStagedPreloads(); }
+            }, 250);
+            // Safety: start after a reasonable timeout even if intro didn't finish
+            setTimeout(() => { clearInterval(poll); startStagedPreloads(); }, 15000);
+          }());
+        } catch (e) { /* ignore */ }
+
       } catch (e) { console.warn('loadTabletGlb init failed', e); }
     }, undefined, (err) => { console.warn('Failed to load GLB', err); });
   };
@@ -626,5 +717,6 @@ onReady(() => {
     console.log('resetGridInteraction: no player API available');
   };
 
+    }, 50);
   });
 });
