@@ -11,7 +11,28 @@
     <script src="https://cdn.jsdelivr.net/npm/kute.js@2.2.4/dist/kute.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/kute.js@2.2.4/dist/kute-svg.min.js" defer></script>
     <script src="graphics-morph.js" defer></script>
-</head>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+            }
+        }
+    </script>
+    <div id="info-panel" class="info-panel" aria-live="polite">
+        <strong>Camera</strong>
+        <div id="camera-info">pos 0,0,0 target 0,0,0 dist 0</div>
+    </div>
+    <div id="manual-controls" class="manual-controls" aria-label="Manual camera controls">
+        <button data-action="left" data-step="0.45" data-precision-step="0.15" title="Move left">←</button>
+        <button data-action="right" data-step="0.45" data-precision-step="0.15" title="Move right">→</button>
+        <button data-action="up" data-step="0.35" data-precision-step="0.12" title="Move up">↑</button>
+        <button data-action="down" data-step="0.35" data-precision-step="0.12" title="Move down">↓</button>
+        <button data-action="scale-in" data-step="0.5" data-precision-step="0.18" title="Zoom in">＋</button>
+        <button data-action="scale-out" data-step="0.5" data-precision-step="0.18" title="Zoom out">－</button>
+    </div>
+    <script type="module" src="graphics.js"></script>
+  </head>
 
 <body>
     <div class="header" id="patterned-background">

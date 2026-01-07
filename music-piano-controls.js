@@ -1122,6 +1122,11 @@ const SF2_ARACHNO_URL = '/soundfonts/arachno/Arachno%20SoundFont%20-%20Version%2
 const SF2_HYPERSOUND_URL = '/soundfonts/hypersound/hypersound.sf2';
 const SF2_DRUMS_URL = '/soundfonts/drums/definitive-drums.sf2';
 const SF2_WAPPYDOG_URL = '/soundfonts/wappydog/WappyDog.sf2';
+const DOG_SAMPLE_URL = assetUrl('soundfonts/DOGBW60.wav');
+const DOG_SAMPLE_BASE_MIDI = 69;
+const DOG_SAMPLE_RANGE = { min: 24, max: 84 };
+let dogSampleBuffer = null;
+let dogSampleLoadPromise = null;
 const SF2_LIB_CANDIDATES = [
   '/assets/vendor/js-synthesizer.js',
   '/assets/vendor/js-synthesizer.min.js'
@@ -1733,6 +1738,94 @@ async function loadWappyDogInstrument(config){
   console.log('[WappyDog] mp3 pack not found; falling back to SF2');
   return loadSf2InstrumentForConfig(config);
 }
+
+async function loadDogSampleBuffer(){
+  if(dogSampleBuffer) return dogSampleBuffer;
+  if(!dogSampleLoadPromise){
+    dogSampleLoadPromise = (async ()=>{
+      ensureAudioContext();
+      if(!audioCtx) throw new Error('AudioContext unavailable');
+      const resp = await fetch(DOG_SAMPLE_URL, { method: 'GET' });
+      if(!resp.ok) throw new Error(`Dog sample fetch failed (${resp.status})`);
+      const arrayBuffer = await resp.arrayBuffer();
+      return audioCtx.decodeAudioData(arrayBuffer);
+    })();
+  }
+  try{
+    dogSampleBuffer = await dogSampleLoadPromise;
+    return dogSampleBuffer;
+  }catch(e){
+    dogSampleLoadPromise = null;
+    throw e;
+  }
+}
+
+function createDogSamplePlayer(buffer){
+  if(!buffer) return null;
+  const player = {
+    _isLocal: true,
+    _buffer: buffer,
+    play(midiNum, whenSec, opts){
+      ensureAudioContext();
+      if(!audioCtx || !buffer) return null;
+      const dest = (opts && opts.gainNode) ? opts.gainNode : audioCtx.destination;
+      const targetMidi = Number.isFinite(Number(midiNum)) ? Number(midiNum) : DOG_SAMPLE_BASE_MIDI;
+      const playbackRate = Math.pow(2, (targetMidi - DOG_SAMPLE_BASE_MIDI) / 12);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = playbackRate;
+      const startAt = (typeof whenSec === 'number') ? whenSec : audioCtx.currentTime;
+      if(opts && opts.preGain){
+        if(!opts.preGain._connectedToDest){
+          try{ opts.preGain.connect(dest); }catch(e){}
+          opts.preGain._connectedToDest = true;
+        }
+        src.connect(opts.preGain);
+      } else if(opts && typeof opts.gain === 'number' && !opts.gainNode){
+        const gainNode = audioCtx.createGain();
+        gainNode.gain.value = opts.gain;
+        gainNode.connect(dest);
+        src.connect(gainNode);
+      } else {
+        src.connect(dest);
+      }
+      src.start(startAt);
+      const wrapper = { _src: src };
+      wrapper.stop = function(stopWhenSec){
+        try{ if(wrapper._src) wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch(e){}
+      };
+      return wrapper;
+    },
+    getBufferForMidi(){
+      return buffer;
+    },
+    loadBufferForMidi(){
+      return Promise.resolve(buffer);
+    }
+  };
+  return player;
+}
+
+async function loadDogSampleInstrument(config){
+  instrumentPlayer = null;
+  currentInstrumentConfig = config;
+  updateNoteEngineMode(config);
+  try{
+    const buffer = await loadDogSampleBuffer();
+    if(!buffer) throw new Error('Dog sample buffer not available');
+    config.sampleRange = DOG_SAMPLE_RANGE;
+    instrumentPlayer = createDogSamplePlayer(buffer);
+    currentInstrumentName = `${config.label} (dog sample)`;
+    if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+    updateDisabledKeysForConfig();
+    logPianoLoadStatus(true, { instrument: config.label, source: DOG_SAMPLE_URL });
+    return instrumentPlayer;
+  }catch(e){
+    console.warn('[Instrument] dog sample load failed', e);
+    logPianoLoadStatus(false, { instrument: config.label, source: DOG_SAMPLE_URL });
+    return loadSf2InstrumentForConfig(config);
+  }
+}
 function updateDisabledKeysForConfig(){
   disabledKeySet.clear();
   const leftRange = getPlayableNoteRangeForSide('left');
@@ -2147,7 +2240,7 @@ const INSTRUMENT_CONFIG = [
   { id: 'solo_wind', tab: 'solo', label: 'Solo Wind', library: 'solo', patch: 'flute', wafProgram: 74, minNote: 60, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_lead', tab: 'solo', label: 'Lead Synth', library: 'solo', patch: 'lead_1_square', wafProgram: 81, minNote: 36, maxNote: 108, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.015, decay: 0.18, sustain: 0.6, release: 0.25 },
   { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: 21, maxNote: 108, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.1, attack: 0.01, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: { min: 35, max: 81 }, engine: 'sf2', sf2Url: SF2_DRUMS_URL, sf2IsDrum: true, sf2Bank: 128, oneShotMs: 80 },
-  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'bird_tweet', wafProgram: 124, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'sf2', sf2Url: SF2_HYPERSOUND_URL, sf2PresetName: 'DOGBW60', sf2ProgramFallback: 0, oneShotMs: 160 },
+    { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'dogbw60', wafProgram: 124, minNote: 24, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'dog-sample' },
   { id: 'fx_telephone', tab: 'fx', label: 'Telephone', library: 'fx', patch: 'telephone_ring', wafProgram: 125, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.01, decay: 0.18, sustain: 0.55, release: 0.2 },
   { id: 'fx_odd', tab: 'fx', label: 'Odd FX', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
 ];
@@ -2223,7 +2316,7 @@ const RANDOM_POOLS = {
   ],
   fx: [
     { id: 'fx_drums', label: 'Arachno Drums' },
-    { id: 'fx_dog', label: 'WappyDog' },
+      { id: 'fx_dog', label: 'Dog' },
     { patch: 'applause', label: 'Applause' },
     { patch: 'whistle', label: 'Whistle' },
     { patch: 'tinkle_bell', label: 'Tinkle Bell' },
@@ -4743,6 +4836,9 @@ async function loadInstrument(id){
   if(!config){
     console.warn('[Instrument] unknown id', id);
     return null;
+  }
+  if(config.id === 'fx_dog'){
+    return loadDogSampleInstrument(config);
   }
   if(config.engine === 'sf2'){
     const loaded = await loadSf2InstrumentForConfig(config);

@@ -1409,15 +1409,15 @@ function formatTime(t) {
         } catch (e) { /* ignore */ }
         return '#1e3a8a';
       })();
-      const panelDarkColor = (() => {
+      const panelPrimaryColor = (() => {
         try {
           const root = document.body || document.documentElement;
-          const dark = getComputedStyle(root).getPropertyValue('--dark-color');
-          if (dark && dark.trim()) return dark.trim();
-          const blueDark = getComputedStyle(root).getPropertyValue('--blue-dark');
-          if (blueDark && blueDark.trim()) return blueDark.trim();
+          const primary = getComputedStyle(root).getPropertyValue('--primary-color');
+          if (primary && primary.trim()) return primary.trim();
+          const bluePrimary = getComputedStyle(root).getPropertyValue('--blue-primary');
+          if (bluePrimary && bluePrimary.trim()) return bluePrimary.trim();
         } catch (e) { /* ignore */ }
-        return '#03010f';
+        return '#0b032d';
       })();
       const iconColor = '#ffa94d';
       const iconFont = '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
@@ -1802,19 +1802,26 @@ function formatTime(t) {
       // expose preview/full video element arrays so external player instances can reuse them
       try { window.__videoGridPreviewVideos = previewVideos; window.__videoGridFullVideos = fullVideos; } catch (e) { /* ignore */ }
 
-      // Kick off preloading for snappier hover and playback
-      previewVideos.forEach((v) => {
-        if (!v) return;
-        try { v.muted = true; v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
-      });
-      fullVideos.forEach((v) => {
-        if (!v) return;
-        try { v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
-      });
-      fullAudios.forEach((a) => {
-        if (!a) return;
-        try { a.preload = 'auto'; a.load(); } catch (e) { /* ignore */ }
-      });
+      // Kick off preloading after the intro gate is visible (deferred to avoid blocking first paint).
+      const schedulePreload = () => {
+        previewVideos.forEach((v) => {
+          if (!v) return;
+          try { v.muted = true; v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
+        });
+        fullVideos.forEach((v) => {
+          if (!v) return;
+          try { v.preload = 'auto'; v.load(); } catch (e) { /* ignore */ }
+        });
+        fullAudios.forEach((a) => {
+          if (!a) return;
+          try { a.preload = 'auto'; a.load(); } catch (e) { /* ignore */ }
+        });
+      };
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(() => schedulePreload(), { timeout: 800 });
+      } else {
+        setTimeout(schedulePreload, 250);
+      }
 
       function applySettingsToAllVideos() {
         previewVideos.forEach(applyPlaybackSettings);
@@ -2092,6 +2099,7 @@ function formatTime(t) {
       let fullIndex = -1;
       let lastFullRect = null;
       let autoZoomOutTriggered = false;
+      let lastHoverEntry = null;
       const previewWindows = entries.map(() => ({ until: 0 }));
       const animation = { phase: 'idle', start: 0, from: null, to: null };
       const cellsBounds = (() => {
@@ -2423,7 +2431,7 @@ function formatTime(t) {
         ctx.restore();
         ctx.save();
         ctx.globalAlpha = 0.18;
-        ctx.fillStyle = panelDarkColor;
+        ctx.fillStyle = panelPrimaryColor;
         ctx.fillRect(layout.descBand.x, layout.descBand.y, layout.descBand.w, layout.descBand.h);
         ctx.restore();
         ctx.strokeStyle = 'rgba(255,255,255,0.10)';
@@ -2436,8 +2444,8 @@ function formatTime(t) {
         // Keep a stable font size and wrap into multiple lines when needed.
         const band = layout.descBand;
         const maxW = band.w * 0.9;
-        const entry = (hoverIndex >= 0 && entries[hoverIndex]) ? entries[hoverIndex] : null;
-        const titleText = entry ? String(entry.title || '').toUpperCase() : '';
+        const entry = (hoverIndex >= 0 && entries[hoverIndex]) ? entries[hoverIndex] : lastHoverEntry;
+        const titleText = entry ? String(entry.title || '').toUpperCase() : 'VIDEO REELS';
         const bodyText = entry ? String(entry.description || '') : String(description || '');
         const baseFs = Math.round(gridCanvas.height * 0.045);
         const fs = Math.max(18, Math.min(46, baseFs));
@@ -2614,10 +2622,9 @@ function formatTime(t) {
         if (hoverIndex >= 0) stopPreview(hoverIndex);
         hoverIndex = idx;
         if (idx >= 0) {
+          lastHoverEntry = entries[idx];
           description = entries[idx].description;
           startPreview(idx);
-        } else {
-          description = 'Hover a thumbnail to preview a random snippet.';
         }
       }
 
@@ -2964,13 +2971,13 @@ function formatTime(t) {
         // Background bars (fill entire panels)
         topPanelCtx.save();
         topPanelCtx.globalAlpha = 0.9 * a;
-        topPanelCtx.fillStyle = panelDarkColor;
+        topPanelCtx.fillStyle = panelPrimaryColor;
         topPanelCtx.fillRect(0, 0, topPanelCanvas.width, topPanelCanvas.height);
         topPanelCtx.restore();
 
         bottomPanelCtx.save();
         bottomPanelCtx.globalAlpha = 0.9 * a;
-        bottomPanelCtx.fillStyle = panelDarkColor;
+        bottomPanelCtx.fillStyle = panelPrimaryColor;
         bottomPanelCtx.fillRect(0, 0, bottomPanelCanvas.width, bottomPanelCanvas.height);
         bottomPanelCtx.restore();
 
@@ -3112,7 +3119,7 @@ function formatTime(t) {
         // Bars (bottom bar visually extends to screen edge)
         ctrlCtx.save();
         ctrlCtx.globalAlpha = barAlpha * alpha;
-        ctrlCtx.fillStyle = panelDarkColor;
+        ctrlCtx.fillStyle = panelPrimaryColor;
         ctrlCtx.fillRect(ui.topBar.x, ui.topBar.y, ui.topBar.w, ui.topBar.h);
         const bottomFillH = (ui.surfaceRect.y + ui.surfaceRect.h) - ui.bottomBar.y;
         ctrlCtx.fillRect(ui.bottomBar.x, ui.bottomBar.y, ui.bottomBar.w, bottomFillH);

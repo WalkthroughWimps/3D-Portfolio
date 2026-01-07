@@ -165,7 +165,16 @@ body {
     opacity: 1;
     transition: opacity 360ms ease;
 }
-.intro-gate.hidden { opacity: 0; pointer-events: none; }
+.intro-gate.is-hidden { display: none; }
+.videos-boot .intro-gate {
+    display: flex;
+    opacity: 1;
+}
+.videos-boot .intro-load-bar {
+    width: 12%;
+    animation: intro-load-pulse 1.1s ease-in-out infinite;
+}
+.videos-boot .intro-play { opacity: 0.8; }
 .intro-play {
     border: 2px solid var(--hl-secondary-color);
     background: color-mix(in oklab, var(--primary-color) 78%, transparent);
@@ -202,6 +211,12 @@ body {
     font-size: 0.95rem;
     color: var(--hl-text-color);
     opacity: 0.9;
+}
+
+@keyframes intro-load-pulse {
+    0% { transform: translateX(0); opacity: 0.6; }
+    50% { transform: translateX(35%); opacity: 1; }
+    100% { transform: translateX(0); opacity: 0.6; }
 }
 
 /* Tablet intro stage: video overlays the GLB, then fades out to reveal the model */

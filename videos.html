@@ -178,7 +178,7 @@
                         <div class="intro-load">
                             <div id="introLoadBar" class="intro-load-bar"></div>
                         </div>
-                        <div id="introLoadText" class="intro-load-text">Loading…</div>
+                        <div id="introLoadText" class="intro-load-text">Loading UI...</div>
                     </div>
                     <canvas id="glCanvas" class="gl-canvas" aria-label="3D tablet canvas"></canvas>
                 </div>
@@ -193,7 +193,11 @@
                         .catch(() => {});
             });
         </script>
+        <script>
+            document.documentElement.classList.add('videos-boot');
+        </script>
         <script type="module" src="videos.js"></script>
 </body>
 
 </html>
+
