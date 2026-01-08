@@ -17,9 +17,14 @@ export const MENU_LAYOUT = Object.freeze({
   dividerOffset: 0.5,
   dividerWidth: 0.01, // percentage of rect.w
   videoAspect: 16 / 9,
+  videoWidthRatio: 0.86,
   safeMargin: 0.01, // relative padding applied inside each region
   circleInsetPx: 48,
-  textGapPx: 48
+  textGapPx: 48,
+  magentaTopInsetRatio: 0.06,
+  videoTitleHeaderRatio: 0.06,
+  videoTitleVerticalOffsetRatio: 0.04,
+  magentaContentOffsetRatio: 0.025
 });
 
 let loggedMenuRect = false;
@@ -35,6 +40,8 @@ export function getMenuRects(rect) {
 
   // Define regions
   const dividerX = rect.x + rect.w * MENU_LAYOUT.dividerOffset;
+  const dividerW = Math.max(4, Math.round(rect.w * MENU_LAYOUT.dividerWidth));
+  const dividerLeft = dividerX - dividerW / 2;
   const leftRegion = {
     left: rect.x,
     right: dividerX,
@@ -50,49 +57,69 @@ export function getMenuRects(rect) {
     centerY: rect.y + rect.h * 0.5
   };
 
+  const leftWidth = leftRegion.right - leftRegion.left;
+  const leftSafeWidth = Math.max(0, leftWidth - safeMargin * 2);
+
   // Available space inside right region with margins
   const availableWidth = (rightRegion.right - rightRegion.left) - 2 * safeMargin;
-  const availableHeight = (rightRegion.bottom - rightRegion.top) - 2 * safeMargin;
 
-  // Vertical spacing based on available height
-  const rowSpacing = availableHeight / gamesCount;
-  const rowCenters = [];
-  for (let i = 0; i < gamesCount; i++) {
-    rowCenters.push(rightRegion.top + safeMargin + (rowSpacing * (i + 0.5)));
-  }
-  // Sizing based on row spacing (fit-to-region rules)
-  const pillHeight = rowSpacing * 0.5;
-  const circleRadius = rowSpacing * 0.42;
-  const gap = circleRadius * 0.18;
-  const overlap = circleRadius * 0.35;
-  const pillWidth = availableWidth * 0.78;
-
-  const rowCenterX = rightRegion.left + safeMargin + (availableWidth * 0.5);
-
-    const thumbPattern = ['left', 'right', 'left', 'right', 'left'];
+  const padX = Math.max(8, Math.round(rect.w * 0.02));
+  const videoTitleHeaderHeight = Math.max(
+    18,
+    Math.round(rect.h * (MENU_LAYOUT.videoTitleHeaderRatio || 0.04))
+  );
+  const videoTitleVerticalOffset = Math.round(rect.h * (MENU_LAYOUT.videoTitleVerticalOffsetRatio || 0.04));
+  const magLeft = Math.round(dividerX + padX);
+  const magRight = Math.round(rightRegion.right - padX);
+  const titleWidthRatio = 0.8;
+  const videoTitleWidth = Math.max(32, Math.round(leftSafeWidth * titleWidthRatio));
+  const videoTitleX = leftRegion.left + safeMargin + Math.round((leftSafeWidth - videoTitleWidth) / 2);
+  const videoTitleRect = {
+    x: videoTitleX,
+    y: leftRegion.top + safeMargin + videoTitleVerticalOffset,
+    w: videoTitleWidth,
+    h: videoTitleHeaderHeight
+  };
+  const magentaTitleWidth = Math.max(32, Math.round((magRight - magLeft) * titleWidthRatio));
+  const magentaTitleRect = {
+    x: magLeft + Math.round(((magRight - magLeft) - magentaTitleWidth) / 2),
+    y: videoTitleRect.y,
+    w: magentaTitleWidth,
+    h: videoTitleHeaderHeight
+  };
+  const EXCEL_ROW_CENTERS = [352, 556, 760, 964, 1168];
+  const rowCenters = EXCEL_ROW_CENTERS.slice(0, gamesCount)
+    .map((y) => rect.y + y);
+  const magentaTopMargin = Math.round(rect.h * (MENU_LAYOUT.magentaTopInsetRatio || 0.06));
+  const magentaContentOffset = Math.round(rect.h * (MENU_LAYOUT.magentaContentOffsetRatio || 0.025));
+  const minMagTop = Math.round(magentaTitleRect.y + magentaTitleRect.h + magentaTopMargin + magentaContentOffset);
+  const maxMagBottom = Math.round(rect.y + rect.h - padX);
+  const rowSpacing = rowCenters.length > 1
+    ? (rowCenters[rowCenters.length - 1] - rowCenters[0]) / (rowCenters.length - 1)
+    : 0;
+  const baseRadiusFromSpacing = rowSpacing ? Math.round(rowSpacing * 0.45) : 0;
+  const baseRadiusFromWidth = Math.max(48, Math.round(availableWidth * 0.12));
+  const baseRadius = Math.max(12, Math.min(
+    baseRadiusFromWidth,
+    baseRadiusFromSpacing || baseRadiusFromWidth
+  ));
+  const maxRadiusByTop = rowCenters.length ? Math.max(0, rowCenters[0] - minMagTop) : baseRadius;
+  const maxRadiusByBottom = rowCenters.length
+    ? Math.max(0, maxMagBottom - rowCenters[rowCenters.length - 1])
+    : baseRadius;
+  const circleRadius = Math.max(12, Math.min(baseRadius, maxRadiusByTop || baseRadius, maxRadiusByBottom || baseRadius));
+  const magTop = rowCenters.length ? Math.round(rowCenters[0] - circleRadius) : minMagTop;
+  const magBottom = rowCenters.length ? Math.round(rowCenters[rowCenters.length - 1] + circleRadius) : maxMagBottom;
+  const magHeight = Math.max(0, magBottom - magTop);
+  const pillHeight = Math.max(12, circleRadius * 1.1);
+  const pillWidth = Math.max(48, availableWidth * 0.78);
+  const thumbPattern = ['left', 'right', 'left', 'right', 'left'];
   const games = GAME_LIST.map((game, index) => {
-      let cy = rowCenters[index];
-      const side = thumbPattern[index % thumbPattern.length];
-      let circleCx;
-    const r = circleRadius * 1.25;
+    let cy = rowCenters[index];
+    const side = thumbPattern[index % thumbPattern.length];
+    const r = circleRadius;
     const inset = Number.isFinite(MENU_LAYOUT.circleInsetPx) ? MENU_LAYOUT.circleInsetPx : Math.max(28, Math.round(availableWidth * 0.06));
-    if (side === 'left') {
-      circleCx = rightRegion.left + safeMargin + inset + r;
-    } else {
-      circleCx = rightRegion.right - safeMargin - inset - r;
-    }
-    const delta = r - circleRadius;
-    if (game.id === 'battleship') {
-      circleCx += delta;
-      cy += delta;
-    } else if (game.id === 'big-bomb-blast') {
-      circleCx += delta;
-      cy -= delta;
-    } else if (game.id === 'train-mania') {
-      circleCx += delta;
-    } else if (game.id === 'plinko' || game.id === 'pick-a-square') {
-      circleCx -= delta;
-    }
+    let circleCx = side === 'left' ? magLeft + r : magRight - r;
     const circle = { cx: circleCx, cy, r, side };
     const circleLeft = circle.cx - r;
     const circleRight = circle.cx + r;
@@ -125,10 +152,15 @@ export function getMenuRects(rect) {
     } else {
       textRect.cx = circle.cx - r - textGap - textBoxW * 0.5;
     }
-    textRect.x = textRect.cx - textBoxW / 2;
+    const textMaxWidth = Math.max(200, Math.round((rightRegion.right - magLeft) - safeMargin * 2));
+    const textPreferredWidth = Math.min(textMaxWidth, Math.round(pillWidth * 1.1));
+    const textExpandedWidth = Math.min(textMaxWidth, Math.round(textPreferredWidth * 1.15));
+    textRect.w = textExpandedWidth;
+    textRect.x = magLeft;
+    textRect.cx = textRect.x + textRect.w * 0.5;
+    textRect.cy = cy;
     textRect.y = textRect.cy - textBoxH / 2;
 
-    // Clamp to right region with safe margins
     let rowLeft = Math.min(pill.x, circleLeft);
     let rowRight = Math.max(pill.x + pill.w, circleRight);
     let rowTop = Math.min(pill.y, cy - r);
@@ -157,6 +189,24 @@ export function getMenuRects(rect) {
       pill.y -= dy; circle.cy -= dy; textRect.y -= dy; textRect.cy -= dy; rowTop -= dy; rowBottom -= dy;
     }
 
+    if (side === 'left') {
+      circle.cx = magLeft + r;
+    } else {
+      circle.cx = magRight - r;
+    }
+    const circleLeft2 = circle.cx - r;
+    const circleRight2 = circle.cx + r;
+    if (side === 'left') {
+      pillLeft = circleRight2 - overlapItem + gapItem;
+      pillRight = pillLeft + pillWidth;
+    } else {
+      pillRight = circleLeft2 + overlapItem - gapItem;
+      pillLeft = pillRight - pillWidth;
+    }
+    pill.x = pillLeft;
+    pill.w = pillWidth;
+    pill.y = cy - pillHeight / 2;
+
     return {
       id: game.id,
       label: game.label,
@@ -179,18 +229,18 @@ export function getMenuRects(rect) {
   }
 
   // Videos: stack inside left region
-  const leftWidth = leftRegion.right - leftRegion.left;
-  const leftHeight = leftRegion.bottom - leftRegion.top;
-  const leftSafeWidth = leftWidth - safeMargin * 2;
-  const leftSafeHeight = leftHeight - safeMargin * 2;
-  const videoWidth = leftSafeWidth * 0.9;
+  const videoWidth = Math.max(64, leftSafeWidth * (MENU_LAYOUT.videoWidthRatio || 0.9));
   const videoHeight = videoWidth / MENU_LAYOUT.videoAspect;
   const videoCount = VIDEO_LIST.length;
-  const remainingHeight = Math.max(0, leftSafeHeight - videoHeight * videoCount);
-  const videoGap = videoCount > 0 ? remainingHeight / (videoCount + 1) : 0;
+  const videoStackHeight = Math.max(0, magBottom - magTop);
+  const gapSlots = Math.max(1, videoCount - 1);
+  const videoGap = videoCount > 1
+    ? Math.max(0, (videoStackHeight - videoHeight * videoCount) / gapSlots)
+    : 0;
+  const videoListTop = magTop;
   const videoX = leftRegion.left + safeMargin + (leftSafeWidth - videoWidth) / 2;
   const videos = VIDEO_LIST.map((video, index) => {
-    const vy = leftRegion.top + safeMargin + videoGap * (index + 1) + videoHeight * index;
+    const vy = videoListTop + index * (videoHeight + videoGap);
     return {
       id: video.id,
       label: video.label,
@@ -202,28 +252,22 @@ export function getMenuRects(rect) {
     };
   });
 
-  // Final vertical centering of the group within right region
-  let minY = Infinity;
-  let maxY = -Infinity;
-  games.forEach((g) => {
-    const circleTop = g.thumb.cy - g.thumb.r;
-    const circleBottom = g.thumb.cy + g.thumb.r;
-    minY = Math.min(minY, g.pill.y, circleTop, g.textRect.y);
-    maxY = Math.max(maxY, g.pill.y + g.pill.h, circleBottom, g.textRect.y + g.textRect.h);
-  });
-  const groupCenterY = (minY + maxY) / 2;
-  const regionCenterY = rightRegion.top + (rightRegion.bottom - rightRegion.top) * 0.5;
-  const offsetY = regionCenterY - groupCenterY;
-  if (Math.abs(offsetY) > 0.01) {
-    games.forEach((g) => {
-      g.pill.y += offsetY;
-      g.thumb.cy += offsetY;
-      g.textRect.y += offsetY;
-      g.textRect.cy += offsetY;
-    });
-  }
-
-  return { games, videos, itemHeight: pillHeight, dividerX, rightRegion };
+  return {
+    games,
+    videos,
+    itemHeight: pillHeight,
+    dividerX,
+    dividerW,
+    dividerLeft,
+    rightRegion,
+    magLeft,
+    magRight,
+    magTop,
+    magBottom,
+    videoTitleRect,
+    magentaTitleRect,
+    videoTitleHeaderHeight
+  };
 }
 
 export function getMenuAction(x, y, rect) {

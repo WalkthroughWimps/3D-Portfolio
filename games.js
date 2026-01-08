@@ -58,6 +58,23 @@ const VIDEO_THUMBS = {
   reel: assetUrl('./Videos/games-page/video-games-reel.png'),
   christmas: assetUrl('./Videos/games-page/christmas-games.png')
 };
+const VIDEO_TITLE_IMAGES = {
+  reels: assetUrl('./games/images/game reels.png'),
+  samples: assetUrl('./games/images/game samples.png')
+};
+const videoTitleImageCache = new Map();
+function ensureVideoTitleImage(key) {
+  if (videoTitleImageCache.has(key)) return videoTitleImageCache.get(key);
+  const src = VIDEO_TITLE_IMAGES[key];
+  if (!src) return null;
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  img.src = src;
+  img.onload = () => { needsRedraw = true; };
+  videoTitleImageCache.set(key, img);
+  return img;
+}
 const VIDEO_LQ = {
   reel: assetUrl('./Videos/games-page/video-games-reel-lq.webm'),
   christmas: assetUrl('./Videos/games-page/christmas-games-lq.webm')
@@ -78,6 +95,15 @@ const DEFAULT_CAMERA = {
   quat: new THREE.Quaternion(-0.114, 0.488, 0.064, 0.863),
   fov: 22.9
 };
+
+// Lightweight logging helper so devs can filter by `[games:<tag>]` in the console.
+function gamesLog(tag, ...args) {
+  try {
+    console.log(`%c[games:${tag}]`, 'color:#7ee787;font-weight:bold', ...args);
+  } catch (e) {
+    console.log(`[games:${tag}]`, ...args);
+  }
+}
 const START_CAMERA = {
   pos: new THREE.Vector3(1207.545, 819.927, -1166.235),
   rot: new THREE.Euler(
@@ -309,6 +335,7 @@ let userReturnTransform = null;
 const videoThumbImages = new Map();
 const videoPreviewVideos = new Map();
 let hoveredVideoId = null;
+let hoveredGameId = null;
 const gameThumbImages = new Map();
 const gameLabelImages = new Map();
 
@@ -427,6 +454,7 @@ function init() {
   renderer.domElement.addEventListener('pointerdown', handlePointerDown, { capture: true });
   renderer.domElement.addEventListener('pointerup', handlePointerUp, { capture: true });
   renderer.domElement.addEventListener('pointercancel', handlePointerUp, { capture: true });
+  renderer.domElement.addEventListener('pointerleave', () => { if (contentMode === 'menu') clearMenuHover(); });
   renderer.domElement.addEventListener('wheel', handleWheel, { capture: true, passive: false });
   renderer.domElement.addEventListener('contextmenu', handleContextMenu, { capture: true });
   window.addEventListener('resize', onResize);
@@ -512,7 +540,7 @@ function loadCabinet() {
         controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
         controls.target.copy(center);
         updateControlsForContent(contentMode);
-        console.log('Using GLB camera:', activeCamera.name || '(unnamed)');
+        gamesLog('glb', 'Using GLB camera:', activeCamera.name || '(unnamed)');
       } else {
         const maxDim = Math.max(size.x, size.y, size.z);
         const dist = maxDim * 2.2;
@@ -520,11 +548,11 @@ function loadCabinet() {
         fallbackCamera.lookAt(center);
         activeCamera = fallbackCamera;
         controls.target.copy(center);
-        console.log('No GLB camera found; using fallback camera.');
+        gamesLog('glb', 'No GLB camera found; using fallback camera.');
       }
 
       screenMesh = findScreenMesh(cabinetRoot);
-      console.log('screen mesh:', screenMesh);
+      gamesLog('glb', 'screen mesh:', screenMesh);
       if (!screenMesh || !screenMesh.isMesh) {
         console.warn('No arcade screen mesh found.');
         return;
@@ -539,7 +567,7 @@ function loadCabinet() {
     },
     (xhr) => {
       const p = xhr.total ? (xhr.loaded / xhr.total) * 100 : 0;
-      if (p) console.log(`Loading GLB... ${p.toFixed(1)}%`);
+      if (p) gamesLog('glb', `Loading GLB... ${p.toFixed(1)}%`);
     },
     (err) => {
       console.error('Failed to load GLB:', err);
@@ -629,12 +657,27 @@ function setupScreenCanvas(mesh) {
 
 function applyDefaultCameraTransform() {
   if (!activeCamera) return;
-  activeCamera.position.copy(DEFAULT_CAMERA.pos);
-  if (DEFAULT_CAMERA.rot) {
-    activeCamera.rotation.copy(DEFAULT_CAMERA.rot);
-    activeCamera.quaternion.setFromEuler(activeCamera.rotation);
+  // DEFAULT_CAMERA stores a world-space snapshot (position + quaternion).
+  // If the camera is parented inside the GLB scene, convert the world snapshot
+  // into the camera's local space so the transform takes effect correctly.
+  const worldPos = DEFAULT_CAMERA.pos.clone();
+  const worldQuat = DEFAULT_CAMERA.quat.clone();
+  if (activeCamera.parent && activeCamera.parent !== scene) {
+    // compute local position
+    const localPos = worldPos.clone();
+    activeCamera.parent.worldToLocal(localPos);
+    // compute local quaternion: localQuat = parentWorldQuat^-1 * worldQuat
+    const parentWorldQuat = new THREE.Quaternion();
+    activeCamera.parent.getWorldQuaternion(parentWorldQuat);
+    const invParentQuat = parentWorldQuat.clone().invert();
+    const localQuat = invParentQuat.multiply(worldQuat.clone());
+    activeCamera.position.copy(localPos);
+    activeCamera.quaternion.copy(localQuat);
+    activeCamera.rotation.setFromQuaternion(activeCamera.quaternion, 'XYZ');
   } else {
-    activeCamera.quaternion.copy(DEFAULT_CAMERA.quat);
+    activeCamera.position.copy(worldPos);
+    activeCamera.quaternion.copy(worldQuat);
+    activeCamera.rotation.setFromQuaternion(activeCamera.quaternion, 'XYZ');
   }
   if (activeCamera.isPerspectiveCamera && typeof DEFAULT_CAMERA.fov === 'number') {
     activeCamera.fov = DEFAULT_CAMERA.fov;
@@ -731,18 +774,56 @@ function startIntroAnimation() {
 
 function captureCameraSnapshot() {
   if (!activeCamera) return null;
+  // Capture a world-space snapshot so restores work regardless of camera parenting.
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  activeCamera.getWorldPosition(pos);
+  activeCamera.getWorldQuaternion(quat);
   return {
-    position: activeCamera.position.clone(),
-    quaternion: activeCamera.quaternion.clone(),
+    position: pos,
+    quaternion: quat,
     fov: activeCamera.isPerspectiveCamera ? activeCamera.fov : null
   };
 }
 
+function setDefaultCameraFromActive() {
+  if (!activeCamera) return;
+  // Update DEFAULT_CAMERA in-place so references remain valid
+  // capture world-space snapshot so it can be reapplied regardless of parenting
+  const worldPos = new THREE.Vector3();
+  const worldQuat = new THREE.Quaternion();
+  activeCamera.getWorldPosition(worldPos);
+  activeCamera.getWorldQuaternion(worldQuat);
+  DEFAULT_CAMERA.pos.copy(worldPos);
+  // prefer quaternion path; remove explicit rot to use quat on apply
+  try { delete DEFAULT_CAMERA.rot; } catch (e) { DEFAULT_CAMERA.rot = undefined; }
+  DEFAULT_CAMERA.quat.copy(worldQuat);
+  if (activeCamera.isPerspectiveCamera && typeof activeCamera.fov === 'number') {
+    DEFAULT_CAMERA.fov = activeCamera.fov;
+  }
+  console.log('[camera] setDefaultCameraFromActive()', { worldPos: DEFAULT_CAMERA.pos.clone(), worldQuat: DEFAULT_CAMERA.quat.clone(), fov: DEFAULT_CAMERA.fov });
+}
+
 function applyCameraSnapshot(snapshot) {
   if (!snapshot || !activeCamera) return;
-  activeCamera.position.copy(snapshot.position);
-  activeCamera.quaternion.copy(snapshot.quaternion);
-  activeCamera.rotation.setFromQuaternion(snapshot.quaternion, 'XYZ');
+  // snapshot is expected to be world-space; convert to local if camera has a parent.
+  const worldPos = snapshot.position.clone();
+  const worldQuat = snapshot.quaternion.clone();
+  if (activeCamera.parent && activeCamera.parent !== scene) {
+    const localPos = worldPos.clone();
+    activeCamera.parent.worldToLocal(localPos);
+    const parentWorldQuat = new THREE.Quaternion();
+    activeCamera.parent.getWorldQuaternion(parentWorldQuat);
+    const invParentQuat = parentWorldQuat.clone().invert();
+    const localQuat = invParentQuat.multiply(worldQuat.clone());
+    activeCamera.position.copy(localPos);
+    activeCamera.quaternion.copy(localQuat);
+    activeCamera.rotation.setFromQuaternion(activeCamera.quaternion, 'XYZ');
+  } else {
+    activeCamera.position.copy(worldPos);
+    activeCamera.quaternion.copy(worldQuat);
+    activeCamera.rotation.setFromQuaternion(worldQuat, 'XYZ');
+  }
   if (activeCamera.isPerspectiveCamera && typeof snapshot.fov === 'number') {
     activeCamera.fov = snapshot.fov;
     activeCamera.updateProjectionMatrix();
@@ -864,6 +945,11 @@ function setupMenu() {
   } else {
     splashDurationMs = GAME_SPLASH_DURATION_MS;
   }
+  // Save current menu camera as the new default so we return to this view when leaving.
+  setDefaultCameraFromActive();
+  // Capture the current view as the return transform immediately before entering content.
+  userReturnTransform = captureCameraSnapshot();
+  console.log('[camera] startGame() preset userReturnTransform=', userReturnTransform);
   enterContentView();
   overlayActive = false;
   cssGameActive = renderMode === 'css3d';
@@ -1375,6 +1461,10 @@ function startVideoReel(entry) {
   console.log(`[games-reel] canvas=${screenCanvas.width}x${screenCanvas.height} screenAR=${(screenCanvas.width / screenCanvas.height).toFixed(3)} targetAR=${TARGET_SCREEN_AR.toFixed(3)}`);
   reelSource = entry && entry.src ? entry.src : '';
   const audioSrc = entry && entry.id ? VIDEO_AUDIO[entry.id] : null;
+  // Preserve the current menu camera as the video-default so exiting the reel returns here.
+  setDefaultCameraFromActive();
+  userReturnTransform = captureCameraSnapshot();
+  console.log('[camera] startVideoReel() preset userReturnTransform=', userReturnTransform);
   enterContentView();
   reelVideo = document.createElement('video');
   reelVideo.crossOrigin = 'anonymous';
@@ -1857,21 +1947,82 @@ function drawMenu(ctx, rect) {
   ctx.textBaseline = 'middle';
   ctx.font = `${Math.max(18, Math.round(layout.itemHeight * 0.42))}px "Segoe UI", Arial, sans-serif`;
   ctx.textAlign = 'left';
+  const hoverVideoScale = 1.03;
+  const hoverCircleScale = 1.08;
+  const hoverTextScale = 1.06;
+  const hoverGlowColor = 'rgba(63, 255, 120, 0.85)';
+  const hoverGlowBlurVideo = Math.max(14, Math.round(rect.w * 0.012));
+  const hoverGlowBlurGame = Math.max(8, Math.round(rect.w * 0.008));
+  const hoverGlowLineVideo = Math.max(3, Math.round(rect.w * 0.0025));
+  const hoverGlowLineGame = Math.max(3, Math.round(rect.w * 0.002));
+
+  const reelsTitleImg = ensureVideoTitleImage('reels');
+  if (layout.videoTitleRect && reelsTitleImg && reelsTitleImg.complete) {
+    ctx.drawImage(
+      reelsTitleImg,
+      layout.videoTitleRect.x,
+      layout.videoTitleRect.y,
+      layout.videoTitleRect.w,
+      layout.videoTitleRect.h
+    );
+  }
+  const samplesTitleImg = ensureVideoTitleImage('samples');
+  if (layout.magentaTitleRect && samplesTitleImg && samplesTitleImg.complete) {
+    ctx.drawImage(
+      samplesTitleImg,
+      layout.magentaTitleRect.x,
+      layout.magentaTitleRect.y,
+      layout.magentaTitleRect.w,
+      layout.magentaTitleRect.h
+    );
+  }
 
   layout.videos.forEach((slot) => {
     const thumb = ensureVideoThumb(slot.id);
     const preview = videoPreviewVideos.get(slot.id);
-    const source = (hoveredVideoId === slot.id && preview && !preview.paused) ? preview : thumb;
+    const isHover = hoveredVideoId === slot.id;
+    const source = (isHover && preview && !preview.paused) ? preview : thumb;
+    const scale = isHover ? hoverVideoScale : 1;
+    const drawW = slot.rect.w * scale;
+    const drawH = slot.rect.h * scale;
+    const drawX = slot.rect.x + (slot.rect.w - drawW) / 2;
+    const drawY = slot.rect.y + (slot.rect.h - drawH) / 2;
     if (source) {
-      ctx.drawImage(source, slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+      ctx.drawImage(source, drawX, drawY, drawW, drawH);
     } else {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
-      ctx.fillRect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+      ctx.fillRect(drawX, drawY, drawW, drawH);
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.002));
-    ctx.strokeRect(slot.rect.x, slot.rect.y, slot.rect.w, slot.rect.h);
+    if (isHover) {
+      ctx.save();
+      ctx.shadowColor = hoverGlowColor;
+      ctx.shadowBlur = hoverGlowBlurVideo;
+      ctx.strokeStyle = 'rgba(63, 255, 120, 0.9)';
+      ctx.lineWidth = hoverGlowLineVideo;
+      ctx.strokeRect(drawX, drawY, drawW, drawH);
+      ctx.restore();
+    } else {
+      ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+      ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.002));
+      ctx.strokeRect(drawX, drawY, drawW, drawH);
+    }
   });
+
+  // Debug: draw a semi-transparent magenta rectangle inset from the divider and right edge
+  if (layout && layout.rightRegion && layout.dividerX) {
+    const pad = Math.max(8, Math.round(rect.w * 0.02));
+    const magLeft = layout.magLeft !== undefined ? layout.magLeft : Math.round(layout.dividerX + pad);
+    const magRight = layout.magRight !== undefined ? layout.magRight : Math.round(layout.rightRegion.right - pad);
+    const magTop = layout.magTop !== undefined
+      ? layout.magTop
+      : Math.round(rect.y + pad + Math.max(layout.videoTitleHeaderHeight || 0, Math.round(rect.h * (MENU_LAYOUT.magentaTopInsetRatio || 0.06))));
+    const magBottom = layout.magBottom !== undefined ? layout.magBottom : Math.round(rect.y + rect.h - pad);
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = '#ff00ff';
+    ctx.fillRect(magLeft, magTop, Math.max(0, magRight - magLeft), Math.max(0, magBottom - magTop));
+    ctx.restore();
+  }
 
   layout.games.forEach((slot) => {
     const thumb = ensureGameThumb(slot.id);
@@ -1887,45 +2038,94 @@ function drawMenu(ctx, rect) {
       ctx.closePath();
     };
 
-    ctx.fillStyle = 'rgba(255,255,255,0.08)';
-    ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
-    ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
-    drawAngledPill();
-    ctx.fill();
-    ctx.stroke();
+    // Draw the text box stretching from the visual divider left to the right region edge
+    if (layout && layout.dividerLeft !== undefined && layout.rightRegion) {
+      const isHover = hoveredGameId === slot.id;
+      const scale = isHover ? hoverCircleScale : 1;
+      const padX = Math.max(8, Math.round(rect.w * 0.01));
+      const RIGHT_MARGIN = 6;
+      // Right-side interactive box (keeps click area intact)
+      const baseX = Math.round(layout.dividerLeft + padX);
+      const EXTRA_RIGHT = Math.max(8, Math.round(rect.w * 0.01));
+      const baseW = Math.round(layout.rightRegion.right - baseX - RIGHT_MARGIN + EXTRA_RIGHT);
+      const baseH = Math.max(28, Math.round(slot.pill ? slot.pill.h * 0.9 : (slot.textRect ? slot.textRect.h : 40)));
+      const boxW = baseW;
+      const boxH = baseH;
+      const boxX = baseX;
+      const boxY = Math.round(thumbCy - boxH / 2);
+      // background (right)
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      // border (right)
+      ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+      ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.0018));
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-    // Circle on top
-    if (thumb) {
-      ctx.save();
+      // Draw label text close to its accompanying circle before the circle is painted
+      ctx.fillStyle = '#ffffff';
+      const baseFont = Math.max(20, Math.round(layout.itemHeight * 0.4));
+      const fontSize = Math.round(baseFont * (isHover ? hoverTextScale : 1));
+      ctx.font = `${fontSize}px "Arvo", "Times New Roman", serif`;
+      ctx.textBaseline = 'top';
+      const textGap = Math.max(8, Math.round(rect.w * 0.01));
+      let textX = thumbCx + (slot.side === 'left' ? (thumbRadius + textGap) : -(thumbRadius + textGap));
+      // Clamp textX inside the box area
+      textX = Math.max(boxX + 6, Math.min(boxX + boxW - 6, textX));
+      ctx.textAlign = slot.side === 'left' ? 'left' : 'right';
+      const textY = Math.round(thumbCy - fontSize * 0.5);
+      if (isHover) {
+        ctx.save();
+        ctx.shadowColor = hoverGlowColor;
+        ctx.shadowBlur = hoverGlowBlurGame;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(slot.label, textX, textY);
+        ctx.restore();
+      }
+      ctx.fillText(slot.label, textX, textY);
+
+      // Draw circular thumb on top of the text
+      if (thumb) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(thumb, thumbCx - thumbRadius * scale, thumbCy - thumbRadius * scale, thumbRadius * 2 * scale, thumbRadius * 2 * scale);
+        ctx.restore();
+      }
+      if (isHover) {
+        ctx.save();
+        ctx.shadowColor = hoverGlowColor;
+        ctx.shadowBlur = hoverGlowBlurGame;
+        ctx.strokeStyle = 'rgba(63, 255, 120, 0.9)';
+        ctx.lineWidth = hoverGlowLineGame;
+        ctx.beginPath();
+        ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+      ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
+      ctx.beginPath();
+      ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // fallback: draw just the circle if layout not available
+      if (thumb) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(thumb, thumbCx - thumbRadius, thumbCy - thumbRadius, thumbRadius * 2, thumbRadius * 2);
+        ctx.restore();
+      }
+      ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+      ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
       ctx.beginPath();
       ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
-      ctx.closePath();
-      ctx.clip();
-      ctx.drawImage(thumb, thumbCx - thumbRadius, thumbCy - thumbRadius, thumbRadius * 2, thumbRadius * 2);
-      ctx.restore();
+      ctx.stroke();
     }
-    ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
-    ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
-    ctx.beginPath();
-    ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // Text as fixed graphic (or fallback text)
-    const tr = slot.textRect;
-    ctx.save();
-    drawAngledPill();
-    ctx.clip();
-    const labelImg = ensureGameLabel(slot.id);
-    if (labelImg && labelImg.complete) {
-      ctx.drawImage(labelImg, tr.x, tr.y, tr.w, tr.h);
-    } else {
-      ctx.fillStyle = '#ffffff';
-      ctx.textAlign = 'center';
-      ctx.font = `64px "Arvo", "Times New Roman", serif`;
-      ctx.textBaseline = 'middle';
-      ctx.fillText(slot.label, tr.cx, tr.cy);
-    }
-    ctx.restore();
   });
 
   if (layout.dividerX) {
@@ -1967,7 +2167,10 @@ function updateCameraPanel() {
 function handlePointerMove(ev) {
   if (!screenMesh || !screenCanvas) return;
   const hit = raycastScreen(ev);
-  if (!hit) return;
+  if (!hit) {
+    if (contentMode === 'menu') clearMenuHover();
+    return;
+  }
   lastScreenHit = hit;
   if (contentMode === 'menu') {
     updateHoveredVideo(hit.x, hit.y);
@@ -2006,6 +2209,7 @@ function handlePointerMove(ev) {
 function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
+  if (contentMode === 'menu' && ev.button === 2) return;
   if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
     const screenPt = mapPointerToScreenPixels(ev);
       if (screenPt && player) {
@@ -2148,6 +2352,14 @@ function handleContextMenu(ev) {
   ev.stopPropagation();
 }
 
+function clearMenuHover() {
+  if (renderer && renderer.domElement) {
+    renderer.domElement.style.cursor = '';
+  }
+  setHoveredVideo(null);
+  setHoveredGame(null);
+}
+
 function updateHoveredVideo(xCanvas, yCanvas) {
   if (!contentRect) return;
   const action = getMenuAction(xCanvas, yCanvas, contentRect);
@@ -2157,8 +2369,13 @@ function updateHoveredVideo(xCanvas, yCanvas) {
   }
   if (action && action.type === 'video') {
     setHoveredVideo(VIDEO_LIST[action.index]?.id || null);
+    setHoveredGame(null);
+  } else if (action && action.type === 'game') {
+    setHoveredGame(GAME_LIST[action.index]?.id || null);
+    setHoveredVideo(null);
   } else {
     setHoveredVideo(null);
+    setHoveredGame(null);
   }
 }
 
@@ -2184,6 +2401,12 @@ function setHoveredVideo(id) {
       });
     }
   }
+  needsRedraw = true;
+}
+
+function setHoveredGame(id) {
+  if (hoveredGameId === id) return;
+  hoveredGameId = id;
   needsRedraw = true;
 }
 
@@ -2299,7 +2522,12 @@ function enterContentView() {
   } else {
     autoZoomActive = false;
   }
-  userReturnTransform = captureCameraSnapshot();
+  if (!userReturnTransform) {
+    userReturnTransform = captureCameraSnapshot();
+    console.log('[camera] enterContentView() userReturnTransform=', userReturnTransform);
+  } else {
+    console.log('[camera] enterContentView() using pre-set userReturnTransform=', userReturnTransform);
+  }
   if (!cameraZoomAlt) {
     applyCameraMode(true);
   }
@@ -2310,6 +2538,7 @@ function restoreViewAfterContent() {
   if (!cameraZoomUserEnabled && autoZoomActive) {
     applyCameraMode(previousCameraZoomAlt);
     if (userReturnTransform) {
+      console.log('[camera] restoreViewAfterContent() applying userReturnTransform=', userReturnTransform);
       applyCameraSnapshot(userReturnTransform);
     }
   }
@@ -2676,8 +2905,22 @@ function raycastScreen(ev) {
   raycaster.setFromCamera(pointerNDC, activeCamera);
   const hits = raycaster.intersectObject(screenMesh, false);
   if (!hits.length || !hits[0].uv) return null;
-  const rawU = hits[0].uv.x;
-  const rawV = hits[0].uv.y;
+  const hit = hits[0];
+  if (cabinetRoot) {
+    const cabinetHits = raycaster.intersectObject(cabinetRoot, true);
+    if (!cabinetHits.length) return null;
+    const firstSceneHit = cabinetHits[0];
+    if (firstSceneHit.object !== screenMesh) return null;
+  }
+  if (hit.face && hit.object) {
+    const normalMatrix = new THREE.Matrix3();
+    normalMatrix.getNormalMatrix(hit.object.matrixWorld);
+    const worldNormal = hit.face.normal.clone().applyMatrix3(normalMatrix).normalize();
+    const rayDir = raycaster.ray.direction;
+    if (worldNormal.dot(rayDir) >= 0) return null;
+  }
+  const rawU = hit.uv.x;
+  const rawV = hit.uv.y;
   let u = rawU;
   let v = rawV;
   if (INPUT_FLIP_U) u = 1 - u;
@@ -2729,6 +2972,22 @@ function cycleSpeed() {
 
 function pointInRect(x, y, r) {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+
+// Debug helper: expose current menu layout using the app's `contentRect`
+if (typeof window !== 'undefined' && !window.__dumpMenuLayout) {
+  window.__dumpMenuLayout = function() {
+    const rect = contentRect || { x: 0, y: 0, w: document.body.clientWidth, h: document.body.clientHeight };
+    try {
+      const layout = getMenuRects(rect);
+      console.log('__dumpMenuLayout rect ->', rect);
+      console.log('__dumpMenuLayout games ->', layout.games.map(g => ({ id: g.id, textX: Math.round(g.textRect.x), circleX: Math.round(g.thumb.cx) })));
+      return layout;
+    } catch (e) {
+      console.error('Error dumping menu layout', e);
+      return null;
+    }
+  };
 }
 
 function getCurrentGameTitle() {

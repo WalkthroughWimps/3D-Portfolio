@@ -157,33 +157,42 @@ function startIntroAudio(videoEl) {
   try { audioEl.volume = stored.muted ? 0 : safeVol; } catch (e) { /* ignore */ }
   try { audioEl.muted = !!stored.muted; } catch (e) { /* ignore */ }
   if (stored.muted || safeVol <= 0.001) return;
+
   const syncMs = getStoredSyncMs();
-  const ct = videoEl && Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
   introState.audioStarted = true;
-  if (syncMs >= 0) {
-    if (audioEl.readyState >= 1) {
-      try { audioEl.currentTime = ct; } catch (e) { /* ignore */ }
-    }
-    introState.audioTimer = setTimeout(() => {
-      try {
-        const p = audioEl.play();
-        if (p && typeof p.catch === 'function') {
-          p.catch(() => { introState.audioStarted = false; });
-        }
-      } catch (e) { introState.audioStarted = false; }
-    }, syncMs);
-  } else {
-    const offset = Math.abs(syncMs) / 1000;
-    if (audioEl.readyState >= 1) {
-      try { audioEl.currentTime = ct + offset; } catch (e) { /* ignore */ }
-    }
+
+  const performStart = () => {
+    const ct = videoEl && Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
     try {
-      const p = audioEl.play();
-      if (p && typeof p.catch === 'function') {
-        p.catch(() => { introState.audioStarted = false; });
+      if (syncMs >= 0) {
+        try { if (audioEl.readyState >= 1) audioEl.currentTime = Math.max(0, ct); } catch (e) {}
+        introState.audioTimer = setTimeout(() => { try { audioEl.play().catch(() => { introState.audioStarted = false; }); } catch (e) { introState.audioStarted = false; } }, Math.max(0, syncMs));
+      } else {
+        const offset = Math.abs(syncMs) / 1000;
+        try { if (audioEl.readyState >= 1) audioEl.currentTime = Math.max(0, ct + offset); } catch (e) {}
+        try { audioEl.play().catch(() => { introState.audioStarted = false; }); } catch (e) { introState.audioStarted = false; }
       }
     } catch (e) { introState.audioStarted = false; }
-  }
+  };
+
+  const waitForReady = (mediaEl, timeout = 1500) => new Promise((resolve) => {
+    if (!mediaEl) return resolve();
+    if (mediaEl.readyState >= 1) return resolve();
+    const onReady = () => { cleanup(); resolve(); };
+    const cleanup = () => { try { mediaEl.removeEventListener('loadedmetadata', onReady); } catch (e) {} };
+    mediaEl.addEventListener('loadedmetadata', onReady, { once: true });
+    setTimeout(() => { cleanup(); resolve(); }, timeout);
+  });
+
+  (async () => {
+    try { await Promise.all([waitForReady(videoEl, 1500), waitForReady(audioEl, 1500)]); } catch (e) { /* ignore */ }
+    performStart();
+  })();
+
+  try {
+    const syncRate = () => { try { audioEl.playbackRate = videoEl.playbackRate || 1; } catch (e) {} };
+    videoEl.addEventListener('ratechange', syncRate);
+  } catch (e) {}
 }
 
 function setupIntroVideo() {
@@ -205,25 +214,132 @@ function setupIntroVideo() {
   videoEl.playsInline = true;
   videoEl.setAttribute('playsinline', '');
   videoEl.classList.add('visible');
+  videoEl.preload = 'auto';
   videoEl.load();
+  // Try to prime the video decoder by briefly playing muted video so
+  // the first frames are decoded and the initial play doesn't stutter.
+  // Some browsers allow muted autoplay; catch rejections and fall back
+  // to waiting for canplay/loadeddata.
+  (function primeIntroVideo() {
+    if (!videoEl) return;
+    if (videoEl.__priming) return;
+    videoEl.__priming = true;
+    videoEl.__primed = false;
+    const markPrimed = () => {
+      videoEl.__primed = true;
+      videoEl.__priming = false;
+      try { if (introState.loadBar) introState.loadBar.style.width = '100%'; } catch (e) {}
+      try { if (introState.loadText) introState.loadText.textContent = 'Ready'; } catch (e) {}
+      try { if (introState.playBtn) introState.playBtn.disabled = false; } catch (e) {}
+    };
+
+    try {
+      // Ensure muted so autoplay is allowed in most browsers
+      videoEl.muted = true;
+      const p = videoEl.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
+          try { videoEl.pause(); videoEl.currentTime = 0; } catch (e) {}
+          markPrimed();
+        }).catch(() => {
+          // autoplay blocked or failed — wait for canplay as fallback
+          const onReady = () => { videoEl.removeEventListener('canplay', onReady); markPrimed(); };
+          videoEl.addEventListener('canplay', onReady, { once: true });
+          setTimeout(() => { if (!videoEl.__primed) markPrimed(); }, 1500);
+        });
+      } else {
+        // Not a promise — treat as primed after a short delay
+        setTimeout(() => { try { videoEl.pause(); videoEl.currentTime = 0; } catch (e) {} ; markPrimed(); }, 300);
+      }
+    } catch (e) {
+      const onReady = () => { videoEl.removeEventListener('canplay', onReady); markPrimed(); };
+      videoEl.addEventListener('canplay', onReady, { once: true });
+      setTimeout(() => { if (!videoEl.__primed) markPrimed(); }, 1500);
+    }
+  })();
   if (allowSound && videosPageConfig.intro && videosPageConfig.intro.audio) {
+    // Defer assigning the audio `src` until the video actually begins
+    // playing so we don't start network/audio work prematurely.
     const audioEl = document.createElement('audio');
     audioEl.crossOrigin = 'anonymous';
-    audioEl.preload = 'auto';
-    audioEl.src = videosPageConfig.intro.audio;
-    audioEl.crossOrigin = 'anonymous';
+    audioEl.preload = 'none';
+    // Store the deferred URL; do not call load() or append yet.
+    audioEl.__deferredSrc = videosPageConfig.intro.audio;
     introState.audioEl = audioEl;
-    document.body.appendChild(audioEl);
-    try { audioEl.load(); } catch (e) { /* ignore */ }
+    // note: will append and load when the video actually starts playing
   }
   const finishOnce = () => markIntroDone();
+  // Keep a conservative fallback: if the video never starts, drop after maxWaitMs.
+  if (!introState.timeoutId) {
+    introState.timeoutId = setTimeout(() => {
+      if (!introState.done && !videoEl.paused && !videoEl.ended && (videoEl.currentTime || 0) === 0) {
+        // video never started — proceed
+        finishOnce();
+      } else if (!introState.done && !videoEl.ended && (videoEl.currentTime || 0) <= 0.01) {
+        // still not progressed — proceed
+        finishOnce();
+      }
+    }, videosPageConfig.intro.maxWaitMs || 12000);
+  }
+
   videoEl.addEventListener('ended', finishOnce, { once: true });
   videoEl.addEventListener('error', finishOnce, { once: true });
-  videoEl.addEventListener('play', () => {
-    startIntroAudio(videoEl);
-    if (!introState.timeoutId) {
-      introState.timeoutId = setTimeout(finishOnce, videosPageConfig.intro.maxWaitMs || 6000);
-    }
+
+  // When playback starts, cancel the one-shot fallback and let the
+  // animation run to completion. Add a watchdog that detects if the
+  // playback stalls for longer than the configured threshold and
+  // forces completion only in that case.
+  videoEl.addEventListener('playing', () => {
+    // Ignore priming playback — only start audio when this is a real user-visible play
+    if (videoEl.__priming) return;
+    if (!videoEl.__primed) videoEl.__primed = true;
+    try { if (introState.timeoutId) { clearTimeout(introState.timeoutId); introState.timeoutId = null; } } catch (e) {}
+
+    const ensureAudioLoadedAndStart = async () => {
+      try {
+        const a = introState.audioEl;
+        if (a && a.__deferredSrc && !a.src) {
+          try {
+            a.src = a.__deferredSrc;
+            a.preload = 'auto';
+            document.body.appendChild(a);
+            const loaded = await new Promise((resolve) => {
+              if (a.readyState >= 1) return resolve(true);
+              const onMeta = () => { cleanup(); resolve(true); };
+              const cleanup = () => { try { a.removeEventListener('loadedmetadata', onMeta); } catch (e) {} };
+              a.addEventListener('loadedmetadata', onMeta, { once: true });
+              setTimeout(() => { cleanup(); resolve(false); }, 1500);
+            });
+            try { a.load(); } catch (e) { /* ignore */ }
+          } catch (e) { /* ignore */ }
+        }
+      } catch (e) { /* ignore */ }
+      // Now start audio sync-aware playback
+      startIntroAudio(videoEl);
+    };
+
+    ensureAudioLoadedAndStart();
+
+    const stuckThreshold = Number.isFinite(Number(videosPageConfig.intro && videosPageConfig.intro.maxWaitMs))
+      ? Number(videosPageConfig.intro.maxWaitMs)
+      : 12000;
+    const checkInterval = 500;
+    let lastTime = videoEl.currentTime || 0;
+    let lastProgressTs = performance.now();
+    const watch = () => {
+      try {
+        if (introState.done) { clearInterval(watchTimer); return; }
+        const ct = videoEl.currentTime || 0;
+        if (ct > lastTime + 0.01) { lastTime = ct; lastProgressTs = performance.now(); }
+        if (videoEl.ended) { clearInterval(watchTimer); return; }
+        if (performance.now() - lastProgressTs > stuckThreshold) {
+          // playback appears stuck — allow the intro to finish now
+          clearInterval(watchTimer);
+          finishOnce();
+        }
+      } catch (e) { /* ignore */ }
+    };
+    const watchTimer = setInterval(watch, checkInterval);
   }, { once: true });
   videoEl.addEventListener('timeupdate', () => {
     if (!introState.audioStarted) startIntroAudio(videoEl);

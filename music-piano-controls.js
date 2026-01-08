@@ -3353,20 +3353,47 @@ function uvToCanvasPx(uv){
   return { px, py };
 }
 
-function raycastBackboardForUv(clientX, clientY){
-  const target = backboardMesh || screenPlane;
-  if(!target) return null;
+const surfaceHitNormalMatrix = new THREE.Matrix3();
+const surfaceToCameraVec = new THREE.Vector3();
+function isSurfaceHitFrontFacing(hit){
+  if(!hit || !hit.face || !hit.object || !cam) return false;
+  surfaceHitNormalMatrix.getNormalMatrix(hit.object.matrixWorld);
+  const worldNormal = hit.face.normal.clone().applyMatrix3(surfaceHitNormalMatrix).normalize();
+  surfaceToCameraVec.copy(cam.position).sub(hit.point);
+  return worldNormal.dot(surfaceToCameraVec) > 0;
+}
+
+function isDescendantOf(target, object){
+  if(!target || !object) return false;
+  let cur = object;
+  while(cur){
+    if(cur === target) return true;
+    cur = cur.parent;
+  }
+  return false;
+}
+
+function getFrontFacingSurfaceHit(target, clientX, clientY){
+  if(!target || !canvas) return null;
   const rect = canvas.getBoundingClientRect();
   const nx = ((clientX - rect.left)/rect.width)*2 - 1;
   const ny = -((clientY - rect.top)/rect.height)*2 + 1;
   pointer.set(nx, ny);
   raycaster.setFromCamera(pointer, cam);
-  const hits = raycaster.intersectObject(target, true);
+  const hits = root ? raycaster.intersectObject(root, true) : raycaster.intersectObject(target, true);
   if(!hits.length) return null;
-  const h = hits[0];
-  if(!h.uv) return null;
-  const uv = h.uv.clone ? h.uv.clone() : { x: h.uv.x, y: h.uv.y };
-  return uv;
+  const hit = hits[0];
+  if(!hit.face || !hit.object) return null;
+  if(!isDescendantOf(target, hit.object)) return null;
+  if(!isSurfaceHitFrontFacing(hit)) return null;
+  return hit;
+}
+
+function raycastBackboardForUv(clientX, clientY){
+  const target = backboardMesh || screenPlane;
+  const hit = getFrontFacingSurfaceHit(target, clientX, clientY);
+  if(!hit || !hit.uv) return null;
+  return hit.uv.clone ? hit.uv.clone() : { x: hit.uv.x, y: hit.uv.y };
 }
 
 function setBackboardDebug(uv){
@@ -3403,17 +3430,9 @@ function hitTestPanelUI(uv){
 
 function raycastTopPadForUv(clientX, clientY){
   if(!topPadMesh) return null;
-  const rect = canvas.getBoundingClientRect();
-  const nx = ((clientX - rect.left)/rect.width)*2 - 1;
-  const ny = -((clientY - rect.top)/rect.height)*2 + 1;
-  pointer.set(nx, ny);
-  raycaster.setFromCamera(pointer, cam);
-  const hits = raycaster.intersectObject(topPadMesh, true);
-  if(!hits.length) return null;
-  const h = hits[0];
-  if(!h.uv) return null;
-  const uv = h.uv.clone ? h.uv.clone() : { x: h.uv.x, y: h.uv.y };
-  return uv;
+  const hit = getFrontFacingSurfaceHit(topPadMesh, clientX, clientY);
+  if(!hit || !hit.uv) return null;
+  return hit.uv.clone ? hit.uv.clone() : { x: hit.uv.x, y: hit.uv.y };
 }
 
 function updateTopPadHover(clientX, clientY){
@@ -8746,6 +8765,7 @@ function findKeyFromObject(obj){
 }
 let suppressRotate = false;
 function onPointerDown(e){
+  if(e.button === 2) return;
   // Top pad UI hit test (track icons + play + speed buttons)
   try{
     if(topPadMesh && topPadCanvas && topPadUiRects){
@@ -8864,8 +8884,6 @@ function onPointerDown(e){
       }
     }
   }catch(err){ /* ignore top pad UI hit errors */ }
-  // Ignore right-clicks
-  if(e.button === 2) return;
   // Check backboard instrument UI first
   const uiUv = raycastBackboardForUv(e.clientX, e.clientY);
   const uiHit = uiUv ? hitTestPanelUI(uiUv) : null;
