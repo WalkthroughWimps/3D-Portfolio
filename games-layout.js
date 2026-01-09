@@ -19,6 +19,7 @@ export const MENU_LAYOUT = Object.freeze({
   videoAspect: 16 / 9,
   videoWidthRatio: 0.86,
   safeMargin: 0.01, // relative padding applied inside each region
+  circleScale: 1.25,
   circleInsetPx: 48,
   textGapPx: 48,
   magentaTopInsetRatio: 0.06,
@@ -87,30 +88,22 @@ export function getMenuRects(rect) {
     w: magentaTitleWidth,
     h: videoTitleHeaderHeight
   };
-  const EXCEL_ROW_CENTERS = [352, 556, 760, 964, 1168];
-  const rowCenters = EXCEL_ROW_CENTERS.slice(0, gamesCount)
-    .map((y) => rect.y + y);
   const magentaTopMargin = Math.round(rect.h * (MENU_LAYOUT.magentaTopInsetRatio || 0.06));
   const magentaContentOffset = Math.round(rect.h * (MENU_LAYOUT.magentaContentOffsetRatio || 0.025));
   const minMagTop = Math.round(magentaTitleRect.y + magentaTitleRect.h + magentaTopMargin + magentaContentOffset);
   const maxMagBottom = Math.round(rect.y + rect.h - padX);
-  const rowSpacing = rowCenters.length > 1
-    ? (rowCenters[rowCenters.length - 1] - rowCenters[0]) / (rowCenters.length - 1)
-    : 0;
-  const baseRadiusFromSpacing = rowSpacing ? Math.round(rowSpacing * 0.45) : 0;
-  const baseRadiusFromWidth = Math.max(48, Math.round(availableWidth * 0.12));
-  const baseRadius = Math.max(12, Math.min(
-    baseRadiusFromWidth,
-    baseRadiusFromSpacing || baseRadiusFromWidth
-  ));
-  const maxRadiusByTop = rowCenters.length ? Math.max(0, rowCenters[0] - minMagTop) : baseRadius;
-  const maxRadiusByBottom = rowCenters.length
-    ? Math.max(0, maxMagBottom - rowCenters[rowCenters.length - 1])
-    : baseRadius;
-  const circleRadius = Math.max(12, Math.min(baseRadius, maxRadiusByTop || baseRadius, maxRadiusByBottom || baseRadius));
-  const magTop = rowCenters.length ? Math.round(rowCenters[0] - circleRadius) : minMagTop;
-  const magBottom = rowCenters.length ? Math.round(rowCenters[rowCenters.length - 1] + circleRadius) : maxMagBottom;
+  const magTop = minMagTop;
+  const magBottom = maxMagBottom;
   const magHeight = Math.max(0, magBottom - magTop);
+  const baseRadiusFromWidth = Math.max(48, Math.round(availableWidth * 0.12));
+  const circleScale = Number.isFinite(MENU_LAYOUT.circleScale) ? MENU_LAYOUT.circleScale : 1;
+  const targetRadius = Math.round(baseRadiusFromWidth * circleScale);
+  const maxRadiusByHeight = magHeight > 0 ? Math.floor(magHeight / 2) : targetRadius;
+  const circleRadius = Math.max(12, Math.min(targetRadius, maxRadiusByHeight));
+  const rowStep = gamesCount > 1 ? (magHeight - circleRadius * 2) / (gamesCount - 1) : 0;
+  const rowCenters = Array.from({ length: gamesCount }, (_, index) =>
+    Math.round(magTop + circleRadius + rowStep * index)
+  );
   const pillHeight = Math.max(12, circleRadius * 1.1);
   const pillWidth = Math.max(48, availableWidth * 0.78);
   const thumbPattern = ['left', 'right', 'left', 'right', 'left'];

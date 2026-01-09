@@ -1913,7 +1913,7 @@ function drawGameSplash(ctx, rect, nowMs) {
   const barY = rect.y + rect.h * 0.78;
   ctx.fillStyle = 'rgba(255,255,255,0.14)';
   ctx.fillRect(barX, barY, barW, barH);
-  ctx.fillStyle = '#7e3ccf';
+  ctx.fillStyle = getCssVar('--tertiary-color', '#7e3ccf');
   ctx.fillRect(barX, barY, barW * progress, barH);
 
   const btnR = Math.min(rect.w, rect.h) * 0.07;
@@ -1922,7 +1922,7 @@ function drawGameSplash(ctx, rect, nowMs) {
   splashPlayRect = { x: btnX, y: btnY, r: btnR };
 
   ctx.globalAlpha = ready ? 1 : 0.3;
-  ctx.fillStyle = '#6b2fa3';
+  ctx.fillStyle = getCssVar('--tertiary-color', '#7e3ccf');
   ctx.beginPath();
   ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
   ctx.fill();
@@ -2008,43 +2008,18 @@ function drawMenu(ctx, rect) {
     }
   });
 
-  // Debug: draw a semi-transparent magenta rectangle inset from the divider and right edge
-  if (layout && layout.rightRegion && layout.dividerX) {
-    const pad = Math.max(8, Math.round(rect.w * 0.02));
-    const magLeft = layout.magLeft !== undefined ? layout.magLeft : Math.round(layout.dividerX + pad);
-    const magRight = layout.magRight !== undefined ? layout.magRight : Math.round(layout.rightRegion.right - pad);
-    const magTop = layout.magTop !== undefined
-      ? layout.magTop
-      : Math.round(rect.y + pad + Math.max(layout.videoTitleHeaderHeight || 0, Math.round(rect.h * (MENU_LAYOUT.magentaTopInsetRatio || 0.06))));
-    const magBottom = layout.magBottom !== undefined ? layout.magBottom : Math.round(rect.y + rect.h - pad);
-    ctx.save();
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = '#ff00ff';
-    ctx.fillRect(magLeft, magTop, Math.max(0, magRight - magLeft), Math.max(0, magBottom - magTop));
-    ctx.restore();
-  }
+  // Debug magenta rectangle disabled (layout still uses magTop/magBottom internally).
 
   layout.games.forEach((slot) => {
-    const thumb = ensureGameThumb(slot.id);
     const thumbRadius = slot.thumb ? slot.thumb.r : Math.min(slot.pill.h * 0.5, slot.pill.w * 0.2);
     const thumbCx = slot.thumb ? slot.thumb.cx : slot.pill.x;
     const thumbCy = slot.thumb ? slot.thumb.cy : (slot.pill.y + slot.pill.h / 2);
 
-    // Pill behind the circle (angled end)
-    const drawAngledPill = () => {
-      const p = slot.pill;
-      ctx.beginPath();
-      ctx.rect(p.x, p.y, p.w, p.h);
-      ctx.closePath();
-    };
-
-    // Draw the text box stretching from the visual divider left to the right region edge
+    // Draw the text boxes first so circles always sit on top.
     if (layout && layout.dividerLeft !== undefined && layout.rightRegion) {
       const isHover = hoveredGameId === slot.id;
-      const scale = isHover ? hoverCircleScale : 1;
       const padX = Math.max(8, Math.round(rect.w * 0.01));
       const RIGHT_MARGIN = 6;
-      // Right-side interactive box (keeps click area intact)
       const baseX = Math.round(layout.dividerLeft + padX);
       const EXTRA_RIGHT = Math.max(8, Math.round(rect.w * 0.01));
       const baseW = Math.round(layout.rightRegion.right - baseX - RIGHT_MARGIN + EXTRA_RIGHT);
@@ -2053,15 +2028,12 @@ function drawMenu(ctx, rect) {
       const boxH = baseH;
       const boxX = baseX;
       const boxY = Math.round(thumbCy - boxH / 2);
-      // background (right)
-      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillStyle = getCssVar('--secondary-color', '#5a2a86');
       ctx.fillRect(boxX, boxY, boxW, boxH);
-      // border (right)
       ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
       ctx.lineWidth = Math.max(2, Math.round(rect.w * 0.0018));
       ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-      // Draw label text close to its accompanying circle before the circle is painted
       ctx.fillStyle = '#ffffff';
       const baseFont = Math.max(20, Math.round(layout.itemHeight * 0.4));
       const fontSize = Math.round(baseFont * (isHover ? hoverTextScale : 1));
@@ -2069,7 +2041,6 @@ function drawMenu(ctx, rect) {
       ctx.textBaseline = 'top';
       const textGap = Math.max(8, Math.round(rect.w * 0.01));
       let textX = thumbCx + (slot.side === 'left' ? (thumbRadius + textGap) : -(thumbRadius + textGap));
-      // Clamp textX inside the box area
       textX = Math.max(boxX + 6, Math.min(boxX + boxW - 6, textX));
       ctx.textAlign = slot.side === 'left' ? 'left' : 'right';
       const textY = Math.round(thumbCy - fontSize * 0.5);
@@ -2082,56 +2053,57 @@ function drawMenu(ctx, rect) {
         ctx.restore();
       }
       ctx.fillText(slot.label, textX, textY);
+    }
+  });
 
-      // Draw circular thumb on top of the text
-      if (thumb) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(thumb, thumbCx - thumbRadius * scale, thumbCy - thumbRadius * scale, thumbRadius * 2 * scale, thumbRadius * 2 * scale);
-        ctx.restore();
-      }
-      if (isHover) {
-        ctx.save();
-        ctx.shadowColor = hoverGlowColor;
-        ctx.shadowBlur = hoverGlowBlurGame;
-        ctx.strokeStyle = 'rgba(63, 255, 120, 0.9)';
-        ctx.lineWidth = hoverGlowLineGame;
-        ctx.beginPath();
-        ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-      ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
-      ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
+  layout.games.forEach((slot) => {
+    const thumb = ensureGameThumb(slot.id);
+    const thumbRadius = slot.thumb ? slot.thumb.r : Math.min(slot.pill.h * 0.5, slot.pill.w * 0.2);
+    const thumbCx = slot.thumb ? slot.thumb.cx : slot.pill.x;
+    const thumbCy = slot.thumb ? slot.thumb.cy : (slot.pill.y + slot.pill.h / 2);
+
+    const isHover = hoveredGameId === slot.id;
+    const scale = isHover ? hoverCircleScale : 1;
+
+    if (thumb) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      ctx.drawImage(thumb, thumbCx - thumbRadius * scale, thumbCy - thumbRadius * scale, thumbRadius * 2 * scale, thumbRadius * 2 * scale);
+      ctx.restore();
+    }
+    if (isHover) {
+      ctx.save();
+      ctx.shadowColor = hoverGlowColor;
+      ctx.shadowBlur = hoverGlowBlurGame;
+      ctx.strokeStyle = 'rgba(63, 255, 120, 0.9)';
+      ctx.lineWidth = hoverGlowLineGame;
       ctx.beginPath();
       ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
       ctx.stroke();
-    } else {
-      // fallback: draw just the circle if layout not available
-      if (thumb) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
-        ctx.closePath();
-        ctx.clip();
-        ctx.drawImage(thumb, thumbCx - thumbRadius, thumbCy - thumbRadius, thumbRadius * 2, thumbRadius * 2);
-        ctx.restore();
-      }
-      ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
-      ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
-      ctx.beginPath();
-      ctx.arc(thumbCx, thumbCy, thumbRadius, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.restore();
     }
+    ctx.strokeStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+    ctx.lineWidth = Math.max(3, Math.round(rect.w * 0.0025));
+    ctx.beginPath();
+    ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
+    ctx.stroke();
   });
 
   if (layout.dividerX) {
     const dividerW = Math.max(4, Math.round(rect.w * MENU_LAYOUT.dividerWidth));
     ctx.fillStyle = getCssVar('--hl-secondary-color', '#1ca36b');
     ctx.fillRect(layout.dividerX - dividerW / 2, rect.y, dividerW, rect.h);
+  }
+  if (layout.videoTitleRect) {
+    const dividerW = Math.max(4, Math.round(rect.w * MENU_LAYOUT.dividerWidth));
+    const titleBottom = layout.videoTitleRect.y + layout.videoTitleRect.h;
+    const contentTop = layout.magTop !== undefined ? layout.magTop : titleBottom;
+    const lineY = Math.round(titleBottom + (contentTop - titleBottom) * 0.55);
+    ctx.fillStyle = getCssVar('--hl-secondary-color', '#1ca36b');
+    ctx.fillRect(rect.x, lineY - dividerW / 2, rect.w, dividerW);
   }
 
   ctx.restore();
