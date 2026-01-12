@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Group_ICONS" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1651.25 372.65">
+  <defs>
+    <clipPath id="clippath">
+      <text transform="translate(182.4 357.98)" fill="none" font-family="BerlinSansFBDemi-Bold, &apos;Berlin Sans FB Demi&apos;" font-size="500" font-weight="700"><tspan x="0" y="0">ICONS</tspan></text>
+    </clipPath>
+    <linearGradient id="linear-gradient" x1="825.63" y1="390.93" x2="825.63" y2="6.1" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000"/>
+      <stop offset=".04" stop-color="#270405"/>
+      <stop offset=".1" stop-color="#54090c"/>
+      <stop offset=".16" stop-color="#7d0e12"/>
+      <stop offset=".23" stop-color="#a01217"/>
+      <stop offset=".3" stop-color="#bd151b"/>
+      <stop offset=".38" stop-color="#d5181f"/>
+      <stop offset=".47" stop-color="#e81a21"/>
+      <stop offset=".57" stop-color="#f51b23"/>
+      <stop offset=".71" stop-color="#fc1c24"/>
+      <stop offset="1" stop-color="#ff1d25"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="825.63" y1="390.93" x2="825.63" y2="6.1" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000"/>
+      <stop offset=".04" stop-color="#001927"/>
+      <stop offset=".1" stop-color="#003554"/>
+      <stop offset=".16" stop-color="#004f7d"/>
+      <stop offset=".23" stop-color="#0065a0"/>
+      <stop offset=".3" stop-color="#0078bd"/>
+      <stop offset=".38" stop-color="#0087d5"/>
+      <stop offset=".47" stop-color="#0093e8"/>
+      <stop offset=".57" stop-color="#009bf5"/>
+      <stop offset=".71" stop-color="#00a0fc"/>
+      <stop offset="1" stop-color="#00a2ff"/>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#clippath)">
+    <rect y="6.1" width="1651.25" height="384.84" fill="url(#linear-gradient)"/>
+    <rect y="6.1" width="1651.25" height="384.84" fill="url(#linear-gradient-2)"/>
+  </g>
+</svg>

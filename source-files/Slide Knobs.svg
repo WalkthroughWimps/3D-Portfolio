@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 5321.63 1181.39">
+  <defs>
+    <clipPath id="clippath">
+      <rect id="Guide_BUTTON" x="2039.43" y="215.95" width="1510.12" height="752.91" rx="376.45" ry="376.45" fill="none"/>
+    </clipPath>
+    <linearGradient id="linear-gradient" x1="2415.93" y1="969.63" x2="2415.93" y2="214.63" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000"/>
+      <stop offset=".03" stop-color="#160000"/>
+      <stop offset=".1" stop-color="#3e0000"/>
+      <stop offset=".17" stop-color="#610000"/>
+      <stop offset=".25" stop-color="#7e0000"/>
+      <stop offset=".33" stop-color="#960000"/>
+      <stop offset=".43" stop-color="#a90000"/>
+      <stop offset=".54" stop-color="#b60000"/>
+      <stop offset=".69" stop-color="#bd0000"/>
+      <stop offset="1" stop-color="#c00000"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient" cx="3171.57" cy="592.15" fx="3171.57" fy="592.15" r="268.57" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff"/>
+      <stop offset=".16" stop-color="#c7c7dd"/>
+      <stop offset=".33" stop-color="#9494be"/>
+      <stop offset=".49" stop-color="#6b6ba6"/>
+      <stop offset=".63" stop-color="#4e4e95"/>
+      <stop offset=".76" stop-color="#3d3d8a"/>
+      <stop offset=".85" stop-color="#373787"/>
+    </radialGradient>
+    <clipPath id="clippath-1">
+      <text id="Guide_NAMES" transform="translate(261.9 751.6)" fill="none" font-family="BerlinSansFBDemi-Bold, &apos;Berlin Sans FB Demi&apos;" font-size="500" font-weight="700"><tspan x="0" y="0">NAMES</tspan></text>
+    </clipPath>
+    <linearGradient id="linear-gradient-2" x1="1111.42" y1="769.68" x2="1111.42" y2="384.84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#000"/>
+      <stop offset=".04" stop-color="#270405"/>
+      <stop offset=".1" stop-color="#54090c"/>
+      <stop offset=".16" stop-color="#7d0e12"/>
+      <stop offset=".23" stop-color="#a01217"/>
+      <stop offset=".3" stop-color="#bd151b"/>
+      <stop offset=".38" stop-color="#d5181f"/>
+      <stop offset=".47" stop-color="#e81a21"/>
+      <stop offset=".57" stop-color="#f51b23"/>
+      <stop offset=".71" stop-color="#fc1c24"/>
+      <stop offset="1" stop-color="#ff1d25"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="1111.42" y1="384.84" x2="1111.42" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#00a2ff"/>
+      <stop offset=".29" stop-color="#00a0fc"/>
+      <stop offset=".43" stop-color="#009bf5"/>
+      <stop offset=".53" stop-color="#0093e8"/>
+      <stop offset=".62" stop-color="#0087d5"/>
+      <stop offset=".7" stop-color="#0078bd"/>
+      <stop offset=".77" stop-color="#0065a0"/>
+      <stop offset=".84" stop-color="#004f7d"/>
+      <stop offset=".9" stop-color="#003554"/>
+      <stop offset=".96" stop-color="#001927"/>
+      <stop offset="1" stop-color="#000"/>
+    </linearGradient>
+    <clipPath id="clippath-2">
+      <text transform="translate(3677.91 766.17)" fill="none" font-family="BerlinSansFBDemi-Bold, &apos;Berlin Sans FB Demi&apos;" font-size="500" font-weight="700"><tspan x="0" y="0">ICONS</tspan></text>
+    </clipPath>
+    <linearGradient id="linear-gradient-4" x1="4447.04" y1="1181.39" x2="4447.04" y2="796.55" xlink:href="#linear-gradient-2"/>
+    <linearGradient id="linear-gradient-5" x1="4447.04" y1="796.55" x2="4447.04" y2="411.71" xlink:href="#linear-gradient-3"/>
+  </defs>
+  <g isolation="isolate">
+    <g id="Group_BUTTON">
+      <g clip-path="url(#clippath)">
+        <g id="Slider_BUTTON">
+          <rect x="2038.43" y="214.63" width="755" height="755" fill="#ff7bab"/>
+          <rect x="2793.43" y="214.63" width="755" height="755" fill="#2e3191"/>
+          <rect x="3548.43" y="214.63" width="755" height="755" fill="#ff7bab"/>
+          <path d="M3484.81,371.03c218.01,370.1-164.89,753-534.99,534.99-32.1-18.91-73.88-60.69-92.78-92.78-218.01-370.1,164.89-753,534.99-534.99,32.1,18.91,73.88,60.69,92.78,92.78Z" fill="#0093d0"/>
+          <path d="M2729.81,371.03c218.01,370.1-164.89,753-534.99,534.99-32.1-18.91-73.88-60.69-92.78-92.78-218.01-370.1,164.89-753,534.99-534.99,32.1,18.91,73.88,60.69,92.78,92.78Z" fill="url(#linear-gradient)"/>
+          <path d="M4239.81,371.03c218.01,370.1-164.89,753-534.99,534.99-32.1-18.91-73.88-60.69-92.78-92.78-218.01-370.1,164.89-753,534.99-534.99,32.1,18.91,73.88,60.69,92.78,92.78Z" fill="#c00000"/>
+          <circle cx="3171.57" cy="592.15" r="294.1" mix-blend-mode="color-burn" opacity=".75"/>
+          <circle cx="3171.57" cy="592.15" r="268.57" fill="url(#radial-gradient)"/>
+        </g>
+      </g>
+    </g>
+    <g id="Group_NAMES">
+      <g clip-path="url(#clippath-1)">
+        <g id="Slider_NAMES">
+          <rect x="285.8" y="384.84" width="1651.25" height="384.84" fill="url(#linear-gradient-2)"/>
+          <rect x="285.8" width="1651.25" height="384.84" fill="url(#linear-gradient-3)"/>
+        </g>
+      </g>
+    </g>
+    <g id="Group_ICONS">
+      <g clip-path="url(#clippath-2)">
+        <g id="Slider_ICONS">
+          <rect x="3621.42" y="796.55" width="1651.25" height="384.84" fill="url(#linear-gradient-4)"/>
+          <rect x="3621.42" y="411.71" width="1651.25" height="384.84" fill="url(#linear-gradient-5)"/>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_3" data-name="Layer 3" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="radial-gradient" cx="128" cy="128" fx="128" fy="128" r="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#415cda"/>
+      <stop offset=".28" stop-color="#6f7fd8"/>
+      <stop offset=".55" stop-color="#959cd6"/>
+      <stop offset=".77" stop-color="#acaed5"/>
+      <stop offset=".9" stop-color="#b5b5d5"/>
+      <stop offset=".91" stop-color="#afafce"/>
+      <stop offset=".93" stop-color="#a1a1bd"/>
+      <stop offset=".94" stop-color="#8888a1"/>
+      <stop offset=".96" stop-color="#676779"/>
+      <stop offset=".98" stop-color="#3b3b46"/>
+      <stop offset="1" stop-color="#070709"/>
+      <stop offset="1" stop-color="#000"/>
+    </radialGradient>
+  </defs>
+  <path d="M128,0C57.31,0,0,57.31,0,128s57.31,128,128,128,128-57.31,128-128S198.69,0,128,0ZM128,220.57c-51.13,0-92.57-41.45-92.57-92.57s41.45-92.57,92.57-92.57,92.57,41.45,92.57,92.57-41.45,92.57-92.57,92.57Z" fill="url(#radial-gradient)"/>
+</svg>

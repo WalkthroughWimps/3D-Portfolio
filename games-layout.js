@@ -95,8 +95,8 @@ export function getMenuRects(rect) {
   const magTop = minMagTop;
   const magBottom = maxMagBottom;
   const magHeight = Math.max(0, magBottom - magTop);
-  const baseRadiusFromWidth = Math.max(48, Math.round(availableWidth * 0.12));
-  const circleScale = Number.isFinite(MENU_LAYOUT.circleScale) ? MENU_LAYOUT.circleScale : 1;
+  const baseRadiusFromWidth = Math.max(48, Math.round(availableWidth * 0.11));
+  const circleScale = Number.isFinite(MENU_LAYOUT.circleScale) ? MENU_LAYOUT.circleScale : .7;
   const targetRadius = Math.round(baseRadiusFromWidth * circleScale);
   const maxRadiusByHeight = magHeight > 0 ? Math.floor(magHeight / 2) : targetRadius;
   const circleRadius = Math.max(12, Math.min(targetRadius, maxRadiusByHeight));

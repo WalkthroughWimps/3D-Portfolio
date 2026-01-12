@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -87,13 +87,16 @@
     </div>
 
     <!-- Centered content -->
-    <main class="content">
-        <section class="about-me">
-            <h2>About Me</h2>
-            <div class="about-row">
-                <div class="about-text">
+    <main>
+        <div class="section-carousel" aria-label="About, References, Skills carousel">
+            <div class="section-carousel-track">
+            <section class="about-me">
+                <div class="section-frame">
+                <h2>About Me</h2>
+                <div class="about-row">
+                    <div class="about-text">
                     <p>
-                        Iâ€™m a creative technologist who blends design, animation, and code to craft delightful experiences.
+                        I&rsquo;m a creative technologist who blends design, animation, and code to craft delightful experiences.
                         When preparing lessons as an English teacher, I was consistently disappointed by the resources I was able to find, and increasingly made my own to better suit my students' needs. This sparked a passion for creating captivating, interactive content that helped the students forget they were learning.
                         </p>
                     <p>
@@ -105,147 +108,176 @@
                     <p>
                         I'm keen to put my skills to use in a dynamic environment where I can contribute to innovative projects and continue to grow as a creative technologist. I'm also curious how much more I can accomplish when I can devote myself full-time to creative work instead of balancing it with teaching.
                     </p>
+                    </div>
+                        <div class="profile-pic-container">
+                        <img src="/assets/images/me.jpg" alt="Profile picture of Matt Hall" class="profile-pic">
+                    </div>
                 </div>
-                    <div class="profile-pic-container">
-                    <img src="/assets/images/me.jpg" alt="Profile picture of Matt Hall" class="profile-pic">
                 </div>
-            </div>
         </section>
 
-        <div class="section-divider" aria-hidden="true">
-            <svg viewBox="0 0 100 8" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="0" y1="4" x2="100" y2="4" stroke="var(--primary-color)" stroke-width="2" vector-effect="non-scaling-stroke" />
-            </svg>
-        </div>
+            <section class="references">
+                <div class="section-frame">
+                <h2>References <span class="refs-asterisk" aria-hidden="true">*</span></h2>
+                <div class="refs-grid">
+                <article class="ref-card">
+                    <blockquote>
+                        <p>&ldquo;Matt&rsquo;s contributions fostered a<br>positive learning environment,<br>making English learning enjoyable<br>and accessible to students,<br>resulting in remarkable outcomes<br>from the lessons he designed.&rdquo;</p>
+                        <div class="ref-id">
+                            <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/reading-dog.png" alt="Referrer photo" /></div>
+                            <footer>
+                                <span class="ref-name ref-name-line">Jinny</span>
+                                <span class="ref-name ref-name-line">Jeon</span>
+                                <span class="ref-title">Manager:<br>Foreign Language<br>Department</span>
+                            </footer>
+                        </div>
+                    </blockquote>
+                </article>
+                <article class="ref-card">
+                    <blockquote>
+                        <p>&ldquo;He willingly helps his coworkers<br>with any problems or questions<br>they have, and he has proved<br>a valuable addition to both<br>the office and the school.&rdquo;</p>
+                        <div class="ref-id">
+                            <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/summer-duck.png" alt="Referrer photo" /></div>
+                            <footer>
+                                <span class="ref-name ref-name-line">Ashley</span>
+                                <span class="ref-name ref-name-line">Kim</span>
+                                <span class="ref-title">Head Teacher</span>
+                            </footer>
+                        </div>
+                    </blockquote>
+                </article>
+                <article class="ref-card">
+                    <blockquote>
+                        <p>&ldquo;His commitment to excellence<br>and continuous pursuit of<br>improvement have had<br>a profound impact on me,<br>both as an educator<br>and as an individual.&rdquo;</p>
+                        <div class="ref-id">
+                            <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/victorian-bear.png" alt="Referrer photo" /></div>
+                            <footer>
+                                <span class="ref-name ref-name-line">Matt</span>
+                                <span class="ref-name ref-name-line">Stone</span>
+                                <span class="ref-title">Native English<br>Teacher</span>
+                            </footer>
+                        </div>
+                    </blockquote>
+                </article>
+                </div>
+                <p class="refs-footnote">
+                    <span class="refs-asterisk" aria-hidden="true">*</span>
+                    Since Korean women can be shy about their photographs, I decided to spare them the embarrassment of feeling obligated to give one.<br>&emsp; In their place, to maintain good style, they have been represented by animal avatars.<br>&emsp; Look at their cute little hats!
+                </p>
+                </div>
+            </section>
 
-        <section class="references">
-            <h2>References</h2>
-            <div class="refs-grid">
-                <article class="ref-card">
-                    <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/reading-dog.png" alt="Referrer photo" /></div>
-                    <blockquote>
-                        <p>â€œMattâ€™s contributions fostered a positive learning environment, making English learning enjoyable and accessible to students, resulting in remarkable outcomes from the lessons he designed. â€</p>
-                        <footer>â€” Jinny Jeon, Manager of Foreign Language Department</footer>
-                    </blockquote>
-                </article>
-                <article class="ref-card">
-                    <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/summer-duck.png" alt="Referrer photo" /></div>
-                    <blockquote>
-                        <p>â€œHe willingly helps his coworkers with any problems or questions they have, and he has proved a valuable addition to both the office and the school. â€</p>
-                        <footer>â€” Ashley Kim, Head Teacher</footer>
-                    </blockquote>
-                </article>
-                <article class="ref-card">
-                    <div class="ref-avatar-wrap"><img class="ref-avatar" src="assets/images/victorian-bear.png" alt="Referrer photo" /></div>
-                    <blockquote>
-                        <p>â€œHis commitment to excellence and continuous pursuit of improvement have had a profound impact on me, both as an educator and as an individual.â€</p>
-                        <footer>â€” Matt Stone, Native English Teacher</footer>
-                    </blockquote>
-                </article>
+            <section class="skills-table">
+                <div class="section-frame">
+                <div class="skills">
+                    <div class="skills-head">
+                        <h2>Skills</h2>
+                        <button class="skills-toggle" id="skillsToggle" type="button" aria-pressed="false">
+                    <span class="sr-only">Toggle back images</span>
+                    <span class="skills-toggle-stack" aria-hidden="true">
+                        <object class="skills-toggle-layer layer-names" data="assets/svg/slider-names.svg" type="image/svg+xml">
+                            <img class="skills-toggle-icon-fallback" src="assets/svg/slider-names.svg" alt="" />
+                        </object>
+                        <object class="skills-toggle-layer layer-knobs" data="assets/svg/slider-knobs.svg" type="image/svg+xml">
+                            <img class="skills-toggle-icon-fallback" src="assets/svg/slider-knobs.svg" alt="" />
+                        </object>
+                        <object class="skills-toggle-layer layer-icons" data="assets/svg/slider-icons.svg" type="image/svg+xml">
+                            <img class="skills-toggle-icon-fallback" src="assets/svg/slider-icons.svg" alt="" />
+                        </object>
+                    </span>
+                </button>
             </div>
-        </section>
-
-        <div class="section-divider" aria-hidden="true">
-            <svg viewBox="0 0 100 8" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
-                <line x1="0" y1="4" x2="100" y2="4" stroke="var(--primary-color)" stroke-width="2" vector-effect="non-scaling-stroke" />
-            </svg>
-        </div>
-
-        <section class="skills">
-            <div class="skills-head">
-                <h2>Skills</h2>
-                <label class="skills-toggle">
-                    <input id="skillsBackToggle" type="checkbox">
-                    <span>Back Images</span>
-                </label>
-            </div>
-            <div class="skills-grid" aria-label="Software skills">
+                <div class="skills-basin" aria-label="Software skills">
                 <div class="skill-card" data-icon="Ableton Live" title="Ableton Live">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Ableton%20Live.png" alt="Ableton Live" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Acrobat Reader" title="Adobe Acrobat Reader">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Acrobat%20Reader.png" alt="Adobe Acrobat Reader" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe After Effects" title="Adobe After Effects">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20After%20Effects.png" alt="Adobe After Effects" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Animate" title="Adobe Animate">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Animate.png" alt="Adobe Animate" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Audition" title="Adobe Audition">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Audition.png" alt="Adobe Audition" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Bridge" title="Adobe Bridge">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Bridge.png" alt="Adobe Bridge" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Capture" title="Adobe Capture">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Capture.png" alt="Adobe Capture" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Character Animator" title="Adobe Character Animator">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Character%20Animator.png" alt="Adobe Character Animator" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Illustrator" title="Adobe Illustrator">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Illustrator.png" alt="Adobe Illustrator" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe InDesign" title="Adobe InDesign">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20InDesign.png" alt="Adobe InDesign" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Media Encoder" title="Adobe Media Encoder">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Media%20Encoder.png" alt="Adobe Media Encoder" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Adobe Premiere Pro" title="Adobe Premiere Pro">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Adobe%20Premiere%20Pro.png" alt="Adobe Premiere Pro" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="blender" title="Blender">
                     <div class="skill-face front"><img src="assets/computer-app-icons/blender.png" alt="Blender" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="DaVinci Resolve" title="DaVinci Resolve">
                     <div class="skill-face front"><img src="assets/computer-app-icons/DaVinci%20Resolve.png" alt="DaVinci Resolve" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Finale" title="Finale">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Finale.png" alt="Finale" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Microsoft Excel" title="Microsoft Excel">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20Excel.png" alt="Microsoft Excel" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Microsoft PowerPoint" title="Microsoft PowerPoint">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20PowerPoint.png" alt="Microsoft PowerPoint" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Microsoft Word" title="Microsoft Word">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Microsoft%20Word.png" alt="Microsoft Word" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="REAPER" title="REAPER">
                     <div class="skill-face front"><img src="assets/computer-app-icons/REAPER.png" alt="REAPER" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Visual Studio Code" title="Visual Studio Code">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Visual%20Studio%20Code.png" alt="Visual Studio Code" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
                 <div class="skill-card" data-icon="Visual Studio" title="Visual Studio">
                     <div class="skill-face front"><img src="assets/computer-app-icons/Visual%20Studio.png" alt="Visual Studio" loading="lazy"></div>
-                    <div class="skill-face back" aria-hidden="true"><span class="skill-name"></span></div>
+                    <div class="skill-face back" aria-hidden="true"></div>
                 </div>
             </div>
-        </section>
+                </div>
+                </div>
+            </section>
+            </div>
+        </div>
     </main>
 
     <div class="footer">

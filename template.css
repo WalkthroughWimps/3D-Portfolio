@@ -262,18 +262,19 @@ body[data-page="videos"][data-has-glb="true"][data-intro-done="true"] .page-note
 /* Unified content frame: matches About's panel but themed by variables */
 .content {
     position: relative;
-    inline-size: min(90vw, clamp(540px, 100vh, 980px));
-    margin: calc(10rem + 1.5rem) auto 6rem;
-    padding: 24px;
+    inline-size: min(96vw, 1120px);
+    margin: calc(10rem + 1.5rem) 25% 3rem 15%;
+    padding: 024px;
     line-height: 1.6;
     font-size: 1.05rem;
     text-wrap: wrap;
     background: color-mix(in oklab, var(--primary-color), transparent 40%);
     border: none;
     /* outline is drawn via ::after */
-    border-radius: 14px;
+    border-radius: 35px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, .25), 0 2px 8px rgba(0, 0, 0, .15);
     z-index: 1;
+    
 }
 
 /* Thin stroke around the content frame */
