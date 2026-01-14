@@ -21,4 +21,32 @@ body {
     fill: var(--red-tertiary);
 }
 
+.glb-viewer {
+    width: 100%;
+    height: calc(100vh - var(--glb-viewer-top, 0px));
+    margin: 0;
+    border-radius: 0;
+    overflow: hidden;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: var(--glb-viewer-top, 0px);
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glb-viewer-status {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.6rem;
+    padding: 0.35rem 0.55rem;
+    border-radius: 0.4rem;
+    background: rgba(0, 0, 0, 0.55);
+    color: #f2f2f2;
+    font: 0.85rem/1.2 "Segoe UI", Arial, sans-serif;
+    pointer-events: none;
+}
+
+
 /* Content panel uses template.css unified styles */

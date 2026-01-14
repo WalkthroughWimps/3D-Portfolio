@@ -124,3 +124,5 @@ document.addEventListener('DOMContentLoaded', () => {
 	showInitial();
 	setInterval(peelOnce, INTERVAL_MS);
 });
+
+

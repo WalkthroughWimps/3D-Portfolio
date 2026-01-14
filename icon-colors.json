@@ -1,0 +1,128 @@
+{
+  "Ableton Live": {
+    "frontPng": "assets/computer-app-icons/Ableton Live.png",
+    "backPng": "assets/computer-app-icons/backs/Ableton Live_back.png",
+    "backFill": "#000000",
+    "backText": "#CADD86"
+  },
+  "Adobe Acrobat Reader": {
+    "frontPng": "assets/computer-app-icons/Adobe Acrobat Reader.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Acrobat Reader_back.png",
+    "backFill": "#000000",
+    "backText": "#FB2215"
+  },
+  "Adobe After Effects": {
+    "frontPng": "assets/computer-app-icons/Adobe After Effects.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe After Effects_back.png",
+    "backFill": "#000000",
+    "backText": "#191975"
+  },
+  "Adobe Animate": {
+    "frontPng": "assets/computer-app-icons/Adobe Animate.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Animate_back.png",
+    "backFill": "#000000",
+    "backText": "#191974"
+  },
+  "Adobe Audition": {
+    "frontPng": "assets/computer-app-icons/Adobe Audition.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Audition_back.png",
+    "backFill": "#000000",
+    "backText": "#1F1F7B"
+  },
+  "Adobe Bridge": {
+    "frontPng": "assets/computer-app-icons/Adobe Bridge.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Bridge_back.png",
+    "backFill": "#000000",
+    "backText": "#2E3644"
+  },
+  "Adobe Capture": {
+    "frontPng": "assets/computer-app-icons/Adobe Capture.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Capture_back.png",
+    "backFill": "#000000",
+    "backText": "#212939"
+  },
+  "Adobe Character Animator": {
+    "frontPng": "assets/computer-app-icons/Adobe Character Animator.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Character Animator_back.png",
+    "backFill": "#000000",
+    "backText": "#161671"
+  },
+  "Adobe Illustrator": {
+    "frontPng": "assets/computer-app-icons/Adobe Illustrator.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Illustrator_back.png",
+    "backFill": "#000000",
+    "backText": "#571C00"
+  },
+  "Adobe InDesign": {
+    "frontPng": "assets/computer-app-icons/Adobe InDesign.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe InDesign_back.png",
+    "backFill": "#000000",
+    "backText": "#640A2A"
+  },
+  "Adobe Media Encoder": {
+    "frontPng": "assets/computer-app-icons/Adobe Media Encoder.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Media Encoder_back.png",
+    "backFill": "#000000",
+    "backText": "#242480"
+  },
+  "Adobe Premiere Pro": {
+    "frontPng": "assets/computer-app-icons/Adobe Premiere Pro.png",
+    "backPng": "assets/computer-app-icons/backs/Adobe Premiere Pro_back.png",
+    "backFill": "#000000",
+    "backText": "#141470"
+  },
+  "blender": {
+    "frontPng": "assets/computer-app-icons/blender.png",
+    "backPng": "assets/computer-app-icons/backs/blender_back.png",
+    "backFill": "#000000",
+    "backText": "#DB8834"
+  },
+  "DaVinci Resolve": {
+    "frontPng": "assets/computer-app-icons/DaVinci Resolve.png",
+    "backPng": "assets/computer-app-icons/backs/DaVinci Resolve_back.png",
+    "backFill": "#000000",
+    "backText": "#595A56"
+  },
+  "Finale": {
+    "frontPng": "assets/computer-app-icons/Finale.png",
+    "backPng": "assets/computer-app-icons/backs/Finale_back.png",
+    "backFill": "#000000",
+    "backText": "#488AA1"
+  },
+  "Microsoft Excel": {
+    "frontPng": "assets/computer-app-icons/Microsoft Excel.png",
+    "backPng": "assets/computer-app-icons/backs/Microsoft Excel_back.png",
+    "backFill": "#000000",
+    "backText": "#4FA24E"
+  },
+  "Microsoft PowerPoint": {
+    "frontPng": "assets/computer-app-icons/Microsoft PowerPoint.png",
+    "backPng": "assets/computer-app-icons/backs/Microsoft PowerPoint_back.png",
+    "backFill": "#000000",
+    "backText": "#E45C4E"
+  },
+  "Microsoft Word": {
+    "frontPng": "assets/computer-app-icons/Microsoft Word.png",
+    "backPng": "assets/computer-app-icons/backs/Microsoft Word_back.png",
+    "backFill": "#000000",
+    "backText": "#498DE9"
+  },
+  "REAPER": {
+    "frontPng": "assets/computer-app-icons/REAPER.png",
+    "backPng": "assets/computer-app-icons/backs/REAPER_back.png",
+    "backFill": "#000000",
+    "backText": "#94A89C"
+  },
+  "Visual Studio Code": {
+    "frontPng": "assets/computer-app-icons/Visual Studio Code.png",
+    "backPng": "assets/computer-app-icons/backs/Visual Studio Code_back.png",
+    "backFill": "#000000",
+    "backText": "#0E91D9"
+  },
+  "Visual Studio": {
+    "frontPng": "assets/computer-app-icons/Visual Studio.png",
+    "backPng": "assets/computer-app-icons/backs/Visual Studio_back.png",
+    "backFill": "#000000",
+    "backText": "#9851DC"
+  }
+}

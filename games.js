@@ -177,6 +177,13 @@ function applyAudioSettings(audio) {
   try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
 }
 
+function applyVideoAudioSettings(video) {
+  if (!video) return;
+  const { muted, volume } = getStoredAudioSettings();
+  try { video.muted = muted; } catch (e) { /* ignore */ }
+  try { video.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+}
+
 function applyGameMediaSettings(force = false) {
   if (!gameIframe || !gameIframe.contentWindow) return;
   const mediaEls = getGameMediaElements(force);
@@ -458,7 +465,12 @@ function init() {
   renderer.domElement.addEventListener('wheel', handleWheel, { capture: true, passive: false });
   renderer.domElement.addEventListener('contextmenu', handleContextMenu, { capture: true });
   window.addEventListener('resize', onResize);
-  window.addEventListener('keydown', handleKeyDown, { capture: true });
+window.addEventListener('keydown', handleKeyDown, { capture: true });
+window.addEventListener('syncOffsetChanged', () => {
+  const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+  const activeAudio = (contentMode === 'video' && reelVideo) ? reelAudio : playerAudio;
+  if (activeVideo && activeAudio) syncAudioToVideo(activeVideo, activeAudio);
+}, { passive: true });
   introActive = false;
 }
 
@@ -845,6 +857,10 @@ function setupPlayer() {
         const audio = getSharedActiveAudio() || playerAudio || reelAudio;
         if (audio) setPreservePitchFlag(audio, preserve);
       },
+      onSeek: (video) => {
+        const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+        if (video && audio) syncAudioToVideo(video, audio);
+      },
       getAudioState: () => {
         const audio = getSharedActiveAudio() || playerAudio || reelAudio;
         if (!audio) return null;
@@ -855,14 +871,19 @@ function setupPlayer() {
       },
       onVolumeChange: (volume) => {
         const audio = getSharedActiveAudio() || playerAudio || reelAudio;
-        if (!audio || !Number.isFinite(volume)) return;
-        audio.volume = Math.max(0, Math.min(1, volume));
-        audio.muted = audio.volume <= 0.001;
+        if (!Number.isFinite(volume)) return;
+        setStoredAudioVolume(volume);
+        if (audio) applyAudioSettings(audio);
+        const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+        if (activeVideo) applyVideoAudioSettings(activeVideo);
       },
       onToggleMute: () => {
         const audio = getSharedActiveAudio() || playerAudio || reelAudio;
-        if (!audio) return;
-        audio.muted = !audio.muted;
+        const nextMuted = !getStoredAudioSettings().muted;
+        setStoredAudioMuted(nextMuted);
+        if (audio) applyAudioSettings(audio);
+        const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
+        if (activeVideo) applyVideoAudioSettings(activeVideo);
       }
     });
   player.loadVideos([VIDEO_SRC]);
@@ -877,6 +898,8 @@ function setupPlayer() {
     playerVideo.preload = 'metadata';
     forceHideVideoElement(playerVideo);
     playerAudio = createAudioElement(VIDEO_AUDIO.reel);
+    applyVideoAudioSettings(playerVideo);
+    applyAudioSettings(playerAudio);
     playerVideo.addEventListener('loadedmetadata', () => {
       videoReady = true;
       needsRedraw = true;
@@ -1479,6 +1502,8 @@ function startVideoReel(entry) {
   if (audioSrc) {
     reelAudio = createAudioElement(audioSrc);
   }
+  applyVideoAudioSettings(reelVideo);
+  if (reelAudio) applyAudioSettings(reelAudio);
   reelVideo.addEventListener('loadedmetadata', () => {
     reelReady = true;
     needsRedraw = true;
@@ -2424,6 +2449,7 @@ function handleKeyDown(ev) {
   const seekBy = (delta) => {
     if (!activeVideo.duration || !isFinite(activeVideo.duration)) return;
     try { activeVideo.currentTime = Math.max(0, Math.min(activeVideo.duration, activeVideo.currentTime + delta)); } catch (e) { /* ignore */ }
+    if (activeAudio) syncAudioToVideo(activeVideo, activeAudio);
   };
 
   if (key === ' ' || key === 'k') {
@@ -2482,6 +2508,7 @@ function handleKeyDown(ev) {
       if (activeVideo.duration && isFinite(activeVideo.duration)) {
         const pct = digit === 0 ? 0 : digit / 10;
         try { activeVideo.currentTime = activeVideo.duration * pct; } catch (e) { /* ignore */ }
+        if (activeAudio) syncAudioToVideo(activeVideo, activeAudio);
       }
       return;
     }

@@ -69,6 +69,9 @@ const ICON_SVG_PATHS = {
   volume_medium: 'assets/video-playback-icons/volume_medium.svg',
   volume_high: 'assets/video-playback-icons/volume_high.svg'
 };
+const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
+const AUDIO_VOLUME_KEY = 'site.audio.volume';
+const AUDIO_MUTED_KEY = 'site.audio.muted';
 const AUDIO_SYNC_KEY = 'site.audio.sync';
 const SYNC_RANGE_MS = 3000;
 const svgTextCache = new Map();
@@ -149,6 +152,24 @@ function getStoredSyncMsLocal() {
   if (SharedVC.getStoredSyncMs) return SharedVC.getStoredSyncMs();
   const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
   return Number.isFinite(raw) ? raw : 0;
+}
+
+function getStoredAudioSettingsGlobal() {
+  const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
+  const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
+  return { allowed, muted, volume };
+}
+
+function setStoredAudioMutedGlobal(muted) {
+  try { localStorage.setItem(AUDIO_MUTED_KEY, muted ? 'true' : 'false'); } catch (e) { /* ignore */ }
+}
+
+function setStoredAudioVolumeGlobal(volume) {
+  const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
+  try { localStorage.setItem(AUDIO_VOLUME_KEY, String(v)); } catch (e) { /* ignore */ }
+  setStoredAudioMutedGlobal(v <= 0.001);
+  return v;
 }
 
 function setStoredSyncMsLocal(ms) {
@@ -261,6 +282,10 @@ function formatTime(t) {
       this.setupEventListeners();
       // preview UI elements (floating canvas)
       this._createPreviewElements();
+      try {
+        const stored = getStoredAudioSettingsGlobal();
+        if (stored.volume > 0.001) this.uiState.lastVolume = stored.volume;
+      } catch (e) { /* ignore */ }
     }
 
     setupEventListeners() {
@@ -287,6 +312,9 @@ function formatTime(t) {
       if (!video || !isFinite(time)) return;
       const wasPlaying = !video.paused && !video.ended;
       const token = ++this._seekToken;
+      if (this.config.onSeek) {
+        try { this.config.onSeek(video, time); } catch (e) { /* ignore */ }
+      }
       const resumeIfCurrent = () => {
         if (token !== this._seekToken) return;
         if (wasPlaying) {
@@ -431,8 +459,11 @@ function formatTime(t) {
           try { video.preload = 'auto'; } catch (e) { /* ignore */ }
           video.pause();
           video.currentTime = 0;
-          video.muted = !this.config.allowSound;
-          if (!video.muted) video.volume = 1.0;
+          const stored = getStoredAudioSettingsGlobal();
+          const muted = !this.config.allowSound || stored.muted || stored.volume <= 0.001;
+          video.muted = muted;
+          video.volume = muted ? 0 : stored.volume;
+          if (stored.volume > 0.001) this.uiState.lastVolume = stored.volume;
         } catch (e) {
           console.warn('[VideoPlayer] Error preparing video:', e);
         }
@@ -527,6 +558,16 @@ function formatTime(t) {
             this.uiState.lastVolume = video.volume;
           }
         }
+        try {
+          const stored = getStoredAudioSettingsGlobal();
+          if (stored.muted || stored.volume <= 0.001) {
+            const restore = this.uiState.lastVolume || stored.volume || 0.5;
+            setStoredAudioVolumeGlobal(restore);
+          } else {
+            if (stored.volume > 0.001) this.uiState.lastVolume = stored.volume;
+            setStoredAudioVolumeGlobal(0);
+          }
+        } catch (e) { /* ignore */ }
         this.keepControlsVisible();
         return;
       }
@@ -562,6 +603,10 @@ function formatTime(t) {
           video.muted = ratio <= 0.001;
           if (ratio > 0.001) this.uiState.lastVolume = ratio;
         }
+        try {
+          const stored = setStoredAudioVolumeGlobal(ratio);
+          if (stored > 0.001) this.uiState.lastVolume = stored;
+        } catch (e) { /* ignore */ }
         this.keepControlsVisible();
         return;
       }
@@ -624,6 +669,10 @@ function formatTime(t) {
             video.muted = ratio <= 0.001;
             if (ratio > 0.001) this.uiState.lastVolume = ratio;
           }
+          try {
+            const stored = setStoredAudioVolumeGlobal(ratio);
+            if (stored > 0.001) this.uiState.lastVolume = stored;
+          } catch (e) { /* ignore */ }
           this.keepControlsVisible();
           return;
         }
@@ -775,7 +824,7 @@ function formatTime(t) {
       const BOTTOM_H = Math.max(32, Math.round(bounds.h * 0.12));
       const TOP_PAD = Math.round(Math.max(14, TOP_H * 0.22));
       const TOP_ICON = Math.round(Math.min(TOP_H * 0.72, bounds.w * 0.09));
-      const sliderW = Math.min(bounds.w * 0.45, Math.max(600, bounds.w * 0.35));
+      const sliderW = Math.min(bounds.w * 0.28, Math.max(260, bounds.w * 0.2));
       const syncSliderW = sliderW;
       const syncSliderH = Math.max(4, Math.round(TOP_H * 0.16));
       const syncIcon = Math.round(TOP_ICON * 0.85);
@@ -836,7 +885,7 @@ function formatTime(t) {
       const pitch = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
       cursor -= clusterGapSmall + boxW;
       const speed = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
-      const divider = { x: speed.x + speed.w + Math.round(clusterGapSmall / 2), y: iconRowY + Math.round(ICON * 0.15), w: dividerW, h: Math.round(ICON * 0.7) };
+      const divider = null;
 
         return {
           top,
@@ -1022,13 +1071,6 @@ function formatTime(t) {
       ctx.font = `${Math.round(ui.bottom.pitch.h * 0.40)}px "Source Sans 3","Segoe UI",sans-serif`;
       ctx.fillText(pitchLabel[0], ui.bottom.pitch.x + ui.bottom.pitch.w / 2, ui.bottom.pitch.y + ui.bottom.pitch.h * 0.38);
       ctx.fillText(pitchLabel[1], ui.bottom.pitch.x + ui.bottom.pitch.w / 2, ui.bottom.pitch.y + ui.bottom.pitch.h * 0.78);
-      ctx.restore();
-
-      // Divider between pitch/speed and right edge
-      ctx.save();
-      ctx.globalAlpha = finalAlpha * 0.65;
-      ctx.fillStyle = theme.fg;
-      ctx.fillRect(ui.bottom.divider.x, ui.bottom.divider.y, ui.bottom.divider.w, ui.bottom.divider.h);
       ctx.restore();
 
       ctx.restore();
@@ -2818,7 +2860,7 @@ function formatTime(t) {
         const bottomBar = { x: surfaceRect.x, y: surfaceRect.y + surfaceRect.h - BAR_H - bottomOffset, w: surfaceRect.w, h: BAR_H };
 
         const backRect = { x: topBar.x + PAD * 0.6, y: topBar.y + (BAR_H - ICON * 1.05) / 2, w: ICON * 1.05, h: ICON * 1.05 };
-        const sliderWTop = Math.min(topBar.w * 0.45, Math.max(600, topBar.w * 0.35));
+        const sliderWTop = Math.min(topBar.w * 0.4, Math.max(420, topBar.w * 0.3));
         const syncSliderW = sliderWTop;
         const syncSliderH = Math.max(4, Math.round(BAR_H * 0.16));
         const syncSliderY = topBar.y + Math.round(BAR_H * 0.62);
@@ -2856,7 +2898,7 @@ function formatTime(t) {
         const iconRowY = progressRect.y + progressRect.h + totalBottomSpace * 0.5 - ICON / 2;
         const playRect = { x: bottomBar.x + PAD, y: iconRowY, w: ICON, h: ICON };
         const volumeRect = { x: playRect.x + ICON + PAD * 0.5, y: iconRowY, w: ICON, h: ICON };
-        const sliderWBottom = Math.min(bottomBar.w * 0.45, Math.max(600, bottomBar.w * 0.35));
+        const sliderWBottom = Math.min(bottomBar.w * 0.3, Math.max(260, bottomBar.w * 0.22));
         const volumeSliderRect = {
           x: volumeRect.x + ICON + PAD * 0.4,
           y: iconRowY + (ICON - BAR_H * 0.26) / 2,
@@ -2875,7 +2917,7 @@ function formatTime(t) {
         const clusterGapSmall = Math.max(4, Math.round(PAD * 0.24));
         const boxW = Math.round(ICON * 1.4);
         const boxH = Math.round(ICON * 0.95);
-        const dividerW = Math.max(4, Math.round(PAD * 0.35));
+        const dividerW = 0;
 
         // Compute from the right edge inward so removing the fullscreen icon
         // simply collapses space and shifts the remaining icons right.
@@ -2891,9 +2933,7 @@ function formatTime(t) {
         const tabletRect = { x: cursor, y: iconRowY, w: ICON, h: ICON };
         cursor -= clusterGap;
 
-        // Divider between right-side icons and the playback-rate/pitch cluster
-        cursor -= dividerW;
-        cursor -= clusterGap;
+        // No divider between speed/pitch and right-side icons
 
         // speed and pitch cluster (closer together)
         cursor -= boxW;
@@ -2901,7 +2941,7 @@ function formatTime(t) {
         cursor -= clusterGapSmall;
         cursor -= boxW;
         const pitchRect = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
-        const dividerRect = { x: speedRect.x + speedRect.w + Math.round(clusterGapSmall / 2), y: iconRowY + Math.round(ICON * 0.15), w: dividerW, h: Math.round(ICON * 0.7) };
+        const dividerRect = null;
 
         return {
           barH: BAR_H,
@@ -2977,7 +3017,7 @@ function formatTime(t) {
           const PAD = Math.round(Math.max(14, CH * 0.22));
           const ICON = Math.round(Math.min(CH * 0.72, CW * 0.09));
           const backRect = { x: PAD, y: (CH - ICON) / 2, w: ICON, h: ICON };
-          const syncSliderW = Math.min(CW * 0.45, Math.max(600, CW * 0.35));
+          const syncSliderW = Math.min(CW * 0.4, Math.max(420, CW * 0.3));
           const syncSliderH = Math.max(4, Math.round(CH * 0.16));
           const syncSliderY = Math.round(CH * 0.62);
           const syncSliderRect = { x: CW - PAD - syncSliderW, y: syncSliderY, w: syncSliderW, h: syncSliderH };
@@ -2998,7 +3038,7 @@ function formatTime(t) {
         const iconRowY = Math.round(progressRect.y + progressRect.h + (CH - (progressRect.y + progressRect.h) - ICON) * 0.55);
         const playRect = { x: PAD, y: iconRowY, w: ICON, h: ICON };
         const volumeRect = { x: playRect.x + ICON + PAD * 0.55, y: iconRowY, w: ICON, h: ICON };
-        const sliderW = Math.min(CW * 0.22, Math.max(180, CW * 0.2));
+        const sliderW = Math.min(CW * 0.2, Math.max(160, CW * 0.18));
         const volumeSliderRect = { x: volumeRect.x + ICON + PAD * 0.5, y: iconRowY + (ICON - CH * 0.22) / 2, w: sliderW, h: CH * 0.22 };
 
         const timeRect = { x: CW / 2 - 120, y: iconRowY + (ICON - Math.round(CH * 0.38)) / 2, w: 240, h: Math.round(CH * 0.38) };
@@ -3007,7 +3047,7 @@ function formatTime(t) {
         const clusterGapSmall = Math.max(4, Math.round(PAD * 0.24));
         const boxW = Math.round(ICON * 1.4);
         const boxH = Math.round(ICON * 0.95);
-        const dividerW = Math.max(4, Math.round(PAD * 0.35));
+        const dividerW = 0;
 
         // Match the fullscreen toggle behavior of the main controls; keep disabled by default.
         const ENABLE_FULLSCREEN_ICON = false; // toggle to true to re-enable
@@ -3022,16 +3062,14 @@ function formatTime(t) {
         cursor -= ICON;
         const tabletRect = { x: cursor, y: iconRowY, w: ICON, h: ICON };
         cursor -= clusterGap;
-        // divider
-        cursor -= dividerW;
-        cursor -= clusterGap;
+        // no divider between speed/pitch and right-side icons
         // speed and pitch cluster
         cursor -= boxW;
         const speedRect = { x: cursor, y: iconRowY, w: boxW, h: ICON };
         cursor -= clusterGapSmall;
         cursor -= boxW;
         const pitchRect = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
-        const dividerRect = { x: speedRect.x + speedRect.w + Math.round(clusterGapSmall / 2), y: iconRowY + Math.round(ICON * 0.15), w: dividerW, h: Math.round(ICON * 0.7) };
+        const dividerRect = null;
 
         return {
           surface: { x: 0, y: 0, w: CW, h: CH },
@@ -3170,17 +3208,6 @@ function formatTime(t) {
           if (video && (video.paused || video.ended)) {
             drawCenterPlayOverlay(ctrlCtx, ui.videoRect || ui.surfaceRect, iconColor, a);
           }
-              // Draw divider between speed/pitch cluster and right-side icons
-              try {
-                if (botUI.dividerRect) {
-                  bottomPanelCtx.save();
-                  bottomPanelCtx.globalAlpha = a * 0.65;
-                  bottomPanelCtx.fillStyle = 'rgba(255,255,255,0.18)';
-                  bottomPanelCtx.fillRect(botUI.dividerRect.x, botUI.dividerRect.y, botUI.dividerRect.w, botUI.dividerRect.h);
-                  bottomPanelCtx.restore();
-                }
-              } catch (e) { /* ignore */ }
-
               drawPanelIcon(bottomPanelCtx, botUI.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture', a);
           // Time display
           bottomPanelCtx.save();
@@ -3359,12 +3386,7 @@ function formatTime(t) {
         // Progress bar
         ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawProgressBar(ctrlCtx, ui.progressRect, video); ctrlCtx.restore();
 
-        // Draw divider if present (between speed/pitch cluster and right icons)
-        try {
-          if (ui.dividerRect) {
-            ctrlCtx.save(); ctrlCtx.globalAlpha = alpha * 0.85; ctrlCtx.fillStyle = 'rgba(255,255,255,0.12)'; ctrlCtx.fillRect(ui.dividerRect.x, ui.dividerRect.y, ui.dividerRect.w, ui.dividerRect.h); ctrlCtx.restore();
-          }
-        } catch (e) { /* ignore */ }
+        // Divider removed to keep speed + pitch grouped
       }
 
       function renderFull(now) {
