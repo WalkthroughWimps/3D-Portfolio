@@ -34,18 +34,18 @@ const GAME_SPLASH_DURATIONS_MS = {
   'big-bomb-blast': 7000
 };
 const GAME_SPLASH_IMAGES = {
-  battleship: assetUrl('games/battleship.png'),
-  'train-mania': assetUrl('games/train-mania.png'),
-  plinko: assetUrl('games/plinko.png'),
-  'pick-a-square': assetUrl('games/pick-a-square.png'),
-  'big-bomb-blast': assetUrl('games/big-bomb-blast.png')
+  battleship: '/games/battleship.png',
+  'train-mania': '/games/train-mania.png',
+  plinko: '/games/plinko.png',
+  'pick-a-square': '/games/pick-a-square.png',
+  'big-bomb-blast': '/games/big-bomb-blast.png'
 };
 const GAME_THUMBS = {
-  battleship: assetUrl('games/images/battleship.png'),
-  plinko: assetUrl('games/images/plinko.png'),
-  'pick-a-square': assetUrl('games/images/pick-a-square.png'),
-  'train-mania': assetUrl('games/images/train-mania.png'),
-  'big-bomb-blast': assetUrl('games/images/big-bomb-blast.png')
+  battleship: '/games/images/battleship.png',
+  plinko: '/games/images/plinko.png',
+  'pick-a-square': '/games/images/pick-a-square.png',
+  'train-mania': '/games/images/train-mania.png',
+  'big-bomb-blast': '/games/images/big-bomb-blast.png'
 };
 const GAME_LABEL_SVGS = {
   battleship: null,
@@ -59,8 +59,8 @@ const VIDEO_THUMBS = {
   christmas: assetUrl('./Videos/games-page/christmas-games.png')
 };
 const VIDEO_TITLE_IMAGES = {
-  reels: assetUrl('./games/images/game reels.png'),
-  samples: assetUrl('./games/images/game samples.png')
+  reels: '/games/images/game reels.png',
+  samples: '/games/images/game samples.png'
 };
 const videoTitleImageCache = new Map();
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));

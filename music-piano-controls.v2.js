@@ -1128,18 +1128,18 @@ const DEBUG_BEEP_FALLBACK = (typeof window !== 'undefined' && typeof window.DEBU
 const CLOUDFLARE_SOUNDFONT_BASE = (typeof window !== 'undefined' && window.CLOUDFLARE_SOUNDFONT_BASE)
   ? String(window.CLOUDFLARE_SOUNDFONT_BASE)
   : '';
-const SOUNDFONT_FALLBACK_URL = '/soundfonts/musyngkite/';
-const SOUND_FONT_BASE = '/soundfonts/musyngkite/';
+const SOUNDFONT_FALLBACK_URL = assetUrl('soundfonts/musyngkite/');
+const SOUND_FONT_BASE = assetUrl('soundfonts/musyngkite/');
 const LOCAL_SOUNDFONT_BASES = {
-  musyngkite: '/soundfonts/musyngkite/',
-  fluidr3_gm: '/soundfonts/fluidr3_gm/',
-  arachno: '/soundfonts/arachno/',
-  wappydog: '/soundfonts/wappydog/'
+  musyngkite: assetUrl('soundfonts/musyngkite/'),
+  fluidr3_gm: assetUrl('soundfonts/fluidr3_gm/'),
+  arachno: assetUrl('soundfonts/arachno/'),
+  wappydog: assetUrl('soundfonts/wappydog/')
 };
-const SF2_ARACHNO_URL = '/soundfonts/arachno/Arachno%20SoundFont%20-%20Version%201.0.sf2';
-const SF2_HYPERSOUND_URL = '/soundfonts/hypersound/hypersound.sf2';
-const SF2_DRUMS_URL = '/soundfonts/drums/definitive-drums.sf2';
-const SF2_WAPPYDOG_URL = '/soundfonts/wappydog/WappyDog.sf2';
+const SF2_ARACHNO_URL = assetUrl('soundfonts/arachno/Arachno%20SoundFont%20-%20Version%201.0.sf2');
+const SF2_HYPERSOUND_URL = assetUrl('soundfonts/hypersound/hypersound.sf2');
+const SF2_DRUMS_URL = assetUrl('soundfonts/drums/definitive-drums.sf2');
+const SF2_WAPPYDOG_URL = assetUrl('soundfonts/wappydog/WappyDog.sf2');
 const SF2_LIB_CACHE_BUST = '2026-01-05-2';
 const SF2_LIB_CANDIDATES = [
   {
