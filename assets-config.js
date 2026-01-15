@@ -17,6 +17,8 @@ export function isLocalDev() {
   return host === "localhost" || host === "127.0.0.1";
 }
 
+export const ASSET_ORIGIN = "https://assets.matthallportfolio.com";
+
 export const ASSETS_BASE = (() => {
   const search = window.location.search || "";
   try {
@@ -37,7 +39,7 @@ export const ASSETS_BASE = (() => {
 
   // Production: serve from R2 custom domain (recommended)
   // If user uses a different subdomain, they can change it here.
-  return "https://assets.matthallportfolio.com";
+  return ASSET_ORIGIN;
 })();
 
 console.info('[assets] base =', ASSETS_BASE);
@@ -66,3 +68,47 @@ export function assetUrl(path) {
 
   return `${base}/${String(path || "").replace(/^\/+/, "")}`;
 }
+
+const brokenAssets = new Set();
+
+export function markBroken(url) {
+  if (!url) return;
+  brokenAssets.add(url);
+}
+
+export function isBroken(url) {
+  if (!url) return false;
+  return brokenAssets.has(url);
+}
+
+export function safeDrawImage(ctx, img, ...args) {
+  if (!img || !img.complete || img.naturalWidth === 0) return false;
+  if (isBroken(img.src)) return false;
+  try {
+    ctx.drawImage(img, ...args);
+    return true;
+  } catch (e) {
+    console.warn("drawImage failed (likely CORS/CORP):", img.src, e);
+    markBroken(img.src);
+    return false;
+  }
+}
+
+export async function corsProbe(testPath) {
+  const url = assetUrl(testPath);
+  try {
+    const r = await fetch(url, { mode: "cors", credentials: "omit" });
+    console.log("[CORS PROBE]", url, "status:", r.status, "ACAO:", r.headers.get("access-control-allow-origin"), "CORP:", r.headers.get("cross-origin-resource-policy"));
+  } catch (e) {
+    console.warn("[CORS PROBE FAILED]", url, e);
+  }
+}
+
+// Expose to non-module scripts if needed.
+try {
+  window.assetUrl = assetUrl;
+  window.safeDrawImage = safeDrawImage;
+  window.markBroken = markBroken;
+  window.isBroken = isBroken;
+  window.corsProbe = corsProbe;
+} catch (e) { /* ignore */ }

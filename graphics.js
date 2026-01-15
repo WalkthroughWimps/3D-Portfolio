@@ -2,8 +2,10 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { assetUrl, corsProbe, isLocalDev } from './assets-config.js';
 
-const MODEL_PATH = 'glb/card-test.glb';
+const MODEL_PATH = assetUrl('glb/card-test.glb');
+THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
 const canvas = document.createElement('canvas');
 canvas.className = 'graphics-gl';
@@ -167,6 +169,7 @@ function onResize() {
 window.addEventListener('resize', onResize);
 
 const loader = new GLTFLoader();
+loader.setCrossOrigin('anonymous');
 loader.load(
   MODEL_PATH,
   (gltf) => {
@@ -178,9 +181,12 @@ loader.load(
   },
   undefined,
   (err) => {
-    console.warn('[graphics] failed to load GLB', err);
+    console.warn('GLTF LOAD FAILED:', MODEL_PATH, err);
   }
 );
+if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
+  corsProbe('glb/card-test.glb');
+}
 
 function animate() {
   controls.update();

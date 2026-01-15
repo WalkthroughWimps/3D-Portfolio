@@ -5,7 +5,7 @@ import VideoPlayer from './video-player-controls.js?v=tablet-ui-1';
 import { createVideoControlsUI } from './shared-video-controls.js';
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
 import { createVideosVideoAdapter } from './videos-video-adapter.js';
-import { assetUrl } from './assets-config.js';
+import { assetUrl, corsProbe, isLocalDev } from './assets-config.js';
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
@@ -46,6 +46,11 @@ const videosPageConfig = {
     }
   }
 };
+
+if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
+  corsProbe('Renders/tablet-animation.webm');
+  corsProbe('Renders/tablet_animation_1.opus');
+}
 
 // Load saved tablet pose if present
 try {
@@ -263,6 +268,10 @@ function setupIntroVideo() {
     const audioEl = document.createElement('audio');
     audioEl.crossOrigin = 'anonymous';
     audioEl.preload = 'none';
+    audioEl.addEventListener('error', () => {
+      const err = audioEl.error;
+      console.warn('AUDIO ERROR:', audioEl.src, err ? { code: err.code, message: err.message } : err);
+    });
     // Store the deferred URL; do not call load() or append yet.
     audioEl.__deferredSrc = videosPageConfig.intro.audio;
     introState.audioEl = audioEl;

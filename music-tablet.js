@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 
 // Path to the HQ video and its thumbnail. Resolve via mediaUrl when MEDIA_BASE set.
-import { assetUrl } from './assets-config.js';
+import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
 
 const TABLET_VIDEO_SRC = assetUrl('Videos/videos-page/music-videos-hq.webm');
 const TABLET_THUMB_SRC = assetUrl('Videos/videos-page/music-videos.jpg');
@@ -176,15 +176,25 @@ export function setupMusicTabletScreen(rootObject3D) {
 
   const videoEl = document.createElement('video');
   videoEl.crossOrigin = 'anonymous';
-  videoEl.src = encodeURI(TABLET_VIDEO_SRC);
-  videoEl.playsInline = true;
-  videoEl.muted = false;
   videoEl.preload = 'metadata';
-  videoEl.crossOrigin = 'anonymous';
+  videoEl.playsInline = true;
+  videoEl.muted = true;
+  videoEl.loop = true;
+  videoEl.src = assetUrl(TABLET_VIDEO_SRC);
+  videoEl.addEventListener('error', () => {
+    const err = videoEl.error;
+    console.warn('VIDEO ERROR:', videoEl.src, err ? { code: err.code, message: err.message } : err);
+  });
 
   const thumbImg = new Image();
-  thumbImg.src = encodeURI(TABLET_THUMB_SRC);
   thumbImg.crossOrigin = 'anonymous';
+  thumbImg.decoding = 'async';
+  thumbImg.loading = 'eager';
+  thumbImg.src = assetUrl(TABLET_THUMB_SRC);
+  if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
+    corsProbe('Videos/videos-page/music-videos-hq.webm');
+    corsProbe('Videos/videos-page/music-videos.jpg');
+  }
 
   function drawFrame() {
     ctx.fillStyle = BG_COLOR;
@@ -241,7 +251,7 @@ export function setupMusicTabletScreen(rootObject3D) {
     }
     const dx = x + Math.round((w - dw) / 2);
     const dy = y + Math.round((h - dh) / 2);
-    ctx.drawImage(source, dx, dy, dw, dh);
+    safeDrawImage(ctx, source, dx, dy, dw, dh);
   }
 
   function drawTabletPlayButton() {

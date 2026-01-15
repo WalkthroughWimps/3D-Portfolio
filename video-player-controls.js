@@ -6,7 +6,7 @@
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
 import * as SharedVC from './shared-video-controls.js';
 import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from './videos-tablet.js';
-import { assetUrl } from './assets-config.js';
+import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
 
 // Player state management
 class PlayerState {
@@ -77,6 +77,30 @@ const SYNC_RANGE_MS = 3000;
 const svgTextCache = new Map();
 const iconImageCache = new Map();
 
+function createCorsImage(src, eager = true) {
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  if (eager) img.loading = 'eager';
+  if (src) img.src = assetUrl(src);
+  return img;
+}
+
+function createCorsVideo(src, { muted = true, loop = false, preload = 'metadata' } = {}) {
+  const video = document.createElement('video');
+  video.crossOrigin = 'anonymous';
+  video.preload = preload;
+  video.playsInline = true;
+  video.muted = muted;
+  video.loop = loop;
+  if (src) video.src = assetUrl(src);
+  video.addEventListener('error', () => {
+    const err = video.error;
+    console.warn('VIDEO ERROR:', video.src, err ? { code: err.code, message: err.message } : err);
+  });
+  return video;
+}
+
 function buildInlineSvg(name, color) {
   if (name === 'play') {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="${color}"><polygon points="22,14 22,50 50,32"/></svg>`;
@@ -120,7 +144,7 @@ function getIconImage(name, color) {
     return cached.ready ? cached.img : null;
   }
 
-  const entry = { img: new Image(), ready: false };
+  const entry = { img: createCorsImage(null), ready: false };
   iconImageCache.set(key, entry);
   entry.img.onload = () => { entry.ready = true; };
 
@@ -142,7 +166,7 @@ function getIconImage(name, color) {
 function drawIconAsset(ctx, rect, name, color) {
   const img = getIconImage(name, color);
   if (img && img.complete) {
-    ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+    safeDrawImage(ctx, img, rect.x, rect.y, rect.w, rect.h);
     return true;
   }
   return false;
@@ -365,18 +389,12 @@ function formatTime(t) {
         if (item instanceof HTMLVideoElement) {
           return item;
         }
-        const video = document.createElement('video');
-        video.crossOrigin = 'anonymous';
-        video.src = item;
-        video.preload = 'metadata';
-        return video;
+        return createCorsVideo(item, { muted: true, loop: false, preload: 'metadata' });
       });
       this.thumbnails = thumbnailUrls.map(url => {
         if (!url) return null;
         if (url instanceof HTMLImageElement) return url;
-        const img = new Image();
-        img.src = url;
-        return img;
+        return createCorsImage(url, true);
       });
       // prepare preview (low-quality) videos if provided
       try {
@@ -384,14 +402,7 @@ function formatTime(t) {
           this.preview.videos = previewUrls.map(u => {
             if (!u) return null;
             if (u instanceof HTMLVideoElement) return u;
-            const v = document.createElement('video');
-            v.crossOrigin = 'anonymous';
-            v.src = u;
-            v.muted = true;
-            v.preload = 'metadata';
-            v.playsInline = true;
-            v.crossOrigin = 'anonymous';
-            return v;
+            return createCorsVideo(u, { muted: true, loop: true, preload: 'metadata' });
           });
         } else if (typeof window !== 'undefined' && window.__videoGridPreviewVideos && Array.isArray(window.__videoGridPreviewVideos)) {
           // reuse preview videos produced by createGrid if available
@@ -1216,7 +1227,7 @@ function formatTime(t) {
             sy = Math.floor((img.naturalHeight - newH) / 2);
             sh = newH;
           }
-          this.preview.ctx.drawImage(img, sx, sy, sw, sh, 0, 0, pw, ph);
+          safeDrawImage(this.preview.ctx, img, sx, sy, sw, sh, 0, 0, pw, ph);
         } else if (img) {
           // try later once image loads
           img.onload = () => { try { this._drawThumbnailPreview(idx); } catch (e) {} };
@@ -1536,8 +1547,7 @@ function formatTime(t) {
       }
 
       const thumbs = entries.map((entry) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
+        const img = createCorsImage(null);
         const imgPath = mediaThumbs[entry.id] || `${entry.id}.jpg`;
         const resolved = resolveMediaUrl(imgPath);
         // Defer assigning src until preload scheduler to avoid blocking initial paint
@@ -1776,6 +1786,10 @@ function formatTime(t) {
         v.preload = 'none';
         v.loop = false;
         v.muted = muted;
+        v.addEventListener('error', () => {
+          const err = v.error;
+          console.warn('VIDEO ERROR:', v.src, err ? { code: err.code, message: err.message } : err);
+        });
 
         // Store normalized source list on the element for later controlled loading
         const list = Array.isArray(srcs) ? srcs.slice() : [srcs];
@@ -1920,12 +1934,7 @@ function formatTime(t) {
             try {
               const path = resolveMediaUrl('tablet_animation.webm');
               if (!path) return;
-              const v = document.createElement('video');
-              v.preload = 'auto';
-              v.muted = true;
-              v.playsInline = true;
-              v.crossOrigin = 'anonymous';
-              v.src = path;
+              const v = createCorsVideo(path, { muted: true, loop: false, preload: 'auto' });
               // Fire load(); don't attach to DOM — just warm browser cache/connection
               try { v.load(); } catch (e) { /* ignore */ }
               // Wait briefly for network to start (or metadata) but don't block too long
@@ -2710,7 +2719,11 @@ function formatTime(t) {
             ctx.beginPath();
             ctx.rect(rc.x, rc.y, rc.w, rc.h);
             ctx.clip();
-            ctx.drawImage(el, x, y, w, h);
+            if (el instanceof HTMLImageElement) {
+              safeDrawImage(ctx, el, x, y, w, h);
+            } else {
+              ctx.drawImage(el, x, y, w, h);
+            }
             ctx.restore();
           } catch (e) {
             try { ctx.restore(); } catch (e2) { /* ignore */ }
@@ -2725,7 +2738,13 @@ function formatTime(t) {
         }
         const x = rc.x + Math.floor((rc.w - w) / 2);
         const y = rc.y + Math.floor((rc.h - h) / 2);
-        try { ctx.drawImage(el, x, y, w, h); } catch (e) { /* ignore draw failures */ }
+        try {
+          if (el instanceof HTMLImageElement) {
+            safeDrawImage(ctx, el, x, y, w, h);
+          } else {
+            ctx.drawImage(el, x, y, w, h);
+          }
+        } catch (e) { /* ignore draw failures */ }
       }
 
       function drawHoverOutline(idx) {

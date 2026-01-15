@@ -25,6 +25,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     const headCircle = document.getElementById('head-inner');
     if (!headCircle) return;
+    const assetUrl = window.assetUrl || ((path) => path);
+    const safeDrawImage = window.safeDrawImage || ((ctx, img, ...args) => {
+        try { ctx.drawImage(img, ...args); return true; } catch (e) { return false; }
+    });
 
     const cx = parseFloat(headCircle.getAttribute('cx'));
     const cy = parseFloat(headCircle.getAttribute('cy'));
@@ -38,7 +42,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Build image sources (encode space in folder name)
     const sources = Array.from({ length: 48 }, (_, i) => {
         const n = (i + 1).toString().padStart(2, '0');
-        return `assets/images/note-bubbles/Note-${n}.png`;
+        return assetUrl(`assets/images/note-bubbles/Note-${n}.png`);
     });
 
     // Classification metadata for each source: { src, color, shapeId }
@@ -87,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function averageHash(img) {
         // Draw scaled to 16x16 grayscale and compute a 256-bit aHash (boolean array)
         ctx16.clearRect(0, 0, 16, 16);
-        ctx16.drawImage(img, 0, 0, 16, 16);
+        safeDrawImage(ctx16, img, 0, 0, 16, 16);
         const data = ctx16.getImageData(0, 0, 16, 16).data;
         const gray = new Float32Array(256);
         let sum = 0;
@@ -118,13 +122,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const metasLocal = [];
         await Promise.all(sources.map((src, index) => new Promise(resolve => {
             const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.decoding = 'async';
+            img.loading = 'eager';
             img.onload = () => {
                 let color = fallbackColorForIndex(index);
                 let hash = null;
                 try {
                     // Color classification from 32x32 average hue of opaque pixels
                     ctx32.clearRect(0, 0, 32, 32);
-                    ctx32.drawImage(img, 0, 0, 32, 32);
+                    safeDrawImage(ctx32, img, 0, 0, 32, 32);
                     const data = ctx32.getImageData(0, 0, 32, 32).data;
                     let rSum = 0, gSum = 0, bSum = 0, count = 0;
                     for (let i = 0; i < data.length; i += 4) {

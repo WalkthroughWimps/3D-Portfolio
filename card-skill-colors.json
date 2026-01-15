@@ -1,0 +1,23 @@
+{
+  "Ableton Live": { "bg": "#e4ff97", "text": "#000000", "side": "#e4ff97" },
+  "Adobe Acrobat Reader": { "bg": "#dd0f00", "text": "#ffffff", "side": "#dd0f00" },
+  "Adobe After Effects": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Adobe Animate": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Adobe Audition": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Adobe Bridge": { "bg": "#001e36", "text": "#ffffff", "side": "#001e36" },
+  "Adobe Capture": { "bg": "#001e36", "text": "#ffffff", "side": "#001e36" },
+  "Adobe Character Animator": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Adobe Illustrator": { "bg": "#330000", "text": "#ff9a00", "side": "#330000" },
+  "Adobe InDesign": { "bg": "#49021f", "text": "#ff3366", "side": "#49021f" },
+  "Adobe Media Encoder": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Adobe Premiere Pro": { "bg": "#00005b", "text": "#9999ff", "side": "#00005b" },
+  "Blender": { "bg": "#f5792a", "text": "#0b3d91", "side": "#f5792a" },
+  "DaVinci Resolve": { "bg": "#4b4b4b", "text": "#ffffff", "side": "#4b4b4b" },
+  "Finale": { "bg": "#1a7a8f", "text": "#ffffff", "side": "#1a7a8f" },
+  "Microsoft Excel": { "bg": "#185c37", "text": "#ffffff", "side": "#185c37" },
+  "Microsoft PowerPoint": { "bg": "#d24726", "text": "#ffffff", "side": "#d24726" },
+  "Microsoft Word": { "bg": "#2b579a", "text": "#ffffff", "side": "#2b579a" },
+  "REAPER": { "bg": "#8d6e63", "text": "#aed581", "side": "#8d6e63" },
+  "Visual Studio": { "bg": "#5750e2", "text": "#ffffff", "side": "#5750e2" },
+  "Visual Studio Code": { "bg": "#2069b5", "text": "#ffffff", "side": "#2069b5" }
+}

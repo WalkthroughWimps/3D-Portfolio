@@ -3,6 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { assetUrl, corsProbe, isLocalDev } from "./assets-config.js";
 
 const mount = document.getElementById("glb-viewer");
 if (!mount) {
@@ -69,13 +70,14 @@ if (!mount) {
   let faceLeftBtnMesh = null;
   let crankshaftHandle = null;
   let skillGroup = null;
+  const cardProxies = new Map();
   let spinX = 0;
   const rotationTweens = new Map();
   const quarterTurn = Math.PI / 2;
-  const FRONT_FILL = 0.65;
-  const BACK_FILL = 0.8;
-  const CARD_CONFIG_URL = "icon-colors.json";
-  const CARD_COLOR_URL = "card-skill-colors.json";
+  const FRONT_FILL = 1;
+  const BACK_FILL = 1;
+  const CARD_CONFIG_URL = assetUrl("icon-colors.json");
+  const CARD_COLOR_URL = assetUrl("card-skill-colors.json");
   const cardOrder = [
     "Ableton Live",
     "Adobe Acrobat Reader",
@@ -101,11 +103,16 @@ if (!mount) {
   ];
   let cardConfig = null;
   let cardColorConfig = null;
+  let cardColorKeyMap = null;
+  let cardColorSequence = null;
+  let cardColorEntrySequence = null;
   const textureCache = new Map();
   const skillCards = [];
   const cardStates = new Map();
   let lastFlipDirection = 1;
+  THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
   const textureLoader = new THREE.TextureLoader();
+  textureLoader.setCrossOrigin("anonymous");
 
   const rotationLocks = [
     "lockedAxes",
@@ -202,29 +209,109 @@ if (!mount) {
     return normalized;
   }
 
-  function getTexture(url, fill) {
+  function getTexture(url) {
     if (!url) return null;
-    if (textureCache.has(url)) return textureCache.get(url);
-    const tex = textureLoader.load(url);
+    const resolved = assetUrl(url);
+    if (textureCache.has(resolved)) return textureCache.get(resolved);
+    const tex = textureLoader.load(resolved);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.flipY = false;
     tex.wrapS = THREE.ClampToEdgeWrapping;
     tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    textureCache.set(resolved, tex);
+    return tex;
+  }
+
+  function getCardTexture(url, fill) {
+    const base = getTexture(url);
+    if (!base) return null;
+    const tex = base.clone();
     const scale = typeof fill === "number" ? fill : 1;
     tex.repeat.set(scale, scale);
     tex.offset.set((1 - scale) / 2, (1 - scale) / 2);
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    textureCache.set(url, tex);
+    tex.needsUpdate = true;
     return tex;
+  }
+
+  function flipTextureX(texture) {
+    if (!texture) return;
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.x *= -1;
+    texture.offset.x = 1 - texture.offset.x;
+    texture.needsUpdate = true;
+  }
+
+  function fitTextureToUV(mesh, texture) {
+    if (!mesh || !texture || !mesh.geometry || !mesh.geometry.attributes) return;
+    const uvAttr = mesh.geometry.attributes.uv;
+    if (!uvAttr) return;
+    let minU = Infinity;
+    let minV = Infinity;
+    let maxU = -Infinity;
+    let maxV = -Infinity;
+    for (let i = 0; i < uvAttr.count; i++) {
+      const u = uvAttr.getX(i);
+      const v = uvAttr.getY(i);
+      if (u < minU) minU = u;
+      if (v < minV) minV = v;
+      if (u > maxU) maxU = u;
+      if (v > maxV) maxV = v;
+    }
+    const rangeU = maxU - minU;
+    const rangeV = maxV - minV;
+    if (rangeU <= 0 || rangeV <= 0) return;
+    texture.repeat.set(1 / rangeU, 1 / rangeV);
+    texture.offset.set(-minU / rangeU, -minV / rangeV);
+    texture.needsUpdate = true;
+  }
+
+  function isSkillCardContainerName(name) {
+    return typeof name === "string" && name.toLowerCase() === "skill-cards";
+  }
+
+  // Matches: "skill-card001" AND "skill-card.001" (and other digit counts)
+  function isSkillCardGroupName(name) {
+    if (typeof name !== "string") return false;
+    const n = name.toLowerCase();
+    if (n === "skill-cards") return false;
+    return /^skill-card\.?\d+$/.test(n);
+  }
+
+  function getCardPivotLocalFromBBox(card) {
+    // World-space bbox center, then convert to parent's local space.
+    const box = new THREE.Box3().setFromObject(card);
+    const centerWorld = box.getCenter(new THREE.Vector3());
+    card.parent.worldToLocal(centerWorld);
+    return centerWorld;
   }
 
   function getCardRoot(obj) {
     let current = obj;
     while (current) {
-      if (current.name && current.name.toLowerCase().startsWith("skill-card")) return current;
+      if (current.name && isSkillCardGroupName(current.name)) return current;
       current = current.parent;
     }
     return null;
+  }
+
+  function getProxyCardTarget(obj) {
+    let current = obj;
+    while (current) {
+      if (current.userData && current.userData.proxyFor) return current.userData.proxyFor;
+      current = current.parent;
+    }
+    return null;
+  }
+
+  function isProxyDescendant(obj) {
+    let current = obj;
+    while (current) {
+      if (current.userData && current.userData.isCardProxy) return true;
+      current = current.parent;
+    }
+    return false;
   }
 
   function collectSkillCards() {
@@ -233,8 +320,7 @@ if (!mount) {
     const seen = new Set();
     modelRoot.traverse((child) => {
       if (!child.name) return;
-      const name = child.name.toLowerCase();
-      if (!name.startsWith("skill-card.")) return;
+      if (!isSkillCardGroupName(child.name)) return;
       if (seen.has(child.name)) return;
       seen.add(child.name);
       skillCards.push(child);
@@ -257,42 +343,65 @@ if (!mount) {
         if (!child.userData.sideBaseColor && mat.color) {
           child.userData.sideBaseColor = mat.color.clone();
         }
-        if (mat.emissive) {
-          mat.emissive.setHex(selected ? 0x2a7dff : 0x000000);
-          mat.emissiveIntensity = selected ? 0.25 : 0;
-          mat.needsUpdate = true;
-        }
       });
     });
   }
 
-  function getCardBaseColor(cardKey, config) {
-    if (cardColorConfig && Object.prototype.hasOwnProperty.call(cardColorConfig, cardKey)) {
-      const entry = cardColorConfig[cardKey];
-      if (typeof entry === "string") return new THREE.Color(entry);
-      if (entry && typeof entry === "object") {
-        const candidate = entry.text || entry.textColor || entry.color || entry.base;
-        if (typeof candidate === "string") return new THREE.Color(candidate);
-      }
+  function getCardColorEntry(cardKey) {
+    if (!cardColorConfig) return null;
+    if (!cardColorKeyMap) {
+      cardColorKeyMap = new Map();
+      Object.keys(cardColorConfig).forEach((key) => {
+        cardColorKeyMap.set(key.toLowerCase(), cardColorConfig[key]);
+      });
     }
-    if (config && config.backText) return new THREE.Color(config.backText);
+    if (Object.prototype.hasOwnProperty.call(cardColorConfig, cardKey)) {
+      return cardColorConfig[cardKey];
+    }
+    return cardColorKeyMap.get(String(cardKey).toLowerCase()) || null;
+  }
+
+  function getCardBaseColorByIndex(index, config) {
+    if (!cardColorSequence && cardColorConfig) {
+      cardColorSequence = Object.values(cardColorConfig)
+        .map((entry) => {
+          if (typeof entry === "string") return entry;
+          if (entry && typeof entry === "object") return entry.text || entry.textColor;
+          return null;
+        })
+        .filter(Boolean);
+    }
+    if (cardColorSequence && cardColorSequence.length) {
+      const value = cardColorSequence[index % cardColorSequence.length];
+      if (typeof value === "string") return new THREE.Color(value);
+    }
     return null;
+  }
+
+  function getCardColorEntryByIndex(index) {
+    if (!cardColorEntrySequence && cardColorConfig) {
+      cardColorEntrySequence = Object.values(cardColorConfig);
+    }
+    if (!cardColorEntrySequence || !cardColorEntrySequence.length) return null;
+    return cardColorEntrySequence[index % cardColorEntrySequence.length];
   }
 
   function applyCardTextures() {
     if (!modelRoot || !cardConfig) return;
     collectSkillCards();
     skillCards.forEach((card, index) => {
+      ensureUniqueCardMaterials(card);
       const cardKey = card.userData.cardKey || cardOrder[index];
       const config = cardConfig[cardKey];
       if (!config) return;
-      const frontFill = typeof config.frontFill === "number" ? config.frontFill : FRONT_FILL;
-      const backFill = typeof config.backFill === "number" ? config.backFill : BACK_FILL;
-      const frontTex = getTexture(config.frontPng, frontFill);
-      const backTex = getTexture(config.backPng, backFill);
-      const baseColor = getCardBaseColor(cardKey, config);
-      const sideColor = baseColor;
-      const backColor = baseColor;
+      const frontFill = FRONT_FILL;
+      const backFill = BACK_FILL;
+      const frontTex = getCardTexture(config.frontPng, frontFill);
+      const backTex = getCardTexture(config.backPng, backFill);
+      const colorEntry = getCardColorEntryByIndex(index);
+      const baseColor = getCardBaseColorByIndex(index, config);
+      const sideColor = colorEntry && colorEntry.side ? new THREE.Color(colorEntry.side) : baseColor;
+      const backColor = colorEntry && colorEntry.bg ? new THREE.Color(colorEntry.bg) : baseColor;
       card.traverse((child) => {
         if (!child.isMesh || !child.material) return;
         const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -301,11 +410,14 @@ if (!mount) {
           const matName = mat.name.toLowerCase();
           if ((matName.includes("card-back") || matName.includes("back")) && backTex) {
             mat.map = backTex;
-            if (backColor && mat.color) mat.color.copy(backColor);
+            fitTextureToUV(child, backTex);
+            if (mat.color) mat.color.setHex(0xffffff);
+            flipTextureX(backTex);
             mat.needsUpdate = true;
           } else if ((matName.includes("card-app") || matName.includes("app") || matName.includes("front")) && frontTex) {
             mat.map = frontTex;
-            if (baseColor && mat.color) mat.color.copy(baseColor);
+            fitTextureToUV(child, frontTex);
+            if (mat.color) mat.color.setHex(0xffffff);
             mat.needsUpdate = true;
           } else if ((matName.includes("card-side") || matName.includes("side") || matName.includes("edge")) && sideColor && mat.color) {
             mat.color.copy(sideColor);
@@ -316,9 +428,73 @@ if (!mount) {
       if (!cardStates.has(card)) {
         cardStates.set(card, { isFlipped: false, isSelected: false });
       }
-      if (card.userData && typeof card.userData.restX !== "number") {
-        card.userData.restX = snapToIncrement(card.rotation.x, Math.PI);
+      if (card.userData && typeof card.userData.restY !== "number") {
+        card.userData.restY = snapToIncrement(card.rotation.y, Math.PI);
       }
+    });
+  }
+
+  function ensureUniqueCardMaterials(card) {
+    card.traverse((child) => {
+      if (!child.isMesh || !child.material) return;
+      if (child.userData && child.userData.materialsCloned) return;
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      const clones = materials.map((mat) => (mat ? mat.clone() : mat));
+      child.material = Array.isArray(child.material) ? clones : clones[0];
+      child.userData.materialsCloned = true;
+    });
+  }
+
+  function buildSkillCardProxies() {
+    if (!modelRoot || !skillGroup) return;
+    collectSkillCards();
+    skillCards.forEach((card) => {
+      if (cardProxies.has(card)) return;
+      const proxy = card.clone(true);
+      proxy.name = `${card.name}-proxy`;
+      proxy.userData.isCardProxy = true;
+      proxy.userData.proxyFor = card;
+      proxy.scale.setScalar(0.85);
+      proxy.traverse((child) => {
+        if (!child.isMesh) return;
+        child.material = new THREE.MeshBasicMaterial({
+          transparent: true,
+          opacity: 0,
+          depthWrite: false
+        });
+        child.castShadow = false;
+        child.receiveShadow = false;
+      });
+      skillGroup.add(proxy);
+      cardProxies.set(card, proxy);
+    });
+  }
+
+  function applySkillCardScale() {
+    const targets = [];
+    if (skillGroup) {
+      skillGroup.traverse((child) => {
+        if (!child.name) return;
+        // Only true per-card groups, never the container.
+        if (!isSkillCardGroupName(child.name)) return;
+        // Optional: ensure it’s not a Mesh; cards should be Group/Object3D wrappers.
+        if (child.isMesh) return;
+        targets.push(child);
+      });
+    } else {
+      collectSkillCards();
+      skillCards.forEach((card) => targets.push(card));
+    }
+    targets.forEach((card) => {
+      if (card.userData && card.userData.skillScaleApplied) return;
+      const pivot = getCardPivotLocalFromBBox(card);
+      const scale = 0.85;
+      // Scale card, but keep the bbox-center pivot visually stable.
+      card.scale.multiplyScalar(scale);
+      card.position.sub(pivot).multiplyScalar(scale).add(pivot);
+      card.updateMatrix();
+      card.updateMatrixWorld(true);
+      card.userData.skillScaleApplied = true;
     });
   }
 
@@ -334,6 +510,9 @@ if (!mount) {
     .then(([configData, colorData]) => {
       cardConfig = configData;
       cardColorConfig = colorData;
+      cardColorKeyMap = null;
+      cardColorSequence = null;
+      cardColorEntrySequence = null;
       applyCardTextures();
     })
     .catch((error) => {
@@ -343,6 +522,12 @@ if (!mount) {
   function snapToIncrement(angle, increment) {
     const normalized = normalizeAngle(angle);
     return Math.round(normalized / increment) * increment;
+  }
+
+  function snapToIncrementAroundBase(angle, base, increment) {
+    const delta = angle - base;
+    const snapped = Math.round(delta / increment) * increment;
+    return base + snapped;
   }
 
   function getActiveRotation(object3d, axis) {
@@ -358,7 +543,10 @@ if (!mount) {
     if (!object3d) return;
     const now = performance.now();
     const current = getActiveRotation(object3d, axis);
-    const snappedTarget = snapToIncrement(target, snapIncrement);
+    let snappedTarget = snapToIncrement(target, snapIncrement);
+    if (object3d.userData && typeof object3d.userData.restY === "number" && axis === "y") {
+      snappedTarget = snapToIncrementAroundBase(target, object3d.userData.restY, snapIncrement);
+    }
     rotationTweens.set(object3d, {
       object3d,
       axis,
@@ -414,7 +602,7 @@ if (!mount) {
   window.addEventListener("resize", resize);
 
   // IMPORTANT: set this path to your real GLB path
-  const GLB_PATH = "glb/about-cube.glb";
+  const GLB_PATH = assetUrl("glb/about-cube.glb");
 
   const loader = new GLTFLoader();
   const draco = new DRACOLoader();
@@ -431,6 +619,8 @@ if (!mount) {
       modelPivot.add(modelRoot);
       scene.add(modelPivot);
       skillGroup = modelRoot.getObjectByName("skill-cards");
+      applySkillCardScale();
+      buildSkillCardProxies();
 
       // If the GLB includes a camera, use it
       if (gltf.cameras && gltf.cameras.length > 0) {
@@ -620,7 +810,7 @@ if (!mount) {
       // console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
     },
     (err) => {
-      console.error("GLB load failed:", err);
+      console.error("GLTF LOAD FAILED:", GLB_PATH, err);
       console.error("Check path, server, and Network tab for 404:", GLB_PATH);
       status.textContent = "GLB load failed. Check console/network.";
       status.style.color = "#ffb3b3";
@@ -653,8 +843,24 @@ if (!mount) {
         const snapIncrement = tween.snapIncrement || quarterTurn;
         object3d.rotation[tween.axis] = snapToIncrement(tween.end, snapIncrement);
         rotationTweens.delete(object3d);
+        const state = cardStates.get(object3d);
+        if (state && !state.isHovered) {
+          state.flipInProgress = false;
+          cardStates.set(object3d, state);
+        }
       }
     });
+    if (skillCards.length) {
+      skillCards.forEach((card) => {
+        const state = cardStates.get(card);
+        if (state && state.isHovered) return;
+        if (rotationTweens.has(card)) return;
+        const restY = getCardRestY(card);
+        if (Math.abs(card.rotation.y - restY) > 0.0001) {
+          card.rotation.y = restY;
+        }
+      });
+    }
     renderer.render(scene, activeCamera);
   }
 
@@ -723,12 +929,18 @@ if (!mount) {
     return rect;
   }
 
-  function getTopHit(event) {
+  function getTopHitFiltered(event, acceptHit) {
     if (!activeCamera || !modelRoot) return null;
     updatePointerFromEvent(event);
     raycaster.setFromCamera(pointer, activeCamera);
     const hits = raycaster.intersectObjects([modelRoot], true);
-    return hits.length ? hits[0] : null;
+    if (!hits.length) return null;
+    if (typeof acceptHit !== "function") return hits[0];
+    return hits.find(acceptHit) || null;
+  }
+
+  function getTopHit(event) {
+    return getTopHitFiltered(event);
   }
 
   function getCrankCenterScreen() {
@@ -781,13 +993,19 @@ if (!mount) {
     lastFlipDirection = direction;
   }
 
-  function getCardRestX(cardRoot) {
+  function getCardRestY(cardRoot) {
     if (!cardRoot) return 0;
-    const current = typeof cardRoot.userData.restX === "number"
-      ? cardRoot.userData.restX
-      : snapToIncrement(cardRoot.rotation.x, Math.PI);
-    cardRoot.userData.restX = current;
+    const current = typeof cardRoot.userData.restY === "number"
+      ? cardRoot.userData.restY
+      : snapToIncrement(cardRoot.rotation.y, Math.PI);
+    cardRoot.userData.restY = current;
     return current;
+  }
+
+  function getTweenDirection(object3d, axis) {
+    const tween = rotationTweens.get(object3d);
+    if (!tween || tween.axis !== axis) return 0;
+    return Math.sign(tween.end - tween.start) || 0;
   }
 
   function setCardHover(cardRoot, hovered) {
@@ -795,16 +1013,47 @@ if (!mount) {
     const state = cardStates.get(cardRoot) || { isFlipped: false, isSelected: false };
     if (state.isHovered === hovered) return;
     state.isHovered = hovered;
-    const base = getCardRestX(cardRoot);
+    const base = getCardRestY(cardRoot);
+    const current = getActiveRotation(cardRoot, "y");
+    const offset = normalizeAngle(current - base);
+    const isAtBase = Math.abs(offset) < 0.001 || Math.abs(offset - Math.PI * 2) < 0.001;
+    const direction = 1;
     cardStates.set(cardRoot, state);
-    const target = hovered ? base + Math.PI : base;
-    tweenRotationTo(cardRoot, "x", target, hoverRotationDuration, Math.PI);
+    const desiredOffset = hovered ? Math.PI : Math.PI * 2;
+    let targetOffset = desiredOffset;
+    if (targetOffset <= offset + 0.0001) {
+      targetOffset += Math.PI * 2;
+    }
+    if (hovered) {
+      state.flipInProgress = true;
+      cardStates.set(cardRoot, state);
+    }
+    if (!hovered && isAtBase && !rotationTweens.has(cardRoot) && !state.flipInProgress) {
+      state.flipInProgress = false;
+      cardStates.set(cardRoot, state);
+      tweenRotationTo(cardRoot, "y", base, hoverRotationDuration, Math.PI);
+      return;
+    }
+    const target = base + direction * targetOffset;
+    tweenRotationTo(cardRoot, "y", target, hoverRotationDuration, Math.PI);
   }
 
   function handleCardHover(event) {
     if (!activeCamera || !skillGroup) return;
-    const hit = getTopHit(event);
-    const cardRoot = hit && isDescendant(hit.object, skillGroup) ? getCardRoot(hit.object) : null;
+    const hit = getTopHitFiltered(event, (hitEntry) => {
+      if (!cardProxies.size) return true;
+      if (!skillGroup) return true;
+      if (!isDescendant(hitEntry.object, skillGroup)) return true;
+      return isProxyDescendant(hitEntry.object);
+    });
+    const proxyTarget = hit ? getProxyCardTarget(hit.object) : null;
+    if (cardProxies.size && !proxyTarget) {
+      if (lastHoveredCard) setCardHover(lastHoveredCard, false);
+      lastHoveredCard = null;
+      return;
+    }
+    const cardRoot = proxyTarget
+      || (hit && isDescendant(hit.object, skillGroup) ? getCardRoot(hit.object) : null);
     if (cardRoot === lastHoveredCard) return;
     if (lastHoveredCard) setCardHover(lastHoveredCard, false);
     lastHoveredCard = cardRoot || null;
@@ -813,9 +1062,17 @@ if (!mount) {
 
   function handleCardClick(event) {
     if (!activeCamera || !skillGroup) return false;
-    const hit = getTopHit(event);
-    if (!hit || !isDescendant(hit.object, skillGroup)) return false;
-    const cardRoot = getCardRoot(hit.object);
+    const hit = getTopHitFiltered(event, (hitEntry) => {
+      if (!cardProxies.size) return true;
+      if (!skillGroup) return true;
+      if (!isDescendant(hitEntry.object, skillGroup)) return true;
+      return isProxyDescendant(hitEntry.object);
+    });
+    const proxyTarget = hit ? getProxyCardTarget(hit.object) : null;
+    if (!hit) return false;
+    if (cardProxies.size && !proxyTarget) return false;
+    if (!proxyTarget && !isDescendant(hit.object, skillGroup)) return false;
+    const cardRoot = proxyTarget || getCardRoot(hit.object);
     if (!cardRoot) return false;
     const state = cardStates.get(cardRoot) || { isFlipped: false, isSelected: false };
     if (event.shiftKey) {
@@ -879,4 +1136,9 @@ if (!mount) {
 
   resize();
   animate();
+  if (isLocalDev() || new URLSearchParams(window.location.search || "").has("assetsDebug")) {
+    corsProbe("glb/about-cube.glb");
+    corsProbe("assets/computer-app-icons/Ableton Live.png");
+    corsProbe("assets/computer-app-icons/backs/Ableton Live_back.png");
+  }
 }

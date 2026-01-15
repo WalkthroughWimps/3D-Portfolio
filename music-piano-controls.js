@@ -28,11 +28,24 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from './global-sync.js';
 import { createVideoControlsUI, syncAudioToVideo } from './shared-video-controls.js';
-import { assetUrl } from './assets-config.js';
+import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
 // Tablet helper currently a no-op; import kept so future tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
+THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
+
+async function fetchAudioBuffer(url) {
+  const resolved = assetUrl(url);
+  const res = await fetch(resolved, { mode: 'cors', credentials: 'omit', cache: 'no-store' });
+  if (!res.ok) throw new Error(`Audio fetch failed ${res.status} for ${res.url}`);
+  return res.arrayBuffer();
+}
 const USE_TOPPAD_GRID = true;
 let showTopPadGrid = false;
+if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
+  corsProbe('glb/toy-piano.glb');
+  corsProbe('Videos/music-page/sunil-video.jpg');
+  corsProbe('Renders/tablet_animation_1.opus');
+}
 window.addEventListener('DOMContentLoaded', ()=>{
   instrumentPickerEl = document.getElementById('instrumentPicker');
   if(instrumentPickerEl){
@@ -407,12 +420,15 @@ const topPadIconSources = [
 const topPadIconImages = topPadIconSources.map((src) => {
   const img = new Image();
   img.crossOrigin = 'anonymous';
+  img.decoding = 'async';
+  img.loading = 'eager';
+  img.crossOrigin = 'anonymous';
   img.src = src;
   img.onload = () => { try { renderTopPadGrid(); } catch (e) {} };
   return img;
 });
 const topPadVideo = {
-  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.src = assetUrl('Videos/music-page/sunil-video.jpg'); img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
+  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async'; img.loading = 'eager'; img.src = assetUrl('Videos/music-page/sunil-video.jpg'); img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
   lqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl('Videos/music-page/sunil-video_lq.webm'); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
   hqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl('Videos/music-page/sunil-video_hq.webm'); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
   audio: (() => { const a = document.createElement('audio'); a.crossOrigin = 'anonymous'; a.src = assetUrl('Videos/music-page/sunil-video.opus'); a.preload = 'auto'; return a; })(),
@@ -1745,9 +1761,7 @@ async function loadDogSampleBuffer(){
     dogSampleLoadPromise = (async ()=>{
       ensureAudioContext();
       if(!audioCtx) throw new Error('AudioContext unavailable');
-      const resp = await fetch(DOG_SAMPLE_URL, { method: 'GET' });
-      if(!resp.ok) throw new Error(`Dog sample fetch failed (${resp.status})`);
-      const arrayBuffer = await resp.arrayBuffer();
+      const arrayBuffer = await fetchAudioBuffer(DOG_SAMPLE_URL);
       return audioCtx.decodeAudioData(arrayBuffer);
     })();
   }
@@ -3885,7 +3899,7 @@ function renderTopPadGrid(){
       } else if(idx === 2){
         drawX = c.x + c.r - size;
       }
-      ctx.drawImage(img, drawX, drawY, size, size);
+      safeDrawImage(ctx, img, drawX, drawY, size, size);
     }
     ctx.restore();
   });
@@ -4135,7 +4149,7 @@ function renderTopPadGrid(){
     const drawH = ih * scale;
     const drawX = rect.x + (rect.w - drawW) * 0.5;
     const drawY = rect.y + (rect.h - drawH) * 0.5;
-    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    safeDrawImage(ctx, img, drawX, drawY, drawW, drawH);
   };
   const drawRoundedRect = (rect, radius) => {
     if(!rect || !rect.w || !rect.h) return;
@@ -6062,6 +6076,10 @@ function buildPendingNotes(){
       trackId: span.part || null,
       hasStruck: false
     });
+  },
+  undefined,
+  (err) => {
+    console.error('GLTF LOAD FAILED:', `${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`, err);
   });
   pendingNotes.sort((a,b)=>a.startSec - b.startSec);
 }
@@ -6838,7 +6856,7 @@ function renderBackboardOverlay(dt){
             const inset = Math.max(6, Math.min(w, h) * 0.2);
             const iw = w - inset * 2;
             const ih = h - inset * 2;
-            ctx.drawImage(img, x + inset, y + inset, iw, ih);
+            safeDrawImage(ctx, img, x + inset, y + inset, iw, ih);
           }
         };
         if(leftBounds){
@@ -9176,7 +9194,13 @@ const instrumentPlayersBySide = {
   right: { player: null, name: null, id: null, config: null }
 };
 const qwertyArrowLeftImg = new Image();
+qwertyArrowLeftImg.crossOrigin = 'anonymous';
+qwertyArrowLeftImg.decoding = 'async';
+qwertyArrowLeftImg.loading = 'eager';
 const qwertyArrowRightImg = new Image();
+qwertyArrowRightImg.crossOrigin = 'anonymous';
+qwertyArrowRightImg.decoding = 'async';
+qwertyArrowRightImg.loading = 'eager';
 qwertyArrowLeftImg.src = 'assets/svg/piano-arrows-left.svg';
 qwertyArrowRightImg.src = 'assets/svg/piano-arrows-right.svg';
 function isBlackMidi(note){

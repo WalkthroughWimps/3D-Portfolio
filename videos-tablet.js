@@ -3,12 +3,14 @@
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
 import { GLTFLoader } from 'https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js';
+import { assetUrl, corsProbe, isLocalDev } from './assets-config.js';
 
 const DEBUG_PINK_RECT = false; // draw a diagnostic 16:9 plane in front of the screen
 const SCREEN_W = 5.1520628;
 const SCREEN_H_TARGET = 2.898035369653893; // 16:9 height derived from screen width
 const NORMALIZE_SCREEN_UV = true;
 let didLogScreenUv = false;
+THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
 /* eslint-disable no-unused-vars */
 
@@ -839,8 +841,11 @@ export function loadTabletGlb(path, onLoaded, onProgress, onError) {
   try {
     const loader = new GLTFLoader();
     loader.setCrossOrigin('anonymous');
-    const enc = (p) => encodeURI(p);
-    loader.load(enc(path), onLoaded, onProgress, onError || (() => {}));
+    const enc = (p) => encodeURI(assetUrl(p));
+    const resolved = enc(path);
+    loader.load(resolved, onLoaded, onProgress, onError || ((e) => {
+      console.error('GLTF LOAD FAILED:', resolved, e);
+    }));
   } catch (e) {
     console.warn('loadTabletGlb failed:', e);
     try { if (onError) onError(e); } catch (err) { /* ignore */ }

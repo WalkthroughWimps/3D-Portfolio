@@ -7,7 +7,7 @@ import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyn
 import { createGameAudioBridge } from './game-audio-bridge.js';
 import { createGamesVideoAdapter } from './games-video-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
-import { assetUrl } from './assets-config.js';
+import { assetUrl, safeDrawImage, markBroken, isBroken, corsProbe, isLocalDev } from './assets-config.js';
 
 const STAGE_ID = 'model-stage';
 const GLB_URL = assetUrl('./glb/Arcade-Console.glb');
@@ -34,18 +34,18 @@ const GAME_SPLASH_DURATIONS_MS = {
   'big-bomb-blast': 7000
 };
 const GAME_SPLASH_IMAGES = {
-  battleship: 'games/battleship.png',
-  'train-mania': 'games/train-mania.png',
-  plinko: 'games/plinko.png',
-  'pick-a-square': 'games/pick-a-square.png',
-  'big-bomb-blast': 'games/big-bomb-blast.png'
+  battleship: assetUrl('games/battleship.png'),
+  'train-mania': assetUrl('games/train-mania.png'),
+  plinko: assetUrl('games/plinko.png'),
+  'pick-a-square': assetUrl('games/pick-a-square.png'),
+  'big-bomb-blast': assetUrl('games/big-bomb-blast.png')
 };
 const GAME_THUMBS = {
-  battleship: 'games/images/battleship.png',
-  plinko: 'games/images/plinko.png',
-  'pick-a-square': 'games/images/pick-a-square.png',
-  'train-mania': 'games/images/train-mania.png',
-  'big-bomb-blast': 'games/images/big-bomb-blast.png'
+  battleship: assetUrl('games/images/battleship.png'),
+  plinko: assetUrl('games/images/plinko.png'),
+  'pick-a-square': assetUrl('games/images/pick-a-square.png'),
+  'train-mania': assetUrl('games/images/train-mania.png'),
+  'big-bomb-blast': assetUrl('games/images/big-bomb-blast.png')
 };
 const GAME_LABEL_SVGS = {
   battleship: null,
@@ -63,6 +63,21 @@ const VIDEO_TITLE_IMAGES = {
   samples: assetUrl('./games/images/game samples.png')
 };
 const videoTitleImageCache = new Map();
+THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
+function safeDrawVideo(ctx, video, ...args) {
+  if (!video || video.readyState < 2) return false;
+  const src = video.currentSrc || video.src || '';
+  if (isBroken(src)) return false;
+  try {
+    ctx.drawImage(video, ...args);
+    return true;
+  } catch (e) {
+    console.warn('drawImage failed (video, likely CORS/CORP):', src, e);
+    markBroken(src);
+    console.warn('markBroken(video):', src);
+    return false;
+  }
+}
 function ensureVideoTitleImage(key) {
   if (videoTitleImageCache.has(key)) return videoTitleImageCache.get(key);
   const src = VIDEO_TITLE_IMAGES[key];
@@ -70,6 +85,7 @@ function ensureVideoTitleImage(key) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
+  img.loading = 'eager';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
   videoTitleImageCache.set(key, img);
@@ -147,6 +163,10 @@ function createAudioElement(src) {
   audio.crossOrigin = 'anonymous';
   audio.preload = 'auto';
   audio.src = src;
+  audio.addEventListener('error', () => {
+    const err = audio.error;
+    console.warn('AUDIO ERROR:', audio.src, err ? { code: err.code, message: err.message } : err);
+  });
   return audio;
 }
 
@@ -384,6 +404,11 @@ if (!stage) throw new Error(`Missing #${STAGE_ID} container`);
 
 init();
 loadCabinet();
+if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
+  corsProbe('glb/Arcade-Console.glb');
+  corsProbe('Videos/games-page/video-games-reel-hq.webm');
+  corsProbe('Videos/games-page/video-games-reel.opus');
+}
 animate();
 
 function init() {
@@ -582,7 +607,7 @@ function loadCabinet() {
       if (p) gamesLog('glb', `Loading GLB... ${p.toFixed(1)}%`);
     },
     (err) => {
-      console.error('Failed to load GLB:', err);
+      console.error('GLTF LOAD FAILED:', GLB_URL, err);
     }
   );
 }
@@ -1236,7 +1261,8 @@ function ensureSplashImage(gameId) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
-  img.src = GAME_SPLASH_IMAGES[gameId] || 'games/game-splash-screen.png';
+  img.loading = 'eager';
+  img.src = GAME_SPLASH_IMAGES[gameId] || assetUrl('games/game-splash-screen.png');
   splashImages.set(key, img);
   splashImage = img;
 }
@@ -1248,6 +1274,7 @@ function ensureVideoThumb(videoId) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
+  img.loading = 'eager';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
   videoThumbImages.set(videoId, img);
@@ -1260,11 +1287,17 @@ function ensurePreviewVideo(videoId) {
   if (!src) return null;
   const v = document.createElement('video');
   v.crossOrigin = 'anonymous';
+  v.preload = 'metadata';
+  v.playsInline = true;
+  v.muted = true;
   v.src = src;
   forceHideVideoElement(v);
   v.loop = true;
-  v.playsInline = true;
   v.setAttribute('playsinline', '');
+  v.addEventListener('error', () => {
+    const err = v.error;
+    console.warn('VIDEO ERROR:', v.src, err ? { code: err.code, message: err.message } : err);
+  });
   videoPreviewVideos.set(videoId, v);
   return v;
 }
@@ -1287,6 +1320,7 @@ function ensureGameThumb(gameId) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
+  img.loading = 'eager';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
   gameThumbImages.set(gameId, img);
@@ -1303,6 +1337,7 @@ function ensureGameLabel(gameId) {
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.decoding = 'async';
+  img.loading = 'eager';
   img.src = src;
   img.onload = () => { needsRedraw = true; };
   gameLabelImages.set(gameId, img);
@@ -1491,14 +1526,18 @@ function startVideoReel(entry) {
   enterContentView();
   reelVideo = document.createElement('video');
   reelVideo.crossOrigin = 'anonymous';
+  reelVideo.preload = 'metadata';
+  reelVideo.playsInline = true;
+  reelVideo.muted = true;
   reelVideo.src = reelSource;
   reelVideo.dataset.title = (entry && entry.title) ? entry.title : 'Game Reel';
   reelVideo.loop = false;
-  reelVideo.playsInline = true;
   reelVideo.setAttribute('playsinline', '');
   forceHideVideoElement(reelVideo);
-  reelVideo.preload = 'metadata';
-  reelVideo.muted = true;
+  reelVideo.addEventListener('error', () => {
+    const err = reelVideo.error;
+    console.warn('VIDEO ERROR:', reelVideo.src, err ? { code: err.code, message: err.message } : err);
+  });
   if (audioSrc) {
     reelAudio = createAudioElement(audioSrc);
   }
@@ -1771,7 +1810,7 @@ function drawScreen() {
       try {
         const screenRect = surface;
         const target = videoRect || contentRect;
-        ctx.drawImage(reelVideo, target.x, target.y, target.w, target.h);
+        safeDrawVideo(ctx, reelVideo, target.x, target.y, target.w, target.h);
 
         if (!loggedReelRect) {
           loggedReelRect = true;
@@ -1784,7 +1823,7 @@ function drawScreen() {
     } else if (videoReady && playerVideo) {
       try {
         const target = videoRect || contentRect;
-        ctx.drawImage(playerVideo, target.x, target.y, target.w, target.h);
+        safeDrawVideo(ctx, playerVideo, target.x, target.y, target.w, target.h);
       } catch (e) { /* ignore */ }
     }
 
@@ -1929,7 +1968,7 @@ function drawGameSplash(ctx, rect, nowMs) {
       : 16 / 9;
     const targetRect = rectRound(fitRectContain(16, 9, box));
     const imgRect = fitRectToAspect(targetRect, imgAspect);
-    ctx.drawImage(splashImage, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
+    safeDrawImage(ctx, splashImage, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
   }
 
   const barW = rect.w * 0.72;
@@ -1983,7 +2022,8 @@ function drawMenu(ctx, rect) {
 
   const reelsTitleImg = ensureVideoTitleImage('reels');
   if (layout.videoTitleRect && reelsTitleImg && reelsTitleImg.complete) {
-    ctx.drawImage(
+    safeDrawImage(
+      ctx,
       reelsTitleImg,
       layout.videoTitleRect.x,
       layout.videoTitleRect.y,
@@ -1993,7 +2033,8 @@ function drawMenu(ctx, rect) {
   }
   const samplesTitleImg = ensureVideoTitleImage('samples');
   if (layout.magentaTitleRect && samplesTitleImg && samplesTitleImg.complete) {
-    ctx.drawImage(
+    safeDrawImage(
+      ctx,
       samplesTitleImg,
       layout.magentaTitleRect.x,
       layout.magentaTitleRect.y,
@@ -2013,7 +2054,11 @@ function drawMenu(ctx, rect) {
     const drawX = slot.rect.x + (slot.rect.w - drawW) / 2;
     const drawY = slot.rect.y + (slot.rect.h - drawH) / 2;
     if (source) {
-      ctx.drawImage(source, drawX, drawY, drawW, drawH);
+      if (source instanceof HTMLVideoElement) {
+        safeDrawVideo(ctx, source, drawX, drawY, drawW, drawH);
+      } else {
+        safeDrawImage(ctx, source, drawX, drawY, drawW, drawH);
+      }
     } else {
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillRect(drawX, drawY, drawW, drawH);
@@ -2096,7 +2141,7 @@ function drawMenu(ctx, rect) {
       ctx.arc(thumbCx, thumbCy, thumbRadius * scale, 0, Math.PI * 2);
       ctx.closePath();
       ctx.clip();
-      ctx.drawImage(thumb, thumbCx - thumbRadius * scale, thumbCy - thumbRadius * scale, thumbRadius * 2 * scale, thumbRadius * 2 * scale);
+      safeDrawImage(ctx, thumb, thumbCx - thumbRadius * scale, thumbCy - thumbRadius * scale, thumbRadius * 2 * scale, thumbRadius * 2 * scale);
       ctx.restore();
     }
     if (isHover) {
