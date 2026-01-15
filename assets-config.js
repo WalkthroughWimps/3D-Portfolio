@@ -60,8 +60,11 @@ export function logAssetDiagnosticsOnce(sampleVideoPath = "Videos/videos-page/mu
 logAssetDiagnosticsOnce();
 
 export function assetUrl(path) {
-  // Leave absolute URLs untouched
-  if (typeof path === "string" && /^https?:\/\//i.test(path)) return path;
+  if (typeof path === "string") {
+    // Leave absolute URLs and special schemes untouched.
+    if (/^https?:\/\//i.test(path)) return path;
+    if (/^(blob:|data:|about:|mailto:)/i.test(path)) return path;
+  }
 
   const base = normalizeBase(ASSETS_BASE);
   if (!base) return path; // local dev / disabled
