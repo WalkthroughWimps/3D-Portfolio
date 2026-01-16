@@ -1139,6 +1139,228 @@ const SF2_HYPERSOUND_URL = assetUrl('soundfonts/hypersound/hypersound.sf2');
 const SF2_DRUMS_URL = assetUrl('soundfonts/drums/definitive-drums.sf2');
 const SF2_WAPPYDOG_URL = assetUrl('soundfonts/wappydog/WappyDog.sf2');
 const DOG_SAMPLE_URL = assetUrl('soundfonts/DOGBW60.wav');
+
+const SALAMANDER_DRUMS_BASE = assetUrl('soundfonts/salamander drums/');
+const SALAMANDER_DRUM_FILES = [
+  '36_C2_kick-1.wav',
+  '37_C#2_kick-2.wav',
+  '38_D2_snare2-1.wav',
+  '39_D#2_snare2-2.wav',
+  '40_E2_snare2-ghost-1.wav',
+  '41_F2_snare2-ghost-10.wav',
+  '42_F#2_snare2-ghost-2.wav',
+  '43_G2_snare2-ghost-3.wav',
+  '44_G#2_snare2-ghost-4.wav',
+  '45_A2_snare2-ghost-5.wav',
+  '46_A#2_snare2-ghost-6.wav',
+  '47_B2_snare2-ghost-7.wav',
+  '48_C3_snare2-ghost-8.wav',
+  '49_C#3_snare2-ghost-9.wav',
+  '50_D3_snare-1.wav',
+  '51_D#3_snarestick.wav',
+  '52_E3_snare-2.wav',
+  '53_F3_snare-ghost-1.wav',
+  '54_F#3_snare-ghost-10.wav',
+  '55_G3_snare-ghost-2.wav',
+  '56_G#3_snare-ghost-3.wav',
+  '57_A3_snare-ghost-4.wav',
+  '58_A#3_snare-ghost-5.wav',
+  '59_B3_snare-ghost-6.wav',
+  '60_C4_snare-ghost-7.wav',
+  '61_C#4_snare-ghost-8.wav',
+  '62_D4_snare-ghost-9.wav',
+  '63_D#4_hihatclosed.wav',
+  '64_E4_hihatfootstomp.wav',
+  '65_F4_hihatfoot.wav',
+  '66_F#4_hihatopen.wav',
+  '67_G4_hihatsemiopen1.wav',
+  '68_G#4_hihatsemiopen1-p.wav',
+  '69_A4_hihatsemiopen2.wav',
+  '70_A#4_hihatsemiopen3.wav',
+  '71_B4_hihatsemiopen4.wav',
+  '72_C5_hihatsemiopen5.wav',
+  '73_C#5_hihatsemiopen6.wav',
+  '74_D5_hihatsemiopen7.wav',
+  '75_D#5_hitom.wav',
+  '76_E5_lotom.wav',
+  '77_F5_ride1bell.wav',
+  '78_F#5_ride-1.wav',
+  '79_G5_ride2bell.wav',
+  '80_G#5_ride2crashchoke.wav',
+  '81_A5_ride2crash.wav',
+  '82_A#5_ride-2.wav',
+  '83_B5_china1choke.wav',
+  '84_C6_china-1.wav',
+  '85_C#6_china2choke.wav',
+  '86_D6_china-2.wav',
+  '87_D#6_crash1choke.wav',
+  '88_E6_crash-1.wav',
+  '89_F6_crash2choke.wav',
+  '90_F#6_crash-2.wav',
+  '91_G6_crash-3.wav',
+  '92_G#6_splash1.wav',
+  '93_A6_cowbell.wav',
+  '94_A#6_bellchime.wav'
+];
+const SALAMANDER_DRUMS_BY_MIDI = new Map();
+const SALAMANDER_DRUMS_BY_NOTE = new Map();
+const SALAMANDER_DRUM_MIDIS = [];
+let SALAMANDER_DRUM_RANGE = { min: 36, max: 94 };
+
+function midiToSharpNoteName(midiNum){
+  const n = Number(midiNum);
+  if(!Number.isFinite(n)) return null;
+  const names = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const octave = Math.floor(n / 12) - 1;
+  const name = names[((n % 12) + 12) % 12];
+  return `${name}${octave}`;
+}
+
+SALAMANDER_DRUM_FILES.forEach((file) => {
+  const match = file.match(/^(\d+)_([^_]+)_/);
+  if(!match) return;
+  const midi = Number(match[1]);
+  const note = match[2];
+  if(Number.isFinite(midi)){
+    if(!SALAMANDER_DRUMS_BY_MIDI.has(midi)) SALAMANDER_DRUMS_BY_MIDI.set(midi, file);
+    SALAMANDER_DRUM_MIDIS.push(midi);
+  }
+  if(note && !SALAMANDER_DRUMS_BY_NOTE.has(note)) SALAMANDER_DRUMS_BY_NOTE.set(note, file);
+});
+SALAMANDER_DRUM_MIDIS.sort((a,b)=>a-b);
+if(SALAMANDER_DRUM_MIDIS.length){
+  SALAMANDER_DRUM_RANGE = {
+    min: SALAMANDER_DRUM_MIDIS[0],
+    max: SALAMANDER_DRUM_MIDIS[SALAMANDER_DRUM_MIDIS.length - 1]
+  };
+}
+
+function getNearestSalamanderDrumMidi(midi){
+  if(!SALAMANDER_DRUM_MIDIS.length || !Number.isFinite(midi)) return null;
+  let best = SALAMANDER_DRUM_MIDIS[0];
+  let bestDist = Math.abs(best - midi);
+  for(let i=1;i<SALAMANDER_DRUM_MIDIS.length;i++){
+    const candidate = SALAMANDER_DRUM_MIDIS[i];
+    const dist = Math.abs(candidate - midi);
+    if(dist < bestDist){
+      best = candidate;
+      bestDist = dist;
+    }
+  }
+  return best;
+}
+
+function getSalamanderDrumFileForMidi(midiNum){
+  const midi = Number(midiNum);
+  if(!Number.isFinite(midi)) return null;
+  if(SALAMANDER_DRUMS_BY_MIDI.has(midi)) return SALAMANDER_DRUMS_BY_MIDI.get(midi);
+  const noteName = midiToSharpNoteName(midi);
+  if(noteName && SALAMANDER_DRUMS_BY_NOTE.has(noteName)) return SALAMANDER_DRUMS_BY_NOTE.get(noteName);
+  const nearest = getNearestSalamanderDrumMidi(midi);
+  return nearest != null ? SALAMANDER_DRUMS_BY_MIDI.get(nearest) : null;
+}
+
+function getSalamanderDrumUrlForMidi(midiNum){
+  const file = getSalamanderDrumFileForMidi(midiNum);
+  if(!file) return null;
+  return `${SALAMANDER_DRUMS_BASE}${encodeURIComponent(file)}`;
+}
+
+const salamanderDrumBuffers = new Map();
+const salamanderDrumPending = new Map();
+
+async function loadSalamanderDrumBuffer(midiNum){
+  const midi = Number(midiNum);
+  if(!Number.isFinite(midi)) return null;
+  const cached = salamanderDrumBuffers.get(midi);
+  if(cached) return cached;
+  const pending = salamanderDrumPending.get(midi);
+  if(pending) return pending;
+  const url = getSalamanderDrumUrlForMidi(midi);
+  if(!url) return null;
+  const promise = (async ()=>{
+    const data = await fetchAudioBuffer(url);
+    ensureAudioContext();
+    if(!audioCtx) return null;
+    return audioCtx.decodeAudioData(data);
+  })();
+  salamanderDrumPending.set(midi, promise);
+  return promise.then((buffer)=>{
+    if(buffer) salamanderDrumBuffers.set(midi, buffer);
+    return buffer;
+  }).catch((err)=>{
+    console.warn('[Drums] sample decode failed', { midi, url }, err);
+    return null;
+  }).finally(()=>{
+    salamanderDrumPending.delete(midi);
+  });
+}
+
+function createSalamanderDrumPlayer(){
+  const player = {
+    play: function(midiNum, whenSec, opts){
+      ensureAudioContext();
+      if(!audioCtx) return null;
+      const midi = Number(midiNum);
+      if(!Number.isFinite(midi)) return null;
+      const dest = (opts && opts.gainNode) ? opts.gainNode : audioCtx.destination;
+      const startAt = (typeof whenSec === 'number') ? whenSec : audioCtx.currentTime;
+      const wrapper = { _src: null, _stopped: false };
+      const startSource = (buffer)=>{
+        if(wrapper._stopped || !buffer) return;
+        const src = audioCtx.createBufferSource();
+        src.buffer = buffer;
+        if(opts && opts.preGain){
+          if(!opts.preGain._connectedToDest){
+            try{ opts.preGain.connect(dest); }catch(e){}
+            opts.preGain._connectedToDest = true;
+          }
+          src.connect(opts.preGain);
+        } else {
+          src.connect(dest);
+        }
+        src.start(startAt);
+        wrapper._src = src;
+      };
+      const cached = salamanderDrumBuffers.get(midi);
+      if(cached){
+        startSource(cached);
+      } else {
+        loadSalamanderDrumBuffer(midi).then(startSource);
+      }
+      wrapper.stop = function(stopWhenSec){
+        wrapper._stopped = true;
+        if(wrapper._src){
+          try{ wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch(e){}
+        }
+      };
+      return wrapper;
+    },
+    getBufferForMidi: function(midiNum){
+      const midi = Number(midiNum);
+      if(!Number.isFinite(midi)) return null;
+      return salamanderDrumBuffers.get(midi) || null;
+    },
+    loadBufferForMidi: function(midiNum){
+      return loadSalamanderDrumBuffer(midiNum);
+    }
+  };
+  player._isLocal = true;
+  return player;
+}
+
+async function loadSalamanderDrumsForConfig(config){
+  instrumentPlayer = createSalamanderDrumPlayer();
+  currentInstrumentName = config.label || 'Drums';
+  currentInstrumentConfig = config;
+  updateNoteEngineMode(config);
+  updateDisabledKeysForConfig();
+  if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
+  if(DEBUG_INSTRUMENTS){
+    console.log('[Instrument] Salamander drums ready', { range: SALAMANDER_DRUM_RANGE });
+  }
+  return instrumentPlayer;
+}
 const DOG_SAMPLE_BASE_MIDI = 69;
 const DOG_SAMPLE_RANGE = { min: 24, max: 84 };
 let dogSampleBuffer = null;
@@ -2253,7 +2475,7 @@ const INSTRUMENT_CONFIG = [
   { id: 'solo_brass', tab: 'solo', label: 'Solo Brass', library: 'solo', patch: 'trumpet', wafProgram: 57, minNote: 54, maxNote: 94, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_wind', tab: 'solo', label: 'Solo Wind', library: 'solo', patch: 'flute', wafProgram: 74, minNote: 60, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_lead', tab: 'solo', label: 'Lead Synth', library: 'solo', patch: 'lead_1_square', wafProgram: 81, minNote: 36, maxNote: 108, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.015, decay: 0.18, sustain: 0.6, release: 0.25 },
-  { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: 21, maxNote: 108, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.1, attack: 0.01, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: { min: 35, max: 81 }, engine: 'sf2', sf2Url: SF2_DRUMS_URL, sf2IsDrum: true, sf2Bank: 128, oneShotMs: 80 },
+  { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: SALAMANDER_DRUM_RANGE.min, maxNote: SALAMANDER_DRUM_RANGE.max, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, gainScale: 1.05, attack: 0.005, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: SALAMANDER_DRUM_RANGE, engine: 'sample', drumSampleSet: 'salamander' },
     { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'dogbw60', wafProgram: 124, minNote: 24, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'dog-sample' },
   { id: 'fx_telephone', tab: 'fx', label: 'Telephone', library: 'fx', patch: 'telephone_ring', wafProgram: 125, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.01, decay: 0.18, sustain: 0.55, release: 0.2 },
   { id: 'fx_odd', tab: 'fx', label: 'Odd FX', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
@@ -2329,7 +2551,7 @@ const RANDOM_POOLS = {
     { patch: 'trumpet', label: 'Trumpet' }
   ],
   fx: [
-    { id: 'fx_drums', label: 'Arachno Drums' },
+    { id: 'fx_drums', label: 'Drums' },
       { id: 'fx_dog', label: 'Dog' },
     { patch: 'applause', label: 'Applause' },
     { patch: 'whistle', label: 'Whistle' },
@@ -4363,21 +4585,15 @@ async function triggerInstrumentButton(id, panelId){
     const config = getInstrumentConfigById(id);
     if(id === 'fx_drums' && config){
       const ps = panelState[panelId] || panelState.left;
-      const maxPreset = 12;
-      const current = Number.isFinite(ps.drumPresetIndex) ? ps.drumPresetIndex : 0;
-      const next = (current % maxPreset) + 1;
-      ps.drumPresetIndex = next;
       if(!ps.customLabels) ps.customLabels = {};
-      ps.customLabels[id] = `Drums ${next}`;
+      ps.customLabels[id] = 'Drums';
       const customConfig = Object.assign({}, config, {
-        label: `Drums ${next}`,
-        sf2PresetName: `Perfect Drums ${next}`,
-        sf2Program: null,
-        sf2ProgramFallback: next - 1,
-        sf2Bank: Number.isFinite(config.sf2Bank) ? config.sf2Bank : 128,
-        sf2BankFallback: Number.isFinite(config.sf2Bank) ? config.sf2Bank : 128
+        label: 'Drums',
+        drumNoteRange: SALAMANDER_DRUM_RANGE,
+        minNote: SALAMANDER_DRUM_RANGE.min,
+        maxNote: SALAMANDER_DRUM_RANGE.max
       });
-      await loadSf2InstrumentForConfig(customConfig);
+      await loadSalamanderDrumsForConfig(customConfig);
       if(panelId && instrumentPlayersBySide[panelId]){
         instrumentPlayersBySide[panelId].player = instrumentPlayer;
         instrumentPlayersBySide[panelId].name = currentInstrumentName;
@@ -4872,6 +5088,9 @@ async function loadInstrument(id){
   }
   if(config.id === 'fx_dog'){
     return loadDogSampleInstrument(config);
+  }
+  if(config.id === 'fx_drums' && config.drumSampleSet === 'salamander'){
+    return loadSalamanderDrumsForConfig(config);
   }
   if(config.engine === 'sf2'){
     const loaded = await loadSf2InstrumentForConfig(config);

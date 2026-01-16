@@ -44,6 +44,23 @@ export const ASSETS_BASE = (() => {
 
 console.info('[assets] base =', ASSETS_BASE);
 
+const ASSET_PREFIXES = [
+  'glb/',
+  'videos/',
+  'renders/',
+  'midi/',
+  'music/',
+  'soundboards/',
+  'soundfonts/'
+];
+
+function isAssetHostedPath(path) {
+  if (!path) return false;
+  const normalized = String(path).replace(/^[./]+/, '');
+  const lowered = normalized.toLowerCase();
+  return ASSET_PREFIXES.some((prefix) => lowered.startsWith(prefix));
+}
+
 let didLogAssetDiagnostics = false;
 export function logAssetDiagnosticsOnce(sampleVideoPath = "Videos/videos-page/music-videos-hq.webm", sampleAudioPath = "Renders/tablet_animation_1.opus") {
   if (didLogAssetDiagnostics) return;
@@ -68,6 +85,7 @@ export function assetUrl(path) {
 
   const base = normalizeBase(ASSETS_BASE);
   if (!base) return path; // local dev / disabled
+  if (!isAssetHostedPath(path)) return path;
 
   return `${base}/${String(path || "").replace(/^\/+/, "")}`;
 }
