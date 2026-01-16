@@ -392,6 +392,11 @@ const MAX_TRIM_MS = 20000; // safety cap (allow long tails up to 20s)
 let audioActiveDurationMs = 0; // duration between first audible and last audible
 let currentPlaybackRate = 1.0;
 let savedAudioPosSec = 0; // persisted playhead when paused
+let playbackPaused = false;
+let pausedTransportSec = 0;
+let pausedMidiElapsedMs = 0;
+let ignoreAudioEndedOnce = false;
+const suppressedNoteOffEvents = new Set();
 // Animation frame lock configuration
 const LOCK_FRAME = 140; // target frame to freeze at
 const LOCK_FPS = 30;    // assumed export FPS (adjust if different)
@@ -448,6 +453,16 @@ const topPadVideo = {
   zoom: null,
   cameraRestore: null
 };
+const trackVideo = {
+  active: false,
+  key: null,
+  hqVideo: null,
+  lqVideo: null,
+  ui: null,
+  uiCanvas: null,
+  uiCtx: null
+};
+const trackVideoElements = new Map();
 const TOPPAD_PREVIEW_MS = 2400;
 const TOPPAD_PREVIEW_SEEK_PAD = 0.6;
 const TOPPAD_ZOOM_MS = 700;
@@ -455,6 +470,7 @@ const AUDIO_VOLUME_KEY = 'site.audio.volume';
 const AUDIO_MUTED_KEY = 'site.audio.muted';
 const SYNC_OFFSET_MIN = -3000;
 const SYNC_OFFSET_MAX = 3000;
+const SYNC_OFFSET_STEP = 10;
 const SYNC_OFFSET_DEADZONE = 25;
 let topPadSyncDragging = false;
 let topPadSyncPointerId = null;
@@ -940,7 +956,8 @@ async function autoLevelSelectedInstruments(){
 
 function clampSyncOffset(ms){
   if(!Number.isFinite(ms)) return 0;
-  return Math.max(SYNC_OFFSET_MIN, Math.min(SYNC_OFFSET_MAX, Math.round(ms)));
+  const stepped = Math.round(ms / SYNC_OFFSET_STEP) * SYNC_OFFSET_STEP;
+  return Math.max(SYNC_OFFSET_MIN, Math.min(SYNC_OFFSET_MAX, stepped));
 }
 
 function normalizeSyncOffset(ms){
@@ -4371,6 +4388,13 @@ function renderTopPadGrid(){
     const drawH = ih * scale;
     const drawX = rect.x + (rect.w - drawW) * 0.5;
     const drawY = rect.y + (rect.h - drawH) * 0.5;
+    const isVideo = (typeof HTMLVideoElement !== 'undefined' && img instanceof HTMLVideoElement)
+      || (img && img.tagName === 'VIDEO');
+    if(isVideo){
+      if((img.readyState || 0) < 2) return;
+      try{ ctx.drawImage(img, drawX, drawY, drawW, drawH); }catch(e){}
+      return;
+    }
     safeDrawImage(ctx, img, drawX, drawY, drawW, drawH);
   };
   const drawRoundedRect = (rect, radius) => {
@@ -4389,7 +4413,46 @@ function renderTopPadGrid(){
     ctx.closePath();
   };
 
-  if(topPadVideo.mode === 'idle'){
+  if(trackVideo.active && trackVideo.hqVideo){
+    const videoEl = trackVideo.hqVideo;
+    const midDivision = { x: leftW, y: 0, w: midW, h: H };
+    const insetX = Math.max(2, Math.round(cellW * 0.06));
+    const insetY = Math.max(2, Math.round(cellH * 0.08));
+    const viewRect = {
+      x: midDivision.x + insetX,
+      y: midDivision.y + insetY,
+      w: Math.max(0, midDivision.w - insetX * 2),
+      h: Math.max(0, midDivision.h - insetY * 2)
+    };
+    drawImageCover(videoEl, viewRect);
+    topPadVideo.videoRect = viewRect;
+    topPadVideo.controlsRect = viewRect;
+    ensureTrackVideoUi();
+    if(trackVideo.ui){
+      if(!trackVideo.uiCanvas){
+        trackVideo.uiCanvas = document.createElement('canvas');
+        trackVideo.uiCtx = trackVideo.uiCanvas.getContext('2d');
+      }
+      const uiW = viewRect.w;
+      const uiH = viewRect.h;
+      trackVideo.uiCanvas.width = Math.max(1, Math.round(uiW));
+      trackVideo.uiCanvas.height = Math.max(1, Math.round(uiH));
+      const settings = getStoredAudioSettings();
+      const s = {
+        playing: !!(audioPlaying || playingMIDI),
+        muted: !!settings.muted,
+        volume: Number.isFinite(settings.volume) ? settings.volume : 1,
+        currentTime: getPlaybackPositionSec(),
+        duration: getTrackDurationSec(),
+        playbackRate: currentPlaybackRate,
+        canPlay: true,
+        canSeek: true
+      };
+      trackVideo.ui.setState(s);
+      trackVideo.ui.draw(trackVideo.uiCtx, { alpha: 1 });
+      ctx.drawImage(trackVideo.uiCanvas, viewRect.x, viewRect.y, viewRect.w, viewRect.h);
+    }
+  } else if(topPadVideo.mode === 'idle'){
     if(topPadVideo.thumbImg && topPadVideo.thumbImg.complete && topPadVideo.thumbImg.naturalWidth){
       drawImageCover(topPadVideo.thumbImg, topPadVideo.thumbRect);
     } else {
@@ -4402,7 +4465,7 @@ function renderTopPadGrid(){
 
   }
 
-  if(topPadVideo.mode !== 'idle'){
+  if(topPadVideo.mode !== 'idle' && !trackVideo.active){
     const videoEl = topPadVideo.mode === 'playing' ? topPadVideo.hqVideo : topPadVideo.lqVideo;
     if(videoEl && videoEl.readyState >= 2){
       if(topPadVideo.mode === 'playing'){
@@ -5305,7 +5368,11 @@ const TRACKS = {
       assetUrl('./music/Baby,-Just-Shut-Up!,-A-Lullaby.wav'),
       assetUrl('./music/Baby,-Just-Shut-Up!,-A-Lullaby.mp3')
     ],
-    midi: assetUrl('./midi/babyshutup.mid')
+    midi: assetUrl('./midi/babyshutup.mid'),
+    video: {
+      lq: assetUrl('Videos/music-page/baby-just-shut-up-a-lullaby_lq.webm'),
+      hq: assetUrl('Videos/music-page/baby-just-shut-up-a-lullaby_hq.webm')
+    }
   },
   raisins: {
     label: 'Raisins',
@@ -5313,7 +5380,11 @@ const TRACKS = {
       assetUrl('./music/Those-Raisins-Are-Mine!.wav'), // preferred if added later
       assetUrl('./music/Those-Raisins-Are-Mine!.mp3')
     ],
-    midi: assetUrl('./midi/raisins.mid')
+    midi: assetUrl('./midi/raisins.mid'),
+    video: {
+      lq: assetUrl('Videos/music-page/those-raisins-are-mine_lq.webm'),
+      hq: assetUrl('Videos/music-page/those-raisins-are-mine_hq.webm')
+    }
   },
   forests: {
     label: 'Forests',
@@ -5326,7 +5397,11 @@ const TRACKS = {
       assetUrl('./midi/Forests-Accomp.mid'),
       assetUrl('./midi/Forests-Harmony.mid'),
       assetUrl('./midi/Forests-Melody.mid')
-    ]
+    ],
+    video: {
+      lq: assetUrl('Videos/music-page/no-forests-left-to-give_lq.webm'),
+      hq: assetUrl('Videos/music-page/no-forests-left-to-give_hq.webm')
+    }
   }
 };
 let currentTrackKey = 'baby';
@@ -5516,14 +5591,15 @@ function animate(){
       if(elapsedMidiSec >= 0) advanceMIDI(elapsedMidiSec * 1000);
     }
     updateKeyAnimations();
-    if(topPadVideo.mode !== 'idle'){
+    updateTrackVideoSync();
+    if(topPadVideo.mode !== 'idle' || trackVideo.active){
       const nowMs = performance.now();
       if((nowMs - topPadLastDrawMs) >= (1000 / TOPPAD_MAX_FPS)){
         renderTopPadGrid();
         topPadLastDrawMs = nowMs;
       }
     }
-    if(topPadVideo.mode === 'playing'){
+    if(topPadVideo.mode === 'playing' && !trackVideo.active){
       try{
         syncAudioToVideo(topPadVideo.hqVideo, topPadVideo.audio, topPadVideo.syncState, {
           syncMs: getSyncOffsetMs()
@@ -6239,6 +6315,7 @@ function adjustMidiTimeMs(rawMs){
   return midiFirstNoteMs + (rawMs - midiFirstNoteMs) * (midiStretch / Math.max(1e-6, currentPlaybackRate));
 }
 function getTransportNowSec(){
+  if(playbackPaused) return pausedTransportSec;
   if(!audioCtx) return 0;
   return audioCtx.currentTime - transportStartAudioTime;
 }
@@ -6251,6 +6328,167 @@ function resetPlaybackVisuals(){
   activeFallingNotes = [];
   playbackParticles = [];
   lastTransportNowSec = null;
+}
+
+function getPlaybackPositionSec(){
+  if(!audioCtx) return savedAudioPosSec || 0;
+  if(audioPlaying){
+    return savedAudioPosSec + Math.max(0, (audioCtx.currentTime - audioStartCtxTime) * currentPlaybackRate);
+  }
+  return savedAudioPosSec || 0;
+}
+
+function getTrackDurationSec(){
+  if(audioActiveDurationMs > 0) return audioActiveDurationMs / 1000;
+  if(audioBuffer && Number.isFinite(audioBuffer.duration)) return audioBuffer.duration;
+  const v = trackVideo && trackVideo.hqVideo;
+  return v && Number.isFinite(v.duration) ? v.duration : 0;
+}
+
+function seekTrackToRatio(ratio){
+  if(!audioCtx || !audioReady || !midiLoaded) return;
+  const dur = getTrackDurationSec();
+  if(!Number.isFinite(dur) || dur <= 0) return;
+  const targetSec = Math.max(0, Math.min(dur, dur * Math.max(0, Math.min(1, ratio || 0))));
+  const wasPlaying = !!(audioPlaying || playingMIDI);
+  ignoreAudioEndedOnce = true;
+  disposeAudioSource('seekTrack cleanup');
+  audioPlaying = false;
+  playingMIDI = false;
+  savedAudioPosSec = targetSec;
+  const now = audioCtx.currentTime;
+  const lead = 0.05;
+  const t0 = now + lead;
+  const midiElapsedMs = (savedAudioPosSec * 1000) / Math.max(1e-6, currentPlaybackRate);
+  midiStartCtxTime = t0 - (midiElapsedMs / 1000);
+  transportStartAudioTime = midiStartCtxTime;
+  buildPendingNotes();
+  midiIndex = 0;
+  advanceMIDI(savedAudioPosSec * 1000);
+  if(wasPlaying){
+    playbackPaused = false;
+    pausedTransportSec = 0;
+    pausedMidiElapsedMs = 0;
+    startAudio((t0 - now) * 1000);
+    audioStartCtxTime = t0;
+    playingMIDI = true;
+    startTrackVideoPlayback(currentTrackKey);
+  } else {
+    playbackPaused = true;
+    pausedTransportSec = getTransportNowSec();
+    pausedMidiElapsedMs = (audioCtx.currentTime - midiStartCtxTime) * 1000;
+    lastTransportNowSec = getVisualNowSec();
+    syncTrackVideoToPlayback(false);
+  }
+  renderTopPadGrid();
+}
+
+function getTrackVideoElements(key){
+  if(trackVideoElements.has(key)) return trackVideoElements.get(key);
+  const track = TRACKS[key];
+  if(!track || !track.video) return null;
+  const lq = document.createElement('video');
+  lq.crossOrigin = 'anonymous';
+  lq.src = track.video.lq;
+  lq.muted = true;
+  lq.loop = false;
+  lq.preload = 'auto';
+  lq.playsInline = true;
+  lq.setAttribute('playsinline', '');
+  const hq = document.createElement('video');
+  hq.crossOrigin = 'anonymous';
+  hq.src = track.video.hq;
+  hq.muted = true;
+  hq.loop = false;
+  hq.preload = 'auto';
+  hq.playsInline = true;
+  hq.setAttribute('playsinline', '');
+  const entry = { lq, hq };
+  trackVideoElements.set(key, entry);
+  return entry;
+}
+
+function syncTrackVideoToPlayback(autoplay){
+  if(!trackVideo.active || !trackVideo.hqVideo) return;
+  const posSec = getPlaybackPositionSec();
+  const syncMs = getSyncOffsetMs();
+  const targetTime = Math.max(0, posSec - (syncMs / 1000));
+  try{ trackVideo.hqVideo.currentTime = targetTime; }catch(e){}
+  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch(e){}
+  if(autoplay){
+    try{ trackVideo.hqVideo.play().catch(() => {}); }catch(e){}
+  } else {
+    try{ trackVideo.hqVideo.pause(); }catch(e){}
+  }
+}
+
+function ensureTrackVideoUi(){
+  if(trackVideo.ui) return;
+  trackVideo.ui = createVideoControlsUI({ enablePointer: true });
+  trackVideo.ui.onAction = (action) => {
+    if(action.type === 'togglePlay'){
+      togglePlayPause();
+    } else if(action.type === 'seekToRatio'){
+      seekTrackToRatio(action.ratio);
+    } else if(action.type === 'toggleMute'){
+      const settings = getStoredAudioSettings();
+      const nextMuted = !settings.muted;
+      setStoredAudioSettings(settings.volume, nextMuted);
+      applyInstrumentMix();
+      renderTopPadGrid();
+    } else if(action.type === 'exit'){
+      stopPlayback();
+    }
+  };
+}
+
+function startTrackVideoPlayback(key){
+  const track = TRACKS[key];
+  if(!track || !track.video) return;
+  const videos = getTrackVideoElements(key);
+  if(!videos) return;
+  trackVideo.active = true;
+  trackVideo.key = key;
+  trackVideo.lqVideo = videos.lq;
+  trackVideo.hqVideo = videos.hq;
+  ensureTrackVideoUi();
+  syncTrackVideoToPlayback(!playbackPaused && (audioPlaying || playingMIDI));
+  renderTopPadGrid();
+}
+
+function pauseTrackVideoPlayback(){
+  if(!trackVideo.active || !trackVideo.hqVideo) return;
+  try{ trackVideo.hqVideo.pause(); }catch(e){}
+}
+
+function stopTrackVideoPlayback(){
+  if(!trackVideo.active) return;
+  try{ if(trackVideo.hqVideo){ trackVideo.hqVideo.pause(); trackVideo.hqVideo.currentTime = 0; } }catch(e){}
+  trackVideo.active = false;
+  trackVideo.key = null;
+  trackVideo.hqVideo = null;
+  trackVideo.lqVideo = null;
+  trackVideo.ui = null;
+  trackVideo.uiCanvas = null;
+  trackVideo.uiCtx = null;
+  renderTopPadGrid();
+}
+
+function updateTrackVideoSync(){
+  if(!trackVideo.active || !trackVideo.hqVideo) return;
+  if(playbackPaused || (!audioPlaying && !playingMIDI)) return;
+  const posSec = getPlaybackPositionSec();
+  const syncMs = getSyncOffsetMs();
+  const targetTime = Math.max(0, posSec - (syncMs / 1000));
+  const cur = trackVideo.hqVideo.currentTime || 0;
+  const threshold = Math.max(0.25, 0.12 * Math.max(1, currentPlaybackRate));
+  if(Math.abs(cur - targetTime) > threshold && !trackVideo.hqVideo.seeking){
+    try{ trackVideo.hqVideo.currentTime = targetTime; }catch(e){}
+  }
+  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch(e){}
+  if(trackVideo.hqVideo.paused){
+    try{ trackVideo.hqVideo.play().catch(() => {}); }catch(e){}
+  }
 }
 function stopAllNotesAndPedal(){
   try{ NoteEngine.panic(); }catch(e){}
@@ -6319,6 +6557,10 @@ function startMIDIPlayback(){
   if(audioCtx.state !== 'running'){
     safeRun(() => audioCtx.resume(), 'audioCtx resume');
   }
+  playbackPaused = false;
+  pausedTransportSec = 0;
+  pausedMidiElapsedMs = 0;
+  suppressedNoteOffEvents.clear();
   // Remove lingering glow from previous session before starting new playback
   clearAllKeyGlow();
   resetPlaybackVisuals();
@@ -6349,11 +6591,13 @@ function startMIDIPlayback(){
   startAudio((tAudio - now)*1000);
   audioStartCtxTime = tAudio;
   playingMIDI=true; midiIndex=0;
+  startTrackVideoPlayback(currentTrackKey);
   console.log('Playback start (audioCtx)', {offsetMs, firstNoteSec, t0, tAudio, tMidiZero, midiStartCtxTime});
 }
 function advanceMIDI(elapsedMs){
   if(midiIndex>=midiEvents.length) return;
   while(midiIndex < midiEvents.length){
+    const evIndex = midiIndex;
     const ev = midiEvents[midiIndex];
     const adjTime = midiFirstNoteMs + (ev.timeMs - midiFirstNoteMs) * (midiStretch / Math.max(1e-6, currentPlaybackRate));
     if(adjTime > elapsedMs) break;
@@ -6398,6 +6642,10 @@ function advanceMIDI(elapsedMs){
           console.log('[Track note]', { midi: nnum, uMid, xPx, keyIndex, meshName });
         }
       } else {
+        if(suppressedNoteOffEvents.has(evIndex)){
+          suppressedNoteOffEvents.delete(evIndex);
+          continue;
+        }
         state.phase='release'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=0;
         // Remove glow when the note-off occurs (respect overlapping notes via counter)
         if(ev.part){
@@ -6449,9 +6697,46 @@ function advanceMIDI(elapsedMs){
     }
   }
 }
+
+function applyMidiNoteOffForPause(ev, elapsedMs){
+  const side = getInstrumentSideForNote(ev.note);
+  if(!isNotePlayable(ev.note, side)) return false;
+  const state = keyAnimState.get(ev.note);
+  if(!state) return false;
+  const mesh = state.mesh;
+  state.phase='release'; state.startMs=elapsedMs; state.fromAngle=mesh.rotation.x; state.targetAngle=0;
+  if(ev.part){
+    applyTrackGlow(ev.note, mesh, ev.part, false);
+  } else {
+    applyKeyGlow(mesh, ev.note, false);
+  }
+  const deln = Number(ev.note);
+  activeNotes.delete(deln);
+  activeNoteSet.delete(deln);
+  return true;
+}
+
+function flushUpcomingNoteOffs(windowMs){
+  if(!midiEvents || midiIndex>=midiEvents.length) return;
+  const elapsedMs = pausedMidiElapsedMs || 0;
+  const limitMs = elapsedMs + Math.max(0, windowMs || 0);
+  for(let i=midiIndex;i<midiEvents.length;i++){
+    const ev = midiEvents[i];
+    const adjTime = midiFirstNoteMs + (ev.timeMs - midiFirstNoteMs) * (midiStretch / Math.max(1e-6, currentPlaybackRate));
+    if(adjTime > limitMs) break;
+    if(ev.type !== 'off') continue;
+    const noteNum = Number(ev.note);
+    if(!activeNoteSet.has(noteNum)) continue;
+    if(applyMidiNoteOffForPause(ev, elapsedMs)){
+      suppressedNoteOffEvents.add(i);
+    }
+  }
+}
 function updateKeyAnimations(){
-  // elapsed MIDI time using context clock
-  const elapsed = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0;
+  // elapsed MIDI time using context clock (freeze when paused)
+  const elapsed = playbackPaused
+    ? pausedMidiElapsedMs
+    : (audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0);
   keyAnimState.forEach(st => {
     const mesh = st.mesh; if(!mesh) return;
     let dur=0;
@@ -7866,14 +8151,20 @@ function startAudio(delayMs=0){
   const when = audioCtx.currentTime + Math.max(0, delayMs)/1000;
   const offset = Math.max(0, (audioTrimMs/1000) + savedAudioPosSec);
   audioSource.onended = ()=>{
+    if(ignoreAudioEndedOnce){
+      ignoreAudioEndedOnce = false;
+      return;
+    }
     audioPlaying=false;
     playingMIDI=false;
+    playbackPaused = false;
     savedAudioPosSec=0;
     resetKeys();
     clearAllKeyGlow();
     resetPlaybackVisuals();
     setBackboardViewMode('record-mode');
     updatePlayButton();
+    stopTrackVideoPlayback();
   };
   audioSource.start(when, offset);
   audioPlaying=true;
@@ -7964,12 +8255,15 @@ function selectTrack(key){
   // Stop current playback and reset state
   disposeAudioSource('selectTrack cleanup');
   audioPlaying=false; playingMIDI=false;
+  playbackPaused = false;
+  suppressedNoteOffEvents.clear();
   savedAudioPosSec=0; midiIndex=0; midiLoaded=false; audioReady=false; midiError=false; audioError=false;
   midiEvents=[]; midiFirstNoteMs=0; midiActiveDurationMs=0; midiStretch=1.0; sentinelFilteredCount=0;
   markMidiNoteSpansDirty();
   resetPlaybackVisuals();
   updatePlayButton(); resetKeys();
   clearAllKeyGlow();
+  stopTrackVideoPlayback();
   // Load assets for track
   const t = TRACKS[key];
   loadTrackAudio(t.audioCandidates || [t.audio]);
@@ -8012,14 +8306,21 @@ function togglePlayPause(){
     const now = audioCtx.currentTime;
     const playedSec = (now - audioStartCtxTime) * currentPlaybackRate;
     savedAudioPosSec += Math.max(0, playedSec);
+    playbackPaused = true;
+    pausedTransportSec = getTransportNowSec();
+    pausedMidiElapsedMs = (audioCtx.currentTime - midiStartCtxTime) * 1000;
+    lastTransportNowSec = getVisualNowSec();
+    ignoreAudioEndedOnce = true;
+    flushUpcomingNoteOffs(150);
     disposeAudioSource('togglePlayPause cleanup');
     audioPlaying=false; playingMIDI=false; // will resume from savedAudioPosSec
-    stopAllNotesAndPedal();
+    pauseTrackVideoPlayback();
     updatePlayButton();
     renderTopPadGrid();
   } else {
     // If starting fresh (no saved position), use full alignment path
     if(savedAudioPosSec===0){
+      playbackPaused = false;
       startMIDIPlayback();
       updatePlayButton();
     } else {
@@ -8038,6 +8339,11 @@ function togglePlayPause(){
       // Advance midiIndex to match saved position
       midiIndex = 0;
       advanceMIDI(savedAudioPosSec*1000);
+      playbackPaused = false;
+      pausedTransportSec = 0;
+      pausedMidiElapsedMs = 0;
+      lastTransportNowSec = getVisualNowSec();
+      startTrackVideoPlayback(currentTrackKey);
       updatePlayButton();
       renderTopPadGrid();
     }
@@ -8047,18 +8353,23 @@ function stopPlayback(){
   if(!audioCtx || !audioReady || !midiLoaded) return;
   disposeAudioSource('stopPlayback cleanup');
   audioPlaying=false; playingMIDI=false;
+  playbackPaused = false;
+  suppressedNoteOffEvents.clear();
   savedAudioPosSec = 0;
   midiIndex = 0;
   stopAllNotesAndPedal();
   setBackboardViewMode('record-mode');
   updatePlayButton();
   renderTopPadGrid();
+  stopTrackVideoPlayback();
 }
 function restartFromBeginning(){
   if(!audioCtx || !audioReady || !midiLoaded) return;
   // Stop any current playback
   disposeAudioSource('restartFromBeginning cleanup');
   audioPlaying=false; playingMIDI=false;
+  playbackPaused = false;
+  suppressedNoteOffEvents.clear();
   savedAudioPosSec = 0;
   midiIndex = 0;
   stopAllNotesAndPedal();
@@ -8066,6 +8377,7 @@ function restartFromBeginning(){
   startMIDIPlayback();
   updatePlayButton();
   renderTopPadGrid();
+  stopTrackVideoPlayback();
 }
 function setPlaybackRate(rate){
   if(!isFinite(rate) || rate<=0) return;
@@ -8089,6 +8401,9 @@ function setPlaybackRate(rate){
   // Resume only if we were playing
   if(audioCtx && audioReady && midiLoaded && wasPlaying){
     togglePlayPause(); // resumes from saved position at new rate
+  }
+  if(trackVideo.active){
+    syncTrackVideoToPlayback(audioPlaying || playingMIDI);
   }
   renderTopPadGrid();
 }
@@ -9110,6 +9425,21 @@ function onPointerDown(e){
             }));
             const ev = { clientX: lx, clientY: ly };
             handled = !!topPadVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
+          }
+        }
+        if(!handled && trackVideo.active && trackVideo.ui && topPadVideo.controlsRect){
+          const cr = topPadVideo.controlsRect;
+          if(px >= cr.x && px <= cr.x + cr.w && py >= cr.y && py <= cr.y + cr.h){
+            const lx = px - cr.x;
+            const ly = py - cr.y;
+            trackVideo.ui.setViewportRectProvider(() => ({
+              left: 0,
+              top: 0,
+              width: Math.max(1, Math.round(cr.w)),
+              height: Math.max(1, Math.round(cr.h))
+            }));
+            const ev = { clientX: lx, clientY: ly };
+            handled = !!trackVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
           }
         }
         if(handled){

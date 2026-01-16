@@ -4,11 +4,20 @@
 // Negative offset starts AUDIO earlier (MIDI delayed by |offset|).
 
 const OFFSET_KEY = 'globalAudioMidiOffsetMs';
-const DEFAULT_OFFSET = 0;
+const DEFAULT_OFFSET = -270;
 
 export function getSyncOffsetMs(){
   const v = localStorage.getItem(OFFSET_KEY);
-  return v!==null ? parseInt(v,10)||0 : DEFAULT_OFFSET;
+  if(v === null){
+    try{ localStorage.setItem(OFFSET_KEY, String(DEFAULT_OFFSET)); }catch(e){}
+    return DEFAULT_OFFSET;
+  }
+  const parsed = parseInt(v,10);
+  if(!Number.isFinite(parsed)){
+    try{ localStorage.setItem(OFFSET_KEY, String(DEFAULT_OFFSET)); }catch(e){}
+    return DEFAULT_OFFSET;
+  }
+  return parsed;
 }
 
 export function setSyncOffsetMs(ms){
