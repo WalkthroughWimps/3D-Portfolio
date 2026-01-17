@@ -676,6 +676,22 @@ document.addEventListener('DOMContentLoaded', () => {
     })();
 });
 
+// Instrument level panel toggle (right-side twirl out)
+document.addEventListener('DOMContentLoaded', () => {
+    const panel = document.getElementById('instrumentLevelPanel');
+    const toggle = document.getElementById('instrumentLevelToggle');
+    if (!panel || !toggle) return;
+    const applyState = (collapsed) => {
+        panel.classList.toggle('is-collapsed', collapsed);
+        toggle.textContent = collapsed ? '‹' : '›';
+    };
+    applyState(false);
+    toggle.addEventListener('click', () => {
+        const next = !panel.classList.contains('is-collapsed');
+        applyState(next);
+    });
+});
+
 
 
 

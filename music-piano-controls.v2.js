@@ -1473,6 +1473,10 @@ async function loadLocalSoundfontForConfig(config){
       try{ console.log('[Instrument] local soundfont keys', Object.keys(map).slice(0, 10)); }catch(e){}
     }
     config.sampleRange = computeSampleRangeFromMap(map);
+    if(config.sampleRange && !Number.isFinite(config.minNote) && !Number.isFinite(config.maxNote)){
+      config.minNote = config.sampleRange.min;
+      config.maxNote = config.sampleRange.max;
+    }
     instrumentPlayer = createLocalSoundfontPlayer(map);
     currentInstrumentName = `${config.label} (local)`;
     updateNoteEngineMode(config);
@@ -1554,6 +1558,9 @@ function getNoteSideForRange(note){
   return getOwnerSideForMidiNote(note);
 }
 function getInstrumentSideForNote(note){
+  if(categoryPickerState && categoryPickerState.open && categoryPickerState.panelId){
+    return categoryPickerState.panelId;
+  }
   return getOwnerSideForMidiNote(note);
 }
 let lastRangeLogSignature = '';
@@ -2060,6 +2067,13 @@ async function loadWappyDogInstrument(config){
   return loadSf2InstrumentForConfig(config);
 }
 function updateDisabledKeysForConfig(){
+  if(isTrackPlaybackActive()){
+    disabledKeySet.clear();
+    clearDisabledKeyMaterials();
+    try{ if(window.rebuildQwertyLabels) window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
+    try{ requestBackboardRedraw(); }catch(e){}
+    return;
+  }
   disabledKeySet.clear();
   const leftRange = getPlayableNoteRangeForSide('left');
   const rightRange = getPlayableNoteRangeForSide('right');
@@ -2504,20 +2518,28 @@ let oddFxPickerEl = null;
 let oddFxPickerSelect = null;
 let oddFxPickerClose = null;
 let oddFxPickerApply = null;
+const categoryPickerState = { open: false, panelId: null, tabId: null, options: [], selectedIndex: null, columns: 6, maxWidth: 0, maxHeight: 0, rows: 4, scrollRow: 0, maxScrollRow: 0, pageIndex: 0, pageCount: 0 };
+let categoryPickerEl = null;
+let categoryPickerSelect = null;
+let categoryPickerGrid = null;
+let categoryPickerClose = null;
+let categoryPickerApply = null;
+
+function isTrackPlaybackActive(){
+  return !!(audioPlaying || playingMIDI || playbackPaused || savedAudioPosSec > 0);
+}
 const RANDOM_POOLS = {
   keys: [
     { patch: 'acoustic_grand_piano', label: 'Grand Piano' },
     { patch: 'bright_acoustic_piano', label: 'Bright Piano' },
     { patch: 'honkytonk_piano', label: 'Honky-Tonk' },
-    { patch: 'electric_piano_1', label: 'Electric Piano 1' },
-    { patch: 'electric_piano_2', label: 'Electric Piano 2' },
-    { patch: 'electric_grand_piano', label: 'Electric Grand' },
     { patch: 'harpsichord', label: 'Harpsichord' },
     { patch: 'celesta', label: 'Celesta' }
   ],
   electric: [
     { patch: 'electric_piano_1', label: 'Electric Piano 1' },
     { patch: 'electric_piano_2', label: 'Electric Piano 2' },
+    { patch: 'electric_grand_piano', label: 'Electric Grand' },
     { patch: 'clavinet', label: 'Clavinet' },
     { patch: 'drawbar_organ', label: 'Drawbar Organ' },
     { patch: 'rock_organ', label: 'Rock Organ' }
@@ -2584,10 +2606,54 @@ function buildRandomInstrumentConfig(tabId, patch, label, base){
   config.localBase = base || (getPreferredBasesForTab(tabId)[0] || SOUND_FONT_BASE);
   config.stub = false;
   config.isRandom = true;
+  config.minNote = null;
+  config.maxNote = null;
+  applyRandomInstrumentRangeHints(config);
   return config;
+}
+function applyRandomInstrumentRangeHints(config){
+  if(!config || !config.patch) return;
+  const patch = String(config.patch).toLowerCase();
+  const windCfg = getInstrumentConfigById('solo_wind');
+  const brassCfg = getInstrumentConfigById('solo_brass');
+  const windPatches = new Set(['clarinet', 'oboe', 'flute', 'alto_sax']);
+  const brassPatches = new Set(['trumpet']);
+  if(windPatches.has(patch) && windCfg && Number.isFinite(windCfg.minNote) && Number.isFinite(windCfg.maxNote)){
+    config.minNote = windCfg.minNote;
+    config.maxNote = windCfg.maxNote;
+  }
+  if(brassPatches.has(patch) && brassCfg && Number.isFinite(brassCfg.minNote) && Number.isFinite(brassCfg.maxNote)){
+    config.minNote = brassCfg.minNote;
+    config.maxNote = brassCfg.maxNote;
+  }
+}
+function getFallbackInstrumentIdForSide(side){
+  const ps = panelState[side];
+  const tabId = getPanelTabId(side);
+  const firstByTab = getFirstInstrumentIdForTab(tabId);
+  return (ps && ps.selected) ? ps.selected : (firstByTab || (INSTRUMENT_BUTTONS[0] ? INSTRUMENT_BUTTONS[0].id : null));
+}
+async function ensureSideInstrumentLoaded(side){
+  if(!dualInstrumentMode) return;
+  const slot = instrumentPlayersBySide[side];
+  if(slot && slot.player && slot.config) return;
+  const fallbackId = getFallbackInstrumentIdForSide(side);
+  if(!fallbackId) return;
+  const fallbackConfig = getInstrumentConfigById(fallbackId);
+  await loadInstrument(fallbackId);
+  if(instrumentPlayersBySide[side]){
+    instrumentPlayersBySide[side].player = instrumentPlayer;
+    instrumentPlayersBySide[side].name = currentInstrumentName;
+    instrumentPlayersBySide[side].id = fallbackId;
+    instrumentPlayersBySide[side].config = fallbackConfig || currentInstrumentConfig;
+  }
 }
 async function loadRandomInstrumentConfig(panelId, tabId, entry){
   if(!entry) return null;
+  if(dualInstrumentMode && panelId){
+    const other = panelId === 'left' ? 'right' : 'left';
+    await ensureSideInstrumentLoaded(other);
+  }
   if(entry.id && INSTRUMENT_CONFIG_BY_ID.has(entry.id)){
     await triggerInstrumentButton(entry.id, panelId);
     return { id: entry.id, label: entry.label || (instrumentById.get(entry.id)?.label || '') };
@@ -2633,6 +2699,12 @@ async function triggerRandomInstrument(panelId, tabId){
 }
 const SOUND_BANK_NAMES_URL = 'soundfont-staging/names.json';
 let oddFxAllPatches = null;
+let soundfontCatalog = null;
+let soundfontCatalogPromise = null;
+const SOUNDFONT_PICKER_BASES = [
+  { key: 'musyngkite', label: 'M', base: LOCAL_SOUNDFONT_BASES.musyngkite },
+  { key: 'fluidr3_gm', label: 'F', base: LOCAL_SOUNDFONT_BASES.fluidr3_gm }
+];
 
 function humanizePatchName(patch){
   if(!patch) return '';
@@ -2816,6 +2888,439 @@ async function applyOddFxSelection(){
   updateDisabledKeysForConfig();
   requestBackboardRedraw();
   closeOddFxPicker();
+}
+function simplifyInstrumentLabel(label){
+  return String(label || '')
+    .replace(/\bSynth(esizer)?\b/gi, 'Synth')
+    .replace(/\bAcoustic\b/gi, '')
+    .replace(/\bGrand\b/gi, 'Grand')
+    .replace(/\bPiano\b/gi, 'Piano')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+function getDefaultLabelSetForTab(tabId){
+  const set = new Set();
+  INSTRUMENT_CONFIG.forEach(cfg => {
+    if(!cfg || cfg.tab !== tabId || !cfg.label) return;
+    const base = simplifyInstrumentLabel(cfg.label);
+    if(base) set.add(base.toLowerCase());
+  });
+  return set;
+}
+function categorizeSoundfontPatch(patch){
+  const name = String(patch || '').toLowerCase();
+  const keysOnly = new Set([
+    'acoustic_grand_piano',
+    'bright_acoustic_piano',
+    'honkytonk_piano',
+    'harpsichord',
+    'celesta',
+    'glockenspiel',
+    'music_box',
+    'vibraphone',
+    'marimba',
+    'xylophone',
+    'tubular_bells',
+    'dulcimer'
+  ]);
+  const electricOnly = new Set([
+    'electric_piano_1',
+    'electric_piano_2',
+    'electric_grand_piano',
+    'clavinet',
+    'drawbar_organ',
+    'percussive_organ',
+    'rock_organ',
+    'reed_organ',
+    'church_organ'
+  ]);
+  const padOnly = new Set([
+    'pad_1_new_age',
+    'pad_2_warm',
+    'pad_3_polysynth',
+    'pad_4_choir',
+    'pad_5_bowed',
+    'pad_6_metallic',
+    'pad_7_halo',
+    'pad_8_sweep'
+  ]);
+  const fxOnly = new Set([
+    'fx_1_rain',
+    'fx_2_soundtrack',
+    'fx_3_crystal',
+    'fx_4_atmosphere',
+    'fx_5_brightness',
+    'fx_6_goblins',
+    'fx_7_echoes',
+    'fx_8_scifi',
+    'tinkle_bell',
+    'agogo',
+    'steel_drums',
+    'woodblock',
+    'taiko_drum',
+    'melodic_tom',
+    'synth_drum',
+    'reverse_cymbal',
+    'guitar_fret_noise',
+    'breath_noise',
+    'seashore',
+    'bird_tweet',
+    'telephone_ring',
+    'helicopter',
+    'applause',
+    'gunshot'
+  ]);
+  if(keysOnly.has(name)) return 'keys';
+  if(electricOnly.has(name)) return 'electric';
+  if(padOnly.has(name)) return 'pads';
+  if(fxOnly.has(name)) return 'fx';
+  if(/lead_/.test(name)) return 'solo';
+  if(/sax|oboe|clarinet|flute|bassoon|trumpet|trombone|tuba|horn|soprano|tenor|baritone|english_horn/.test(name)) return 'solo';
+  if(/violin|viola|cello|contrabass|fiddle|harp|string/.test(name)) return 'solo';
+  return 'solo';
+}
+function loadSoundfontCatalog(){
+  if(soundfontCatalogPromise) return soundfontCatalogPromise;
+  soundfontCatalogPromise = fetch(SOUND_BANK_NAMES_URL)
+    .then(res => res.ok ? res.json() : [])
+    .then(data => {
+      soundfontCatalog = Array.isArray(data) ? data.slice() : [];
+      return soundfontCatalog;
+    })
+    .catch(() => {
+      soundfontCatalog = [];
+      return soundfontCatalog;
+    });
+  return soundfontCatalogPromise;
+}
+function buildCatalogOptionsForTab(tabId){
+  const patches = Array.isArray(soundfontCatalog) ? soundfontCatalog : [];
+  if(!patches.length){
+    const pool = RANDOM_POOLS[tabId] || [];
+    return pool.map(entry => ({
+      id: entry.id || null,
+      patch: entry.patch ? String(entry.patch) : null,
+      label: entry.label || (entry.id ? (instrumentById.get(entry.id)?.label || '') : humanizePatchName(entry.patch)),
+      labelBase: simplifyInstrumentLabel(entry.label || (entry.id ? (instrumentById.get(entry.id)?.label || '') : humanizePatchName(entry.patch))),
+      base: entry.base || null,
+      baseLabel: entry.baseLabel || null
+    }));
+  }
+  const options = [];
+  patches.forEach(patch => {
+    if(categorizeSoundfontPatch(patch) !== tabId) return;
+    SOUNDFONT_PICKER_BASES.forEach(base => {
+      if(!base || !base.base) return;
+      const baseLabel = simplifyInstrumentLabel(humanizePatchName(patch));
+      options.push({
+        id: null,
+        patch: String(patch),
+        label: baseLabel,
+        labelBase: baseLabel,
+        base: base.base,
+        baseKey: base.key,
+        baseLabel: base.label
+      });
+    });
+  });
+  return options;
+}
+function applyLibraryNumbering(options, tabId){
+  const defaults = getDefaultLabelSetForTab(tabId);
+  const grouped = new Map();
+  const ordered = options.slice().sort((a, b) => {
+    const la = String(a.labelBase || a.label || '');
+    const lb = String(b.labelBase || b.label || '');
+    if(la === lb){
+      const ka = String(a.baseKey || '');
+      const kb = String(b.baseKey || '');
+      return ka.localeCompare(kb);
+    }
+    return la.localeCompare(lb);
+  });
+  ordered.forEach(opt => {
+    const base = String(opt.labelBase || opt.label || '');
+    const key = base.toLowerCase();
+    if(!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(opt);
+  });
+  const numbered = [];
+  grouped.forEach((group, key) => {
+    const start = defaults.has(key) ? 2 : 1;
+    group.forEach((opt, idx) => {
+      const base = String(opt.labelBase || opt.label || '').trim();
+      const label = base ? `${base} ${start + idx}` : String(opt.label || '');
+      numbered.push(Object.assign({}, opt, { label }));
+    });
+  });
+  return numbered;
+}
+function updateCategoryPickerColumns(){
+  const opts = categoryPickerState.options || [];
+  const maxCols = 8;
+  const rows = 4;
+  let cols = Math.max(2, Math.ceil(opts.length / Math.max(1, rows)));
+  if(cols % 2 === 1) cols += 1;
+  cols = Math.max(2, Math.min(maxCols, cols));
+  categoryPickerState.columns = cols;
+  categoryPickerState.rows = rows;
+}
+
+function ensureCategoryPicker(){
+  if(categoryPickerEl) return;
+  categoryPickerEl = document.createElement('div');
+  categoryPickerEl.style.cssText = 'position:fixed; z-index:2200; background:rgba(8,24,16,0.96); border:1px solid rgba(90,200,140,0.6); border-radius:10px; padding:12px 14px; box-shadow:0 10px 24px rgba(0,0,0,0.45); color:#e7fff2; font:12px/1.3 "Source Sans 3", system-ui; display:none; min-width:220px; display:flex; flex-direction:column; gap:10px;';
+  const title = document.createElement('div');
+  title.textContent = 'Select Instrument';
+  title.style.cssText = 'font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:6px; color:#9ff5c6;';
+  categoryPickerGrid = document.createElement('div');
+  categoryPickerGrid.style.cssText = 'display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); align-items:stretch; width:100%; flex:1 1 auto;';
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex; gap:6px; justify-content:flex-end; margin-top:auto;';
+  categoryPickerClose = document.createElement('button');
+  categoryPickerClose.type = 'button';
+  categoryPickerClose.textContent = 'Close';
+  categoryPickerClose.style.cssText = 'background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2); padding:4px 8px; border-radius:6px; cursor:pointer;';
+  categoryPickerApply = document.createElement('button');
+  categoryPickerApply.type = 'button';
+  categoryPickerApply.textContent = 'Use';
+  categoryPickerApply.style.cssText = 'background:#1f8f4a; color:#fff; border:1px solid rgba(70,200,120,0.9); padding:4px 10px; border-radius:6px; cursor:pointer;';
+  btnRow.appendChild(categoryPickerClose);
+  btnRow.appendChild(categoryPickerApply);
+  categoryPickerEl.appendChild(title);
+  categoryPickerEl.appendChild(categoryPickerGrid);
+  categoryPickerEl.appendChild(btnRow);
+  document.body.appendChild(categoryPickerEl);
+  categoryPickerClose.addEventListener('click', () => closeCategoryPicker());
+  categoryPickerApply.addEventListener('click', () => applyCategorySelection());
+}
+
+function positionCategoryPicker(panelId){
+  const topRect = getTopPadScreenRect();
+  const rect = topRect || getBackboardScreenRect();
+  const baseY = rect ? (rect.y + rect.h * 0.08) : (window.innerHeight * 0.15);
+  const maxW = rect ? Math.min(rect.w * 0.88, window.innerWidth - 24) : Math.min(980, window.innerWidth - 24);
+  const maxH = rect ? Math.min(rect.h * 0.9, window.innerHeight * 0.5) : Math.min(360, window.innerHeight * 0.5);
+  categoryPickerState.maxWidth = maxW;
+  categoryPickerState.maxHeight = maxH;
+  categoryPickerEl.style.width = `${Math.max(320, maxW)}px`;
+  categoryPickerEl.style.maxHeight = `${Math.max(220, maxH)}px`;
+  categoryPickerEl.style.overflow = 'hidden';
+  const panelWidth = Math.max(320, maxW);
+  categoryPickerEl.style.left = `${Math.max(12, (window.innerWidth - panelWidth) * 0.5)}px`;
+  if(rect){
+    categoryPickerEl.style.top = `${Math.max(12, rect.y + 8)}px`;
+    categoryPickerEl.style.bottom = 'auto';
+  } else {
+    categoryPickerEl.style.top = `${Math.max(12, baseY)}px`;
+    categoryPickerEl.style.bottom = 'auto';
+  }
+}
+
+function buildCategoryPickerOptions(panelId, tabId){
+  const pool = buildCatalogOptionsForTab(tabId);
+  const usedIds = new Set();
+  const usedPatches = new Set();
+  INSTRUMENT_CONFIG.forEach(cfg => {
+    if(!cfg || cfg.id === ODD_FX_ID) return;
+    if(cfg.tab !== tabId) return;
+    if(cfg.id) usedIds.add(cfg.id);
+    if(cfg.patch) usedPatches.add(String(cfg.patch));
+  });
+  const ps = panelState[panelId];
+  const selectedEntry = ps && ps.randomByTab ? ps.randomByTab[tabId] : null;
+  const selectedId = selectedEntry && selectedEntry.id ? String(selectedEntry.id) : null;
+  const selectedPatch = selectedEntry && selectedEntry.patch ? String(selectedEntry.patch) : null;
+  const options = pool.filter(entry => {
+    if(entry.id && usedIds.has(entry.id) && entry.id !== selectedId) return false;
+    if(entry.patch && usedPatches.has(String(entry.patch)) && String(entry.patch) !== selectedPatch) return false;
+    return true;
+  }).map(entry => ({
+    id: entry.id || null,
+    patch: entry.patch ? String(entry.patch) : null,
+    label: entry.label || (entry.id ? (instrumentById.get(entry.id)?.label || '') : humanizePatchName(entry.patch)),
+    labelBase: entry.labelBase || entry.label || (entry.id ? (instrumentById.get(entry.id)?.label || '') : humanizePatchName(entry.patch)),
+    base: entry.base || null,
+    baseLabel: entry.baseLabel || null,
+    baseKey: entry.baseKey || null
+  }));
+  return applyLibraryNumbering(options, tabId);
+}
+function renderCategoryPickerOptions(){
+  if(!categoryPickerGrid) return;
+  const cols = Math.max(1, Math.min(categoryPickerState.columns || 5, 12));
+  categoryPickerGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(120px, 1fr))`;
+  categoryPickerGrid.innerHTML = '';
+  const isSolo = categoryPickerState.tabId === 'solo';
+  const opts = categoryPickerState.options || [];
+  const items = opts.slice();
+  if(!isSolo && items.length && cols > 1){
+    const remainder = items.length % cols;
+    if(remainder !== 0){
+      const pad = Math.floor((cols - remainder) / 2);
+      const insertAt = items.length - remainder;
+      for(let i=0;i<pad;i++) items.splice(insertAt, 0, null);
+    }
+  }
+  items.forEach((opt, idx) => {
+    if(!opt){
+      const spacer = document.createElement('div');
+      spacer.style.cssText = 'opacity:0; pointer-events:none;';
+      categoryPickerGrid.appendChild(spacer);
+      return;
+    }
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.textContent = opt.label || '';
+    cell.dataset.idx = String(categoryPickerState.options.indexOf(opt));
+    cell.style.cssText = [
+      'background:linear-gradient(180deg, rgba(245,245,245,0.2) 0%, rgba(40,40,40,0.9) 100%)',
+      'border:1px solid rgba(160,160,160,0.75)',
+      'box-shadow:inset 0 1px 2px rgba(255,255,255,0.18), inset 0 -2px 6px rgba(0,0,0,0.5), 0 3px 6px rgba(0,0,0,0.35)',
+      'border-radius:8px',
+      'padding:8px 10px',
+      'color:#e7fff2',
+      'font:600 13px/1.1 "Source Sans 3", system-ui',
+      'cursor:pointer',
+      'text-align:center',
+      'min-height:38px'
+    ].join(';');
+    const isSelected = categoryPickerState.selectedIndex === Number(cell.dataset.idx);
+    if(isSelected){
+      cell.style.background = 'linear-gradient(180deg, rgba(120,240,170,0.85) 0%, rgba(30,120,70,0.95) 100%)';
+      cell.style.borderColor = 'rgba(120,240,170,0.95)';
+      cell.style.color = '#042212';
+    }
+    cell.addEventListener('mouseenter', () => {
+      if(categoryPickerState.selectedIndex === Number(cell.dataset.idx)) return;
+      cell.style.background = 'linear-gradient(180deg, rgba(140,220,190,0.85) 0%, rgba(28,80,56,0.95) 100%)';
+      cell.style.borderColor = 'rgba(120,220,190,0.9)';
+      cell.style.color = '#042214';
+    });
+    cell.addEventListener('mouseleave', () => {
+      if(categoryPickerState.selectedIndex === Number(cell.dataset.idx)) return;
+      cell.style.background = 'linear-gradient(180deg, rgba(245,245,245,0.2) 0%, rgba(40,40,40,0.9) 100%)';
+      cell.style.borderColor = 'rgba(160,160,160,0.75)';
+      cell.style.color = '#e7fff2';
+    });
+    cell.addEventListener('click', () => {
+      categoryPickerState.selectedIndex = Number(cell.dataset.idx);
+      renderCategoryPickerOptions();
+      previewCategorySelection(categoryPickerState.selectedIndex);
+    });
+    categoryPickerGrid.appendChild(cell);
+  });
+}
+
+function openCategoryPicker(panelId, tabId){
+  categoryPickerState.open = true;
+  categoryPickerState.panelId = panelId;
+  categoryPickerState.tabId = tabId;
+  categoryPickerState.scrollRow = 0;
+  categoryPickerState.maxScrollRow = 0;
+  categoryPickerState.pageIndex = 0;
+  categoryPickerState.pageCount = 0;
+  if(categoryPickerEl) categoryPickerEl.style.display = 'none';
+  const options = buildCategoryPickerOptions(panelId, tabId);
+  categoryPickerState.options = options;
+  categoryPickerState.selectedIndex = null;
+  const ps = panelState[panelId];
+  const selectedEntry = ps && ps.randomByTab ? ps.randomByTab[tabId] : null;
+  if(selectedEntry){
+    const matchIndex = options.findIndex(opt => (selectedEntry.id && opt.id === selectedEntry.id) || (selectedEntry.patch && opt.patch === selectedEntry.patch));
+    if(matchIndex >= 0) categoryPickerState.selectedIndex = matchIndex;
+  } else if(options.length){
+    categoryPickerState.selectedIndex = 0;
+  }
+  updateCategoryPickerColumns();
+  if(Number.isFinite(categoryPickerState.selectedIndex)){
+    const pageSize = Math.max(1, categoryPickerState.columns * categoryPickerState.rows);
+    categoryPickerState.pageIndex = Math.floor(categoryPickerState.selectedIndex / pageSize);
+  }
+  categoryPickerState.pageCount = Math.max(1, Math.ceil(options.length / Math.max(1, categoryPickerState.columns * categoryPickerState.rows)));
+  requestBackboardRedraw();
+  loadSoundfontCatalog().then(() => {
+    if(!categoryPickerState.open) return;
+    const refreshed = buildCategoryPickerOptions(panelId, tabId);
+    categoryPickerState.options = refreshed;
+    if(categoryPickerState.selectedIndex == null && refreshed.length){
+      categoryPickerState.selectedIndex = 0;
+    }
+    updateCategoryPickerColumns();
+    if(Number.isFinite(categoryPickerState.selectedIndex)){
+      const pageSize = Math.max(1, categoryPickerState.columns * categoryPickerState.rows);
+      categoryPickerState.pageIndex = Math.floor(categoryPickerState.selectedIndex / pageSize);
+    }
+    categoryPickerState.pageCount = Math.max(1, Math.ceil(refreshed.length / Math.max(1, categoryPickerState.columns * categoryPickerState.rows)));
+    requestBackboardRedraw();
+  });
+}
+
+function closeCategoryPicker(){
+  categoryPickerState.open = false;
+  categoryPickerState.panelId = null;
+  categoryPickerState.tabId = null;
+  categoryPickerState.scrollRow = 0;
+  categoryPickerState.maxScrollRow = 0;
+  categoryPickerState.pageIndex = 0;
+  categoryPickerState.pageCount = 0;
+  if(categoryPickerEl) categoryPickerEl.style.display = 'none';
+  requestBackboardRedraw();
+}
+
+async function applyCategorySelection(){
+  if(!categoryPickerState.panelId || !categoryPickerState.tabId) return;
+  const panelId = categoryPickerState.panelId;
+  const tabId = categoryPickerState.tabId;
+  const idx = Number(categoryPickerState.selectedIndex);
+  if(!Number.isFinite(idx)) return;
+  const entry = categoryPickerState.options[idx];
+  if(!entry) return;
+  const result = await loadRandomInstrumentConfig(panelId, tabId, entry);
+  if(!result) return;
+  const ps = panelState[panelId];
+  if(!ps) return;
+  ps.selected = result.id;
+  ps.randomActiveTab = tabId;
+  if(!ps.randomByTab) ps.randomByTab = {};
+  ps.randomByTab[tabId] = { id: result.id, label: result.label, patch: entry.patch, base: entry.base, baseLabel: entry.baseLabel };
+  if(!dualInstrumentMode){
+    selectedSingleInstrumentId = result.id;
+  }
+  updateInstrumentMixReadouts();
+  updateDisabledKeysForConfig();
+  requestBackboardRedraw();
+  closeCategoryPicker();
+}
+async function previewCategorySelection(index){
+  if(!categoryPickerState.panelId || !categoryPickerState.tabId) return;
+  const entry = categoryPickerState.options[index];
+  if(!entry) return;
+  await loadRandomInstrumentConfig(categoryPickerState.panelId, categoryPickerState.tabId, entry);
+  updateInstrumentMixReadouts();
+  updateDisabledKeysForConfig();
+  requestBackboardRedraw();
+}
+
+async function selectCategoryInstrument(panelId, tabId){
+  const ps = panelState[panelId];
+  const entry = ps && ps.randomByTab ? ps.randomByTab[tabId] : null;
+  if(!entry){
+    openCategoryPicker(panelId, tabId);
+    return;
+  }
+  const result = await loadRandomInstrumentConfig(panelId, tabId, entry);
+  if(!result) return;
+  ps.selected = result.id;
+  ps.randomActiveTab = tabId;
+  if(!ps.randomByTab) ps.randomByTab = {};
+  ps.randomByTab[tabId] = { id: result.id, label: result.label, patch: entry.patch, base: entry.base };
+  if(!dualInstrumentMode){
+    selectedSingleInstrumentId = result.id;
+  }
+  updateInstrumentMixReadouts();
+  updateDisabledKeysForConfig();
+  requestBackboardRedraw();
 }
 const KEYMAP_URL = 'piano_keymap.json';
 const keymapEntries = [];
@@ -3230,7 +3735,7 @@ const panelState = {
   left: { offset: 0, selected: INSTRUMENT_BUTTONS[0].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {}, randomByTab: {}, randomActiveTab: null },
   right: { offset: Math.max(0, INSTRUMENT_BUTTONS.length - 6), selected: INSTRUMENT_BUTTONS[1].id, tab: INSTRUMENT_TABS[0].id, lastByTab: {}, randomByTab: {}, randomActiveTab: null }
 };
-let dualInstrumentMode = true;
+let dualInstrumentMode = false;
 const SINGLE_INSTRUMENT_SIDE = 'left';
 let selectedSingleInstrumentId = panelState[SINGLE_INSTRUMENT_SIDE] ? panelState[SINGLE_INSTRUMENT_SIDE].selected : (INSTRUMENT_BUTTONS[0] ? INSTRUMENT_BUTTONS[0].id : null);
 function getPanelTabId(panelId){
@@ -3248,6 +3753,9 @@ function setPanelTabId(panelId, tabId){
     if(!dualInstrumentMode){
       const currentId = panelState[SINGLE_INSTRUMENT_SIDE] ? panelState[SINGLE_INSTRUMENT_SIDE].selected : null;
       if(currentId) selectedSingleInstrumentId = currentId;
+    } else {
+      ensureSideInstrumentLoaded('left');
+      ensureSideInstrumentLoaded('right');
     }
     updateDisabledKeysForConfig();
     requestBackboardRedraw();
@@ -3387,6 +3895,40 @@ function getBackboardScreenRect(){
   for(const c of corners){
     const v = c.clone();
     try{ v.applyMatrix4(target.matrixWorld); }catch(e){}
+    try{ v.project(cam); }catch(e){}
+    const x = (v.x * 0.5 + 0.5) * domRect.width + domRect.left;
+    const y = (-v.y * 0.5 + 0.5) * domRect.height + domRect.top;
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  if(!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
+  return { x:minX, y:minY, w: Math.max(0, maxX-minX), h: Math.max(0, maxY-minY) };
+}
+function getTopPadScreenRect(){
+  if(!topPadMesh || !renderer || !cam) return null;
+  const geom = topPadMesh.geometry;
+  if(!geom) return null;
+  try{ if(!geom.boundingBox) geom.computeBoundingBox(); }catch(e){}
+  const bb = geom.boundingBox;
+  if(!bb) return null;
+  const min = bb.min, max = bb.max;
+  const corners = [
+    new THREE.Vector3(min.x, min.y, min.z),
+    new THREE.Vector3(min.x, min.y, max.z),
+    new THREE.Vector3(min.x, max.y, min.z),
+    new THREE.Vector3(min.x, max.y, max.z),
+    new THREE.Vector3(max.x, min.y, min.z),
+    new THREE.Vector3(max.x, min.y, max.z),
+    new THREE.Vector3(max.x, max.y, min.z),
+    new THREE.Vector3(max.x, max.y, max.z)
+  ];
+  const domRect = renderer.domElement.getBoundingClientRect();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for(const c of corners){
+    const v = c.clone();
+    try{ v.applyMatrix4(topPadMesh.matrixWorld); }catch(e){}
     try{ v.project(cam); }catch(e){}
     const x = (v.x * 0.5 + 0.5) * domRect.width + domRect.left;
     const y = (-v.y * 0.5 + 0.5) * domRect.height + domRect.top;
@@ -4061,6 +4603,13 @@ function renderTopPadGrid(){
   ctx.moveTo(rightX, 0);
   ctx.lineTo(rightX, H);
   ctx.stroke();
+  const midRect = {
+    x: cellW * 3.5,
+    y: 0,
+    w: cellW * 5,
+    h: cellH * 8
+  };
+  topPadVideo.midRect = midRect;
   const getCssVar = (name, fallback) => {
     try{
       const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
@@ -4309,25 +4858,26 @@ function renderTopPadGrid(){
   ctx.font = `800 ${Math.max(12, Math.round(toggleH * 0.38))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const toggleLabel = dualInstrumentMode ? 'Dual' : 'Single';
-  ctx.fillText(toggleLabel, toggleX + toggleW / 2, toggleY + toggleH / 2);
+  const toggleLines = dualInstrumentMode
+    ? ['USE ONE', 'INSTRUMENT']
+    : ['USE TWO', 'INSTRUMENTS'];
+  const toggleFont = Math.max(11, Math.round(toggleH * 0.22));
+  const lineH = Math.round(toggleFont * 1.15);
+  const centerY = toggleY + toggleH / 2 - (lineH * (toggleLines.length - 1)) / 2;
+  ctx.font = `700 ${toggleFont}px "Source Sans 3", system-ui, sans-serif`;
+  toggleLines.forEach((line, idx) => {
+    ctx.fillText(line, toggleX + toggleW / 2, centerY + idx * lineH);
+  });
   ctx.restore();
   topPadUiRects.instrumentModeToggle = { x: toggleX, y: toggleY, w: toggleW, h: toggleH };
 
   // Middle section: thumbnail + info box
-  const midRect = {
-    x: cellW * 3.5,
-    y: 0,
-    w: cellW * 5,
-    h: cellH * 8
-  };
   const infoRect = {
     x: midRect.x,
     y: cellH * 8,
     w: midRect.w,
     h: cellH * 4
   };
-  topPadVideo.midRect = midRect;
   const thumbBounds = {
     x: cellW * 4,
     y: cellH * 0.5,
@@ -4535,7 +5085,7 @@ function renderTopPadGrid(){
       }
     }
   }
-  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing'){
+  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing' && !trackVideo.active){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     drawRoundedRect(infoBoxRect, Math.min(14, infoBoxRect.h * 0.18));
     ctx.fill();
@@ -6358,7 +6908,7 @@ function seekTrackToRatio(ratio){
   transportStartAudioTime = midiStartCtxTime;
   buildPendingNotes();
   midiIndex = 0;
-  advanceMIDI(midiElapsedMs);
+  rebuildNoteStateAtElapsed(midiElapsedMs);
   const seekNowSec = (midiElapsedMs / 1000) - ((midiFirstNoteMs || 0) / 1000);
   rebuildFallingNotesAtElapsed(seekNowSec);
   if(wasPlaying){
@@ -6376,6 +6926,7 @@ function seekTrackToRatio(ratio){
     lastTransportNowSec = getVisualNowSec();
     syncTrackVideoToPlayback(false);
   }
+  updateDisabledKeysForConfig();
   renderTopPadGrid();
 }
 
@@ -6739,11 +7290,24 @@ function clampKeyRotation(mesh){
   if(mesh.rotation.x > max) mesh.rotation.x = max;
 }
 
+function clearDisabledKeyMaterials(){
+  if(!midiKeyMap || !midiKeyMap.size) return;
+  midiKeyMap.forEach((mesh) => {
+    if(!mesh || !mesh.userData) return;
+    const orig = mesh.userData._origMaterial;
+    if(orig && mesh.material === disabledKeyMat){
+      mesh.material = orig;
+      if(mesh.material) mesh.material.needsUpdate = true;
+    }
+  });
+}
+
 function rebuildNoteStateAtElapsed(elapsedMs){
   if(!midiEvents || !midiEvents.length) return 0;
   clearAllKeyGlow();
   activeNotes.clear();
   activeNoteSet.clear();
+  disabledKeySet.clear();
   keyAnimState.forEach(st => {
     if(st.mesh){ st.mesh.rotation.x = 0; }
     st.phase = 'idle';
@@ -6788,6 +7352,7 @@ function rebuildNoteStateAtElapsed(elapsedMs){
     activeNoteSet.add(note);
   });
   keyAnimState.forEach(st => { if(st.mesh) clampKeyRotation(st.mesh); });
+  clearDisabledKeyMaterials();
   return nextIndex;
 }
 
@@ -6897,6 +7462,178 @@ function renderBackboardOverlay(dt){
       ctx.stroke();
     }
   };
+  if(categoryPickerState.open){
+    const opts = categoryPickerState.options || [];
+    const gridCols = 8;
+    const colsRaw = Math.max(2, Math.min(gridCols, categoryPickerState.columns || gridCols));
+    const cols = (colsRaw % 2 === 0) ? colsRaw : Math.max(2, colsRaw - 1);
+    const backboardRows = rows;
+    const pickerRows = 4;
+    const pageSize = cols * pickerRows;
+    const pageCount = Math.max(1, Math.ceil(opts.length / Math.max(1, pageSize)));
+    const pageIndex = Math.max(0, Math.min(categoryPickerState.pageIndex || 0, pageCount - 1));
+    categoryPickerState.columns = cols;
+    categoryPickerState.rows = pickerRows;
+    categoryPickerState.pageCount = pageCount;
+    categoryPickerState.pageIndex = pageIndex;
+
+    const panelTop = 0;
+    const panelH = cellH * Math.max(1, backboardRows - 1);
+    const cellHPicker = panelH / 6;
+    const headerH = cellHPicker;
+    const footerH = cellHPicker;
+    const rowH = cellHPicker;
+    const gridH = rowH * pickerRows;
+    const showArrows = pageCount > 1;
+    const arrowW = showArrows ? Math.max(20, Math.round(W * 0.035)) : 0;
+    const arrowGap = showArrows ? Math.max(10, Math.round(W * 0.015)) : 0;
+    const innerPad = Math.max(10, Math.round(W * 0.02));
+    const panelRect = { x: 0, y: panelTop, w: W, h: panelH };
+    const gridY = panelRect.y + headerH;
+    const gridX = panelRect.x + innerPad + (showArrows ? (arrowW + arrowGap) : 0);
+    const gridWFinal = Math.max(40, panelRect.w - innerPad * 2 - (showArrows ? (arrowW * 2 + arrowGap * 2) : 0));
+    const gridCellW = gridWFinal / gridCols;
+
+    const startIndex = pageIndex * pageSize;
+    const pageOptions = opts.slice(startIndex, startIndex + pageSize);
+
+    panelHitRects = [];
+    drawRoundedRectCanvas(panelRect.x, panelRect.y, panelRect.w, headerH, Math.min(12, headerH * 0.45), '#6fb8d8', '#98d7ef');
+    drawRoundedRectCanvas(panelRect.x, panelRect.y + panelRect.h - footerH, panelRect.w, footerH, Math.min(12, footerH * 0.45), 'rgba(8, 24, 16, 0.9)', 'rgba(90,200,140,0.7)');
+
+    let headerText = 'Choose a custom instrument';
+    if(pageCount > 1){
+      headerText = `Choose a custom instrument   (${pageIndex + 1} / ${pageCount})`;
+    }
+    ctx.fillStyle = '#e7fff2';
+    ctx.font = `700 ${Math.max(24, Math.round(headerH * 0.62))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(headerText, panelRect.x + panelRect.w / 2, panelRect.y + headerH / 2);
+
+    if(showArrows){
+      const arrowY = gridY;
+      const arrowH = gridH;
+      const leftRect = { x: panelRect.x + innerPad, y: arrowY, w: arrowW, h: arrowH };
+      const rightRect = { x: panelRect.x + panelRect.w - innerPad - arrowW, y: arrowY, w: arrowW, h: arrowH };
+      const leftKey = 'picker:prev';
+      const rightKey = 'picker:next';
+      const leftHover = panelHover === leftKey;
+      const rightHover = panelHover === rightKey;
+      const drawArrow = (rect, dir, hover) => {
+        drawRoundedRectCanvas(rect.x, rect.y, rect.w, rect.h, Math.min(10, rect.w * 0.6), hover ? 'rgba(90,160,120,0.95)' : 'rgba(20,30,25,0.85)', 'rgba(90,200,140,0.6)');
+        ctx.save();
+        ctx.translate(rect.x + rect.w / 2, rect.y + rect.h / 2);
+        ctx.fillStyle = hover ? '#e8fff4' : '#bfe9d3';
+        ctx.beginPath();
+        const size = Math.min(rect.w, rect.h) * 0.35;
+        if(dir === 'left'){
+          ctx.moveTo(size * 0.6, -size);
+          ctx.lineTo(-size * 0.6, 0);
+          ctx.lineTo(size * 0.6, size);
+        } else {
+          ctx.moveTo(-size * 0.6, -size);
+          ctx.lineTo(size * 0.6, 0);
+          ctx.lineTo(-size * 0.6, size);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      };
+      drawArrow(leftRect, 'left', leftHover);
+      drawArrow(rightRect, 'right', rightHover);
+      panelHitRects.push({ panel: 'picker', type: 'picker-prev', key: leftKey, rect: leftRect });
+      panelHitRects.push({ panel: 'picker', type: 'picker-next', key: rightKey, rect: rightRect });
+    }
+
+    const usedCols = cols;
+    const emptyCols = Math.max(0, gridCols - usedCols);
+    const baseOffsetX = (emptyCols * gridCellW) / 2;
+    for(let r=0;r<pickerRows;r++){
+      const rowStart = r * usedCols;
+      const rowEnd = Math.min(pageOptions.length, rowStart + usedCols);
+      const count = rowEnd - rowStart;
+      if(count <= 0) continue;
+      const offsetX = (count < usedCols) ? ((usedCols - count) * gridCellW) / 2 : 0;
+      for(let c=0;c<count;c++){
+        const opt = pageOptions[rowStart + c];
+        if(!opt) continue;
+        const optIndex = startIndex + rowStart + c;
+        const baseX = gridX + baseOffsetX + offsetX + c * gridCellW;
+        const baseY = gridY + r * rowH;
+        const inset = Math.max(4, Math.min(gridCellW, rowH) * 0.06);
+        const btnRect = { x: baseX + inset, y: baseY + inset, w: Math.max(10, gridCellW - inset * 2), h: Math.max(10, rowH - inset * 2) };
+        const hitKey = `picker:cell:${optIndex}`;
+        const isSelected = categoryPickerState.selectedIndex === optIndex;
+        const isHover = panelHover === hitKey;
+        const grad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
+        const base = isSelected ? 'rgba(255,195,90,0.75)' : (isHover ? 'rgba(70,245,200,0.65)' : 'rgba(15,15,15,0.9)');
+        grad.addColorStop(0, 'rgba(255,255,255,0.25)');
+        grad.addColorStop(0.45, base);
+        grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+        drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(12, btnRect.h * 0.35), grad, '#ffeb3b');
+        ctx.fillStyle = '#fff';
+        const baseFontSize = Math.max(20, Math.round(btnRect.h * 0.7));
+        let fontSizeBtn = baseFontSize;
+        ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+        const maxLabelWidth = btnRect.w * 0.9;
+        if(opt.label){
+          const width = ctx.measureText(opt.label).width;
+          if(width > maxLabelWidth){
+            fontSizeBtn = Math.max(12, Math.floor(fontSizeBtn * (maxLabelWidth / width)));
+            ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+          }
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(opt.label || '', btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+        panelHitRects.push({ panel: 'picker', type: 'picker-cell', id: optIndex, key: hitKey, rect: btnRect, index: optIndex });
+      }
+    }
+
+    const footerY = panelRect.y + panelRect.h - footerH;
+    const footerText = 'Listen before you choose';
+    const btnH = Math.max(30, Math.round(footerH * 0.8));
+    ctx.font = `700 ${Math.max(14, Math.round(btnH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
+    const cancelTextW = ctx.measureText('Cancel').width;
+    const useTextW = ctx.measureText('Use').width;
+    const btnW = Math.ceil(Math.max(cancelTextW, useTextW) + Math.max(22, btnH * 1.0));
+    const btnGap = Math.max(12, Math.round(btnH * 0.5));
+    const footerFontSize = Math.max(16, Math.round(footerH * 0.55));
+    ctx.font = `600 ${footerFontSize}px "Source Sans 3", system-ui, sans-serif`;
+    const spaceW = ctx.measureText(' ').width || 6;
+    const footerTextW = ctx.measureText(footerText).width;
+    const textCenterX = panelRect.x + panelRect.w / 2;
+    const textRightX = textCenterX + footerTextW / 2;
+    const textGap = spaceW * 10;
+    let buttonsStartX = textRightX + textGap;
+    const buttonsGroupW = (btnW * 2) + btnGap;
+    const maxButtonsX = panelRect.x + panelRect.w - innerPad - buttonsGroupW;
+    if(buttonsStartX > maxButtonsX) buttonsStartX = maxButtonsX;
+    const cancelRect = { x: buttonsStartX, y: footerY + (footerH - btnH) / 2, w: btnW, h: btnH };
+    const useRect = { x: cancelRect.x + btnW + btnGap, y: cancelRect.y, w: btnW, h: btnH };
+    const cancelKey = 'picker:cancel';
+    const useKey = 'picker:use';
+    drawRoundedRectCanvas(cancelRect.x, cancelRect.y, cancelRect.w, cancelRect.h, Math.min(10, btnH * 0.45), panelHover === cancelKey ? 'rgba(90,140,120,0.9)' : 'rgba(50,60,55,0.85)', 'rgba(180,220,200,0.7)');
+    drawRoundedRectCanvas(useRect.x, useRect.y, useRect.w, useRect.h, Math.min(10, btnH * 0.45), panelHover === useKey ? 'rgba(90,200,140,0.95)' : 'rgba(40,130,80,0.9)', 'rgba(180,240,210,0.8)');
+    ctx.fillStyle = '#e7fff2';
+    ctx.font = `700 ${Math.max(14, Math.round(btnH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Cancel', cancelRect.x + cancelRect.w / 2, cancelRect.y + cancelRect.h / 2);
+    ctx.fillText('Use', useRect.x + useRect.w / 2, useRect.y + useRect.h / 2);
+    panelHitRects.push({ panel: 'picker', type: 'picker-cancel', key: cancelKey, rect: cancelRect });
+    panelHitRects.push({ panel: 'picker', type: 'picker-use', key: useKey, rect: useRect });
+
+    ctx.fillStyle = '#bfe9d3';
+    ctx.font = `600 ${footerFontSize}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(footerText, textCenterX, footerY + footerH / 2);
+
+    backboardTexture.needsUpdate = true;
+    return;
+  }
   const buildLaneData = () => {
     const sourceEntries = (keymapEntries && keymapEntries.length)
       ? keymapEntries.map(entry => ({
@@ -7741,7 +8478,7 @@ function renderBackboardOverlay(dt){
       const panelTop = (headerRow - 1) * cellH;
       const panelBottom = (headerRow + 5) * cellH;
       const panelH = Math.max(0, panelBottom - panelTop);
-      const headerH = Math.round(cellH * 1.2);
+        const headerH = Math.round(cellH * 1.35);
       const tabH = Math.round(cellH * 1.6);
       const tabsY = panelTop + headerH;
       const buttonsY = panelTop + headerH + tabH;
@@ -7865,11 +8602,20 @@ function renderBackboardOverlay(dt){
             drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(10, btnRect.h * 0.35), 'rgba(255,255,255,0.08)', '#7fb9d8');
           }
           ctx.fillStyle = '#fff';
-          const fontSizeBtn = Math.max(14, Math.round(btnRect.h * 0.56));
+          const baseFontSize = Math.max(16, Math.round(btnRect.h * 0.58));
+          let fontSizeBtn = baseFontSize;
           ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+          const maxLabelWidth = btnRect.w * 0.9;
+          if(label){
+            const width = ctx.measureText(label).width;
+            if(width > maxLabelWidth){
+              fontSizeBtn = Math.max(12, Math.floor(fontSizeBtn * (maxLabelWidth / width)));
+              ctx.font = `${fontSizeBtn}px "Source Sans 3", system-ui, sans-serif`;
+            }
+          }
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.fillText(label || '', btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h / 2);
+          ctx.fillText(label || '', btnRect.x + btnRect.w / 2, btnRect.y + btnRect.h * 0.58);
         }
         if(randomW > 0){
           const randomRect = {
@@ -7885,32 +8631,47 @@ function renderBackboardOverlay(dt){
             w: Math.max(0, randomRect.w - inset * 2),
             h: Math.max(0, randomRect.h - inset * 2)
           };
-          const hitKey = `${panelId}:random:${activeTab}`;
-          panelHitRects.push({ panel: panelId, type: 'random', id: activeTab, key: hitKey, rect: btnRect, tab: activeTab });
+          const selectKey = `${panelId}:picker:${activeTab}`;
+          const menuKey = `${panelId}:picker-menu:${activeTab}`;
+          const topH = btnRect.h * 0.45;
+          const selectRect = { x: btnRect.x, y: btnRect.y, w: btnRect.w, h: topH };
+          const menuRect = { x: btnRect.x, y: btnRect.y + topH, w: btnRect.w, h: btnRect.h - topH };
+          panelHitRects.push({ panel: panelId, type: 'picker-select', id: activeTab, key: selectKey, rect: selectRect, tab: activeTab });
+          panelHitRects.push({ panel: panelId, type: 'picker-menu', id: activeTab, key: menuKey, rect: menuRect, tab: activeTab });
           const randomInfo = (ps.randomByTab && ps.randomByTab[activeTab]) ? ps.randomByTab[activeTab] : null;
           const isSelected = ps.randomActiveTab === activeTab && randomInfo;
-          const isHover = panelHover === hitKey;
+          const isHover = panelHover === selectKey || panelHover === menuKey;
           const grad = ctx.createLinearGradient(btnRect.x, btnRect.y, btnRect.x, btnRect.y + btnRect.h);
-          const base = isSelected ? 'rgba(120,200,255,0.85)' : (isHover ? 'rgba(110,185,255,0.75)' : 'rgba(20,60,120,0.95)');
+          const base = isSelected ? 'rgba(255,195,90,0.75)' : (isHover ? 'rgba(70,245,200,0.65)' : 'rgba(15,15,15,0.9)');
           grad.addColorStop(0, 'rgba(255,255,255,0.25)');
           grad.addColorStop(0.45, base);
           grad.addColorStop(1, 'rgba(0,0,0,0.45)');
-          drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(12, btnRect.w * 0.2), grad, '#6ea4ff');
-          const labelTop = '???';
-          const labelBottom = randomInfo ? randomInfo.label : '';
+          drawRoundedRectCanvas(btnRect.x, btnRect.y, btnRect.w, btnRect.h, Math.min(12, btnRect.w * 0.2), grad, '#ffeb3b');
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.45)';
+          ctx.fillRect(menuRect.x, menuRect.y, menuRect.w, menuRect.h);
+          ctx.restore();
+          const labelText = randomInfo ? randomInfo.label : '???';
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          const topSize = Math.max(16, Math.round(btnRect.h * 0.28));
-          const bottomSize = Math.max(10, Math.round(btnRect.h * 0.16));
+          const baseNameSize = Math.max(11, Math.round(btnRect.h * 0.3));
+          let nameSize = baseNameSize;
           const centerX = btnRect.x + btnRect.w / 2;
-          const centerY = btnRect.y + btnRect.h / 2;
-          ctx.font = `700 ${topSize}px "Source Sans 3", system-ui, sans-serif`;
-          ctx.fillText(labelTop, centerX, labelBottom ? (centerY - bottomSize * 0.6) : centerY);
-          if(labelBottom){
-            ctx.font = `600 ${bottomSize}px "Source Sans 3", system-ui, sans-serif`;
-            ctx.fillText(labelBottom, centerX, centerY + topSize * 0.45);
+          const labelY = btnRect.y + topH * 0.6;
+          ctx.font = `700 ${nameSize}px "Source Sans 3", system-ui, sans-serif`;
+          const maxNameWidth = btnRect.w * 0.9;
+          if(labelText){
+            const width = ctx.measureText(labelText).width;
+            if(width > maxNameWidth){
+              nameSize = Math.max(12, Math.floor(nameSize * (maxNameWidth / width)));
+              ctx.font = `700 ${nameSize}px "Source Sans 3", system-ui, sans-serif`;
+            }
           }
+          ctx.fillText(labelText, centerX, labelY);
+          ctx.fillStyle = '#c7f7dd';
+          ctx.font = `700 ${Math.max(11, Math.round(menuRect.h * 0.55))}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.fillText('SELECT', centerX, menuRect.y + menuRect.h / 2);
         }
       };
       if(dualInstrumentMode){
@@ -9501,7 +10262,7 @@ function onPointerDown(e){
             handled = true;
           }
         }
-        if(!handled && topPadVideo.mode !== 'playing' && topPadVideo.thumbRect){
+        if(!handled && topPadVideo.mode !== 'playing' && topPadVideo.thumbRect && !trackVideo.active && !audioPlaying && !playingMIDI && !playbackPaused && savedAudioPosSec === 0){
           const r = topPadVideo.thumbRect;
           if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
             startTopPadVideoPlayback();
@@ -9577,11 +10338,28 @@ function onPointerDown(e){
         } else {
           triggerInstrumentButton(uiHit.id, uiHit.panel);
         }
-      } else if(uiHit.type === 'random'){
-        const ps = panelState[uiHit.panel];
-        if(ps){
-          triggerRandomInstrument(uiHit.panel, uiHit.tab || uiHit.id);
-        }
+      } else if(uiHit.type === 'picker-cell'){
+        categoryPickerState.selectedIndex = Number(uiHit.index);
+        previewCategorySelection(Number(uiHit.index));
+        requestBackboardRedraw();
+      } else if(uiHit.type === 'picker-prev'){
+        const total = Math.max(1, categoryPickerState.pageCount || 1);
+        const next = (categoryPickerState.pageIndex || 0) - 1;
+        categoryPickerState.pageIndex = (next < 0) ? (total - 1) : next;
+        requestBackboardRedraw();
+      } else if(uiHit.type === 'picker-next'){
+        const total = Math.max(1, categoryPickerState.pageCount || 1);
+        const next = (categoryPickerState.pageIndex || 0) + 1;
+        categoryPickerState.pageIndex = (next >= total) ? 0 : next;
+        requestBackboardRedraw();
+      } else if(uiHit.type === 'picker-cancel'){
+        closeCategoryPicker();
+      } else if(uiHit.type === 'picker-use'){
+        applyCategorySelection();
+      } else if(uiHit.type === 'picker-select'){
+        selectCategoryInstrument(uiHit.panel, uiHit.tab || uiHit.id);
+      } else if(uiHit.type === 'picker-menu'){
+        openCategoryPicker(uiHit.panel, uiHit.tab || uiHit.id);
       } else if(uiHit.type === 'tab'){
         selectPanelInstrumentForTab(uiHit.panel, uiHit.id);
       } else if(uiHit.type === 'piano-shift'){

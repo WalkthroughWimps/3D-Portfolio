@@ -4547,7 +4547,7 @@ function renderTopPadGrid(){
       }
     }
   }
-  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing'){
+  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing' && !trackVideo.active){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     drawRoundedRect(infoBoxRect, Math.min(14, infoBoxRect.h * 0.18));
     ctx.fill();
