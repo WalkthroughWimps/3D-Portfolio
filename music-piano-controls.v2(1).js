@@ -29,6 +29,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from './global-sync.js';
 import { createVideoControlsUI, syncAudioToVideo } from './shared-video-controls.js';
 import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
+import { recording, configureRecordingEngine } from './music-transcription.js';
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
@@ -66,7 +67,23 @@ window.addEventListener('DOMContentLoaded', ()=>{
       logInstrumentMeterSnapshot();
     }
   });
+  setupTrackTextLayoutControls();
   setupInstrumentLevelUi();
+  ensureTopPadOverlayElements();
+  if(topPadOverlayToggle){
+    topPadOverlayToggle.addEventListener('click', ()=>{
+      setTopPadOverlayMode(!topPadOverlayMode);
+    });
+  }
+  if(twoDimExitBtn){
+    twoDimExitBtn.addEventListener('click', ()=> setTopPadOverlayMode(false));
+  }
+  try{
+    topPadOverlayMode = localStorage.getItem('topPadOverlayMode') === '1';
+  }catch(e){
+    topPadOverlayMode = false;
+  }
+  setTopPadOverlayMode(topPadOverlayMode);
 });
 
 // Label display mode: 'qwerty' | 'note' | 'none'
@@ -357,6 +374,101 @@ let instrumentSiteVolumeSlider = null;
 let instrumentSiteVolumeReadout = null;
 let instrumentMasterSlider = null;
 let instrumentMasterReadout = null;
+let instrumentMeterPrevEnabled = null;
+let showRightButtonGrid = false;
+const tintedIconCache = new Map();
+const metronomeOnImg = new Image();
+metronomeOnImg.crossOrigin = 'anonymous';
+metronomeOnImg.decoding = 'async';
+metronomeOnImg.loading = 'eager';
+metronomeOnImg.src = 'assets/svg/metronome-on.svg';
+metronomeOnImg.onload = () => { try{ renderTopPadGrid(); }catch(e){} };
+const metronomeOffImg = new Image();
+metronomeOffImg.crossOrigin = 'anonymous';
+metronomeOffImg.decoding = 'async';
+metronomeOffImg.loading = 'eager';
+metronomeOffImg.src = 'assets/svg/metronome-off.svg';
+metronomeOffImg.onload = () => { try{ renderTopPadGrid(); }catch(e){} };
+const trackVolIconImg = new Image();
+trackVolIconImg.crossOrigin = 'anonymous';
+trackVolIconImg.decoding = 'async';
+trackVolIconImg.loading = 'eager';
+trackVolIconImg.src = assetUrl('assets/svg/btn-vol.svg');
+trackVolIconImg.onload = () => { try{ renderTopPadGrid(); }catch(e){} };
+const trackSyncIconImg = new Image();
+trackSyncIconImg.crossOrigin = 'anonymous';
+trackSyncIconImg.decoding = 'async';
+trackSyncIconImg.loading = 'eager';
+trackSyncIconImg.src = assetUrl('assets/svg/btn-sync.svg');
+trackSyncIconImg.onload = () => { try{ renderTopPadGrid(); }catch(e){} };
+const metronomeClockAssets = {
+  ready: false,
+  loading: false,
+  circle: null,
+  spinner: null,
+  tick: null,
+  subtick: null
+};
+function loadMetronomeClockAssets(){
+  if(metronomeClockAssets.ready || metronomeClockAssets.loading) return;
+  metronomeClockAssets.loading = true;
+  fetch(assetUrl('assets/svg/metronome-circle.svg'))
+    .then((res) => res.text())
+    .then((svgText) => {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svgText, 'image/svg+xml');
+      const svg = doc.querySelector('svg');
+      if(!svg) throw new Error('metronome-circle svg missing root');
+      const serializeLayer = (layerId) => {
+        const clone = svg.cloneNode(true);
+        const keep = clone.querySelector(`#${layerId}`);
+        const groups = Array.from(clone.querySelectorAll('g'));
+        groups.forEach((g) => { if(g !== keep) g.remove(); });
+        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(new XMLSerializer().serializeToString(clone))}`;
+      };
+      const makeImg = (src) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.decoding = 'async';
+        img.loading = 'eager';
+        img.src = src;
+        return img;
+      };
+      const layers = {
+        circle: serializeLayer('metronome-circle'),
+        spinner: serializeLayer('metronome-spinner'),
+        tick: serializeLayer('metronome-tick'),
+        subtick: serializeLayer('metronome-subtick')
+      };
+      const imgs = {};
+      let loaded = 0;
+      const finish = () => {
+        metronomeClockAssets.ready = true;
+        metronomeClockAssets.loading = false;
+        renderTopPadGrid();
+      };
+      Object.keys(layers).forEach((key) => {
+        const img = makeImg(layers[key]);
+        img.onload = () => {
+          loaded += 1;
+          if(loaded === 4) finish();
+        };
+        img.onerror = () => {
+          loaded += 1;
+          if(loaded === 4) finish();
+        };
+        imgs[key] = img;
+      });
+      metronomeClockAssets.circle = imgs.circle;
+      metronomeClockAssets.spinner = imgs.spinner;
+      metronomeClockAssets.tick = imgs.tick;
+      metronomeClockAssets.subtick = imgs.subtick;
+    })
+    .catch(() => {
+      metronomeClockAssets.loading = false;
+    });
+}
+loadMetronomeClockAssets();
 let instrumentCategorySelect = null;
 let instrumentCategorySlider = null;
 let instrumentCategoryReadout = null;
@@ -416,9 +528,873 @@ let topPadMesh = null;
 let topPadCanvas = null;
 let topPadCtx = null;
 let topPadTexture = null;
+let topPadOverlayMode = false;
+let topPadOverlayToggle = null;
+let twoDimOverlayEl = null;
+let twoDimCanvas = null;
+let twoDimCtx = null;
+let twoDimOverlayBound = false;
+let twoDimExitBtn = null;
 let topPadHoverCell = null;
 let topPadHoverUi = null;
-let topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, instrumentModeToggle: null, syncSlider: null };
+let topPadHoverLock = false;
+let topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, speedCircle: null, trackCircles: [], trackButtons: [], trackRowButtons: [], trackParamButtons: [], trackRows: [], trackNameRects: [], trackNameHistoryRects: [], actionButtons: [], trackAddRect: null, trackListRect: null, pianoRollRect: null, recordToggle: null, recordTabs: [], recordButton: null, recordControlButtons: [], recordMetronome: null, rightGridToggle: null, instrumentModeToggle: null, syncSlider: null, gridToggle: null, meterButtons: [], collapseButtons: [], recordMidRect: null, deleteConfirm: null };
+const recordState = recording.state;
+if(recordState.rightPanelCollapsed == null) recordState.rightPanelCollapsed = false;
+const TRACK_TEXT_LAYOUT_DEFAULTS = {
+  namePct: 0.35,
+  instrPct: 0.25,
+  infoPct: 0.3,
+  marginOuterPct: 0.02,
+  marginBetweenPct: 0.02
+};
+const trackTextLayout = { ...TRACK_TEXT_LAYOUT_DEFAULTS };
+const trackRenameState = {
+  active: false,
+  trackId: null,
+  text: '',
+  originalText: '',
+  lastInputMs: 0,
+  hover: false,
+  historyScrollAuto: true,
+  cursor: 0,
+  selStart: 0,
+  selEnd: 0,
+  undoStack: [],
+  redoStack: [],
+  clipboard: ''
+};
+const trackValueEditState = {
+  active: false,
+  trackId: null,
+  type: null,
+  text: '',
+  cursor: 0,
+  selStart: 0,
+  selEnd: 0,
+  lastInputMs: 0,
+  hover: false,
+  undoStack: [],
+  redoStack: [],
+  clipboard: ''
+};
+let trackValueDragState = null;
+
+function parsePercentInput(value, fallback, min, max){
+  let num = Number.parseFloat(value);
+  if(!Number.isFinite(num)) return fallback;
+  if(num > 1) num = num / 100;
+  return clampRange(num, min, max);
+}
+
+function updateTrackTextLayout(){
+  const nameInput = document.getElementById('trackNamePctInput');
+  const instrInput = document.getElementById('trackInstrumentPctInput');
+  const infoInput = document.getElementById('trackInfoPctInput');
+  const outerInput = document.getElementById('trackMarginOuterInput');
+  const betweenInput = document.getElementById('trackMarginBetweenInput');
+  if(!nameInput || !instrInput || !infoInput || !outerInput || !betweenInput) return;
+
+  trackTextLayout.namePct = parsePercentInput(nameInput.value, trackTextLayout.namePct, 0.05, 0.95);
+  trackTextLayout.instrPct = parsePercentInput(instrInput.value, trackTextLayout.instrPct, 0.05, 0.95);
+  trackTextLayout.infoPct = parsePercentInput(infoInput.value, trackTextLayout.infoPct, 0.05, 0.95);
+  trackTextLayout.marginOuterPct = parsePercentInput(outerInput.value, trackTextLayout.marginOuterPct, 0, 0.2);
+  trackTextLayout.marginBetweenPct = parsePercentInput(betweenInput.value, trackTextLayout.marginBetweenPct, 0, 0.2);
+  renderTopPadGrid();
+}
+
+function setupTrackTextLayoutControls(){
+  const nameInput = document.getElementById('trackNamePctInput');
+  const instrInput = document.getElementById('trackInstrumentPctInput');
+  const infoInput = document.getElementById('trackInfoPctInput');
+  const outerInput = document.getElementById('trackMarginOuterInput');
+  const betweenInput = document.getElementById('trackMarginBetweenInput');
+  if(!nameInput || !instrInput || !infoInput || !outerInput || !betweenInput) return;
+  nameInput.value = String(trackTextLayout.namePct * 100);
+  instrInput.value = String(trackTextLayout.instrPct * 100);
+  infoInput.value = String(trackTextLayout.infoPct * 100);
+  outerInput.value = String(trackTextLayout.marginOuterPct * 100);
+  betweenInput.value = String(trackTextLayout.marginBetweenPct * 100);
+  [nameInput, instrInput, infoInput, outerInput, betweenInput].forEach((input) => {
+    input.addEventListener('input', updateTrackTextLayout);
+    input.addEventListener('change', updateTrackTextLayout);
+  });
+}
+
+function getTrackDisplayLabel(track){
+  const custom = (track && typeof track.customName === 'string') ? track.customName.trim() : '';
+  return custom ? custom : (track ? track.name : '');
+}
+
+function updateTrackNameHistory(next){
+  const trimmed = (next || '').trim().slice(0, 25);
+  if(!trimmed) return;
+  const history = recordState.trackNameHistory || [];
+  const existing = history.indexOf(trimmed);
+  if(existing >= 0) history.splice(existing, 1);
+  history.unshift(trimmed);
+  const limit = Math.max(1, recordState.trackNameHistoryLimit || 120);
+  if(history.length > limit) history.splice(limit);
+  recordState.trackNameHistory = history;
+  recordState.trackNameHistoryScroll = 0;
+}
+
+function startTrackRename(trackId, labelText){
+  if(!trackId) return;
+  const track = recordState.tracks.find((t)=>t.id === trackId);
+  const custom = track && typeof track.customName === 'string' ? track.customName.trim() : '';
+  trackRenameState.active = true;
+  trackRenameState.trackId = trackId;
+  trackRenameState.text = custom;
+  trackRenameState.originalText = labelText || '';
+  trackRenameState.lastInputMs = performance.now();
+  trackRenameState.hover = true;
+  trackRenameState.historyScrollAuto = true;
+  trackRenameState.cursor = custom.length;
+  trackRenameState.selStart = 0;
+  trackRenameState.selEnd = custom.length;
+  trackRenameState.undoStack = [];
+  trackRenameState.redoStack = [];
+  recordState.trackNameHistoryScroll = 0;
+  renderTopPadGrid();
+}
+
+function stopTrackRename({ commit } = { commit: true }){
+  if(!trackRenameState.active) return;
+  const track = recordState.tracks.find((t)=>t.id === trackRenameState.trackId);
+  if(track && commit){
+    const next = (trackRenameState.text || '').trim().slice(0, 25);
+    if(next && next !== track.name){
+      track.customName = next;
+      updateTrackNameHistory(next);
+    } else {
+      track.customName = '';
+    }
+  }
+  trackRenameState.active = false;
+  trackRenameState.trackId = null;
+  trackRenameState.text = '';
+  trackRenameState.originalText = '';
+  trackRenameState.hover = false;
+  trackRenameState.cursor = 0;
+  trackRenameState.selStart = 0;
+  trackRenameState.selEnd = 0;
+  trackRenameState.undoStack = [];
+  trackRenameState.redoStack = [];
+  renderTopPadGrid();
+}
+
+function startTrackValueEdit(trackId, type, valueText){
+  if(!trackId || !type) return;
+  trackValueEditState.active = true;
+  trackValueEditState.trackId = trackId;
+  trackValueEditState.type = type;
+  trackValueEditState.text = String(valueText || '');
+  trackValueEditState.cursor = trackValueEditState.text.length;
+  trackValueEditState.selStart = 0;
+  trackValueEditState.selEnd = trackValueEditState.text.length;
+  trackValueEditState.lastInputMs = performance.now();
+  trackValueEditState.undoStack = [];
+  trackValueEditState.redoStack = [];
+  renderTopPadGrid();
+}
+
+function stopTrackValueEdit({ commit } = { commit: true }){
+  if(!trackValueEditState.active) return;
+  const track = recordState.tracks.find((t)=>t.id === trackValueEditState.trackId);
+  if(track && commit){
+    const raw = (trackValueEditState.text || '').trim();
+    if(trackValueEditState.type === 'vol'){
+      const cleaned = raw.replace('%', '');
+      const nextPct = Number.parseFloat(cleaned);
+      if(Number.isFinite(nextPct)){
+        track.volume = clampRange(nextPct / 100, 0, 1);
+      }
+    } else if(trackValueEditState.type === 'sync'){
+      const cleaned = raw.replace('ms', '');
+      const nextMs = Number.parseFloat(cleaned);
+      if(Number.isFinite(nextMs)){
+        track.syncMs = clampRange(nextMs, -5000, 5000);
+      }
+    }
+  }
+  trackValueEditState.active = false;
+  trackValueEditState.trackId = null;
+  trackValueEditState.type = null;
+  trackValueEditState.text = '';
+  trackValueEditState.cursor = 0;
+  trackValueEditState.selStart = 0;
+  trackValueEditState.selEnd = 0;
+  trackValueEditState.undoStack = [];
+  trackValueEditState.redoStack = [];
+  renderTopPadGrid();
+}
+
+function getTrackValueSelection(){
+  const start = Math.min(trackValueEditState.selStart || 0, trackValueEditState.selEnd || 0);
+  const end = Math.max(trackValueEditState.selStart || 0, trackValueEditState.selEnd || 0);
+  return { start, end };
+}
+
+function setTrackValueCursor(pos){
+  const next = clampRange(pos, 0, (trackValueEditState.text || '').length);
+  trackValueEditState.cursor = next;
+  trackValueEditState.selStart = next;
+  trackValueEditState.selEnd = next;
+}
+
+function setTrackValueSelection(start, end){
+  const s = clampRange(start, 0, (trackValueEditState.text || '').length);
+  const e = clampRange(end, 0, (trackValueEditState.text || '').length);
+  trackValueEditState.selStart = s;
+  trackValueEditState.selEnd = e;
+  trackValueEditState.cursor = e;
+}
+
+function snapshotTrackValueEdit(){
+  return {
+    text: trackValueEditState.text || '',
+    cursor: trackValueEditState.cursor || 0,
+    selStart: trackValueEditState.selStart || 0,
+    selEnd: trackValueEditState.selEnd || 0
+  };
+}
+
+function applyTrackValueSnapshot(snapshot){
+  if(!snapshot) return;
+  trackValueEditState.text = snapshot.text || '';
+  trackValueEditState.cursor = clampRange(snapshot.cursor || 0, 0, trackValueEditState.text.length);
+  trackValueEditState.selStart = clampRange(snapshot.selStart || 0, 0, trackValueEditState.text.length);
+  trackValueEditState.selEnd = clampRange(snapshot.selEnd || 0, 0, trackValueEditState.text.length);
+}
+
+function pushTrackValueUndo(){
+  const snap = snapshotTrackValueEdit();
+  const stack = trackValueEditState.undoStack || [];
+  const last = stack[stack.length - 1];
+  if(last && last.text === snap.text && last.cursor === snap.cursor && last.selStart === snap.selStart && last.selEnd === snap.selEnd){
+    return;
+  }
+  stack.push(snap);
+  if(stack.length > 100) stack.shift();
+  trackValueEditState.undoStack = stack;
+  trackValueEditState.redoStack = [];
+}
+
+function getTrackSelection(){
+  const start = Math.min(trackRenameState.selStart || 0, trackRenameState.selEnd || 0);
+  const end = Math.max(trackRenameState.selStart || 0, trackRenameState.selEnd || 0);
+  return { start, end };
+}
+
+function setTrackCursor(pos){
+  const next = clampRange(pos, 0, (trackRenameState.text || '').length);
+  trackRenameState.cursor = next;
+  trackRenameState.selStart = next;
+  trackRenameState.selEnd = next;
+}
+
+function setTrackSelection(start, end){
+  const s = clampRange(start, 0, (trackRenameState.text || '').length);
+  const e = clampRange(end, 0, (trackRenameState.text || '').length);
+  trackRenameState.selStart = s;
+  trackRenameState.selEnd = e;
+  trackRenameState.cursor = e;
+}
+
+function snapshotTrackRenameState(){
+  return {
+    text: trackRenameState.text || '',
+    cursor: trackRenameState.cursor || 0,
+    selStart: trackRenameState.selStart || 0,
+    selEnd: trackRenameState.selEnd || 0
+  };
+}
+
+function applyTrackRenameSnapshot(snapshot){
+  if(!snapshot) return;
+  trackRenameState.text = snapshot.text || '';
+  trackRenameState.cursor = clampRange(snapshot.cursor || 0, 0, trackRenameState.text.length);
+  trackRenameState.selStart = clampRange(snapshot.selStart || 0, 0, trackRenameState.text.length);
+  trackRenameState.selEnd = clampRange(snapshot.selEnd || 0, 0, trackRenameState.text.length);
+}
+
+function pushTrackRenameUndo(){
+  const snap = snapshotTrackRenameState();
+  const stack = trackRenameState.undoStack || [];
+  const last = stack[stack.length - 1];
+  if(last && last.text === snap.text && last.cursor === snap.cursor && last.selStart === snap.selStart && last.selEnd === snap.selEnd){
+    return;
+  }
+  stack.push(snap);
+  if(stack.length > 100) stack.shift();
+  trackRenameState.undoStack = stack;
+  trackRenameState.redoStack = [];
+}
+
+function findWordLeft(text, pos){
+  let i = Math.max(0, Math.min(text.length, pos));
+  if(i === 0) return 0;
+  const isSpace = /\s/.test(text[i - 1]);
+  while(i > 0 && /\s/.test(text[i - 1]) === isSpace) i--;
+  return i;
+}
+
+function findWordRight(text, pos){
+  let i = Math.max(0, Math.min(text.length, pos));
+  if(i === text.length) return i;
+  const isSpace = /\s/.test(text[i]);
+  while(i < text.length && /\s/.test(text[i]) === isSpace) i++;
+  return i;
+}
+
+function handleTrackRenameKey(ev){
+  if(!trackRenameState.active) return false;
+  const key = ev.key;
+  const text = trackRenameState.text || '';
+  const sel = getTrackSelection();
+  const hasSel = sel.start !== sel.end;
+  const modKey = !!(ev.ctrlKey || ev.metaKey);
+  const commitChange = () => { trackRenameState.lastInputMs = performance.now(); renderTopPadGrid(); };
+  if(key === 'Enter'){
+    ev.preventDefault();
+    stopTrackRename({ commit: true });
+    return true;
+  }
+  if(key === 'Escape'){
+    ev.preventDefault();
+    stopTrackRename({ commit: false });
+    return true;
+  }
+  if(key === 'ArrowLeft' || key === 'ArrowRight'){
+    ev.preventDefault();
+    const moveTo = (key === 'ArrowLeft')
+      ? (modKey ? findWordLeft(text, trackRenameState.cursor) : trackRenameState.cursor - 1)
+      : (modKey ? findWordRight(text, trackRenameState.cursor) : trackRenameState.cursor + 1);
+    const next = clampRange(moveTo, 0, text.length);
+    if(ev.shiftKey){
+      setTrackSelection(trackRenameState.selStart, next);
+    } else {
+      setTrackCursor(next);
+    }
+    commitChange();
+    return true;
+  }
+  if((key === 'a' || key === 'A') && modKey){
+    ev.preventDefault();
+    setTrackSelection(0, text.length);
+    commitChange();
+    return true;
+  }
+  if((key === 'z' || key === 'Z') && modKey){
+    ev.preventDefault();
+    const undoStack = trackRenameState.undoStack || [];
+    if(undoStack.length){
+      const current = snapshotTrackRenameState();
+      const prev = undoStack.pop();
+      trackRenameState.undoStack = undoStack;
+      const redoStack = trackRenameState.redoStack || [];
+      redoStack.push(current);
+      trackRenameState.redoStack = redoStack;
+      applyTrackRenameSnapshot(prev);
+      commitChange();
+    }
+    return true;
+  }
+  if(((key === 'y' || key === 'Y') && modKey) || (modKey && ev.shiftKey && (key === 'z' || key === 'Z'))){
+    ev.preventDefault();
+    const redoStack = trackRenameState.redoStack || [];
+    if(redoStack.length){
+      const current = snapshotTrackRenameState();
+      const next = redoStack.pop();
+      trackRenameState.redoStack = redoStack;
+      const undoStack = trackRenameState.undoStack || [];
+      undoStack.push(current);
+      trackRenameState.undoStack = undoStack;
+      applyTrackRenameSnapshot(next);
+      commitChange();
+    }
+    return true;
+  }
+  if((key === 'c' || key === 'C') && modKey){
+    ev.preventDefault();
+    if(hasSel){
+      const copied = text.slice(sel.start, sel.end);
+      trackRenameState.clipboard = copied;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copied).catch(()=>{});
+      }
+    }
+    return true;
+  }
+  if((key === 'x' || key === 'X') && modKey){
+    ev.preventDefault();
+    if(hasSel){
+      const copied = text.slice(sel.start, sel.end);
+      trackRenameState.clipboard = copied;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copied).catch(()=>{});
+      }
+      pushTrackRenameUndo();
+      trackRenameState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackCursor(sel.start);
+      commitChange();
+    }
+    return true;
+  }
+  if((key === 'v' || key === 'V') && modKey){
+    ev.preventDefault();
+    const applyPaste = (pasteText) => {
+      if(!pasteText) return;
+      const cleaned = String(pasteText).replace(/\s+/g, ' ');
+      pushTrackRenameUndo();
+      const head = text.slice(0, sel.start);
+      const tail = text.slice(sel.end);
+      let merged = (head + cleaned + tail).slice(0, 25);
+      trackRenameState.text = merged;
+      const nextCursor = Math.min(head.length + cleaned.length, trackRenameState.text.length);
+      setTrackCursor(nextCursor);
+      commitChange();
+    };
+    if(navigator.clipboard && navigator.clipboard.readText){
+      navigator.clipboard.readText().then(applyPaste).catch(()=>applyPaste(trackRenameState.clipboard));
+    } else {
+      applyPaste(trackRenameState.clipboard);
+    }
+    return true;
+  }
+  if((key === 'a' || key === 'A') && ev.ctrlKey){
+    ev.preventDefault();
+    setTrackSelection(0, text.length);
+    commitChange();
+    return true;
+  }
+  if(key === 'Home'){
+    ev.preventDefault();
+    if(ev.shiftKey) setTrackSelection(trackRenameState.selStart, 0);
+    else setTrackCursor(0);
+    commitChange();
+    return true;
+  }
+  if(key === 'End'){
+    ev.preventDefault();
+    if(ev.shiftKey) setTrackSelection(trackRenameState.selStart, text.length);
+    else setTrackCursor(text.length);
+    commitChange();
+    return true;
+  }
+  if(key === 'Backspace'){
+    ev.preventDefault();
+    if(hasSel){
+      pushTrackRenameUndo();
+      trackRenameState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackCursor(sel.start);
+    } else if(trackRenameState.cursor > 0){
+      pushTrackRenameUndo();
+      const start = modKey ? findWordLeft(text, trackRenameState.cursor) : trackRenameState.cursor - 1;
+      trackRenameState.text = text.slice(0, start) + text.slice(trackRenameState.cursor);
+      setTrackCursor(start);
+    }
+    commitChange();
+    return true;
+  }
+  if(key === 'Delete'){
+    ev.preventDefault();
+    if(hasSel){
+      pushTrackRenameUndo();
+      trackRenameState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackCursor(sel.start);
+    } else if(trackRenameState.cursor < text.length){
+      pushTrackRenameUndo();
+      const end = modKey ? findWordRight(text, trackRenameState.cursor) : trackRenameState.cursor + 1;
+      trackRenameState.text = text.slice(0, trackRenameState.cursor) + text.slice(end);
+      setTrackCursor(trackRenameState.cursor);
+    }
+    commitChange();
+    return true;
+  }
+  if(key && key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey){
+    ev.preventDefault();
+    pushTrackRenameUndo();
+    const insertChar = key;
+    let nextText = text;
+    let nextCursor = trackRenameState.cursor;
+    if(hasSel){
+      nextText = text.slice(0, sel.start) + insertChar + text.slice(sel.end);
+      nextCursor = sel.start + 1;
+    } else if(text.length < 25){
+      nextText = text.slice(0, trackRenameState.cursor) + insertChar + text.slice(trackRenameState.cursor);
+      nextCursor = trackRenameState.cursor + 1;
+    } else {
+      return true;
+    }
+    trackRenameState.text = nextText.slice(0, 25);
+    setTrackCursor(nextCursor);
+    commitChange();
+    return true;
+  }
+  return false;
+}
+
+function sanitizeTrackValueText(text, type){
+  const raw = String(text || '');
+  if(type === 'vol'){
+    return raw.replace(/[^0-9.\-%]/g, '');
+  }
+  if(type === 'sync'){
+    return raw.replace(/[^0-9.\-+ms]/gi, '');
+  }
+  return raw;
+}
+
+function handleTrackValueKey(ev){
+  if(!trackValueEditState.active) return false;
+  const key = ev.key;
+  const type = trackValueEditState.type;
+  const text = trackValueEditState.text || '';
+  const sel = getTrackValueSelection();
+  const hasSel = sel.start !== sel.end;
+  const modKey = !!(ev.ctrlKey || ev.metaKey);
+  const commitChange = () => { trackValueEditState.lastInputMs = performance.now(); renderTopPadGrid(); };
+  if(key === 'Enter'){
+    ev.preventDefault();
+    stopTrackValueEdit({ commit: true });
+    return true;
+  }
+  if(key === 'Escape'){
+    ev.preventDefault();
+    stopTrackValueEdit({ commit: false });
+    return true;
+  }
+  if(key === 'ArrowUp' || key === 'ArrowDown'){
+    ev.preventDefault();
+    const dir = key === 'ArrowUp' ? 1 : -1;
+    const step = type === 'vol' ? 1 : 5;
+    const rawNum = Number.parseFloat(String(text).replace('%', '').replace('ms', ''));
+    const fallback = type === 'vol'
+      ? Math.round((Number.isFinite(rawNum) ? rawNum : 50))
+      : Math.round((Number.isFinite(rawNum) ? rawNum : 0));
+    const next = type === 'vol'
+      ? clampRange(fallback + dir * step, 0, 100)
+      : clampRange(fallback + dir * step, -5000, 5000);
+    trackValueEditState.text = String(Math.round(next));
+    setTrackValueSelection(0, trackValueEditState.text.length);
+    commitChange();
+    return true;
+  }
+  if(key === 'ArrowLeft' || key === 'ArrowRight'){
+    ev.preventDefault();
+    const moveTo = (key === 'ArrowLeft')
+      ? (modKey ? findWordLeft(text, trackValueEditState.cursor) : trackValueEditState.cursor - 1)
+      : (modKey ? findWordRight(text, trackValueEditState.cursor) : trackValueEditState.cursor + 1);
+    const next = clampRange(moveTo, 0, text.length);
+    if(ev.shiftKey){
+      setTrackValueSelection(trackValueEditState.selStart, next);
+    } else {
+      setTrackValueCursor(next);
+    }
+    commitChange();
+    return true;
+  }
+  if((key === 'a' || key === 'A') && modKey){
+    ev.preventDefault();
+    setTrackValueSelection(0, text.length);
+    commitChange();
+    return true;
+  }
+  if((key === 'z' || key === 'Z') && modKey){
+    ev.preventDefault();
+    const undoStack = trackValueEditState.undoStack || [];
+    if(undoStack.length){
+      const current = snapshotTrackValueEdit();
+      const prev = undoStack.pop();
+      trackValueEditState.undoStack = undoStack;
+      const redoStack = trackValueEditState.redoStack || [];
+      redoStack.push(current);
+      trackValueEditState.redoStack = redoStack;
+      applyTrackValueSnapshot(prev);
+      commitChange();
+    }
+    return true;
+  }
+  if(((key === 'y' || key === 'Y') && modKey) || (modKey && ev.shiftKey && (key === 'z' || key === 'Z'))){
+    ev.preventDefault();
+    const redoStack = trackValueEditState.redoStack || [];
+    if(redoStack.length){
+      const current = snapshotTrackValueEdit();
+      const next = redoStack.pop();
+      trackValueEditState.redoStack = redoStack;
+      const undoStack = trackValueEditState.undoStack || [];
+      undoStack.push(current);
+      trackValueEditState.undoStack = undoStack;
+      applyTrackValueSnapshot(next);
+      commitChange();
+    }
+    return true;
+  }
+  if((key === 'c' || key === 'C') && modKey){
+    ev.preventDefault();
+    if(hasSel){
+      const copied = text.slice(sel.start, sel.end);
+      trackValueEditState.clipboard = copied;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copied).catch(()=>{});
+      }
+    }
+    return true;
+  }
+  if((key === 'x' || key === 'X') && modKey){
+    ev.preventDefault();
+    if(hasSel){
+      const copied = text.slice(sel.start, sel.end);
+      trackValueEditState.clipboard = copied;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(copied).catch(()=>{});
+      }
+      pushTrackValueUndo();
+      trackValueEditState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackValueCursor(sel.start);
+      commitChange();
+    }
+    return true;
+  }
+  if((key === 'v' || key === 'V') && modKey){
+    ev.preventDefault();
+    const applyPaste = (pasteText) => {
+      if(!pasteText) return;
+      const cleaned = sanitizeTrackValueText(pasteText, type);
+      pushTrackValueUndo();
+      const head = text.slice(0, sel.start);
+      const tail = text.slice(sel.end);
+      trackValueEditState.text = sanitizeTrackValueText(head + cleaned + tail, type);
+      const nextCursor = Math.min(head.length + cleaned.length, trackValueEditState.text.length);
+      setTrackValueCursor(nextCursor);
+      commitChange();
+    };
+    if(navigator.clipboard && navigator.clipboard.readText){
+      navigator.clipboard.readText().then(applyPaste).catch(()=>applyPaste(trackValueEditState.clipboard));
+    } else {
+      applyPaste(trackValueEditState.clipboard);
+    }
+    return true;
+  }
+  if(key === 'Backspace'){
+    ev.preventDefault();
+    if(hasSel){
+      pushTrackValueUndo();
+      trackValueEditState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackValueCursor(sel.start);
+    } else if(trackValueEditState.cursor > 0){
+      pushTrackValueUndo();
+      const start = modKey ? findWordLeft(text, trackValueEditState.cursor) : trackValueEditState.cursor - 1;
+      trackValueEditState.text = text.slice(0, start) + text.slice(trackValueEditState.cursor);
+      setTrackValueCursor(start);
+    }
+    commitChange();
+    return true;
+  }
+  if(key === 'Delete'){
+    ev.preventDefault();
+    if(hasSel){
+      pushTrackValueUndo();
+      trackValueEditState.text = text.slice(0, sel.start) + text.slice(sel.end);
+      setTrackValueCursor(sel.start);
+    } else if(trackValueEditState.cursor < text.length){
+      pushTrackValueUndo();
+      const end = modKey ? findWordRight(text, trackValueEditState.cursor) : trackValueEditState.cursor + 1;
+      trackValueEditState.text = text.slice(0, trackValueEditState.cursor) + text.slice(end);
+      setTrackValueCursor(trackValueEditState.cursor);
+    }
+    commitChange();
+    return true;
+  }
+  if(key && key.length === 1 && !ev.ctrlKey && !ev.metaKey && !ev.altKey){
+    const allowed = sanitizeTrackValueText(key, type);
+    if(!allowed) return true;
+    ev.preventDefault();
+    pushTrackValueUndo();
+    let nextText = text;
+    let nextCursor = trackValueEditState.cursor;
+    if(hasSel){
+      nextText = text.slice(0, sel.start) + allowed + text.slice(sel.end);
+      nextCursor = sel.start + allowed.length;
+    } else {
+      nextText = text.slice(0, trackValueEditState.cursor) + allowed + text.slice(trackValueEditState.cursor);
+      nextCursor = trackValueEditState.cursor + allowed.length;
+    }
+    trackValueEditState.text = sanitizeTrackValueText(nextText, type);
+    setTrackValueCursor(nextCursor);
+    commitChange();
+    return true;
+  }
+  return false;
+}
+const TIME_SIG_TOPS = Array.from({ length: 12 }, (_, i) => i + 1);
+const TIME_SIG_BOTTOMS = [1, 2, 4, 8, 16];
+const {
+  normalizeRecordTracksForMode,
+  getRecordTrackForSide,
+  buildRecordNoteSpans,
+  getSelectedRecordTrack,
+  setRecordPanelTab,
+  selectRecordTrack,
+  setTrackRecordEnabled,
+  toggleTrackMute,
+  toggleTrackSolo,
+  getPlayableRecordTracks,
+  addRecordTrack,
+  deleteRecordTrack,
+  undeleteRecordTrack,
+  duplicateRecordTrack,
+  transposeRecordTrack,
+  reverseRecordTrack,
+  swapTrackInstrument,
+  adjustTrackVolume,
+  adjustTrackSync,
+  adjustMasterVolume,
+  setRecordTempo,
+  toggleMetronome,
+  toggleLeadIn,
+  toggleTempoMode,
+  toggleSilentMode,
+  toggleMonitorDuringRecord,
+  startRecordingSession,
+  enterRecordMode,
+  exitRecordMode,
+  stopRecordingSession,
+  stopRecordPlayback,
+  playRecordPlayback,
+  recordNoteEvent
+} = recording;
+function getRecordNowMs(){
+  if(audioCtx && audioCtx.state === 'running' && Number.isFinite(audioCtx.currentTime)) return audioCtx.currentTime * 1000;
+  if(typeof performance !== 'undefined' && performance.now) return performance.now();
+  return Date.now();
+}
+function clampTimeSigTop(value){
+  const n = Math.max(1, Math.min(12, Math.round(value)));
+  return n;
+}
+function clampTimeSigBottom(value){
+  if(TIME_SIG_BOTTOMS.includes(value)) return value;
+  return 4;
+}
+function toggleTimeSignatureTop(){
+  const current = recordState.timeSignature || { top: 4, bottom: 4 };
+  const idx = TIME_SIG_TOPS.indexOf(current.top);
+  const nextTop = TIME_SIG_TOPS[(idx >= 0 ? idx + 1 : 1) % TIME_SIG_TOPS.length];
+  recordState.timeSignature = { top: clampTimeSigTop(nextTop), bottom: clampTimeSigBottom(current.bottom) };
+  renderTopPadGrid();
+}
+function toggleTimeSignatureBottom(){
+  const current = recordState.timeSignature || { top: 4, bottom: 4 };
+  const idx = TIME_SIG_BOTTOMS.indexOf(current.bottom);
+  const nextBottom = TIME_SIG_BOTTOMS[(idx >= 0 ? idx + 1 : 1) % TIME_SIG_BOTTOMS.length];
+  recordState.timeSignature = { top: clampTimeSigTop(current.top), bottom: clampTimeSigBottom(nextBottom) };
+  renderTopPadGrid();
+}
+function playMetronomeClick(accent, whenSec){
+  ensureAudioContextRunning();
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const startAt = (typeof whenSec === 'number') ? Math.max(now, whenSec) : now;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const baseGain = recordState.metronome.volume || 0.85;
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(accent ? 1100 : 800, startAt);
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(baseGain, startAt + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.12);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(startAt);
+  osc.stop(startAt + 0.16);
+}
+function startRecordCountIn(){
+  if(recordState.recording || recordState.countIn) return;
+  ensureAudioContextRunning();
+  setRecordingPerfMode(true);
+  if(!recordState.metronome.enabled){
+    recordState.metronome.enabled = true;
+  }
+  const bpm = Math.max(30, recordState.tempoBpm || 120);
+  const beatMs = 60000 / bpm;
+  const beatsPerBar = Math.max(1, Math.round((recordState.timeSignature && recordState.timeSignature.top) ? recordState.timeSignature.top : 4));
+  const totalMs = 2000;
+  const warmupMs = 200;
+  const startMs = performance.now() + warmupMs;
+  recordState.countIn = true;
+  recordState.countInClock = 'perf';
+  recordState.countInUntilMs = startMs + totalMs;
+  recordState.countInStartMs = startMs;
+  recordState.countInTotalMs = totalMs;
+  recordState.countInBeatIndex = 0;
+  recordState.countInGoUntilMs = 0;
+  recordState.countInGoDurationMs = 420;
+  if(recordState.countInTimer) clearInterval(recordState.countInTimer);
+  if(recordState.countInTimeout) clearTimeout(recordState.countInTimeout);
+  playMetronomeClick(true, audioCtx ? (audioCtx.currentTime + (warmupMs / 1000)) : undefined);
+  const finishCountIn = (startRecording) => {
+    if(!recordState.countIn) return;
+    recordState.countIn = false;
+    if(recordState.countInTimer){
+      clearInterval(recordState.countInTimer);
+      recordState.countInTimer = null;
+    }
+    if(recordState.countInTimeout){
+      clearTimeout(recordState.countInTimeout);
+      recordState.countInTimeout = null;
+    }
+    recordState.countInClock = null;
+    recordState.countInGoUntilMs = performance.now() + (recordState.countInGoDurationMs || 420);
+    if(startRecording) startRecordingSession({ skipLeadIn: true });
+    renderTopPadGrid();
+  };
+  recordState.countInTimer = setInterval(() => {
+    const nowMs = performance.now();
+    if(nowMs < startMs){
+      renderTopPadGrid();
+      return;
+    }
+    if(nowMs >= recordState.countInUntilMs){
+      finishCountIn(true);
+      return;
+    }
+    const elapsed = nowMs - startMs;
+    const beatIndex = Math.floor(elapsed / beatMs);
+    if(beatIndex <= (recordState.countInBeatIndex || 0)) return;
+    recordState.countInBeatIndex = beatIndex;
+    const isBar = (beatIndex % beatsPerBar) === 0;
+    playMetronomeClick(isBar);
+    renderTopPadGrid();
+  }, beatMs);
+  recordState.countInTimeout = setTimeout(() => {
+    finishCountIn(true);
+  }, totalMs + warmupMs + 20);
+  renderTopPadGrid();
+}
+function cancelRecordCountIn(){
+  if(!recordState.countIn) return;
+  recordState.countIn = false;
+  if(recordState.countInTimer){
+    clearInterval(recordState.countInTimer);
+    recordState.countInTimer = null;
+  }
+  if(recordState.countInTimeout){
+    clearTimeout(recordState.countInTimeout);
+    recordState.countInTimeout = null;
+  }
+  recordState.countInUntilMs = 0;
+  recordState.countInClock = null;
+  recordState.countInGoUntilMs = 0;
+  renderTopPadGrid();
+}
+function getInstrumentSnapshotForSide(side){
+  const slot = instrumentPlayersBySide && instrumentPlayersBySide[side] ? instrumentPlayersBySide[side] : null;
+  const name = (slot && (slot.name || (slot.config && slot.config.label))) || currentInstrumentName || 'Instrument';
+  const id = (slot && slot.id) || (side === 'left' ? selectedSingleInstrumentId : null);
+  return { id, name };
+}
 const topPadIconSources = [
   assetUrl('Videos/music-page/baby-just-shut-up-a-lullaby.png'),
   assetUrl('Videos/music-page/those-raisins-are-mine.png'),
@@ -960,6 +1936,53 @@ function clampSyncOffset(ms){
   if(!Number.isFinite(ms)) return 0;
   const stepped = Math.round(ms / SYNC_OFFSET_STEP) * SYNC_OFFSET_STEP;
   return Math.max(SYNC_OFFSET_MIN, Math.min(SYNC_OFFSET_MAX, stepped));
+}
+
+function setRecordingPerfMode(active){
+  if(active){
+    if(instrumentMeterPrevEnabled === null) instrumentMeterPrevEnabled = instrumentMeterEnabled;
+    if(instrumentMeterEnabled){
+      instrumentMeterEnabled = false;
+      if(instrumentVizAnimation){
+        cancelAnimationFrame(instrumentVizAnimation);
+        instrumentVizAnimation = null;
+      }
+      ensureAudioMeterChain();
+    }
+  } else if(instrumentMeterPrevEnabled !== null){
+    instrumentMeterEnabled = instrumentMeterPrevEnabled;
+    instrumentMeterPrevEnabled = null;
+    ensureAudioMeterChain();
+    if(instrumentMeterEnabled) startInstrumentMeter();
+  }
+}
+
+function drawTintedIcon(ctx, img, x, y, w, h, color, alpha){
+  if(!img || !img.complete || !img.naturalWidth){
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.fillRect(x + w * 0.2, y + h * 0.2, w * 0.6, h * 0.6);
+    ctx.restore();
+    return;
+  }
+  const key = `${img.src}|${color}`;
+  let canvas = tintedIconCache.get(key);
+  if(!canvas){
+    canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const cctx = canvas.getContext('2d');
+    cctx.drawImage(img, 0, 0);
+    cctx.globalCompositeOperation = 'source-in';
+    cctx.fillStyle = color;
+    cctx.fillRect(0, 0, canvas.width, canvas.height);
+    tintedIconCache.set(key, canvas);
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(canvas, x, y, w, h);
+  ctx.restore();
 }
 
 function normalizeSyncOffset(ms){
@@ -3757,6 +4780,8 @@ function setPanelTabId(panelId, tabId){
       ensureSideInstrumentLoaded('left');
       ensureSideInstrumentLoaded('right');
     }
+    normalizeRecordTracksForMode();
+    renderTopPadGrid();
     updateDisabledKeysForConfig();
     requestBackboardRedraw();
     updateInstrumentMixReadouts();
@@ -4211,10 +5236,155 @@ function raycastTopPadForUv(clientX, clientY){
   return hit.uv.clone ? hit.uv.clone() : { x: hit.uv.x, y: hit.uv.y };
 }
 
-function updateTopPadHover(clientX, clientY){
-  if(!topPadMesh || !topPadCanvas) return;
+function getTopPadPointerPx(clientX, clientY){
+  if(topPadOverlayMode){
+    if(!twoDimCanvas) return null;
+    const rect = twoDimCanvas.getBoundingClientRect();
+    if(!rect || rect.width <= 0 || rect.height <= 0) return null;
+    if(clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null;
+    const nx = (clientX - rect.left) / rect.width;
+    const ny = (clientY - rect.top) / rect.height;
+    return { px: nx * twoDimCanvas.width, py: ny * twoDimCanvas.height };
+  }
+  if(!topPadCanvas || !topPadMesh) return null;
   const uv = raycastTopPadForUv(clientX, clientY);
-  if(!uv){
+  if(!uv) return null;
+  let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
+  let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
+  if(topPadUvRemap.swap){ const tmp = u; u = v; v = tmp; }
+  if(topPadUvRemap.mirrorU) u = 1 - u;
+  if(topPadUvRemap.mirrorV) v = 1 - v;
+  const px = Math.max(0, Math.min(1, u)) * topPadCanvas.width;
+  const py = Math.max(0, Math.min(1, v)) * topPadCanvas.height;
+  return { px, py };
+}
+
+function setTopPadHoverLock(next){
+  if(next === topPadHoverLock) return;
+  topPadHoverLock = next;
+  if(!controls) return;
+  if(next){
+    controls.enableRotate = false;
+    controls.enableZoom = false;
+  } else if(!suppressRotate && !backboardPointerDown){
+    controls.enableRotate = true;
+    controls.enableZoom = true;
+  }
+}
+
+function getTopPadCursorCanvas(){
+  return topPadOverlayMode ? (twoDimCanvas || canvas) : canvas;
+}
+
+function ensureTopPadOverlayElements(){
+  if(!topPadOverlayToggle){
+    topPadOverlayToggle = document.getElementById('topPadModeToggle');
+  }
+  if(!twoDimOverlayEl){
+    twoDimOverlayEl = document.getElementById('twoDimOverlay');
+  }
+  if(!twoDimCanvas){
+    twoDimCanvas = document.getElementById('twoDimCanvas');
+  }
+  if(twoDimCanvas && !twoDimCtx){
+    twoDimCtx = twoDimCanvas.getContext('2d');
+  }
+  if(!twoDimExitBtn){
+    twoDimExitBtn = document.getElementById('twoDimExitBtn');
+  }
+}
+
+function updateTopPadOverlayButton(){
+  if(!topPadOverlayToggle) return;
+  topPadOverlayToggle.textContent = topPadOverlayMode ? 'UI: 2D' : 'UI: GLB';
+}
+
+function applyTopPadMeshOverlayState(){
+  if(!topPadMesh) return;
+  const mats = Array.isArray(topPadMesh.material) ? topPadMesh.material : [topPadMesh.material];
+  mats.forEach((m) => {
+    if(!m) return;
+    if(topPadOverlayMode){
+      m.transparent = true;
+      m.opacity = 0;
+      m.depthWrite = false;
+      if('visible' in m) m.visible = false;
+    } else {
+      m.opacity = 1;
+      m.transparent = false;
+      m.depthWrite = true;
+      if('visible' in m) m.visible = true;
+    }
+    m.needsUpdate = true;
+  });
+}
+
+function bindTwoDimCanvasEvents(){
+  if(!twoDimCanvas || twoDimOverlayBound) return;
+  twoDimOverlayBound = true;
+  twoDimCanvas.addEventListener('pointerdown', (e)=>{
+    if(!topPadOverlayMode) return;
+    onPointerDown(e);
+  });
+  twoDimCanvas.addEventListener('pointermove', (e)=>{
+    if(!topPadOverlayMode) return;
+    updateTopPadHover(e.clientX, e.clientY);
+  });
+  twoDimCanvas.addEventListener('pointerleave', ()=>{
+    if(!topPadOverlayMode) return;
+    if(panelHover){ panelHover = null; requestBackboardRedraw(); }
+    if(topPadHoverCell){ topPadHoverCell = null; renderTopPadGrid(); }
+    if(topPadHoverUi){ topPadHoverUi = null; renderTopPadGrid(); }
+    trackRenameState.hover = false;
+    if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb = false; stopTopPadPreview(); }
+    if(topPadHoverLock) setTopPadHoverLock(false);
+    if(twoDimCanvas) twoDimCanvas.style.cursor = '';
+  });
+  twoDimCanvas.addEventListener('wheel', (e)=>{
+    if(!topPadOverlayMode) return;
+    handleTopPadWheel(e);
+  }, { passive: false });
+}
+
+function showTwoDimOverlay(active){
+  ensureTopPadOverlayElements();
+  if(twoDimOverlayEl){
+    twoDimOverlayEl.classList.toggle('active', active);
+    twoDimOverlayEl.setAttribute('aria-hidden', active ? 'false' : 'true');
+  }
+  if(twoDimCanvas && topPadCanvas){
+    twoDimCanvas.width = topPadCanvas.width;
+    twoDimCanvas.height = topPadCanvas.height;
+  }
+}
+
+function setTopPadOverlayMode(next){
+  topPadOverlayMode = !!next;
+  try{ localStorage.setItem('topPadOverlayMode', topPadOverlayMode ? '1' : '0'); }catch(e){}
+  try{
+    if(document && document.body){
+      document.body.classList.toggle('top-pad-overlay-active', topPadOverlayMode);
+    }
+  }catch(e){}
+  showTwoDimOverlay(topPadOverlayMode);
+  updateTopPadOverlayButton();
+  applyTopPadMeshOverlayState();
+  bindTwoDimCanvasEvents();
+  if(topPadOverlayMode){
+    stopTopPadVideoPlayback();
+    stopTrackVideoPlayback();
+  } else {
+    if(topPadMesh) topPadMesh.visible = true;
+  }
+  try{ renderTopPadGrid(); }catch(e){}
+}
+
+function updateTopPadHover(clientX, clientY){
+  if(!topPadCanvas) return;
+  if(!topPadMesh && !topPadOverlayMode) return;
+  const pt = getTopPadPointerPx(clientX, clientY);
+  if(!pt){
+    if(topPadHoverLock) setTopPadHoverLock(false);
     if(topPadHoverCell){
       topPadHoverCell = null;
       renderTopPadGrid();
@@ -4223,24 +5393,52 @@ function updateTopPadHover(clientX, clientY){
       topPadHoverUi = null;
       renderTopPadGrid();
     }
+    trackRenameState.hover = false;
     if(topPadVideo.hoverThumb){
       topPadVideo.hoverThumb = false;
       stopTopPadPreview();
     }
     return;
   }
-  let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
-  let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
-  if(topPadUvRemap.swap){
-    const tmp = u;
-    u = v;
-    v = tmp;
+  const recordHoverMode = recordState.recordMode || recordState.recording || recordState.countIn;
+  if(recordHoverMode) setTopPadHoverLock(true);
+  else if(topPadHoverLock) setTopPadHoverLock(false);
+  const cursorCanvas = getTopPadCursorCanvas();
+  let overHistoryPanel = false;
+  if(trackRenameState.active && topPadUiRects && topPadUiRects.trackNameHistoryRects && topPadUiRects.trackNameHistoryRects.length){
+    overHistoryPanel = topPadUiRects.trackNameHistoryRects.some((entry)=> pt.px >= entry.rect.x && pt.px <= entry.rect.x + entry.rect.w && pt.py >= entry.rect.y && pt.py <= entry.rect.y + entry.rect.h);
   }
-  if(topPadUvRemap.mirrorU) u = 1 - u;
-  if(topPadUvRemap.mirrorV) v = 1 - v;
-  const clampedU = Math.max(0, Math.min(1, u));
-  const clampedV = Math.max(0, Math.min(1, v));
-  const pt = { px: clampedU * topPadCanvas.width, py: clampedV * topPadCanvas.height };
+  if(topPadUiRects && topPadUiRects.deleteConfirm){
+    const { yesRect, noRect, transferUpRect, transferDownRect } = topPadUiRects.deleteConfirm;
+    if(pt.px >= yesRect.x && pt.px <= yesRect.x + yesRect.w && pt.py >= yesRect.y && pt.py <= yesRect.y + yesRect.h){
+      topPadHoverUi = { type: 'delete-confirm-yes' };
+      trackRenameState.hover = false;
+      renderTopPadGrid();
+      if(cursorCanvas) cursorCanvas.style.cursor = 'pointer';
+      return;
+    }
+    if(pt.px >= noRect.x && pt.px <= noRect.x + noRect.w && pt.py >= noRect.y && pt.py <= noRect.y + noRect.h){
+      topPadHoverUi = { type: 'delete-confirm-no' };
+      trackRenameState.hover = false;
+      renderTopPadGrid();
+      if(cursorCanvas) cursorCanvas.style.cursor = 'pointer';
+      return;
+    }
+    if(transferUpRect && pt.px >= transferUpRect.x && pt.px <= transferUpRect.x + transferUpRect.w && pt.py >= transferUpRect.y && pt.py <= transferUpRect.y + transferUpRect.h){
+      topPadHoverUi = { type: 'delete-confirm-up' };
+      trackRenameState.hover = false;
+      renderTopPadGrid();
+      if(cursorCanvas) cursorCanvas.style.cursor = 'pointer';
+      return;
+    }
+    if(transferDownRect && pt.px >= transferDownRect.x && pt.px <= transferDownRect.x + transferDownRect.w && pt.py >= transferDownRect.y && pt.py <= transferDownRect.y + transferDownRect.h){
+      topPadHoverUi = { type: 'delete-confirm-down' };
+      trackRenameState.hover = false;
+      renderTopPadGrid();
+      if(cursorCanvas) cursorCanvas.style.cursor = 'pointer';
+      return;
+    }
+  }
   if(showTopPadGrid){
     const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
     const row = Math.floor(clampedV * TOPPAD_GRID_ROWS);
@@ -4254,19 +5452,35 @@ function updateTopPadHover(clientX, clientY){
     renderTopPadGrid();
   }
   let nextUi = null;
-    if(topPadUiRects && topPadUiRects.speedButtons && topPadUiRects.speedButtons.length){
-      for(let i=0;i<topPadUiRects.speedButtons.length;i++){
-        const r = topPadUiRects.speedButtons[i];
-        if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
-          nextUi = { type: 'speed', index: i };
-          break;
-        }
+  if(topPadUiRects && topPadUiRects.speedButtons && topPadUiRects.speedButtons.length){
+    for(let i=0;i<topPadUiRects.speedButtons.length;i++){
+      const r = topPadUiRects.speedButtons[i];
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'speed', index: i };
+        break;
       }
     }
+  }
+  if(!nextUi && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects && topPadUiRects.recordTabs && topPadUiRects.recordTabs.length){
+    for(let i=0;i<topPadUiRects.recordTabs.length;i++){
+      const tab = topPadUiRects.recordTabs[i];
+      const r = tab.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'record-tab', tab: tab.tab };
+        break;
+      }
+    }
+  }
   if(!nextUi && topPadUiRects && topPadUiRects.gridToggle){
     const r = topPadUiRects.gridToggle;
     if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
       nextUi = { type: 'gridToggle' };
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.rightGridToggle){
+    const r = topPadUiRects.rightGridToggle;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'right-grid' };
     }
   }
   if(!nextUi && topPadUiRects && topPadUiRects.instrumentModeToggle){
@@ -4282,6 +5496,89 @@ function updateTopPadHover(clientX, clientY){
       const dy = pt.py - c.y;
       if((dx * dx + dy * dy) <= (c.r * c.r)){
         nextUi = { type: 'track', index: i };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackButtons && topPadUiRects.trackButtons.length){
+    for(let i=0;i<topPadUiRects.trackButtons.length;i++){
+      const btn = topPadUiRects.trackButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        let type = 'track-stop';
+        if(btn.type === 'record') type = 'track-record';
+        if(btn.type === 'play') type = 'track-play';
+        nextUi = { type, trackId: btn.trackId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackParamButtons && topPadUiRects.trackParamButtons.length){
+    for(let i=0;i<topPadUiRects.trackParamButtons.length;i++){
+      const btn = topPadUiRects.trackParamButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: btn.type, trackId: btn.trackId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackRowButtons && topPadUiRects.trackRowButtons.length){
+    for(let i=0;i<topPadUiRects.trackRowButtons.length;i++){
+      const btn = topPadUiRects.trackRowButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        let type = 'track-mute';
+        if(btn.type === 'trackrec') type = 'trackrec';
+        if(btn.type === 'solo') type = 'track-solo';
+        if(btn.type === 'delete') type = 'track-delete';
+        nextUi = { type, trackId: btn.trackId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackNameRects && topPadUiRects.trackNameRects.length){
+    for(let i=0;i<topPadUiRects.trackNameRects.length;i++){
+      const entry = topPadUiRects.trackNameRects[i];
+      const r = entry.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'track-name', trackId: entry.trackId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.collapseButtons && topPadUiRects.collapseButtons.length){
+    for(let i=0;i<topPadUiRects.collapseButtons.length;i++){
+      const btn = topPadUiRects.collapseButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'right-collapse' };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackAddRect){
+    const r = topPadUiRects.trackAddRect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'track-add' };
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.trackRows && topPadUiRects.trackRows.length){
+    for(let i=0;i<topPadUiRects.trackRows.length;i++){
+      const row = topPadUiRects.trackRows[i];
+      const r = row.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'track-row', trackId: row.trackId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.actionButtons && topPadUiRects.actionButtons.length){
+    for(let i=0;i<topPadUiRects.actionButtons.length;i++){
+      const btn = topPadUiRects.actionButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'action', actionId: btn.actionId };
         break;
       }
     }
@@ -4310,16 +5607,77 @@ function updateTopPadHover(clientX, clientY){
       nextUi = { type: 'sync-slider' };
     }
   }
+  if(!nextUi && topPadUiRects && topPadUiRects.meterButtons && topPadUiRects.meterButtons.length){
+    for(let i=0;i<topPadUiRects.meterButtons.length;i++){
+      const btn = topPadUiRects.meterButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'meter', meterId: btn.meterId };
+        break;
+      }
+    }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.recordButton){
+    const c = topPadUiRects.recordButton;
+    if(c && c.isSquare){
+      if(pt.px >= c.x && pt.px <= c.x + c.w && pt.py >= c.y && pt.py <= c.y + c.h){
+        nextUi = { type: 'record' };
+      }
+    } else if(c && Number.isFinite(c.r)){
+      const dx = pt.px - c.x;
+      const dy = pt.py - c.y;
+      if((dx * dx + dy * dy) <= (c.r * c.r)){
+        nextUi = { type: 'record' };
+      }
+    }
+  }
+  if(!nextUi && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects && topPadUiRects.recordMetronome){
+    const r = topPadUiRects.recordMetronome;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'record-metro' };
+    }
+  }
+  if(!nextUi && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects && topPadUiRects.recordControlButtons && topPadUiRects.recordControlButtons.length){
+    for(let i=0;i<topPadUiRects.recordControlButtons.length;i++){
+      const btn = topPadUiRects.recordControlButtons[i];
+      const r = btn.rect;
+      if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+        nextUi = { type: 'record-ctrl', action: btn.action };
+        break;
+      }
+    }
+  }
+  if(!nextUi && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects && topPadUiRects.recordMidRect){
+    const r = topPadUiRects.recordMidRect;
+    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
+      nextUi = { type: 'record-playhead' };
+    }
+  }
   if(!nextUi && topPadVideo.mode !== 'playing' && topPadVideo.thumbRect){
     const r = topPadVideo.thumbRect;
     if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
       nextUi = { type: 'thumb' };
     }
   }
-  if((!topPadHoverUi && nextUi) || (topPadHoverUi && (!nextUi || topPadHoverUi.type !== nextUi.type || topPadHoverUi.index !== nextUi.index))){
+  const sameHover = (a, b) => {
+    if(!a || !b) return false;
+    if(a.type !== b.type) return false;
+    if(a.index !== b.index) return false;
+    if(a.trackId !== b.trackId) return false;
+    if(a.actionId !== b.actionId) return false;
+    if(a.action !== b.action) return false;
+    if(a.meterId !== b.meterId) return false;
+    if(a.tab !== b.tab) return false;
+    return true;
+  };
+  if((!topPadHoverUi && nextUi) || (topPadHoverUi && (!nextUi || !sameHover(topPadHoverUi, nextUi)))){
     topPadHoverUi = nextUi;
     renderTopPadGrid();
   }
+  trackRenameState.hover = !!(trackRenameState.active && ((nextUi && nextUi.type === 'track-name' && nextUi.trackId === trackRenameState.trackId) || overHistoryPanel));
+  trackValueEditState.hover = !!(trackValueEditState.active && nextUi && (nextUi.type === 'track-vol' || nextUi.type === 'track-sync')
+    && nextUi.trackId === trackValueEditState.trackId
+    && ((trackValueEditState.type === 'vol' && nextUi.type === 'track-vol') || (trackValueEditState.type === 'sync' && nextUi.type === 'track-sync')));
   const overThumb = nextUi && nextUi.type === 'thumb';
   if(overThumb && !topPadVideo.hoverThumb){
     topPadVideo.hoverThumb = true;
@@ -4328,11 +5686,16 @@ function updateTopPadHover(clientX, clientY){
     topPadVideo.hoverThumb = false;
     stopTopPadPreview();
   }
-  if(canvas){
+  if(cursorCanvas){
     const overControlsRect = topPadVideo.controlsRect
       && pt.px >= topPadVideo.controlsRect.x && pt.px <= topPadVideo.controlsRect.x + topPadVideo.controlsRect.w
       && pt.py >= topPadVideo.controlsRect.y && pt.py <= topPadVideo.controlsRect.y + topPadVideo.controlsRect.h;
-    canvas.style.cursor = (nextUi || overControlsRect) ? 'pointer' : '';
+    const cursor = trackValueDragState
+      ? 'grabbing'
+      : (nextUi
+        ? (nextUi.type === 'track-name' ? 'text' : ((nextUi.type === 'track-vol' || nextUi.type === 'track-sync') ? 'ew-resize' : 'pointer'))
+        : (overHistoryPanel ? 'pointer' : (overControlsRect ? 'pointer' : '')));
+    cursorCanvas.style.cursor = cursor;
   }
 }
 
@@ -4460,6 +5823,12 @@ function createTopPadCanvas(aspect=1){
   try{ topPadTexture.flipY = false; }catch(e){}
   topPadTexture.needsUpdate = true;
   renderTopPadGrid();
+  ensureTopPadOverlayElements();
+  if(twoDimCanvas){
+    twoDimCanvas.width = width;
+    twoDimCanvas.height = height;
+    if(!twoDimCtx) twoDimCtx = twoDimCanvas.getContext('2d');
+  }
 }
 
 function remapTextureToUvBounds(mesh, texture){
@@ -4560,16 +5929,50 @@ function remapTextureToUvBounds(mesh, texture){
 
 function renderTopPadGrid(){
   if(!topPadCanvas || !topPadCtx || !topPadTexture) return;
-  const ctx = topPadCtx;
-  const W = topPadCanvas.width;
-  const H = topPadCanvas.height;
+  const targetCanvas = topPadOverlayMode ? twoDimCanvas : topPadCanvas;
+  const ctx = topPadOverlayMode ? twoDimCtx : topPadCtx;
+  if(!targetCanvas || !ctx) return;
+  const W = targetCanvas.width;
+  const H = targetCanvas.height;
+  if(trackRenameState.active && !recordState.tracks.some((t)=>t.id === trackRenameState.trackId)){
+    stopTrackRename({ commit: false });
+    return;
+  }
+  if(trackRenameState.active && recordState.recordTab !== 'tracks'){
+    stopTrackRename({ commit: true });
+    return;
+  }
+  if(trackRenameState.active && !trackRenameState.hover){
+    const idleMs = performance.now() - (trackRenameState.lastInputMs || 0);
+    if(idleMs >= 5000){
+      stopTrackRename({ commit: true });
+      return;
+    }
+  }
+  if(trackValueEditState.active && !recordState.tracks.some((t)=>t.id === trackValueEditState.trackId)){
+    stopTrackValueEdit({ commit: false });
+    return;
+  }
+  if(trackValueEditState.active && recordState.recordTab !== 'tracks'){
+    stopTrackValueEdit({ commit: true });
+    return;
+  }
+  const recordHoverActive = recordState.recordMode || recordState.recording || recordState.countIn;
+  if(!recordHoverActive && topPadHoverLock) setTopPadHoverLock(false);
+  setRecordingPerfMode(recordState.recordMode && (recordState.recording || recordState.countIn));
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle = '#0a0a0a';
   ctx.fillRect(0,0,W,H);
+  const tooltipQueue = [];
+  let historyOverlay = null;
+  const recordMode = recordState.recordMode || recordState.recording || recordState.countIn;
   const cellW = W / TOPPAD_GRID_COLS;
   const cellH = H / TOPPAD_GRID_ROWS;
-  const leftW = cellW * 3.5;
-  const midW = cellW * 5;
+  const leftCols = (recordMode && recordState.recordTab === 'piano') ? 1.3 : 3.5;
+  const rightCols = 3.5;
+  const leftW = cellW * leftCols;
+  const rightW = cellW * rightCols;
+  const midW = Math.max(cellW * 3, W - leftW - rightW);
   const rightX = leftW + midW;
   ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
   ctx.fillRect(0, 0, leftW, H);
@@ -4595,7 +5998,22 @@ function renderTopPadGrid(){
       ctx.stroke();
     }
   }
-  ctx.strokeStyle = 'rgba(255, 220, 70, 0.9)';
+  const getCssVar = (name, fallback) => {
+    try{
+      const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
+      if(val && val.trim()) return val.trim();
+    }catch(e){}
+    return fallback;
+  };
+  const greenPrimary = getCssVar('--green-primary', '#3fda84');
+  const greenSecondary = getCssVar('--green-secondary', '#1f8f4a');
+  const greenTertiary = getCssVar('--green-tertiary', '#2ddf76');
+  const hlTertiary = getCssVar('--hl-tertiary-color', '#6a7a86');
+  const hlSecondary = getCssVar('--hl-secondary-color', greenSecondary);
+  const recordPrimary = '#e03a3a';
+  const recordSecondary = '#8f1d1d';
+  const textLight = '#f1fff6';
+  ctx.strokeStyle = recordMode ? recordPrimary : greenPrimary;
   ctx.lineWidth = Math.max(2, Math.round(cellW * 0.06));
   ctx.beginPath();
   ctx.moveTo(leftW, 0);
@@ -4610,304 +6028,1544 @@ function renderTopPadGrid(){
     h: cellH * 8
   };
   topPadVideo.midRect = midRect;
-  const getCssVar = (name, fallback) => {
-    try{
-      const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
-      if(val && val.trim()) return val.trim();
-    }catch(e){}
-    return fallback;
-  };
-  const greenPrimary = getCssVar('--green-primary', '#3fda84');
-  const greenSecondary = getCssVar('--green-secondary', '#1f8f4a');
-  const textLight = '#f1fff6';
-  const uiPadX = Math.round(cellW * 0.12);
+  const tabStripW = recordMode ? Math.max(8, Math.round(cellW * 0.17)) : 0;
+  const uiPadXBase = Math.round(cellW * 0.12);
+  const uiPadX = recordMode ? Math.max(uiPadXBase, tabStripW + Math.round(cellW * 0.08)) : uiPadXBase;
   const uiWidth = leftW - uiPadX * 2;
   const titleY = Math.round(cellH * 0.75);
   ctx.fillStyle = textLight;
   ctx.font = `700 ${Math.max(14, Math.round(cellH * 0.7))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('Play Tracks', leftW / 2, titleY);
+  if(!recordMode){
+    ctx.fillText('Tracks', leftW / 2, titleY);
+  }
 
-  const circleMargin = Math.round(cellW * 0.14);
-  const circleR = Math.min((leftW - circleMargin * 2) * 0.42, cellH * 1.6);
-  const circleGap = Math.max(10, Math.round((leftW - circleMargin * 2 - circleR * 2) / 2));
-  const circleYTop = Math.round(cellH * 3.1);
-  const circleYRow = Math.round(cellH * 6.0);
-  const circleLeftX = circleMargin + circleR;
-  const circleRightX = leftW - circleMargin - circleR;
-  const circleTopX = leftW / 2;
-  const circleRects = [
-    { x: circleTopX, y: circleYTop, r: circleR },
-    { x: circleLeftX, y: circleYRow, r: circleR },
-    { x: circleRightX, y: circleYRow, r: circleR }
-  ];
-  topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, speedCircle: null, trackCircles: circleRects, gridToggle: null, instrumentModeToggle: null, syncSlider: null };
-  circleRects.forEach((c, idx) => {
+  topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, speedCircle: null, trackCircles: [], trackButtons: [], trackRowButtons: [], trackParamButtons: [], trackRows: [], trackNameRects: [], trackNameHistoryRects: [], actionButtons: [], trackAddRect: null, trackListRect: null, pianoRollRect: null, recordToggle: null, recordTabs: [], recordButton: null, recordControlButtons: [], recordMetronome: null, rightGridToggle: null, gridToggle: null, instrumentModeToggle: null, syncSlider: null, meterButtons: [], collapseButtons: [], recordMidRect: null, deleteConfirm: null };
+  let trackAreaY = 0;
+  let rowH = 0;
+  let rowStride = 0;
+
+  if(recordMode){
+    const tabStripX = 0;
+    const tabH = Math.max(40, Math.floor(H * 0.5));
+    const tabs = [
+      { id: 'tracks', label: 'TRACK VIEW', y: 0 },
+      { id: 'piano', label: 'PIANO ROLL VIEW', y: H - tabH }
+    ];
+    tabs.forEach((tab) => {
+      const active = recordState.recordTab === tab.id;
+      const hover = topPadHoverUi && topPadHoverUi.type === 'record-tab' && topPadHoverUi.tab === tab.id;
+      ctx.save();
+      ctx.fillStyle = hover ? 'rgba(90, 160, 120, 0.9)' : (active ? 'rgba(50, 90, 70, 0.85)' : 'rgba(15, 15, 15, 0.6)');
+      ctx.strokeStyle = active ? greenPrimary : greenSecondary;
+      ctx.lineWidth = 2;
+      ctx.fillRect(tabStripX, tab.y, tabStripW, tabH);
+      ctx.strokeRect(tabStripX + 0.5, tab.y + 0.5, tabStripW - 1, tabH - 1);
+      ctx.translate(tabStripX + tabStripW / 2, tab.y + tabH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = `700 ${Math.max(6, Math.round(tabStripW * 0.55))}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(tab.label, 0, 0);
+      ctx.restore();
+      topPadUiRects.recordTabs.push({ tab: tab.id, rect: { x: tabStripX, y: tab.y, w: tabStripW, h: tabH } });
+    });
+    normalizeRecordTracksForMode();
+    const visibleTracks = dualInstrumentMode
+      ? ['left','right'].map((side)=>getRecordTrackForSide(side))
+      : [getRecordTrackForSide('single')];
+    const listTracks = (recordState.recordTab === 'tracks') ? recordState.tracks : visibleTracks;
+    trackAreaY = Math.round(recordState.recordTab === 'piano' ? 0 : (cellH * 0.25));
+    const rowHBase = Math.max(36, Math.round(cellH * 3.15));
+    const rowGap = Math.max(8, Math.round(cellH * 0.4));
+    const trackPadX = uiPadX;
+    const trackRightX = leftW;
+    const trackW = Math.max(0, trackRightX - trackPadX);
+    const addZoneH = (recordState.recordTab === 'tracks') ? Math.max(40, Math.round(cellH * 1.5)) : Math.max(12, Math.round(cellH * 0.4));
+    const listBottomY = Math.round(recordState.recordTab === 'piano' ? (H - cellH * 0.4) : (H - addZoneH));
+    const listHeight = Math.max(0, listBottomY - trackAreaY);
+    const maxRowHFor3 = Math.floor((listHeight - rowGap * 2) / 3);
+    rowH = (recordState.recordTab === 'tracks' && maxRowHFor3 > 0)
+      ? Math.max(24, Math.min(rowHBase, maxRowHFor3))
+      : rowHBase;
+    rowStride = rowH + rowGap;
+    const contentHeight = Math.max(0, (listTracks.length * rowStride) - rowGap);
+    const maxScroll = Math.max(0, contentHeight - listHeight);
+    recordState.trackScrollMax = maxScroll;
+    recordState.trackScrollY = clampRange(recordState.trackScrollY || 0, 0, maxScroll);
+    topPadUiRects.trackListRect = { x: trackPadX, y: trackAreaY, w: trackW, h: listHeight };
     ctx.save();
     ctx.beginPath();
-    ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(20, 20, 20, 0.6)';
-    ctx.fill();
-    const hover = topPadHoverUi && topPadHoverUi.type === 'track' && topPadHoverUi.index === idx;
-    ctx.strokeStyle = hover ? greenPrimary : greenSecondary;
-    ctx.lineWidth = Math.max(2, Math.round(c.r * (hover ? 0.16 : 0.12)));
-    ctx.stroke();
+    ctx.rect(trackPadX, trackAreaY, trackW, listHeight);
     ctx.clip();
-    const img = topPadIconImages[idx];
-    if(img && img.complete && img.naturalWidth){
-      const scale = idx === 0 ? 1.35 : 1.15;
-      const size = c.r * 1.7 * scale;
-      let drawX = c.x - size / 2;
-      let drawY = c.y - size / 2;
-      if(idx === 0){
-        drawY = c.y - c.r;
-      } else if(idx === 1){
-        drawX = c.x - c.r;
-      } else if(idx === 2){
-        drawX = c.x + c.r - size;
+    if(recordState.recordTab !== 'tracks'){
+      recordState.deleteConfirmTrackId = null;
+      recordState.deleteConfirmTransferUp = false;
+      recordState.deleteConfirmTransferDown = false;
+      topPadUiRects.deleteConfirm = null;
+    }
+    if(recordState.recordTab === 'tracks'){
+      if(recordState.trackScrollToBottom){
+        recordState.trackScrollY = maxScroll;
+        recordState.trackScrollToBottom = false;
       }
-      safeDrawImage(ctx, img, drawX, drawY, size, size);
+      listTracks.forEach((track, idx) => {
+        if(!track) return;
+        const rowY = trackAreaY + idx * rowStride - recordState.trackScrollY;
+        const rowRect = { x: trackPadX, y: rowY, w: trackW, h: rowH };
+        if(rowRect.y + rowRect.h < trackAreaY || rowRect.y > trackAreaY + listHeight) return;
+        const isSelected = recordState.selectedTrackId === track.id;
+        const anySolo = recordState.tracks.some((t)=>t.solo);
+        const dim = track.muted || (anySolo && !track.solo);
+        ctx.save();
+        ctx.globalAlpha = dim ? 0.4 : 1;
+        ctx.fillStyle = isSelected ? 'rgba(35, 55, 45, 0.85)' : 'rgba(15, 15, 15, 0.72)';
+        ctx.strokeStyle = isSelected ? greenPrimary : greenSecondary;
+        ctx.lineWidth = 2;
+        ctx.fillRect(rowRect.x, rowRect.y, rowRect.w, rowRect.h);
+        ctx.strokeRect(rowRect.x + 0.5, rowRect.y + 0.5, rowRect.w - 1, rowRect.h - 1);
+        const sideLabel = track.side === 'right' ? 'HIGHER' : (track.side === 'left' ? 'LOWER' : 'SINGLE');
+        const baseLabel = getTrackDisplayLabel(track);
+        const trackLabel = dualInstrumentMode ? `${baseLabel} (${sideLabel})` : baseLabel;
+        const instrSide = track.side === 'right' ? 'right' : 'left';
+        const instrRaw = track.instrumentName || getInstrumentSnapshotForSide(instrSide).name || 'Instrument';
+        const instrLabel = instrRaw.replace(/\s*\(local\)\s*/i, '').trim();
+        const vol = Number.isFinite(track.volume) ? track.volume : 0.5;
+        const sync = Number.isFinite(track.syncMs) ? track.syncMs : 0;
+        const volValueText = `${Math.round(vol * 100)}%`;
+        const syncValueText = `${sync >= 0 ? '+' : ''}${Math.round(sync)}ms`;
+        ctx.fillStyle = textLight;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+        const toggleSize = Math.max(16, Math.round(rowH * 0.3));
+        const toggleGap = Math.max(6, Math.round(toggleSize * 0.3));
+        const deleteSize = Math.max(18, Math.round(rowH * 0.35));
+        const deleteX = rowRect.x + Math.max(6, Math.round(cellW * 0.08));
+        const deleteY = rowRect.y + (rowRect.h - deleteSize) / 2;
+        const labelX = deleteX + deleteSize + Math.max(10, Math.round(cellW * 0.12));
+        const toggleY = rowRect.y + rowRect.h - toggleSize - Math.max(6, Math.round(rowH * 0.12));
+        const textAreaTop = rowRect.y;
+        const textAreaBottom = rowRect.y + rowRect.h;
+        const textAreaH = Math.max(1, textAreaBottom - textAreaTop);
+        const pctTotal = Math.max(0.01, trackTextLayout.namePct + trackTextLayout.instrPct + trackTextLayout.infoPct);
+        const outerMargin = textAreaH * trackTextLayout.marginOuterPct;
+        const betweenMargin = textAreaH * trackTextLayout.marginBetweenPct;
+        const textAvailH = Math.max(1, textAreaH - (outerMargin * 2) - (betweenMargin * 2));
+        const nameBandH = textAvailH * (trackTextLayout.namePct / pctTotal);
+        const instrBandH = textAvailH * (trackTextLayout.instrPct / pctTotal);
+        const infoBandH = textAvailH * (trackTextLayout.infoPct / pctTotal);
+        const labelFontSize = Math.max(10, Math.floor(nameBandH * 0.85));
+        const instrFontSize = Math.max(9, Math.floor(instrBandH * 0.85));
+        const infoFontSize = Math.max(9, Math.floor(infoBandH * 0.85));
+        const labelFont = `700 ${labelFontSize}px "Source Sans 3", system-ui, sans-serif`;
+        const instrFont = `600 ${instrFontSize}px "Source Sans 3", system-ui, sans-serif`;
+        const infoFont = `600 ${infoFontSize}px "Source Sans 3", system-ui, sans-serif`;
+        const renaming = trackRenameState.active && trackRenameState.trackId === track.id;
+        const labelText = renaming ? trackRenameState.text : trackLabel;
+        ctx.fillStyle = textLight;
+        ctx.font = labelFont;
+        const soloX = rowRect.x + rowRect.w - toggleSize;
+        const muteX = soloX - toggleGap - toggleSize;
+        const recX = muteX - toggleGap - toggleSize;
+        const labelMetrics = ctx.measureText(labelText || trackLabel || '');
+        const labelMaxW = Math.max(20, (recX - Math.round(cellW * 0.18)) - labelX);
+        const labelW = Math.min(labelMaxW, Math.max(20, Math.ceil(labelMetrics.width) + 6));
+        const labelH = labelFontSize;
+        const blockTop = textAreaTop + outerMargin;
+        const labelCenterY = blockTop + nameBandH * 0.5;
+        const instrCenterY = labelCenterY + nameBandH * 0.5 + betweenMargin + instrBandH * 0.5;
+        const infoCenterY = instrCenterY + instrBandH * 0.5 + betweenMargin + infoBandH * 0.5;
+        const labelRect = { x: labelX - 2, y: labelCenterY - labelH * 0.5, w: labelW + 4, h: Math.round(labelH * 1.15) };
+        const highlightRight = rowRect.x + rowRect.w - Math.round(cellW * 0.12);
+        const fieldRect = { x: labelRect.x, y: labelRect.y - 2, w: Math.max(labelRect.w, highlightRight - labelRect.x), h: labelRect.h + 4 };
+        if(renaming){
+          ctx.save();
+          ctx.fillStyle = 'rgba(120, 200, 170, 0.2)';
+          ctx.fillRect(fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h);
+          ctx.strokeStyle = hlSecondary;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(fieldRect.x + 0.5, fieldRect.y + 0.5, fieldRect.w - 1, fieldRect.h - 1);
+          ctx.beginPath();
+          ctx.rect(fieldRect.x, fieldRect.y, fieldRect.w, fieldRect.h);
+          ctx.clip();
+          ctx.restore();
+        }
+        const selection = getTrackSelection();
+        const hasSelection = renaming && (selection.start !== selection.end);
+        if(renaming && hasSelection && labelText){
+          const beforeSel = labelText.slice(0, selection.start);
+          const selText = labelText.slice(selection.start, selection.end);
+          const selX = labelX + ctx.measureText(beforeSel).width;
+          const selW = ctx.measureText(selText).width;
+          ctx.save();
+          ctx.fillStyle = 'rgba(180, 230, 210, 0.6)';
+          ctx.fillRect(selX - 1, labelCenterY - labelH * 0.5, Math.max(2, selW + 2), labelH);
+          ctx.fillStyle = '#0b1a14';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, labelX, labelCenterY);
+          ctx.restore();
+        } else if(renaming && !labelText){
+          ctx.save();
+          ctx.fillStyle = 'rgba(220, 240, 230, 0.35)';
+          ctx.font = instrFont;
+          ctx.textBaseline = 'middle';
+          ctx.fillText(track.name, labelX, labelCenterY);
+          ctx.fillStyle = 'rgba(220, 240, 230, 0.28)';
+          ctx.font = `500 ${Math.max(9, Math.round(rowH * 0.16))}px "Source Sans 3", system-ui, sans-serif`;
+          const hintX = Math.min(highlightRight - 4, labelX + Math.max(0, Math.round(cellW * 1.2)));
+          ctx.textBaseline = 'middle';
+          ctx.fillText('press End to modify', hintX, labelCenterY);
+          ctx.restore();
+        } else {
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = greenTertiary;
+          ctx.fillText(labelText, labelX, labelCenterY);
+        }
+        topPadUiRects.trackNameRects.push({ trackId: track.id, rect: fieldRect });
+        ctx.font = instrFont;
+        ctx.fillStyle = 'rgba(220, 240, 230, 0.9)';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(instrLabel, labelX, instrCenterY);
+        const volEditing = trackValueEditState.active && trackValueEditState.trackId === track.id && trackValueEditState.type === 'vol';
+        const syncEditing = trackValueEditState.active && trackValueEditState.trackId === track.id && trackValueEditState.type === 'sync';
+        const volHover = topPadHoverUi && topPadHoverUi.type === 'track-vol' && topPadHoverUi.trackId === track.id;
+        const syncHover = topPadHoverUi && topPadHoverUi.type === 'track-sync' && topPadHoverUi.trackId === track.id;
+        const volDisplayText = volEditing ? (trackValueEditState.text || '') : (volHover ? volValueText : 'VOL');
+        const syncDisplayText = syncEditing ? (trackValueEditState.text || '') : (syncHover ? syncValueText : 'SYNC');
+        const iconSize = Math.max(14, Math.round(infoFontSize * 1.45));
+        const valueFontSize = Math.max(8, Math.round(iconSize * 0.5));
+        const valueFont = `600 ${valueFontSize}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.font = valueFont;
+        ctx.fillStyle = 'rgba(220, 240, 230, 0.92)';
+        ctx.textBaseline = 'middle';
+        const iconPad = Math.max(4, Math.round(infoFontSize * 0.4));
+        const volMaxText = ': 100%';
+        const syncMaxText = ': +5000ms';
+        const volTextW = ctx.measureText(`: ${volDisplayText}`).width;
+        const syncTextW = ctx.measureText(`: ${syncDisplayText}`).width;
+        const volMaxW = ctx.measureText(volMaxText).width;
+        const syncMaxW = ctx.measureText(syncMaxText).width;
+        let volRectW = iconSize + iconPad + Math.max(volTextW, volMaxW);
+        let syncRectW = iconSize + iconPad + Math.max(syncTextW, syncMaxW);
+        const minGap = Math.max(14, Math.round(infoFontSize * 1.2));
+        const recGuard = Math.max(8, Math.round(infoFontSize * 0.9));
+        const available = Math.max(20, recX - labelX - minGap - recGuard);
+        const maxVolW = Math.max(60, available * 0.45);
+        const maxSyncW = Math.max(60, available * 0.4);
+        volRectW = Math.min(volRectW, maxVolW);
+        syncRectW = Math.min(syncRectW, maxSyncW);
+        const volRect = { x: labelX, y: infoCenterY - iconSize * 0.6, w: volRectW, h: iconSize * 1.2 };
+        let syncX = volRect.x + volRect.w + minGap;
+        const maxSyncX = recX - recGuard - syncRectW;
+        if(syncX > maxSyncX){
+          const overshoot = syncX - maxSyncX;
+          volRect.w = Math.max(50, volRect.w - overshoot);
+          syncX = volRect.x + volRect.w + minGap;
+        }
+        const syncRect = { x: Math.min(syncX, maxSyncX), y: infoCenterY - iconSize * 0.6, w: syncRectW, h: iconSize * 1.2 };
+        const drawValueLabel = (rect, iconImg, textValue, isActive) => {
+          ctx.save();
+          if(isActive){
+            ctx.fillStyle = 'rgba(120, 200, 170, 0.25)';
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.strokeStyle = hlSecondary;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+          }
+          const iconY = rect.y + (rect.h - iconSize) / 2;
+          const iconAlpha = dim ? 0.4 : 1;
+          drawTintedIcon(ctx, iconImg, rect.x, iconY, iconSize, iconSize, greenTertiary, iconAlpha);
+          const textX = rect.x + iconSize + iconPad;
+          ctx.fillStyle = 'rgba(230, 250, 240, 0.95)';
+          ctx.font = valueFont;
+          ctx.fillText(`: ${textValue}`, textX, infoCenterY);
+          ctx.restore();
+        };
+        const drawValueEditOverlay = (rect, textValue) => {
+          ctx.save();
+          ctx.font = valueFont;
+          ctx.textBaseline = 'middle';
+          const selection = getTrackValueSelection();
+          const hasSelection = selection.start !== selection.end;
+          const textX = rect.x + iconSize + iconPad;
+          if(hasSelection){
+            const before = textValue.slice(0, selection.start);
+            const selText = textValue.slice(selection.start, selection.end);
+            const selX = textX + ctx.measureText(`: ${before}`).width;
+            const selW = Math.max(2, ctx.measureText(selText).width);
+            ctx.fillStyle = 'rgba(180, 230, 210, 0.6)';
+            ctx.fillRect(selX - 1, rect.y + rect.h * 0.2, selW + 2, rect.h * 0.6);
+          }
+          const caretOn = Math.floor(performance.now() / 500) % 2 === 0;
+          if(caretOn && !hasSelection){
+            const caretText = textValue.slice(0, trackValueEditState.cursor);
+            const caretX = textX + ctx.measureText(`: ${caretText}`).width;
+            ctx.strokeStyle = '#e6fff6';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(caretX, rect.y + rect.h * 0.2);
+            ctx.lineTo(caretX, rect.y + rect.h * 0.8);
+            ctx.stroke();
+          }
+          ctx.restore();
+        };
+        drawValueLabel(volRect, trackVolIconImg, volDisplayText, volEditing || volHover);
+        drawValueLabel(syncRect, trackSyncIconImg, syncDisplayText, syncEditing || syncHover);
+        if(volEditing) drawValueEditOverlay(volRect, volDisplayText);
+        if(syncEditing) drawValueEditOverlay(syncRect, syncDisplayText);
+        topPadUiRects.trackParamButtons.push(
+          { trackId: track.id, type: 'track-vol', rect: volRect, value: volValueText, valueClass: `vol-${Math.round(vol * 100)}` },
+          { trackId: track.id, type: 'track-sync', rect: syncRect, value: syncValueText, valueClass: `sync-${Math.round(sync)}` }
+        );
+        const rowTopLimit = rowRect.y + 4;
+        const rowBottomLimit = rowRect.y + rowRect.h - 4;
+        const instrTop = instrCenterY - instrBandH * 0.5;
+        const instrBottom = instrCenterY + instrBandH * 0.5;
+        const labelTop = labelCenterY - nameBandH * 0.5;
+        const labelBottom = labelCenterY + nameBandH * 0.5;
+        const infoTop = infoCenterY - infoBandH * 0.5;
+        const infoBottom = infoCenterY + infoBandH * 0.5;
+        const queueTooltip = (rect, lines, placement, maxHeight) => {
+          tooltipQueue.push({
+            rect,
+            lines,
+            rowRect,
+            infoFontSize,
+            placement,
+            maxHeight
+          });
+        };
+        const hoverLines = ['Drag to adjust', 'Click to type'];
+        const editLines = ['↑/↓ to nudge', 'Esc to cancel', 'Enter to confirm'];
+        const volSyncMaxHeight = Math.max(24, instrBottom - rowTopLimit);
+        if(volHover && !volEditing) queueTooltip(volRect, hoverLines, 'above', volSyncMaxHeight);
+        if(syncHover && !syncEditing) queueTooltip(syncRect, hoverLines, 'above', volSyncMaxHeight);
+        if(volHover && volEditing) queueTooltip(volRect, editLines, 'above', volSyncMaxHeight);
+        if(syncHover && syncEditing) queueTooltip(syncRect, editLines, 'above', volSyncMaxHeight);
+        const recHover = topPadHoverUi && topPadHoverUi.type === 'trackrec' && topPadHoverUi.trackId === track.id;
+        const muteHover = topPadHoverUi && topPadHoverUi.type === 'track-mute' && topPadHoverUi.trackId === track.id;
+        const soloHover = topPadHoverUi && topPadHoverUi.type === 'track-solo' && topPadHoverUi.trackId === track.id;
+        const deleteHover = topPadHoverUi && topPadHoverUi.type === 'track-delete' && topPadHoverUi.trackId === track.id;
+        ctx.save();
+        ctx.fillStyle = deleteHover ? '#ff5a5a' : '#b12a2a';
+        ctx.fillRect(deleteX, deleteY, deleteSize, deleteSize);
+        ctx.lineWidth = Math.max(2, Math.round(deleteSize * 0.12));
+        ctx.strokeStyle = '#ffb3b3';
+        ctx.strokeRect(deleteX + 0.5, deleteY + 0.5, deleteSize - 1, deleteSize - 1);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(2, Math.round(deleteSize * 0.12));
+        ctx.beginPath();
+        ctx.moveTo(deleteX + deleteSize * 0.25, deleteY + deleteSize * 0.5);
+        ctx.lineTo(deleteX + deleteSize * 0.75, deleteY + deleteSize * 0.5);
+        ctx.stroke();
+        if(renaming){
+          const caretOn = Math.floor(performance.now() / 500) % 2 === 0;
+          const selection = getTrackSelection();
+          if(caretOn && selection.start === selection.end){
+            ctx.font = labelFont;
+            const caretText = labelText || '';
+            const caretX = labelX + ctx.measureText(caretText.slice(0, trackRenameState.cursor)).width + 2;
+            const caretTop = labelCenterY - labelH * 0.6;
+            const caretBottom = labelCenterY + labelH * 0.6;
+            ctx.save();
+            ctx.strokeStyle = '#e6fff6';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(caretX, caretTop);
+            ctx.lineTo(caretX, caretBottom);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+        if((topPadHoverUi && topPadHoverUi.type === 'track-name' && topPadHoverUi.trackId === track.id)){
+          const lines = renaming
+            ? ['Esc to cancel', 'Enter to confirm']
+            : ['Click to edit'];
+          const nameMaxHeight = Math.max(24, rowBottomLimit - instrTop);
+          tooltipQueue.push({
+            rect: fieldRect,
+            lines,
+            rowRect,
+            infoFontSize: Math.max(9, Math.round(labelH * 0.55)),
+            placement: 'below',
+            maxHeight: nameMaxHeight
+          });
+        }
+        ctx.restore();
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(recX + toggleSize / 2, toggleY + toggleSize / 2, toggleSize / 2, 0, Math.PI * 2);
+        ctx.fillStyle = (track.recordEnabled || track.recording || recHover) ? recordPrimary : recordSecondary;
+        ctx.fill();
+        ctx.lineWidth = Math.max(1, Math.round(toggleSize * 0.12));
+        ctx.strokeStyle = (track.recordEnabled || track.recording || recHover) ? '#ffb3b3' : '#d87a7a';
+        ctx.stroke();
+        ctx.restore();
+        const drawToggle = (x, label, active, hover, fill) => {
+          ctx.save();
+          ctx.fillStyle = hover ? 'rgba(120, 200, 170, 0.9)' : (active ? fill : 'rgba(20,20,20,0.6)');
+          ctx.strokeStyle = active ? greenPrimary : greenSecondary;
+          ctx.lineWidth = 2;
+          ctx.fillRect(x, toggleY, toggleSize, toggleSize);
+          ctx.strokeRect(x + 0.5, toggleY + 0.5, toggleSize - 1, toggleSize - 1);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `700 ${Math.max(8, Math.round(toggleSize * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, x + toggleSize / 2, toggleY + toggleSize / 2);
+          ctx.restore();
+        };
+        drawToggle(muteX, 'M', track.muted, muteHover, 'rgba(170, 90, 110, 0.85)');
+        drawToggle(soloX, 'S', track.solo, soloHover, 'rgba(90, 160, 120, 0.85)');
+        ctx.restore();
+        topPadUiRects.trackRows.push({ trackId: track.id, rect: rowRect });
+        topPadUiRects.trackRowButtons.push(
+          { trackId: track.id, type: 'trackrec', rect: { x: recX, y: toggleY, w: toggleSize, h: toggleSize } },
+          { trackId: track.id, type: 'mute', rect: { x: muteX, y: toggleY, w: toggleSize, h: toggleSize } },
+          { trackId: track.id, type: 'solo', rect: { x: soloX, y: toggleY, w: toggleSize, h: toggleSize } },
+          { trackId: track.id, type: 'delete', rect: { x: deleteX, y: deleteY, w: deleteSize, h: deleteSize } }
+        );
+      });
+      topPadUiRects.trackAddRect = null;
+      if(recordState.deleteConfirmTrackId){
+        const delTrack = recordState.tracks.find((t)=>t.id === recordState.deleteConfirmTrackId);
+        const hasCustomName = delTrack && delTrack.customName && delTrack.customName.trim();
+        if(!hasCustomName){
+          recordState.deleteConfirmTransferUp = false;
+          recordState.deleteConfirmTransferDown = false;
+        }
+        const panelW = Math.min(trackW * 0.8, 320);
+        const panelH = Math.max(120, Math.round(rowH * 1.4));
+        const panelX = trackPadX + (trackW - panelW) / 2;
+        const panelY = trackAreaY + (listHeight - panelH) / 2;
+        const btnW = Math.max(70, Math.round(panelW * 0.28));
+        const btnH = Math.max(28, Math.round(panelH * 0.28));
+        const gap = Math.max(12, Math.round(panelW * 0.06));
+        const yesRect = { x: panelX + (panelW - (btnW * 2 + gap)) / 2, y: panelY + panelH - btnH - gap, w: btnW, h: btnH };
+        const noRect = { x: yesRect.x + btnW + gap, y: yesRect.y, w: btnW, h: btnH };
+        ctx.save();
+        ctx.fillStyle = 'rgba(8, 12, 10, 0.85)';
+        ctx.strokeStyle = greenSecondary;
+        ctx.lineWidth = 2;
+        ctx.fillRect(panelX, panelY, panelW, panelH);
+        ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+        ctx.fillStyle = '#e8fff4';
+        ctx.font = `700 ${Math.max(12, Math.round(panelH * 0.18))}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Delete this track?', panelX + panelW / 2, panelY + panelH * 0.38);
+        const drawConfirmBtn = (rect, label, hover) => {
+          ctx.save();
+          ctx.fillStyle = hover ? 'rgba(120, 200, 170, 0.9)' : 'rgba(20,20,20,0.7)';
+          ctx.strokeStyle = greenPrimary;
+          ctx.lineWidth = 2;
+          ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+          ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = `700 ${Math.max(10, Math.round(rect.h * 0.5))}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+          ctx.restore();
+        };
+        const yesHover = topPadHoverUi && topPadHoverUi.type === 'delete-confirm-yes';
+        const noHover = topPadHoverUi && topPadHoverUi.type === 'delete-confirm-no';
+        drawConfirmBtn(yesRect, 'Yes', yesHover);
+        drawConfirmBtn(noRect, 'No', noHover);
+        let upRect = null;
+        let downRect = null;
+        if(hasCustomName){
+          const checkboxSize = Math.max(12, Math.round(btnH * 0.55));
+          const checkboxPad = Math.max(8, Math.round(gap * 0.5));
+          const optionsTop = yesRect.y + yesRect.h + checkboxPad;
+          const optionsBottom = panelY + panelH - checkboxPad;
+          const optionH = Math.max(checkboxSize + 6, (optionsBottom - optionsTop) / 2);
+          const optionX = panelX + checkboxPad;
+          const optionLabelX = optionX + checkboxSize + 8;
+          const drawCheckbox = (rect, label, checked, hover) => {
+            ctx.save();
+            ctx.fillStyle = hover ? 'rgba(120, 200, 170, 0.25)' : 'rgba(10, 14, 12, 0.5)';
+            ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+            ctx.strokeStyle = greenSecondary;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+            if(checked){
+              ctx.strokeStyle = '#e8fff4';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.moveTo(rect.x + rect.w * 0.2, rect.y + rect.h * 0.55);
+              ctx.lineTo(rect.x + rect.w * 0.42, rect.y + rect.h * 0.75);
+              ctx.lineTo(rect.x + rect.w * 0.8, rect.y + rect.h * 0.25);
+              ctx.stroke();
+            }
+            ctx.fillStyle = '#e8fff4';
+            ctx.font = `600 ${Math.max(10, Math.round(rect.h * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, optionLabelX, rect.y + rect.h / 2);
+            ctx.restore();
+          };
+          upRect = { x: optionX, y: optionsTop, w: checkboxSize, h: checkboxSize };
+          downRect = { x: optionX, y: optionsTop + optionH, w: checkboxSize, h: checkboxSize };
+          const upHover = topPadHoverUi && topPadHoverUi.type === 'delete-confirm-up';
+          const downHover = topPadHoverUi && topPadHoverUi.type === 'delete-confirm-down';
+          drawCheckbox(upRect, 'Copy name to track above', !!recordState.deleteConfirmTransferUp, upHover);
+          drawCheckbox(downRect, 'Copy name to track below', !!recordState.deleteConfirmTransferDown, downHover);
+        }
+        ctx.restore();
+        topPadUiRects.deleteConfirm = { rect: { x: panelX, y: panelY, w: panelW, h: panelH }, yesRect, noRect, transferUpRect: upRect, transferDownRect: downRect };
+      } else {
+        topPadUiRects.deleteConfirm = null;
+      }
+    } else {
+      const notePanel = { x: trackPadX, y: trackAreaY, w: trackW, h: listHeight };
+      topPadUiRects.pianoRollRect = notePanel;
+      const selected = getSelectedRecordTrack();
+      const noteSet = new Set();
+      if(selected && Array.isArray(selected.events)){
+        selected.events.forEach((ev) => {
+          if(ev && ev.type === 'on' && Number.isFinite(ev.note)){
+            noteSet.add(Number(ev.note));
+          }
+        });
+      }
+      const notes = Array.from(noteSet).sort((a,b)=>b-a);
+      const headerH = Math.max(18, Math.round(cellH * 0.6));
+      const bodyY = notePanel.y + headerH;
+      const bodyH = Math.max(1, notePanel.h - headerH);
+      ctx.save();
+      ctx.fillStyle = 'rgba(10, 10, 10, 0.7)';
+      ctx.fillRect(notePanel.x, notePanel.y, notePanel.w, notePanel.h);
+      ctx.strokeStyle = greenSecondary;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(notePanel.x + 0.5, notePanel.y + 0.5, notePanel.w - 1, notePanel.h - 1);
+      ctx.fillStyle = '#d6efe0';
+      ctx.font = `700 ${Math.max(10, Math.round(headerH * 0.5))}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const title = selected ? getTrackDisplayLabel(selected) : 'No Track Selected';
+      ctx.fillText(title, notePanel.x + 8, notePanel.y + headerH / 2);
+      if(!notes.length){
+        ctx.fillStyle = 'rgba(220, 240, 230, 0.7)';
+        ctx.font = `600 ${Math.max(10, Math.round(bodyH * 0.2))}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('No notes yet', notePanel.x + notePanel.w / 2, bodyY + bodyH / 2);
+      } else {
+        const minRowH = Math.max(16, Math.round(cellH * 0.35));
+        const maxRows = Math.max(1, Math.floor(bodyH / minRowH));
+        const showNotes = notes.slice(0, maxRows);
+        const rowH = bodyH / Math.max(1, showNotes.length);
+        const fontSize = Math.max(10, Math.round(rowH * 0.5));
+        ctx.font = `600 ${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        showNotes.forEach((note, idx) => {
+          const y = bodyY + idx * rowH;
+          const alt = idx % 2 === 0;
+          ctx.fillStyle = alt ? 'rgba(18, 28, 24, 0.7)' : 'rgba(12, 18, 16, 0.6)';
+          ctx.fillRect(notePanel.x + 2, y, notePanel.w - 4, rowH);
+          ctx.fillStyle = '#e8fff4';
+          const label = (midiToNoteName(note) || String(note)).replace('s', '#');
+          ctx.fillText(label, notePanel.x + 10, y + rowH / 2);
+        });
+      }
+      ctx.restore();
     }
     ctx.restore();
-  });
+    if(recordState.recordTab === 'tracks'){
+      const addSize = Math.max(26, Math.round(rowH * 0.45));
+      const addX = trackPadX + (trackW - addSize) / 2;
+      const addY = listBottomY + (addZoneH - addSize) / 2;
+      const addHover = topPadHoverUi && topPadHoverUi.type === 'track-add';
+      ctx.save();
+      ctx.fillStyle = addHover ? '#66ff99' : '#2ddf76';
+      ctx.fillRect(addX, addY, addSize, addSize);
+      ctx.lineWidth = Math.max(2, Math.round(addSize * 0.1));
+      ctx.strokeStyle = '#b9ffd8';
+      ctx.strokeRect(addX + 0.5, addY + 0.5, addSize - 1, addSize - 1);
+      ctx.strokeStyle = '#0f3a20';
+      ctx.lineWidth = Math.max(2, Math.round(addSize * 0.12));
+      ctx.beginPath();
+      ctx.moveTo(addX + addSize * 0.5, addY + addSize * 0.2);
+      ctx.lineTo(addX + addSize * 0.5, addY + addSize * 0.8);
+      ctx.moveTo(addX + addSize * 0.2, addY + addSize * 0.5);
+      ctx.lineTo(addX + addSize * 0.8, addY + addSize * 0.5);
+      ctx.stroke();
+      ctx.restore();
+      topPadUiRects.trackAddRect = { x: addX, y: addY, w: addSize, h: addSize };
+    }
+      if(recordState.recordTab === 'tracks' && trackRenameState.active){
+        const history = recordState.trackNameHistory || [];
+        const activeTrack = recordState.tracks.find((t)=>t.id === trackRenameState.trackId);
+        if(activeTrack && history.length){
+          const charSample = 'W'.repeat(20);
+          ctx.font = `600 ${Math.max(10, Math.round(rowH * 0.18))}px "Source Sans 3", system-ui, sans-serif`;
+          const charW = ctx.measureText(charSample).width;
+          const scrollbarW = Math.max(10, Math.round(cellW * 0.18));
+          const padX = Math.max(8, Math.round(cellW * 0.18));
+          const maxPanelW = Math.max(0, (midW + rightW) - Math.round(cellW * 0.4));
+          const basePanelW = Math.min(maxPanelW, Math.ceil(charW + scrollbarW + padX * 2));
+          const panelW = Math.max(12, Math.round(basePanelW * 0.65));
+          const historyX = leftW + Math.max(4, Math.round(cellW * 0.04));
+          const frameH = listHeight;
+          const visibleCount = Math.min(10, history.length);
+          const baseRowH = frameH / 10;
+          const panelH = frameH;
+          const activeIdx = recordState.tracks.findIndex((t)=>t.id === activeTrack.id);
+          const activeRowTop = trackAreaY + (activeIdx * (rowH + rowGap)) - recordState.trackScrollY;
+          const activeCenterY = activeRowTop + rowH / 2;
+          const minY = trackAreaY;
+          const maxY = Math.max(trackAreaY, listBottomY - panelH);
+          const historyY = (panelH >= frameH) ? trackAreaY : clampRange(activeCenterY - panelH / 2, minY, maxY);
+          if(panelW > 8 && panelH > 8){
+            const maxScroll = Math.max(0, history.length - visibleCount);
+            const targetRow = clampRange(Math.floor((activeCenterY - trackAreaY) / baseRowH), 0, 9);
+            if(trackRenameState.historyScrollAuto){
+              recordState.trackNameHistoryScroll = clampRange(0 - targetRow, 0, maxScroll);
+            }
+            const startIdx = clampRange(recordState.trackNameHistoryScroll || 0, 0, maxScroll);
+            const entries = history.slice(startIdx, startIdx + visibleCount);
+            const fontSize = Math.max(12, Math.floor(baseRowH * 0.55));
+            const rowEntryH = baseRowH;
+            const rowOffset = (history.length <= 10)
+              ? clampRange(targetRow, 0, 10 - visibleCount)
+              : 0;
+            const trackH = maxScroll > 0 ? (panelH - 8) : 0;
+            const thumbH = maxScroll > 0 ? Math.max(12, trackH * (visibleCount / history.length)) : 0;
+            const trackY = historyY + 4;
+            const thumbY = maxScroll > 0 ? (trackY + (trackH - thumbH) * (startIdx / maxScroll)) : 0;
+            historyOverlay = {
+              historyX,
+              historyY,
+              panelW,
+              panelH,
+              padX,
+              entries,
+              rowEntryH,
+              rowOffset,
+              fontSize,
+              scrollbarW,
+              trackH,
+              thumbH,
+              trackY,
+              thumbY,
+              maxScroll
+            };
+            topPadUiRects.trackNameHistoryRects.push({
+              trackId: activeTrack.id,
+              rect: { x: historyX, y: historyY, w: panelW, h: panelH },
+              entries,
+              rowEntryH,
+              rowOffset
+            });
+          }
+        }
+      }
+      if(tooltipQueue.length){
+        tooltipQueue.forEach((tip) => {
+          const { rect, lines, rowRect, infoFontSize, placement, maxHeight } = tip;
+          ctx.save();
+          const padX = 6;
+          const padY = 4;
+          const baseFontSize = Math.max(9, Math.round(infoFontSize * 0.85));
+          const lineFactor = 1.25;
+          const targetHeight = Math.max(12, Number.isFinite(maxHeight) ? maxHeight : rowRect.h);
+          const maxFontByHeight = Math.floor((targetHeight - padY * 2) / (lines.length * lineFactor));
+          const fontSize = Math.max(8, Math.min(baseFontSize, maxFontByHeight));
+          const lineH = Math.max(9, Math.round(fontSize * lineFactor));
+          ctx.font = `600 ${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.textBaseline = 'top';
+          ctx.textAlign = 'left';
+          const textW = Math.max(...lines.map(line => ctx.measureText(line).width));
+          const w = textW + padX * 2;
+          const h = lineH * lines.length + padY * 2;
+          const x = clampRange(rect.x, rowRect.x + 6, rowRect.x + rowRect.w - w - 6);
+          const y = placement === 'below'
+            ? Math.min(rowRect.y + rowRect.h - h - 6, rect.y + rect.h + 6)
+            : Math.max(rowRect.y + 6, rect.y - h - 8);
+          ctx.fillStyle = '#e9f7ef';
+          ctx.strokeStyle = '#1aa36a';
+          ctx.lineWidth = 1;
+          ctx.fillRect(x, y, w, h);
+          ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+          ctx.fillStyle = '#0a1b14';
+          lines.forEach((line, idx) => {
+            ctx.fillText(line, x + padX, y + padY + lineH * idx);
+          });
+          ctx.restore();
+        });
+      }
 
-  const playRowY = Math.round(H - cellH * 3.2);
-  const iconR = Math.round(cellH * 0.9);
-  const iconGap = Math.max(10, Math.round(cellW * 0.18));
-  const playCenterX = uiPadX + uiWidth * 0.55;
-  const playCenterY = playRowY + iconR;
-  const speedCenterX = playCenterX - (iconR * 2 + iconGap);
-  const stopCenterX = playCenterX + (iconR * 2 + iconGap);
-  const speedHover = topPadHoverUi && topPadHoverUi.type === 'speed-circle';
-  const playHover = topPadHoverUi && topPadHoverUi.type === 'play';
-  const stopHover = topPadHoverUi && topPadHoverUi.type === 'stop';
-  const applyPlayGlow = (hover) => {
-    if(!hover) return;
-    ctx.shadowColor = 'rgba(255, 40, 40, 0.9)';
-    ctx.shadowBlur = Math.max(6, Math.round(iconR * 0.4));
-  };
-
-  // Speed circle
-  ctx.save();
-  applyPlayGlow(speedHover);
-  ctx.beginPath();
-  ctx.arc(speedCenterX, playCenterY, iconR, 0, Math.PI * 2);
-  ctx.fillStyle = speedHover ? greenPrimary : greenSecondary;
-  ctx.fill();
-  ctx.lineWidth = speedHover ? 4 : 3;
-  ctx.strokeStyle = greenPrimary;
-  ctx.stroke();
-  applyPlayGlow(speedHover);
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `800 ${Math.max(14, Math.round(iconR * 0.7))}px "Source Sans 3", system-ui, sans-serif`;
-  ctx.fillText(`${currentPlaybackRate}x`, speedCenterX, playCenterY + 1);
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.restore();
-
-  // Play/Pause circle
-  ctx.save();
-  applyPlayGlow(playHover);
-  ctx.beginPath();
-  ctx.arc(playCenterX, playCenterY, iconR, 0, Math.PI * 2);
-  ctx.fillStyle = playHover ? greenPrimary : greenSecondary;
-  ctx.fill();
-  ctx.lineWidth = playHover ? 4 : 3;
-  ctx.strokeStyle = greenPrimary;
-  ctx.stroke();
-  applyPlayGlow(playHover);
-  ctx.fillStyle = '#ffffff';
-  if(audioPlaying || playingMIDI){
-    const barW = iconR * 0.35;
-    const barH = iconR * 0.85;
-    const gap = iconR * 0.2;
-    ctx.fillRect(playCenterX - gap - barW, playCenterY - barH / 2, barW, barH);
-    ctx.fillRect(playCenterX + gap, playCenterY - barH / 2, barW, barH);
   } else {
+    const circleMargin = Math.round(cellW * 0.14);
+    const circleR = Math.min((leftW - circleMargin * 2) * 0.42, cellH * 1.6);
+    const circleYTop = Math.round(cellH * 3.1);
+    const circleYRow = Math.round(cellH * 6.0);
+    const circleLeftX = circleMargin + circleR;
+    const circleRightX = leftW - circleMargin - circleR;
+    const circleTopX = leftW / 2;
+    const circleRects = [
+      { x: circleTopX, y: circleYTop, r: circleR },
+      { x: circleLeftX, y: circleYRow, r: circleR },
+      { x: circleRightX, y: circleYRow, r: circleR }
+    ];
+    topPadUiRects.trackCircles = circleRects;
+    circleRects.forEach((c, idx) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.6)';
+      ctx.fill();
+      const hover = topPadHoverUi && topPadHoverUi.type === 'track' && topPadHoverUi.index === idx;
+      ctx.strokeStyle = hover ? greenPrimary : greenSecondary;
+      ctx.lineWidth = Math.max(2, Math.round(c.r * (hover ? 0.16 : 0.12)));
+      ctx.stroke();
+      ctx.clip();
+      const img = topPadIconImages[idx];
+      if(img && img.complete && img.naturalWidth){
+        const scale = idx === 0 ? 1.35 : 1.15;
+        const size = c.r * 1.7 * scale;
+        let drawX = c.x - size / 2;
+        let drawY = c.y - size / 2;
+        if(idx === 0){
+          drawY = c.y - c.r;
+        } else if(idx === 1){
+          drawX = c.x - c.r;
+        } else if(idx === 2){
+          drawX = c.x + c.r - size;
+        }
+        safeDrawImage(ctx, img, drawX, drawY, size, size);
+      }
+      ctx.restore();
+    });
+
+    const trackNameMap = {
+      baby: 'Baby, Just Shut Up: A Lullaby',
+      raisins: 'Those Raisins Are Mine!',
+      forests: 'No Forests Left to Give'
+    };
+    const trackLabel = trackNameMap[currentTrackKey] || 'Selected Track';
+    const namePadX = Math.round(cellW * 0.08);
+    const nameW = leftW - namePadX * 2;
+    const nameH = Math.round(cellH * 0.9);
+    const nameY = Math.round((circleYRow + circleR) + cellH * 0.5);
+    const nameX = namePadX;
+    ctx.save();
+    const radius = Math.min(12, nameH * 0.4);
+    ctx.fillStyle = 'rgba(15,15,15,0.7)';
+    ctx.strokeStyle = greenSecondary;
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(playCenterX - iconR * 0.35, playCenterY - iconR * 0.45);
-    ctx.lineTo(playCenterX + iconR * 0.5, playCenterY);
-    ctx.lineTo(playCenterX - iconR * 0.35, playCenterY + iconR * 0.45);
+    ctx.moveTo(nameX + radius, nameY);
+    ctx.lineTo(nameX + nameW - radius, nameY);
+    ctx.arcTo(nameX + nameW, nameY, nameX + nameW, nameY + radius, radius);
+    ctx.lineTo(nameX + nameW, nameY + nameH - radius);
+    ctx.arcTo(nameX + nameW, nameY + nameH, nameX + nameW - radius, nameY + nameH, radius);
+    ctx.lineTo(nameX + radius, nameY + nameH);
+    ctx.arcTo(nameX, nameY + nameH, nameX, nameY + nameH - radius, radius);
+    ctx.lineTo(nameX, nameY + radius);
+    ctx.arcTo(nameX, nameY, nameX + radius, nameY, radius);
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `700 ${Math.max(12, Math.round(nameH * 0.5))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.fillText(trackLabel, nameX + nameW / 2, nameY + nameH / 2);
+    ctx.restore();
   }
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.restore();
 
-  // Stop circle
-  ctx.save();
-  applyPlayGlow(stopHover);
-  ctx.beginPath();
-  ctx.arc(stopCenterX, playCenterY, iconR, 0, Math.PI * 2);
-  ctx.fillStyle = stopHover ? greenPrimary : greenSecondary;
-  ctx.fill();
-  ctx.lineWidth = stopHover ? 4 : 3;
-  ctx.strokeStyle = greenPrimary;
-  ctx.stroke();
-  applyPlayGlow(stopHover);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(stopCenterX - iconR * 0.35, playCenterY - iconR * 0.35, iconR * 0.7, iconR * 0.7);
-  ctx.shadowColor = 'transparent';
-  ctx.shadowBlur = 0;
-  ctx.restore();
+  if(historyOverlay){
+    const h = historyOverlay;
+    ctx.save();
+    ctx.fillStyle = '#123548';
+    ctx.strokeStyle = '#59d6ff';
+    ctx.lineWidth = 2;
+    ctx.fillRect(h.historyX, h.historyY, h.panelW, h.panelH);
+    ctx.strokeRect(h.historyX + 0.5, h.historyY + 0.5, h.panelW - 1, h.panelH - 1);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(h.historyX, h.historyY, h.panelW, h.panelH);
+    ctx.clip();
+    ctx.fillStyle = '#f2fffb';
+    ctx.font = `600 ${h.fontSize}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    h.entries.forEach((entry, entryIdx) => {
+      const y = h.historyY + h.rowEntryH * (h.rowOffset + entryIdx + 0.5);
+      ctx.fillText(String(entry || '').slice(0, 25), h.historyX + h.padX, y);
+    });
+    ctx.restore();
+    if(h.maxScroll > 0){
+      ctx.fillStyle = '#1a5268';
+      ctx.fillRect(h.historyX + h.panelW - h.scrollbarW + 2, h.trackY, h.scrollbarW - 4, h.trackH);
+      ctx.fillStyle = '#9ff2ff';
+      ctx.fillRect(h.historyX + h.panelW - h.scrollbarW + 3, h.thumbY, h.scrollbarW - 6, h.thumbH);
+    }
+    ctx.restore();
+  }
 
-  topPadUiRects.playRect = { x: playCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
-  topPadUiRects.stopRect = { x: stopCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
-  topPadUiRects.speedCircle = { x: speedCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
-  topPadUiRects.speedButtons = [];
+  if(!recordMode){
+    const playRowY = Math.round(H - cellH * 3.2);
+    const iconR = Math.round(cellH * 0.9);
+    const iconGap = Math.max(10, Math.round(cellW * 0.18));
+    const playCenterX = uiPadX + uiWidth * 0.55;
+    const playCenterY = playRowY + iconR;
+    const speedCenterX = playCenterX - (iconR * 2 + iconGap);
+    const stopCenterX = playCenterX + (iconR * 2 + iconGap);
+    const speedHover = topPadHoverUi && topPadHoverUi.type === 'speed-circle';
+    const playHover = topPadHoverUi && topPadHoverUi.type === 'play';
+    const stopHover = topPadHoverUi && topPadHoverUi.type === 'stop';
+    const applyPlayGlow = (hover) => {
+      if(!hover) return;
+      ctx.shadowColor = 'rgba(255, 40, 40, 0.9)';
+      ctx.shadowBlur = Math.max(6, Math.round(iconR * 0.4));
+    };
 
-  const syncValue = normalizeSyncOffset(getSyncOffsetMs());
-  const syncLabelY = playCenterY + iconR + Math.round(cellH * 0.25);
-  const sliderH = Math.max(8, Math.round(cellH * 0.22));
-  const sliderW = Math.max(120, Math.round(uiWidth * 0.92));
-  const sliderX = uiPadX + (uiWidth - sliderW) / 2;
-  let sliderY = syncLabelY + Math.round(cellH * 0.35);
-  sliderY = Math.min(sliderY, H - sliderH - Math.round(cellH * 0.4));
-  const sliderRect = { x: sliderX, y: sliderY, w: sliderW, h: sliderH };
-  topPadUiRects.syncSlider = sliderRect;
-  const sliderHover = topPadHoverUi && topPadHoverUi.type === 'sync-slider';
-  const sliderRatio = (syncValue - SYNC_OFFSET_MIN) / (SYNC_OFFSET_MAX - SYNC_OFFSET_MIN);
-  const knobX = sliderRect.x + sliderRect.w * Math.max(0, Math.min(1, sliderRatio));
-  ctx.save();
-  ctx.fillStyle = textLight;
-  ctx.font = `600 ${Math.max(11, Math.round(cellH * 0.34))}px "Source Sans 3", system-ui, sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`Audio Sync Offset: ${syncValue} ms`, leftW / 2, syncLabelY);
-  ctx.restore();
-  ctx.save();
-  ctx.fillStyle = sliderHover ? 'rgba(120, 220, 170, 0.35)' : 'rgba(255,255,255,0.18)';
-  ctx.fillRect(sliderRect.x, sliderRect.y, sliderRect.w, sliderRect.h);
-  ctx.fillStyle = sliderHover ? greenPrimary : greenSecondary;
-  ctx.fillRect(sliderRect.x, sliderRect.y, sliderRect.w * Math.max(0, Math.min(1, sliderRatio)), sliderRect.h);
-  ctx.beginPath();
-  ctx.arc(knobX, sliderRect.y + sliderRect.h / 2, Math.max(6, Math.round(sliderRect.h * 0.9)), 0, Math.PI * 2);
-  ctx.fillStyle = sliderHover ? '#f7fff8' : '#ffffff';
-  ctx.fill();
-  ctx.restore();
+    // Speed circle
+    ctx.save();
+    applyPlayGlow(speedHover);
+    ctx.beginPath();
+    ctx.arc(speedCenterX, playCenterY, iconR, 0, Math.PI * 2);
+    ctx.fillStyle = speedHover ? greenPrimary : greenSecondary;
+    ctx.fill();
+    ctx.lineWidth = speedHover ? 4 : 3;
+    ctx.strokeStyle = greenPrimary;
+    ctx.stroke();
+    applyPlayGlow(speedHover);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 ${Math.max(14, Math.round(iconR * 0.7))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.fillText(`${currentPlaybackRate}x`, speedCenterX, playCenterY + 1);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.restore();
 
-  const trackNameMap = {
-    baby: 'Baby, Just Shut Up: A Lullaby',
-    raisins: 'Those Raisins Are Mine!',
-    forests: 'No Forests Left to Give'
-  };
-  const trackLabel = trackNameMap[currentTrackKey] || 'Selected Track';
-  const namePadX = Math.round(cellW * 0.08);
-  const nameW = leftW - namePadX * 2;
-  const nameH = Math.round(cellH * 0.9);
-  const nameY = Math.round((circleYRow + circleR) + cellH * 0.5);
-  const nameX = namePadX;
+    // Play/Pause circle
+    ctx.save();
+    applyPlayGlow(playHover);
+    ctx.beginPath();
+    ctx.arc(playCenterX, playCenterY, iconR, 0, Math.PI * 2);
+    ctx.fillStyle = playHover ? greenPrimary : greenSecondary;
+    ctx.fill();
+    ctx.lineWidth = playHover ? 4 : 3;
+    ctx.strokeStyle = greenPrimary;
+    ctx.stroke();
+    applyPlayGlow(playHover);
+    ctx.fillStyle = '#ffffff';
+    if(audioPlaying || playingMIDI){
+      const barW = iconR * 0.35;
+      const barH = iconR * 0.85;
+      const gap = iconR * 0.2;
+      ctx.fillRect(playCenterX - gap - barW, playCenterY - barH / 2, barW, barH);
+      ctx.fillRect(playCenterX + gap, playCenterY - barH / 2, barW, barH);
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(playCenterX - iconR * 0.35, playCenterY - iconR * 0.45);
+      ctx.lineTo(playCenterX + iconR * 0.5, playCenterY);
+      ctx.lineTo(playCenterX - iconR * 0.35, playCenterY + iconR * 0.45);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // Stop circle
+    ctx.save();
+    applyPlayGlow(stopHover);
+    ctx.beginPath();
+    ctx.arc(stopCenterX, playCenterY, iconR, 0, Math.PI * 2);
+    ctx.fillStyle = stopHover ? greenPrimary : greenSecondary;
+    ctx.fill();
+    ctx.lineWidth = stopHover ? 4 : 3;
+    ctx.strokeStyle = greenPrimary;
+    ctx.stroke();
+    applyPlayGlow(stopHover);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(stopCenterX - iconR * 0.35, playCenterY - iconR * 0.35, iconR * 0.7, iconR * 0.7);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    topPadUiRects.playRect = { x: playCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
+    topPadUiRects.stopRect = { x: stopCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
+    topPadUiRects.speedCircle = { x: speedCenterX - iconR, y: playCenterY - iconR, w: iconR * 2, h: iconR * 2 };
+    topPadUiRects.speedButtons = [];
+
+    const syncValue = normalizeSyncOffset(getSyncOffsetMs());
+    const syncLabelY = playCenterY + iconR + Math.round(cellH * 0.25);
+    const sliderH = Math.max(8, Math.round(cellH * 0.22));
+    const sliderW = Math.max(120, Math.round(uiWidth * 0.92));
+    const sliderX = uiPadX + (uiWidth - sliderW) / 2;
+    let sliderY = syncLabelY + Math.round(cellH * 0.35);
+    sliderY = Math.min(sliderY, H - sliderH - Math.round(cellH * 0.4));
+    const sliderRect = { x: sliderX, y: sliderY, w: sliderW, h: sliderH };
+    topPadUiRects.syncSlider = sliderRect;
+    const sliderHover = topPadHoverUi && topPadHoverUi.type === 'sync-slider';
+    const sliderRatio = (syncValue - SYNC_OFFSET_MIN) / (SYNC_OFFSET_MAX - SYNC_OFFSET_MIN);
+    const knobX = sliderRect.x + sliderRect.w * Math.max(0, Math.min(1, sliderRatio));
+    ctx.save();
+    ctx.fillStyle = textLight;
+    ctx.font = `600 ${Math.max(11, Math.round(cellH * 0.34))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`Audio Sync Offset: ${syncValue} ms`, leftW / 2, syncLabelY);
+    ctx.restore();
+    ctx.save();
+    ctx.fillStyle = sliderHover ? 'rgba(120, 220, 170, 0.35)' : 'rgba(255,255,255,0.18)';
+    ctx.fillRect(sliderRect.x, sliderRect.y, sliderRect.w, sliderRect.h);
+    ctx.fillStyle = sliderHover ? greenPrimary : greenSecondary;
+    ctx.fillRect(sliderRect.x, sliderRect.y, sliderRect.w * Math.max(0, Math.min(1, sliderRatio)), sliderRect.h);
+    ctx.beginPath();
+    ctx.arc(knobX, sliderRect.y + sliderRect.h / 2, Math.max(6, Math.round(sliderRect.h * 0.9)), 0, Math.PI * 2);
+    ctx.fillStyle = sliderHover ? '#f7fff8' : '#ffffff';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const rightPanelCollapsed = !!recordState.rightPanelCollapsed;
+  const collapseW = Math.max(14, Math.round(cellW * 0.22));
+  const collapseH = Math.max(120, Math.round(H * 0.45));
+  const collapseX = rightX + Math.round(cellW * 0.04);
+  const collapseY = (H - collapseH) / 2;
+  const collapseRect = { x: collapseX, y: collapseY, w: collapseW, h: collapseH };
+  const collapseHover = topPadHoverUi && topPadHoverUi.type === 'right-collapse';
   ctx.save();
-  const radius = Math.min(12, nameH * 0.4);
-  ctx.fillStyle = 'rgba(15,15,15,0.8)';
-  ctx.strokeStyle = greenSecondary;
+  ctx.fillStyle = collapseHover ? 'rgba(90, 160, 120, 0.9)' : 'rgba(18, 22, 20, 0.75)';
+  ctx.strokeStyle = collapseHover ? greenPrimary : greenSecondary;
   ctx.lineWidth = 2;
+  ctx.fillRect(collapseRect.x, collapseRect.y, collapseRect.w, collapseRect.h);
+  ctx.strokeRect(collapseRect.x + 0.5, collapseRect.y + 0.5, collapseRect.w - 1, collapseRect.h - 1);
+  ctx.fillStyle = '#e8fff4';
+  const arrowW = collapseRect.w * 0.55;
+  const arrowH = collapseRect.w * 0.8;
+  const arrowX = collapseRect.x + (collapseRect.w - arrowW) / 2;
+  const arrowY = collapseRect.y + (collapseRect.h - arrowH) / 2;
   ctx.beginPath();
-  ctx.moveTo(nameX + radius, nameY);
-  ctx.lineTo(nameX + nameW - radius, nameY);
-  ctx.arcTo(nameX + nameW, nameY, nameX + nameW, nameY + radius, radius);
-  ctx.lineTo(nameX + nameW, nameY + nameH - radius);
-  ctx.arcTo(nameX + nameW, nameY + nameH, nameX + nameW - radius, nameY + nameH, radius);
-  ctx.lineTo(nameX + radius, nameY + nameH);
-  ctx.arcTo(nameX, nameY + nameH, nameX, nameY + nameH - radius, radius);
-  ctx.lineTo(nameX, nameY + radius);
-  ctx.arcTo(nameX, nameY, nameX + radius, nameY, radius);
+  if(rightPanelCollapsed){
+    ctx.moveTo(arrowX + arrowW, arrowY);
+    ctx.lineTo(arrowX, arrowY + arrowH / 2);
+    ctx.lineTo(arrowX + arrowW, arrowY + arrowH);
+  } else {
+    ctx.moveTo(arrowX, arrowY);
+    ctx.lineTo(arrowX + arrowW, arrowY + arrowH / 2);
+    ctx.lineTo(arrowX, arrowY + arrowH);
+  }
   ctx.closePath();
   ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${Math.max(12, Math.round(nameH * 0.5))}px "Source Sans 3", system-ui, sans-serif`;
-  ctx.fillText(trackLabel, nameX + nameW / 2, nameY + nameH / 2);
   ctx.restore();
+  topPadUiRects.collapseButtons.push({ id: 'right-panel', rect: collapseRect });
 
-  const rightPadX = Math.round(cellW * 0.2);
-  const rightPadY = Math.round(cellH * 0.7);
-  const rightW = W - rightX;
-  const gridBtnW = Math.round(rightW * 0.5);
-  const gridBtnH = Math.round(cellH * 0.6);
-  const gridBtnX = rightX + rightPadX;
-  const gridBtnY = rightPadY;
-  ctx.fillStyle = showTopPadGrid ? greenSecondary : 'rgba(97, 28, 28, .85)';
-  ctx.fillRect(gridBtnX, gridBtnY, gridBtnW, gridBtnH);
-  ctx.strokeStyle = greenPrimary;
-  ctx.lineWidth = 2;
-  ctx.strokeRect(gridBtnX + 0.5, gridBtnY + 0.5, gridBtnW - 1, gridBtnH - 1);
-  ctx.fillStyle = showTopPadGrid ? '#ffffff' : greenPrimary;
-  ctx.font = `700 ${Math.max(12, Math.round(gridBtnH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
-  ctx.fillText(showTopPadGrid ? 'Grid: On' : 'Grid: Off', gridBtnX + gridBtnW / 2, gridBtnY + gridBtnH / 2);
-  topPadUiRects.gridToggle = { x: gridBtnX, y: gridBtnY, w: gridBtnW, h: gridBtnH };
+  if(!rightPanelCollapsed){
+  const rightGridCols = { J: 9, K: 10, L: 11 };
+  const rightGridRows = [
+    { start: 0.5, end: 1.5 },
+    { start: 2.5, end: 3.5 },
+    { start: 4.5, end: 5.5 },
+    { start: 6.5, end: 7.5 },
+    { start: 8.5, end: 9.5 },
+    { start: 10.5, end: 11.5 }
+  ];
+  const rightCell = (colKey, rowIndex, rowSpan=1) => {
+    const col = rightGridCols[colKey];
+    const row = rightGridRows[rowIndex];
+    const rowEnd = rightGridRows[Math.min(rightGridRows.length - 1, rowIndex + rowSpan - 1)];
+    const x = col * cellW;
+    const y = row.start * cellH;
+    const w = cellW * 0.5;
+    const h = (rowEnd.end - row.start) * cellH;
+    return { x, y, w, h };
+  };
+  const gridToggleRect = rightCell('J', 0);
+  const layoutToggleRect = rightCell('J', 1);
+  const recordCellRect = rightCell('K', 0, 2);
+  const recordSize = Math.min(recordCellRect.w, recordCellRect.h);
+  const recordRect = {
+    x: recordCellRect.x + (recordCellRect.w - recordSize) / 2,
+    y: recordCellRect.y + (recordCellRect.h - recordSize) / 2,
+    w: recordSize,
+    h: recordSize
+  };
+  const instrumentRect = rightCell('L', 1);
+  const meterSlots = [
+    rightCell('J', 2), rightCell('K', 2), rightCell('L', 2),
+    rightCell('J', 3), rightCell('K', 3), rightCell('L', 3),
+    rightCell('J', 4), rightCell('K', 4), rightCell('L', 4),
+    rightCell('J', 5), rightCell('K', 5), rightCell('L', 5)
+  ];
 
-  const toggleStartCol = 9.5;
-  const toggleEndCol = 11.5;
-  const toggleRowStart = 9;
-  const toggleX = toggleStartCol * cellW;
-  const toggleY = toggleRowStart * cellH;
-  const toggleW = (toggleEndCol - toggleStartCol) * cellW;
-  const toggleH = cellH * 2;
+  const drawSmallButton = (rect, label, hover, activeFill, inactiveFill, disabled=false) => {
+    ctx.save();
+    if(disabled){
+      ctx.fillStyle = hover ? 'rgba(80, 80, 80, 0.75)' : 'rgba(50, 50, 50, 0.7)';
+      ctx.strokeStyle = hover ? 'rgba(170, 170, 170, 0.85)' : 'rgba(120, 120, 120, 0.6)';
+    } else {
+      ctx.fillStyle = hover ? 'rgba(90, 160, 120, 0.85)' : inactiveFill;
+      ctx.strokeStyle = activeFill;
+    }
+    ctx.lineWidth = 2;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+    ctx.fillStyle = disabled ? '#d0d0d0' : '#ffffff';
+    ctx.font = `700 ${Math.max(8, Math.round(rect.h * 0.45))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2);
+    ctx.restore();
+  };
+
+  const gridHover = topPadHoverUi && topPadHoverUi.type === 'gridToggle';
+  drawSmallButton(
+    gridToggleRect,
+    showTopPadGrid ? 'GRID ON' : 'GRID OFF',
+    gridHover,
+    greenPrimary,
+    'rgba(20, 20, 20, 0.6)'
+  );
+  topPadUiRects.gridToggle = gridToggleRect;
+
+  const layoutHover = topPadHoverUi && topPadHoverUi.type === 'right-grid';
+  drawSmallButton(
+    layoutToggleRect,
+    showRightButtonGrid ? 'SLOTS ON' : 'SLOTS OFF',
+    layoutHover,
+    'rgba(240, 220, 120, 0.8)',
+    'rgba(20, 20, 20, 0.6)'
+  );
+  topPadUiRects.rightGridToggle = layoutToggleRect;
+
   const toggleHover = topPadHoverUi && topPadHoverUi.type === 'instrument-mode';
   ctx.save();
   ctx.fillStyle = toggleHover ? 'rgba(110, 185, 255, 0.85)' : 'rgba(45, 115, 190, 0.75)';
-  ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
+  ctx.fillRect(instrumentRect.x, instrumentRect.y, instrumentRect.w, instrumentRect.h);
   ctx.strokeStyle = toggleHover ? '#bfe1ff' : '#8fbbe8';
-  ctx.lineWidth = Math.max(2, Math.round(cellH * 0.08));
-  ctx.strokeRect(toggleX + 0.5, toggleY + 0.5, Math.max(0, toggleW - 1), Math.max(0, toggleH - 1));
+  ctx.lineWidth = 2;
+  ctx.strokeRect(instrumentRect.x + 0.5, instrumentRect.y + 0.5, instrumentRect.w - 1, instrumentRect.h - 1);
   ctx.fillStyle = '#ffffff';
-  ctx.font = `800 ${Math.max(12, Math.round(toggleH * 0.38))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.font = `800 ${Math.max(8, Math.round(instrumentRect.h * 0.42))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const toggleLines = dualInstrumentMode
-    ? ['USE ONE', 'INSTRUMENT']
-    : ['USE TWO', 'INSTRUMENTS'];
-  const toggleFont = Math.max(11, Math.round(toggleH * 0.22));
-  const lineH = Math.round(toggleFont * 1.15);
-  const centerY = toggleY + toggleH / 2 - (lineH * (toggleLines.length - 1)) / 2;
+  const toggleLines = dualInstrumentMode ? ['USE ONE', 'INSTR'] : ['USE TWO', 'INSTR'];
+  const toggleFont = Math.max(7, Math.round(instrumentRect.h * 0.28));
+  const lineH = Math.round(toggleFont * 1.1);
+  const centerY = instrumentRect.y + instrumentRect.h / 2 - (lineH * (toggleLines.length - 1)) / 2;
   ctx.font = `700 ${toggleFont}px "Source Sans 3", system-ui, sans-serif`;
   toggleLines.forEach((line, idx) => {
-    ctx.fillText(line, toggleX + toggleW / 2, centerY + idx * lineH);
+    ctx.fillText(line, instrumentRect.x + instrumentRect.w / 2, centerY + idx * lineH);
   });
   ctx.restore();
-  topPadUiRects.instrumentModeToggle = { x: toggleX, y: toggleY, w: toggleW, h: toggleH };
+  topPadUiRects.instrumentModeToggle = instrumentRect;
+
+  const timeSig = recordState.timeSignature || { top: 4, bottom: 4 };
+  const meterButtons = [
+    { id: 'tempo-down', label: 'BPM-' },
+    { id: 'tempo-up', label: 'BPM+' },
+    { id: 'tempo-mode', label: recordState.tempoMode === 'pitch' ? 'PITCH' : 'TIME' },
+    { id: 'silent', label: recordState.silentMode ? 'SILENT ON' : 'SILENT OFF' },
+    { id: 'lead', label: recordState.metronome.leadInBars ? 'LEAD 2' : 'LEAD 0' },
+    { id: 'ts-top', label: `TS ${timeSig.top}` },
+    { id: 'ts-bottom', label: `/${timeSig.bottom}` },
+    { id: 'master-down', label: 'MSTR-' },
+    { id: 'master-up', label: 'MSTR+' },
+    { id: 'monitor', label: recordState.monitorDuringRecord ? 'MON ON' : 'MON OFF' },
+    { id: 'ui-mode', label: topPadOverlayMode ? 'UI 2D' : 'UI GLB' }
+  ];
+  meterButtons.forEach((btn, idx) => {
+    const rect = meterSlots[idx];
+    if(!rect) return;
+    const hover = topPadHoverUi && topPadHoverUi.type === 'meter' && topPadHoverUi.meterId === btn.id;
+    drawSmallButton(rect, btn.label, hover, greenSecondary, 'rgba(20, 20, 20, 0.6)', !!btn.disabled);
+    topPadUiRects.meterButtons.push({ meterId: btn.id, rect });
+  });
+
+  if(showRightButtonGrid){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(240, 220, 120, 0.6)';
+    ctx.lineWidth = 2;
+    const slotRects = [];
+    rightGridRows.forEach((row, rowIdx) => {
+      ['J','K','L'].forEach((colKey) => {
+        if(colKey === 'K' && rowIdx <= 1) return;
+        slotRects.push(rightCell(colKey, rowIdx));
+      });
+    });
+    slotRects.push(recordCellRect);
+    slotRects.forEach((rect) => {
+      ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+    });
+    ctx.restore();
+  }
+
+  const recordX = recordRect.x + recordRect.w / 2;
+  const recordY = recordRect.y + recordRect.h / 2;
+  const recordR = Math.max(18, Math.min(recordRect.w, recordRect.h) * 0.45);
+    const recordHover = topPadHoverUi && topPadHoverUi.type === 'record';
+  ctx.save();
+  if(recordState.recordMode){
+    const size = recordR * 1.6;
+    const rect = { x: recordX - size / 2, y: recordY - size / 2, w: size, h: size };
+    if(recordHover){
+      ctx.shadowColor = 'rgba(255, 60, 60, 0.7)';
+      ctx.shadowBlur = Math.max(8, Math.round(recordR * 0.35));
+    }
+    ctx.fillStyle = recordPrimary;
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.lineWidth = Math.max(3, Math.round(recordR * 0.08));
+    ctx.strokeStyle = '#ffbdbd';
+    ctx.strokeRect(rect.x + 0.5, rect.y + 0.5, rect.w - 1, rect.h - 1);
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const lines = ['EXIT', 'RECORD', 'MODE'];
+    const fontSize = Math.max(9, Math.round(size * 0.2));
+    const lineH = Math.round(fontSize * 1.2);
+    const startY = recordY - lineH;
+    ctx.font = `800 ${fontSize}px "Source Sans 3", system-ui, sans-serif`;
+    lines.forEach((line, idx) => {
+      ctx.fillText(line, recordX, startY + idx * lineH);
+    });
+    topPadUiRects.recordButton = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, isSquare: true };
+  } else {
+    if(recordHover){
+      ctx.shadowColor = 'rgba(255, 60, 60, 0.7)';
+      ctx.shadowBlur = Math.max(8, Math.round(recordR * 0.35));
+    }
+    ctx.beginPath();
+    ctx.arc(recordX, recordY, recordR, 0, Math.PI * 2);
+    ctx.fillStyle = recordSecondary;
+    ctx.fill();
+    ctx.lineWidth = Math.max(3, Math.round(recordR * 0.08));
+    ctx.strokeStyle = '#cc6b6b';
+    ctx.stroke();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.translate(recordX, recordY);
+    ctx.rotate(33 * Math.PI / 180);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `800 ${Math.max(10, Math.round(recordR * 0.36))}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('RECORD', 0, 0);
+    topPadUiRects.recordButton = { x: recordX, y: recordY, r: recordR, isSquare: false };
+  }
+  ctx.restore();
+  }
+
+  // transport moved to notes zone
+
+  if(recordMode){
+    const recordMidRect = { x: leftW, y: 0, w: midW, h: H };
+    const notesRect = { x: recordMidRect.x, y: recordMidRect.y, w: recordMidRect.w, h: recordMidRect.h };
+    const pianoRange = getPianoRollRange();
+    const minNote = pianoRange.min;
+    const maxNote = pianoRange.max;
+    const noteRange = maxNote - minNote + 1;
+    const keyH = notesRect.h / Math.max(1, noteRange);
+    const minimalRecordView = recordState.recording || recordState.countIn;
+    const iconH = Math.max(18, Math.round(keyH * 3));
+    const metroH = Math.max(22, Math.round(keyH * 4));
+    const iconW = Math.max(18, Math.round(iconH * 0.45));
+    const metroW = Math.max(18, Math.round(metroH * 0.45));
+    const iconPad = Math.max(6, Math.round(cellW * 0.06));
+    const iconColX = notesRect.x + iconPad;
+    const iconColW = iconW + iconPad * 2;
+    const dividerX = iconColX + iconColW + Math.round(cellW * 0.05);
+    const notesContentRect = { x: dividerX + Math.round(cellW * 0.05), y: notesRect.y, w: Math.max(0, notesRect.w - (dividerX - notesRect.x) - Math.round(cellW * 0.05)), h: notesRect.h };
+    topPadUiRects.recordMidRect = notesContentRect;
+    const nowMs = getRecordNowMs();
+    const audioNowSec = audioCtx ? audioCtx.currentTime : (nowMs / 1000);
+    const transportStartSec = Number.isFinite(recordState.transportStartSec) ? recordState.transportStartSec : (recordState.startMs / 1000);
+    const transportElapsedMs = Math.max(0, (audioNowSec - transportStartSec) * 1000);
+    if(recordState.recording || recordState.playing){
+      recordState.playheadMs = transportElapsedMs + (recordState.recordOffsetMs || 0);
+    }
+    const countInNow = (recordState.countInClock === 'perf' || recordState.countInGoUntilMs)
+      ? performance.now()
+      : nowMs;
+    const countInStartMs = recordState.countInStartMs || countInNow;
+    const countInStarted = recordState.countIn && countInNow >= countInStartMs;
+    const countdownNow = countInStarted ? countInNow : countInStartMs;
+    const countInLeft = recordState.countIn ? Math.max(0, recordState.countInUntilMs - countdownNow) : 0;
+    const countInElapsedMs = recordState.countIn ? Math.max(0, countdownNow - countInStartMs) : 0;
+    const goLeft = Math.max(0, (recordState.countInGoUntilMs || 0) - countInNow);
+    if(recordState.countIn && countInLeft <= 0){
+      recordState.countIn = false;
+      if(recordState.countInTimer){
+        clearInterval(recordState.countInTimer);
+        recordState.countInTimer = null;
+      }
+      if(recordState.countInTimeout){
+        clearTimeout(recordState.countInTimeout);
+        recordState.countInTimeout = null;
+      }
+      recordState.countInClock = null;
+      recordState.countInGoUntilMs = performance.now() + (recordState.countInGoDurationMs || 420);
+      startRecordingSession({ skipLeadIn: true });
+    }
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 10, 10, 0.6)';
+    ctx.fillRect(recordMidRect.x, recordMidRect.y, recordMidRect.w, recordMidRect.h);
+    if(countInLeft > 0 && countInStarted){
+      const beatMs = 60000 / Math.max(1, recordState.tempoBpm || 120);
+      const secondsLeft = Math.max(1, Math.ceil(countInLeft / 1000));
+      const pulse = 0.6 + 0.4 * (1 - ((countInLeft % beatMs) / beatMs));
+      ctx.save();
+      ctx.fillStyle = `rgba(80, 150, 255, ${pulse})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `800 ${Math.max(40, Math.round(cellH * 2.4))}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.fillText(String(secondsLeft), notesRect.x + notesRect.w * 0.5, notesRect.y + notesRect.h * 0.25);
+      ctx.restore();
+    } else if(goLeft > 0){
+      const goDur = recordState.countInGoDurationMs || 420;
+      const goT = Math.max(0, Math.min(1, 1 - (goLeft / goDur)));
+      const goScale = 1 + (goT * 0.18);
+      const goAlpha = 1 - goT;
+      ctx.save();
+      ctx.fillStyle = `rgba(80, 220, 140, ${goAlpha})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.translate(notesRect.x + notesRect.w * 0.5, notesRect.y + notesRect.h * 0.25);
+      ctx.scale(goScale, goScale);
+      ctx.font = `800 ${Math.max(40, Math.round(cellH * 2.2))}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.fillText('GO!', 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+
+    const showNotes = !minimalRecordView;
+    const isTrackView = recordState.recordTab === 'tracks';
+    const selected = showNotes && !isTrackView ? getSelectedRecordTrack() : null;
+    const trackSpans = new Map();
+    let maxTime = 0;
+    if(showNotes){
+      if(isTrackView){
+        recordState.tracks.forEach((track) => {
+          const spans = buildRecordNoteSpans(track);
+          trackSpans.set(track.id, spans);
+          spans.forEach((s)=>{ maxTime = Math.max(maxTime, s.endMs || 0); });
+        });
+      } else if(selected){
+        const spans = buildRecordNoteSpans(selected);
+        trackSpans.set(selected.id, spans);
+        spans.forEach((s)=>{ maxTime = Math.max(maxTime, s.endMs || 0); });
+      }
+    }
+    const safeMax = showNotes ? Math.max(1000, maxTime) : 1000;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(notesRect.x, notesRect.y, notesRect.w, notesRect.h);
+    ctx.clip();
+    const beatMs = 60000 / Math.max(1, recordState.tempoBpm || 120);
+    const barBeats = Math.max(1, Math.round((recordState.timeSignature && recordState.timeSignature.top) ? recordState.timeSignature.top : 4));
+    const windowMs = beatMs * 16;
+    const playheadMs = recordState.recording ? transportElapsedMs : recordState.playheadMs;
+    const viewStartMs = 0;
+    const viewEndMs = windowMs;
+    if(showNotes){
+      let beatIndex = Math.max(0, Math.floor(viewStartMs / beatMs));
+      for(let t=Math.floor(viewStartMs / beatMs) * beatMs; t<=viewEndMs; t+=beatMs){
+        const x = notesContentRect.x + ((t - viewStartMs) / windowMs) * notesContentRect.w;
+        const isBar = (beatIndex % barBeats) === 0;
+        ctx.strokeStyle = isBar ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.14)';
+        ctx.lineWidth = isBar ? 3 : 2;
+        ctx.beginPath();
+        ctx.moveTo(x, notesRect.y);
+        ctx.lineTo(x, notesRect.y + notesRect.h);
+        ctx.stroke();
+        if(isBar){
+          ctx.fillStyle = 'rgba(220, 230, 225, 0.8)';
+          ctx.font = `600 ${Math.max(10, Math.round(cellH * 0.35))}px "Source Sans 3", system-ui, sans-serif`;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+          const barNum = Math.floor((t / beatMs) / barBeats) + 1;
+          ctx.fillText(String(barNum), x + 4, notesRect.y + 4);
+        }
+        beatIndex++;
+      }
+      if(!isTrackView){
+        for(let n=minNote; n<=maxNote; n++){
+          const y = notesRect.y + notesRect.h - ((n - minNote + 1) / noteRange) * notesRect.h;
+          ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(notesRect.x, y);
+          ctx.lineTo(notesRect.x + notesRect.w, y);
+          ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+          ctx.beginPath();
+          ctx.moveTo(notesContentRect.x, y);
+          ctx.lineTo(notesContentRect.x + notesContentRect.w, y);
+          ctx.stroke();
+        }
+      }
+    }
+    const timeSig = recordState.timeSignature || { top: 4, bottom: 4 };
+    const beatsPerBar = Math.max(1, Math.round(timeSig.top || 4));
+    const targetRotation = (Math.PI * 2) / beatsPerBar;
+    const startAngle = -Math.PI / 2;
+    const tickAngles = [];
+    const subTickAngles = [];
+    for(let i=0; i<beatsPerBar; i++){
+      tickAngles.push(startAngle + (i * targetRotation));
+    }
+    const subStart = startAngle + (targetRotation / 2);
+    for(let i=0; i<beatsPerBar; i++){
+      subTickAngles.push(subStart + (i * targetRotation));
+    }
+    const clockSize = Math.min(notesContentRect.w, notesRect.h) * 0.52;
+    const clockX = notesContentRect.x + notesContentRect.w * 0.5;
+    const clockY = notesRect.y + notesRect.h * 0.5;
+    const drawClockLayer = (img, angleRad, alpha=1) => {
+      if(!img || !img.complete) return;
+      ctx.save();
+      ctx.translate(clockX, clockY);
+      if(angleRad) ctx.rotate(angleRad);
+      ctx.globalAlpha = alpha;
+      ctx.drawImage(img, -clockSize / 2, -clockSize / 2, clockSize, clockSize);
+      ctx.restore();
+    };
+    if(metronomeClockAssets.ready){
+      const barMs = beatMs * beatsPerBar;
+      let spinnerSourceMs = (recordState.recording || recordState.playing)
+        ? playheadMs
+        : (recordState.countIn ? countInElapsedMs : playheadMs);
+      if(recordState.countIn && !countInStarted){
+        const warmupLeft = Math.max(0, countInStartMs - countInNow);
+        spinnerSourceMs = barMs > 0 ? (barMs - (warmupLeft % barMs)) : 0;
+      }
+      const stepsPerBar = Math.max(1, beatsPerBar * 6);
+      const spinnerProgress = barMs > 0 ? ((spinnerSourceMs % barMs) / barMs) : 0;
+      const spinnerStep = Math.round(spinnerProgress * stepsPerBar);
+      const spinnerAngle = startAngle + (spinnerStep / stepsPerBar) * Math.PI * 2;
+      drawClockLayer(metronomeClockAssets.circle, 0, 0.75);
+      tickAngles.forEach((angle) => drawClockLayer(metronomeClockAssets.tick, angle, 0.9));
+      subTickAngles.forEach((angle) => drawClockLayer(metronomeClockAssets.subtick, angle, 0.65));
+      drawClockLayer(metronomeClockAssets.spinner, spinnerAngle, 0.95);
+    }
+    if(showNotes){
+      if(isTrackView && recordMode){
+        const anySolo = recordState.tracks.some((t)=>t.solo);
+        recordState.tracks.forEach((track, idx) => {
+          const laneTop = trackAreaY + idx * rowStride - recordState.trackScrollY;
+          const laneH = rowH;
+          if(laneTop + laneH < notesRect.y || laneTop > notesRect.y + notesRect.h) return;
+          ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(notesRect.x, laneTop);
+          ctx.lineTo(notesRect.x + notesRect.w, laneTop);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(notesRect.x, laneTop + laneH);
+          ctx.lineTo(notesRect.x + notesRect.w, laneTop + laneH);
+          ctx.stroke();
+          const dimLane = track.muted || (anySolo && !track.solo);
+          const alpha = dimLane ? 0.25 : 0.7;
+          const noteH = Math.max(4, Math.round(laneH * 0.45));
+          const noteY = laneTop + (laneH - noteH) / 2;
+          const spans = trackSpans.get(track.id) || [];
+          spans.forEach((span) => {
+            const rawStart = (span.startMs || 0);
+            const rawEnd = (span.endMs || 0);
+            if(rawEnd < viewStartMs || rawStart > viewEndMs) return;
+            const clampedStart = Math.max(viewStartMs, rawStart);
+            const clampedEnd = Math.min(viewEndMs, rawEnd);
+            const x0 = notesContentRect.x + ((clampedStart - viewStartMs) / windowMs) * notesContentRect.w;
+            const x1 = notesContentRect.x + ((clampedEnd - viewStartMs) / windowMs) * notesContentRect.w;
+            ctx.fillStyle = `rgba(90, 200, 130, ${alpha})`;
+            ctx.fillRect(x0, noteY, Math.max(1, x1 - x0), noteH);
+          });
+        });
+      } else {
+        const spans = (selected && trackSpans.get(selected.id)) ? trackSpans.get(selected.id) : [];
+        spans.forEach((span) => {
+          const n = span.note;
+          if(!Number.isFinite(n)) return;
+          const y = notesRect.y + notesRect.h - ((n - minNote + 1) / noteRange) * notesRect.h;
+          const rawStart = (span.startMs || 0);
+          const rawEnd = (span.endMs || 0);
+          if(rawEnd < viewStartMs || rawStart > viewEndMs) return;
+          const clampedStart = Math.max(viewStartMs, rawStart);
+          const clampedEnd = Math.min(viewEndMs, rawEnd);
+          const x0 = notesContentRect.x + ((clampedStart - viewStartMs) / windowMs) * notesContentRect.w;
+          const x1 = notesContentRect.x + ((clampedEnd - viewStartMs) / windowMs) * notesContentRect.w;
+          const h = Math.max(2, Math.round(notesRect.h / noteRange));
+          const isBlack = isBlackNoteByNumber(n);
+          ctx.fillStyle = isBlack ? 'rgba(220, 70, 70, 0.75)' : 'rgba(90, 200, 130, 0.65)';
+          ctx.fillRect(x0, y, Math.max(1, x1 - x0), h);
+        });
+      }
+      const clampedPlayhead = Math.max(viewStartMs, Math.min(viewEndMs, playheadMs));
+      const playheadX = notesContentRect.x + ((clampedPlayhead - viewStartMs) / windowMs) * notesContentRect.w;
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(2, Math.round(cellW * 0.08));
+      ctx.beginPath();
+      ctx.moveTo(playheadX, notesRect.y);
+      ctx.lineTo(playheadX, notesRect.y + notesRect.h);
+      ctx.stroke();
+      if(recordState.metronome.enabled && (recordState.recording || recordState.playing || recordState.countIn)){
+        const tickIndex = Math.floor(playheadMs / beatMs);
+        const tickIsBar = (tickIndex % barBeats) === 0;
+        const tickMs = tickIndex * beatMs;
+        const pulse = 0.5 + 0.5 * (1 - ((playheadMs % beatMs) / beatMs));
+        const tickX = notesContentRect.x + ((tickMs - viewStartMs) / windowMs) * notesContentRect.w;
+        ctx.save();
+        ctx.strokeStyle = tickIsBar ? `rgba(45, 220, 120, ${pulse})` : `rgba(45, 220, 120, ${pulse * 0.6})`;
+        ctx.lineWidth = tickIsBar ? 3 : 2;
+        ctx.beginPath();
+        ctx.moveTo(tickX, notesRect.y);
+        ctx.lineTo(tickX, notesRect.y + notesRect.h);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    if(window.DEBUG_METRO){
+      const beatDisplay = (recordState.metronomeBeatIndex || 0) % barBeats + 1;
+      const nextTick = Number.isFinite(recordState.metronomeNextTickSec)
+        ? recordState.metronomeNextTickSec.toFixed(3)
+        : 'n/a';
+      ctx.save();
+      ctx.fillStyle = 'rgba(220, 240, 230, 0.8)';
+      ctx.font = `600 ${Math.max(10, Math.round(cellH * 0.35))}px "Source Sans 3", system-ui, sans-serif`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`Beat ${beatDisplay} Next ${nextTick}`, notesContentRect.x + 6, notesContentRect.y + 6);
+      ctx.restore();
+    }
+    ctx.strokeStyle = recordPrimary;
+    ctx.lineWidth = Math.max(2, Math.round(cellW * 0.05));
+    ctx.beginPath();
+    ctx.moveTo(dividerX, notesRect.y);
+    ctx.lineTo(dividerX, notesRect.y + notesRect.h);
+    ctx.stroke();
+    const iconsBlockH = metroH + (iconH * 3) + keyH;
+    const blockTop = notesRect.y + Math.max(0, (notesRect.h - iconsBlockH) / 2);
+    const metroY = blockTop;
+    const dividerY = metroY + metroH;
+    const playY = dividerY + keyH;
+    const stopY = playY + iconH;
+    const recY = stopY + iconH;
+    ctx.save();
+    ctx.strokeStyle = recordPrimary;
+    ctx.lineWidth = Math.max(2, Math.round(cellW * 0.04));
+    ctx.beginPath();
+    ctx.moveTo(iconColX + iconPad * 0.5, dividerY);
+    ctx.lineTo(iconColX + iconColW - iconPad * 0.5, dividerY);
+    ctx.stroke();
+    ctx.restore();
+    const metroActive = !!recordState.metronome.enabled;
+    const metroColor = metroActive ? greenTertiary : hlTertiary;
+    const metroAlpha = metroActive ? 0.95 : 0.65;
+    const metroHover = topPadHoverUi && topPadHoverUi.type === 'record-metro';
+    if(metroHover){
+      ctx.save();
+      ctx.shadowColor = 'rgba(140, 200, 255, 0.85)';
+      ctx.shadowBlur = Math.max(6, Math.round(iconH * 0.25));
+      drawTintedIcon(ctx, metroActive ? metronomeOnImg : metronomeOffImg, iconColX + (iconColW - metroW) / 2, metroY + (metroH * 0.15), metroW, metroH * 0.7, metroColor, metroAlpha);
+      ctx.restore();
+    } else {
+      drawTintedIcon(ctx, metroActive ? metronomeOnImg : metronomeOffImg, iconColX + (iconColW - metroW) / 2, metroY + (metroH * 0.15), metroW, metroH * 0.7, metroColor, metroAlpha);
+    }
+    topPadUiRects.recordMetronome = { x: iconColX, y: metroY, w: iconColW, h: metroH };
+    const iconAlpha = 0.85;
+    const iconGreen = greenTertiary;
+    const iconSecondary = greenSecondary;
+    const recHover = topPadHoverUi && topPadHoverUi.type === 'record-ctrl' && topPadHoverUi.action === 'midirec';
+    const stopHover = topPadHoverUi && topPadHoverUi.type === 'record-ctrl' && topPadHoverUi.action === 'stop';
+    const playHover = topPadHoverUi && topPadHoverUi.type === 'record-ctrl' && topPadHoverUi.action === 'play';
+    ctx.save();
+    ctx.globalAlpha = iconAlpha;
+    ctx.beginPath();
+    ctx.arc(iconColX + iconColW / 2, recY + iconH / 2, iconH * 0.45, 0, Math.PI * 2);
+    ctx.fillStyle = recordState.recording ? hlTertiary : (recHover ? recordPrimary : recordSecondary);
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, Math.round(iconH * 0.08));
+    ctx.strokeStyle = recordState.recording ? hlTertiary : (recHover ? '#ffb3b3' : '#d87a7a');
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = iconAlpha;
+    if(stopHover){
+      ctx.shadowColor = 'rgba(140, 200, 255, 0.85)';
+      ctx.shadowBlur = Math.max(6, Math.round(iconH * 0.25));
+    }
+    ctx.fillStyle = (recordState.playing || recordState.recording) ? greenTertiary : hlTertiary;
+    const stopSize = iconH * 0.72;
+    ctx.fillRect(iconColX + (iconColW - stopSize) / 2, stopY + (iconH - stopSize) / 2, stopSize, stopSize);
+    ctx.restore();
+    ctx.save();
+    ctx.globalAlpha = iconAlpha;
+    if(playHover){
+      ctx.shadowColor = 'rgba(140, 200, 255, 0.85)';
+      ctx.shadowBlur = Math.max(6, Math.round(iconH * 0.25));
+    }
+    ctx.fillStyle = recordState.playing ? iconSecondary : iconGreen;
+    ctx.beginPath();
+    ctx.moveTo(iconColX + iconColW * 0.35, playY + iconH * 0.2);
+    ctx.lineTo(iconColX + iconColW * 0.7, playY + iconH * 0.5);
+    ctx.lineTo(iconColX + iconColW * 0.35, playY + iconH * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    topPadUiRects.recordControlButtons.push(
+      { action: 'play', rect: { x: iconColX, y: playY, w: iconColW, h: iconH } },
+      { action: 'stop', rect: { x: iconColX, y: stopY, w: iconColW, h: iconH } },
+      { action: 'midirec', rect: { x: iconColX, y: recY, w: iconColW, h: iconH } }
+    );
+    ctx.restore();
+  }
 
   // Middle section: thumbnail + info box
-  const infoRect = {
-    x: midRect.x,
-    y: cellH * 8,
-    w: midRect.w,
-    h: cellH * 4
-  };
-  const thumbBounds = {
-    x: cellW * 4,
-    y: cellH * 0.5,
-    w: (cellW * 8.5) - (cellW * 4),
-    h: (cellH * 7.5) - (cellH * 0.5)
-  };
-  const fitRectToAspect = (rect, aspect) => {
-    if(!rect || !rect.w || !rect.h || !aspect) return rect;
-    let w = rect.w;
-    let h = w / aspect;
-    if(h > rect.h){
-      h = rect.h;
-      w = h * aspect;
-    }
-    const x = rect.x + (rect.w - w) * 0.5;
-    const y = rect.y + (rect.h - h) * 0.5;
-    return { x, y, w, h };
-  };
-  topPadVideo.thumbRect = fitRectToAspect(thumbBounds, 16 / 9);
-  const infoInsetX = Math.max(8, Math.round(cellW * 0.2));
-  const infoInsetY = Math.max(6, Math.round(cellH * 0.2));
-  const infoBoxRect = {
-    x: infoRect.x + infoInsetX,
-    y: infoRect.y + infoInsetY,
-    w: Math.max(0, infoRect.w - infoInsetX * 2),
-    h: Math.max(0, infoRect.h - infoInsetY * 2)
-  };
-  topPadVideo.infoRect = infoBoxRect;
-  topPadVideo.videoRect = null;
-  topPadVideo.controlsRect = null;
+  let infoBoxRect = null;
+  if(!recordMode){
+    const infoRect = {
+      x: midRect.x,
+      y: cellH * 8,
+      w: midRect.w,
+      h: cellH * 4
+    };
+    const thumbBounds = {
+      x: cellW * 4,
+      y: cellH * 0.5,
+      w: (cellW * 8.5) - (cellW * 4),
+      h: (cellH * 7.5) - (cellH * 0.5)
+    };
+    const fitRectToAspect = (rect, aspect) => {
+      if(!rect || !rect.w || !rect.h || !aspect) return rect;
+      let w = rect.w;
+      let h = w / aspect;
+      if(h > rect.h){
+        h = rect.h;
+        w = h * aspect;
+      }
+      const x = rect.x + (rect.w - w) * 0.5;
+      const y = rect.y + (rect.h - h) * 0.5;
+      return { x, y, w, h };
+    };
+    topPadVideo.thumbRect = fitRectToAspect(thumbBounds, 16 / 9);
+    const infoInsetX = Math.max(8, Math.round(cellW * 0.2));
+    const infoInsetY = Math.max(6, Math.round(cellH * 0.2));
+    infoBoxRect = {
+      x: infoRect.x + infoInsetX,
+      y: infoRect.y + infoInsetY,
+      w: Math.max(0, infoRect.w - infoInsetX * 2),
+      h: Math.max(0, infoRect.h - infoInsetY * 2)
+    };
+    topPadVideo.infoRect = infoBoxRect;
+    topPadVideo.videoRect = null;
+    topPadVideo.controlsRect = null;
+  } else {
+    topPadVideo.thumbRect = null;
+    topPadVideo.infoRect = null;
+    topPadVideo.videoRect = null;
+    topPadVideo.controlsRect = null;
+  }
 
   const drawImageCover = (img, rect) => {
     if(!img || !rect || !rect.w || !rect.h) return;
@@ -4944,7 +7602,7 @@ function renderTopPadGrid(){
     ctx.closePath();
   };
 
-  if(trackVideo.active && trackVideo.hqVideo){
+  if(!recordMode && trackVideo.active && trackVideo.hqVideo){
     const videoEl = trackVideo.hqVideo;
     const midDivision = { x: leftW, y: 0, w: midW, h: H };
     const insetX = Math.max(2, Math.round(cellW * 0.06));
@@ -4990,7 +7648,7 @@ function renderTopPadGrid(){
       trackVideo.ui.draw(trackVideo.uiCtx, { alpha: 1 });
       ctx.drawImage(trackVideo.uiCanvas, viewRect.x, viewRect.y, viewRect.w, viewRect.h);
     }
-  } else if(topPadVideo.mode === 'idle'){
+  } else if(!recordMode && topPadVideo.mode === 'idle'){
     if(topPadVideo.thumbImg && topPadVideo.thumbImg.complete && topPadVideo.thumbImg.naturalWidth){
       drawImageCover(topPadVideo.thumbImg, topPadVideo.thumbRect);
     } else {
@@ -5003,7 +7661,7 @@ function renderTopPadGrid(){
 
   }
 
-  if(topPadVideo.mode !== 'idle' && !trackVideo.active){
+  if(!recordMode && topPadVideo.mode !== 'idle' && !trackVideo.active){
     const videoEl = topPadVideo.mode === 'playing' ? topPadVideo.hqVideo : topPadVideo.lqVideo;
     if(videoEl && videoEl.readyState >= 2){
       if(topPadVideo.mode === 'playing'){
@@ -5085,7 +7743,7 @@ function renderTopPadGrid(){
       }
     }
   }
-  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing' && !trackVideo.active){
+  if(!recordMode && topPadVideo.infoRect && topPadVideo.mode !== 'playing' && !trackVideo.active){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     drawRoundedRect(infoBoxRect, Math.min(14, infoBoxRect.h * 0.18));
     ctx.fill();
@@ -5137,7 +7795,38 @@ function renderTopPadGrid(){
       }
     }
   }
-  topPadTexture.needsUpdate = true;
+  if(historyOverlay){
+    const h = historyOverlay;
+    ctx.save();
+    ctx.fillStyle = '#123548';
+    ctx.strokeStyle = '#59d6ff';
+    ctx.lineWidth = 2;
+    ctx.fillRect(h.historyX, h.historyY, h.panelW, h.panelH);
+    ctx.strokeRect(h.historyX + 0.5, h.historyY + 0.5, h.panelW - 1, h.panelH - 1);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(h.historyX, h.historyY, h.panelW, h.panelH);
+    ctx.clip();
+    ctx.fillStyle = '#f2fffb';
+    ctx.font = `600 ${h.fontSize}px "Source Sans 3", system-ui, sans-serif`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    h.entries.forEach((entry, entryIdx) => {
+      const y = h.historyY + h.rowEntryH * (h.rowOffset + entryIdx + 0.5);
+      ctx.fillText(String(entry || '').slice(0, 25), h.historyX + h.padX, y);
+    });
+    ctx.restore();
+    if(h.maxScroll > 0){
+      ctx.fillStyle = '#1a5268';
+      ctx.fillRect(h.historyX + h.panelW - h.scrollbarW + 2, h.trackY, h.scrollbarW - 4, h.trackH);
+      ctx.fillStyle = '#9ff2ff';
+      ctx.fillRect(h.historyX + h.panelW - h.scrollbarW + 3, h.thumbY, h.scrollbarW - 6, h.thumbH);
+    }
+    ctx.restore();
+  }
+  if(!topPadOverlayMode){
+    topPadTexture.needsUpdate = true;
+  }
 }
 
 function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
@@ -6055,6 +8744,12 @@ function isBlackKey(mesh){
 }
 function animate(){
   requestAnimationFrame(animate);
+  if(topPadOverlayMode){
+    if(controls){
+      controls.update();
+    }
+    return;
+  }
   controls.update();
   const dt = clock.getDelta();
   updateTopPadZoom();
@@ -6220,6 +8915,7 @@ loader.load(`${assetUrl('glb/toy-piano.glb')}?${MODEL_VERSION}`,
             if(typeof m.emissiveIntensity === 'number') m.emissiveIntensity = 1.0;
             m.needsUpdate = true;
           });
+          applyTopPadMeshOverlayState();
           remapTextureToUvBounds(topPadMesh, topPadTexture);
         }catch(e){ console.warn('Top pad init failed', e); }
       }
@@ -9623,16 +12319,10 @@ function onGlobalPointerMove(e){
     return;
   }
   if(topPadSyncDragging){
-    if(topPadMesh && topPadCanvas && topPadUiRects && topPadUiRects.syncSlider){
-      const uv = raycastTopPadForUv(e.clientX, e.clientY);
-      if(uv){
-        let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
-        let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
-        if(topPadUvRemap.swap){ const tmp = u; u = v; v = tmp; }
-        if(topPadUvRemap.mirrorU) u = 1 - u;
-        if(topPadUvRemap.mirrorV) v = 1 - v;
-        const px = Math.max(0, Math.min(1, u)) * topPadCanvas.width;
-        setTopPadSyncOffsetFromPx(px, topPadUiRects.syncSlider);
+    if(topPadCanvas && topPadUiRects && topPadUiRects.syncSlider){
+      const pt = getTopPadPointerPx(e.clientX, e.clientY);
+      if(pt){
+        setTopPadSyncOffsetFromPx(pt.px, topPadUiRects.syncSlider);
       }
     }
     e.preventDefault();
@@ -9994,6 +12684,7 @@ const NoteEngine = {
     const route = resolveInstrumentNoteRoute(midi, config);
     const routeKey = getNoteRouteKey(side, midi);
     if(!route) return;
+    recordNoteEvent('on', midi, 1, side);
     const isStub = !!(config && config.stub);
     const hasBound = !!(side && instrumentPlayersBySide[side] && instrumentPlayersBySide[side].player) || !!instrumentPlayer;
     if(config && config.mono && side){
@@ -10065,6 +12756,7 @@ const NoteEngine = {
     const midi = Number(midiNum);
     if(Number.isNaN(midi)) return;
     const side = getInstrumentSideForNote(midi);
+    recordNoteEvent('off', midi, 0, side);
     const routeKey = getNoteRouteKey(side, midi);
     let route = null;
     if(noteRoutingByInput.has(routeKey)){
@@ -10114,10 +12806,51 @@ const NoteEngine = {
   }
 };
 
+configureRecordingEngine({
+  getNowMs: getRecordNowMs,
+  getAudioTimeSec: () => (audioCtx ? audioCtx.currentTime : 0),
+  render: renderTopPadGrid,
+  getInstrumentSnapshotForSide,
+  noteOn: (note)=>{
+    if(recordState.recordMode && recordState.silentMode){
+      try{ const mesh = midiKeyMap.get(Number(note)); if(mesh) applyKeyGlow(mesh, Number(note), true); }catch(e){}
+      return;
+    }
+    NoteEngine.noteOn(note);
+  },
+  noteOff: (note)=>{
+    if(recordState.recordMode && recordState.silentMode){
+      try{ const mesh = midiKeyMap.get(Number(note)); if(mesh) applyKeyGlow(mesh, Number(note), false); }catch(e){}
+      return;
+    }
+    NoteEngine.noteOff(note);
+  },
+  panic: () => NoteEngine.panic(),
+  clampRange,
+  getDualMode: () => dualInstrumentMode,
+  playMetronomeClick
+});
+
 function onGlobalPointerUp(e){
   if(topPadSyncDragging){
     topPadSyncDragging = false;
     topPadSyncPointerId = null;
+    return;
+  }
+  if(trackValueDragState){
+    const drag = trackValueDragState;
+    trackValueDragState = null;
+    if(!drag.moved && drag.trackId && drag.type){
+      const track = recordState.tracks.find((t)=>t.id === drag.trackId);
+      if(track){
+        const valueText = drag.type === 'vol'
+          ? String(Math.round((Number.isFinite(track.volume) ? track.volume : 0.5) * 100))
+          : String(Math.round(Number.isFinite(track.syncMs) ? track.syncMs : 0));
+        startTrackValueEdit(drag.trackId, drag.type, valueText);
+      }
+    }
+    const cursorCanvas = getTopPadCursorCanvas();
+    if(cursorCanvas) cursorCanvas.style.cursor = '';
     return;
   }
   if(!pointerDownInfo) return;
@@ -10187,23 +12920,124 @@ function findKeyFromObject(obj){
 let suppressRotate = false;
 function onPointerDown(e){
   if(e.button === 2) return;
+  const overlayEvent = !!(topPadOverlayMode && twoDimCanvas && e && e.currentTarget === twoDimCanvas);
   // Top pad UI hit test (track icons + play + speed buttons)
   try{
-    if(topPadMesh && topPadCanvas && topPadUiRects){
-      const uv = raycastTopPadForUv(e.clientX, e.clientY);
-      if(uv){
-        let u = (uv.x * topPadUvRemap.repeatU) + topPadUvRemap.offsetU;
-        let v = (uv.y * topPadUvRemap.repeatV) + topPadUvRemap.offsetV;
-        if(topPadUvRemap.swap){ const tmp = u; u = v; v = tmp; }
-        if(topPadUvRemap.mirrorU) u = 1 - u;
-        if(topPadUvRemap.mirrorV) v = 1 - v;
-        const px = Math.max(0, Math.min(1, u)) * topPadCanvas.width;
-        const py = Math.max(0, Math.min(1, v)) * topPadCanvas.height;
+    if(topPadCanvas && topPadUiRects){
+      const pt = getTopPadPointerPx(e.clientX, e.clientY);
+      if(pt){
+        const px = pt.px;
+        const py = pt.py;
         let handled = false;
+        if(trackValueEditState.active && topPadUiRects.trackParamButtons && topPadUiRects.trackParamButtons.length){
+          const activeType = trackValueEditState.type === 'vol' ? 'track-vol' : 'track-sync';
+          const activeRect = topPadUiRects.trackParamButtons.find((btn)=> btn.trackId === trackValueEditState.trackId && btn.type === activeType);
+          const hitActive = activeRect
+            && px >= activeRect.rect.x && px <= activeRect.rect.x + activeRect.rect.w
+            && py >= activeRect.rect.y && py <= activeRect.rect.y + activeRect.rect.h;
+          if(!hitActive){
+            stopTrackValueEdit({ commit: false });
+          }
+        }
+        if(!handled && recordState.deleteConfirmTrackId && topPadUiRects.deleteConfirm){
+          const { yesRect, noRect, transferUpRect, transferDownRect } = topPadUiRects.deleteConfirm;
+          if(px >= yesRect.x && px <= yesRect.x + yesRect.w && py >= yesRect.y && py <= yesRect.y + yesRect.h){
+            const tid = recordState.deleteConfirmTrackId;
+            recordState.deleteConfirmTrackId = null;
+            const trackIndex = recordState.tracks.findIndex((t)=>t.id === tid);
+            const track = recordState.tracks[trackIndex] || null;
+            const transferName = track ? getTrackDisplayLabel(track) : '';
+            if(transferName){
+              if(recordState.deleteConfirmTransferUp && trackIndex > 0){
+                const upTrack = recordState.tracks[trackIndex - 1];
+                if(upTrack){
+                  upTrack.customName = transferName;
+                  updateTrackNameHistory(transferName);
+                }
+              }
+              if(recordState.deleteConfirmTransferDown && trackIndex < recordState.tracks.length - 1){
+                const downTrack = recordState.tracks[trackIndex + 1];
+                if(downTrack){
+                  downTrack.customName = transferName;
+                  updateTrackNameHistory(transferName);
+                }
+              }
+            }
+            recordState.deleteConfirmTransferUp = false;
+            recordState.deleteConfirmTransferDown = false;
+            deleteRecordTrack(tid);
+            renderTopPadGrid();
+            handled = true;
+          } else if(px >= noRect.x && px <= noRect.x + noRect.w && py >= noRect.y && py <= noRect.y + noRect.h){
+            recordState.deleteConfirmTrackId = null;
+            recordState.deleteConfirmTransferUp = false;
+            recordState.deleteConfirmTransferDown = false;
+            renderTopPadGrid();
+            handled = true;
+          } else if(transferUpRect && px >= transferUpRect.x && px <= transferUpRect.x + transferUpRect.w && py >= transferUpRect.y && py <= transferUpRect.y + transferUpRect.h){
+            recordState.deleteConfirmTransferUp = !recordState.deleteConfirmTransferUp;
+            renderTopPadGrid();
+            handled = true;
+          } else if(transferDownRect && px >= transferDownRect.x && px <= transferDownRect.x + transferDownRect.w && py >= transferDownRect.y && py <= transferDownRect.y + transferDownRect.h){
+            recordState.deleteConfirmTransferDown = !recordState.deleteConfirmTransferDown;
+            renderTopPadGrid();
+            handled = true;
+          } else {
+            handled = true;
+          }
+        }
+        if(!handled && recordState.recordTab === 'tracks' && trackRenameState.active && topPadUiRects.trackNameHistoryRects && topPadUiRects.trackNameHistoryRects.length){
+          const historyRect = topPadUiRects.trackNameHistoryRects.find((entry)=> px >= entry.rect.x && px <= entry.rect.x + entry.rect.w && py >= entry.rect.y && py <= entry.rect.y + entry.rect.h);
+          if(historyRect && historyRect.entries && historyRect.entries.length){
+            const rowIdx = Math.floor((py - historyRect.rect.y) / Math.max(1, historyRect.rowEntryH || 1));
+            const offset = Number.isFinite(historyRect.rowOffset) ? historyRect.rowOffset : 0;
+            const entry = historyRect.entries[Math.max(0, Math.min(historyRect.entries.length - 1, rowIdx - offset))];
+            if(typeof entry === 'string' && entry.trim()){
+              trackRenameState.text = entry.slice(0, 25);
+              trackRenameState.lastInputMs = performance.now();
+              setTrackSelection(0, trackRenameState.text.length);
+              trackRenameState.historyScrollAuto = false;
+              renderTopPadGrid();
+            }
+            handled = true;
+          }
+        }
+        if(!handled && trackRenameState.active){
+          let hitRename = null;
+          if(topPadUiRects.trackNameRects && topPadUiRects.trackNameRects.length){
+            hitRename = topPadUiRects.trackNameRects.find((entry)=> px >= entry.rect.x && px <= entry.rect.x + entry.rect.w && py >= entry.rect.y && py <= entry.rect.y + entry.rect.h);
+          }
+          if(hitRename){
+            const track = recordState.tracks.find((t)=>t.id === hitRename.trackId);
+            const label = track ? getTrackDisplayLabel(track) : '';
+            stopTrackRename({ commit: true });
+            startTrackRename(hitRename.trackId, label || (track ? track.name : ''));
+            handled = true;
+          } else {
+            stopTrackRename({ commit: true });
+          }
+        }
+        if(!handled && topPadUiRects.trackNameRects && topPadUiRects.trackNameRects.length){
+          const hitName = topPadUiRects.trackNameRects.find((entry)=> px >= entry.rect.x && px <= entry.rect.x + entry.rect.w && py >= entry.rect.y && py <= entry.rect.y + entry.rect.h);
+          if(hitName){
+            const track = recordState.tracks.find((t)=>t.id === hitName.trackId);
+            const label = track ? getTrackDisplayLabel(track) : '';
+            startTrackRename(hitName.trackId, label || (track ? track.name : ''));
+            handled = true;
+          }
+        }
         if(topPadUiRects.gridToggle){
           const r = topPadUiRects.gridToggle;
           if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
             showTopPadGrid = !showTopPadGrid;
+            renderTopPadGrid();
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.rightGridToggle){
+          const r = topPadUiRects.rightGridToggle;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            showRightButtonGrid = !showRightButtonGrid;
             renderTopPadGrid();
             handled = true;
           }
@@ -10216,7 +13050,19 @@ function onPointerDown(e){
             handled = true;
           }
         }
-        if(topPadUiRects.trackCircles && topPadUiRects.trackCircles.length){
+        if(!handled && recordState.recordMode && topPadUiRects.recordTabs && topPadUiRects.recordTabs.length){
+          for(let i=0;i<topPadUiRects.recordTabs.length;i++){
+            const tab = topPadUiRects.recordTabs[i];
+            const r = tab.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              setRecordPanelTab(tab.tab);
+              renderTopPadGrid();
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.trackCircles && topPadUiRects.trackCircles.length){
           const trackKeys = ['baby', 'raisins', 'forests'];
           for(let i=0;i<topPadUiRects.trackCircles.length;i++){
             const c = topPadUiRects.trackCircles[i];
@@ -10225,6 +13071,120 @@ function onPointerDown(e){
             if((dx * dx + dy * dy) <= (c.r * c.r)){
               const key = trackKeys[i] || null;
               if(key) selectTrack(key);
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.trackButtons && topPadUiRects.trackButtons.length){
+          for(let i=0;i<topPadUiRects.trackButtons.length;i++){
+            const btn = topPadUiRects.trackButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            if(btn.type === 'record'){
+                startRecordCountIn();
+            } else if(btn.type === 'play'){
+                playRecordPlayback();
+            } else {
+              if(recordState.countIn) cancelRecordCountIn();
+              if(recordState.recording) stopRecordingSession();
+              else stopRecordPlayback();
+            }
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.trackParamButtons && topPadUiRects.trackParamButtons.length){
+          for(let i=0;i<topPadUiRects.trackParamButtons.length;i++){
+            const btn = topPadUiRects.trackParamButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              const track = recordState.tracks.find((t)=>t.id === btn.trackId);
+              if(track){
+                if(trackValueEditState.active) stopTrackValueEdit({ commit: true });
+                trackValueDragState = {
+                  trackId: btn.trackId,
+                  type: btn.type === 'track-vol' ? 'vol' : 'sync',
+                  startX: e.clientX,
+                  startY: e.clientY,
+                  startValue: btn.type === 'track-vol'
+                    ? (Number.isFinite(track.volume) ? track.volume : 0.5)
+                    : (Number.isFinite(track.syncMs) ? track.syncMs : 0),
+                  moved: false,
+                  pointerId: e.pointerId
+                };
+                const cursorCanvas = getTopPadCursorCanvas();
+                if(cursorCanvas) cursorCanvas.style.cursor = 'grabbing';
+                try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+              }
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.trackRowButtons && topPadUiRects.trackRowButtons.length){
+          for(let i=0;i<topPadUiRects.trackRowButtons.length;i++){
+            const btn = topPadUiRects.trackRowButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              if(btn.type === 'trackrec') setTrackRecordEnabled(btn.trackId);
+              if(btn.type === 'mute') toggleTrackMute(btn.trackId);
+              if(btn.type === 'solo') toggleTrackSolo(btn.trackId);
+              if(btn.type === 'delete'){
+                recordState.deleteConfirmTrackId = btn.trackId;
+                recordState.deleteConfirmTransferUp = false;
+                recordState.deleteConfirmTransferDown = false;
+                renderTopPadGrid();
+              }
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.trackAddRect){
+          const r = topPadUiRects.trackAddRect;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            addRecordTrack();
+            recordState.trackScrollToBottom = true;
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.trackRows && topPadUiRects.trackRows.length){
+          for(let i=0;i<topPadUiRects.trackRows.length;i++){
+            const row = topPadUiRects.trackRows[i];
+            const r = row.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              selectRecordTrack(row.trackId);
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.actionButtons && topPadUiRects.actionButtons.length){
+          for(let i=0;i<topPadUiRects.actionButtons.length;i++){
+            const btn = topPadUiRects.actionButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              const selected = getSelectedRecordTrack();
+              const tid = selected ? selected.id : null;
+              if(btn.actionId === 'add') addRecordTrack();
+              if(btn.actionId === 'del' && tid){
+                recordState.deleteConfirmTrackId = tid;
+                recordState.deleteConfirmTransferUp = false;
+                recordState.deleteConfirmTransferDown = false;
+                renderTopPadGrid();
+              }
+              if(btn.actionId === 'undo') undeleteRecordTrack();
+              if(btn.actionId === 'dup' && tid) duplicateRecordTrack(tid);
+              if(btn.actionId === 'swap' && tid) swapTrackInstrument(tid);
+              if(btn.actionId === 'rev' && tid) reverseRecordTrack(tid);
+              if(btn.actionId === 'trn-up' && tid) transposeRecordTrack(tid, 12);
+              if(btn.actionId === 'trn-down' && tid) transposeRecordTrack(tid, -12);
+              if(btn.actionId === 'vol-up' && tid) adjustTrackVolume(tid, 0.1);
+              if(btn.actionId === 'vol-down' && tid) adjustTrackVolume(tid, -0.1);
+              if(btn.actionId === 'sync-up' && tid) adjustTrackSync(tid, 25);
+              if(btn.actionId === 'sync-down' && tid) adjustTrackSync(tid, -25);
               handled = true;
               break;
             }
@@ -10259,6 +13219,95 @@ function onPointerDown(e){
             topPadSyncDragging = true;
             topPadSyncPointerId = e.pointerId;
             setTopPadSyncOffsetFromPx(px, r);
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.meterButtons && topPadUiRects.meterButtons.length){
+          for(let i=0;i<topPadUiRects.meterButtons.length;i++){
+            const btn = topPadUiRects.meterButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              if(btn.meterId === 'tempo-down') setRecordTempo(-5);
+              if(btn.meterId === 'tempo-up') setRecordTempo(5);
+              if(btn.meterId === 'tempo-mode') toggleTempoMode();
+              if(btn.meterId === 'silent') toggleSilentMode();
+              if(btn.meterId === 'lead') toggleLeadIn();
+              if(btn.meterId === 'ts-top') toggleTimeSignatureTop();
+              if(btn.meterId === 'ts-bottom') toggleTimeSignatureBottom();
+              if(btn.meterId === 'master-down') adjustMasterVolume(-0.1);
+              if(btn.meterId === 'master-up') adjustMasterVolume(0.1);
+              if(btn.meterId === 'monitor') toggleMonitorDuringRecord();
+              if(btn.meterId === 'ui-mode') setTopPadOverlayMode(!topPadOverlayMode);
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && topPadUiRects.collapseButtons && topPadUiRects.collapseButtons.length){
+          const btn = topPadUiRects.collapseButtons.find((entry)=> px >= entry.rect.x && px <= entry.rect.x + entry.rect.w && py >= entry.rect.y && py <= entry.rect.y + entry.rect.h);
+          if(btn){
+            recordState.rightPanelCollapsed = !recordState.rightPanelCollapsed;
+            renderTopPadGrid();
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.recordButton){
+          const c = topPadUiRects.recordButton;
+          let hit = false;
+          if(c && c.isSquare){
+            hit = px >= c.x && px <= c.x + c.w && py >= c.y && py <= c.y + c.h;
+          } else if(c && Number.isFinite(c.r)){
+            const dx = px - c.x;
+            const dy = py - c.y;
+            hit = (dx * dx + dy * dy) <= (c.r * c.r);
+          }
+          if(hit){
+            if(recordState.recordMode){
+              exitRecordMode();
+            } else {
+              enterRecordMode();
+            }
+            handled = true;
+          }
+        }
+        if(!handled && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects.recordMetronome){
+          const r = topPadUiRects.recordMetronome;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            toggleMetronome();
+            renderTopPadGrid();
+            handled = true;
+          }
+        }
+        if(!handled && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects.recordControlButtons && topPadUiRects.recordControlButtons.length){
+          for(let i=0;i<topPadUiRects.recordControlButtons.length;i++){
+            const btn = topPadUiRects.recordControlButtons[i];
+            const r = btn.rect;
+            if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+              if(btn.action === 'midirec') startRecordCountIn();
+              if(btn.action === 'stop'){
+                if(recordState.countIn) cancelRecordCountIn();
+                if(recordState.recording) stopRecordingSession();
+                else stopRecordPlayback();
+              }
+              if(btn.action === 'play'){
+                if(recordState.playing) stopRecordPlayback();
+                else playRecordPlayback();
+              }
+              handled = true;
+              break;
+            }
+          }
+        }
+        if(!handled && (recordState.recordMode || recordState.recording || recordState.countIn) && topPadUiRects.recordMidRect){
+          const r = topPadUiRects.recordMidRect;
+          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+            const ratio = (px - r.x) / Math.max(1, r.w);
+            const selected = getSelectedRecordTrack();
+            const spans = selected ? buildRecordNoteSpans(selected) : [];
+            const maxTime = spans.reduce((m, s)=> Math.max(m, s.endMs || 0), 0);
+            const safeMax = Math.max(1000, maxTime);
+            recordState.playheadMs = Math.max(0, Math.min(safeMax, ratio * safeMax));
+            renderTopPadGrid();
             handled = true;
           }
         }
@@ -10313,13 +13362,18 @@ function onPointerDown(e){
         }
         if(handled){
           updateTopPadHover(e.clientX, e.clientY);
-          try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+          const captureTarget = overlayEvent ? e.currentTarget : canvas;
+          try{ if(typeof e.pointerId !== 'undefined' && captureTarget) captureTarget.setPointerCapture(e.pointerId); }catch(err){}
           e.preventDefault();
           return;
         }
       }
     }
   }catch(err){ /* ignore top pad UI hit errors */ }
+  if(overlayEvent){
+    e.preventDefault();
+    return;
+  }
   // Ignore right-clicks
   if(e.button === 2) return;
   // Check backboard instrument UI first
@@ -10419,6 +13473,30 @@ function onPointerDown(e){
     e.preventDefault();
     return;
   }
+  if(trackValueDragState){
+    const drag = trackValueDragState;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    const delta = dx - dy;
+    if(!drag.moved && Math.abs(delta) > 4){
+      drag.moved = true;
+    }
+    if(drag.trackId){
+      const track = recordState.tracks.find((t)=>t.id === drag.trackId);
+      if(track){
+        if(drag.type === 'vol'){
+          const next = clampRange(drag.startValue + delta * 0.003, 0, 1);
+          track.volume = next;
+        } else if(drag.type === 'sync'){
+          const next = clampRange(drag.startValue + delta * 3, -5000, 5000);
+          track.syncMs = next;
+        }
+        renderTopPadGrid();
+      }
+    }
+    e.preventDefault();
+    return;
+  }
   // If we hit the backboard plane but not UI (e.g., empty space), still suppress rotate like keys
   if(uiUv){
     backboardPointerDown = true;
@@ -10470,8 +13548,11 @@ function onPointerDown(e){
 function onPointerUp(){
   // Release pointer capture if we had one
   const pid = pointerDownInfo && pointerDownInfo.pointerId;
+  const trackValuePid = trackValueDragState && trackValueDragState.pointerId;
   onGlobalPointerUp();
   try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+  const captureCanvas = getTopPadCursorCanvas();
+  try{ if(trackValuePid !== undefined && trackValuePid !== null && captureCanvas) captureCanvas.releasePointerCapture(trackValuePid); }catch(err){}
   if(topPadSyncPointerId !== null && topPadSyncPointerId !== undefined){
     try{ canvas.releasePointerCapture(topPadSyncPointerId); }catch(err){}
     topPadSyncPointerId = null;
@@ -10501,8 +13582,58 @@ window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
 canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
 canvas.addEventListener('pointermove', (e)=>updateTopPadHover(e.clientX, e.clientY));
+function handleTopPadWheel(e){
+  if(!recordState.recordMode || !topPadCanvas) return;
+  const pt = getTopPadPointerPx(e.clientX, e.clientY);
+  if(!pt) return;
+  const px = pt.px;
+  const py = pt.py;
+  if(recordState.recordTab === 'tracks' && topPadUiRects.trackNameHistoryRects && topPadUiRects.trackNameHistoryRects.length){
+    const historyRect = topPadUiRects.trackNameHistoryRects.find((entry)=> px >= entry.rect.x && px <= entry.rect.x + entry.rect.w && py >= entry.rect.y && py <= entry.rect.y + entry.rect.h);
+    const history = recordState.trackNameHistory || [];
+    const visibleCount = Math.min(10, history.length);
+    const maxScroll = Math.max(0, history.length - visibleCount);
+    if(historyRect && maxScroll > 0){
+      const delta = e.deltaY || 0;
+      const step = delta === 0 ? 0 : (delta > 0 ? 1 : -1);
+      if(step !== 0){
+        trackRenameState.historyScrollAuto = false;
+        recordState.trackNameHistoryScroll = clampRange((recordState.trackNameHistoryScroll || 0) + step, 0, maxScroll);
+        renderTopPadGrid();
+      }
+      e.preventDefault();
+      return;
+    }
+  }
+  if(recordState.recordTab === 'tracks' && topPadUiRects.trackListRect){
+    const r = topPadUiRects.trackListRect;
+    if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+      const delta = e.deltaY || 0;
+      const next = clampRange((recordState.trackScrollY || 0) + delta, 0, recordState.trackScrollMax || 0);
+      if(next !== recordState.trackScrollY){
+        recordState.trackScrollY = next;
+        renderTopPadGrid();
+      }
+      e.preventDefault();
+      return;
+    }
+  }
+  if(recordState.recordTab === 'piano' && topPadUiRects.pianoRollRect){
+    const r = topPadUiRects.pianoRollRect;
+    if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
+      const delta = e.deltaY || 0;
+      const step = delta === 0 ? 0 : (delta > 0 ? -1 : 1);
+      if(step !== 0){
+        recordState.pianoRollOffset = (recordState.pianoRollOffset || 0) + step;
+        renderTopPadGrid();
+      }
+      e.preventDefault();
+    }
+  }
+}
+canvas.addEventListener('wheel', (e)=>handleTopPadWheel(e), { passive: false });
 // Keep pointer-down glissando active even if cursor leaves the canvas
-canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
+canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } trackRenameState.hover = false; if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(topPadHoverLock) setTopPadHoverLock(false); if(canvas) canvas.style.cursor = ''; });
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
@@ -10599,6 +13730,22 @@ const CODE_TO_MIDI = new Map(Object.entries({
   // Top accidentals (skip where no black key exists)
   "Digit2":66, "Digit3":68, "Digit4":70, "Digit6":73, "Digit7":75, "Digit9":78, "Digit0":80, "Minus":82
 }));
+function getQwertyNoteRange(){
+  const notes = [];
+  CODE_TO_MIDI.forEach((midi) => {
+    if(Number.isFinite(midi)) notes.push(Number(midi));
+  });
+  if(!notes.length) return { min: 48, max: 84 };
+  return { min: Math.min(...notes), max: Math.max(...notes) };
+}
+function getPianoRollRange(){
+  const baseRange = getQwertyNoteRange();
+  const maxOffsetUp = 108 - baseRange.max;
+  const maxOffsetDown = 21 - baseRange.min;
+  const offset = clampRange(recordState.pianoRollOffset || 0, maxOffsetDown, maxOffsetUp);
+  recordState.pianoRollOffset = offset;
+  return { min: baseRange.min + offset, max: baseRange.max + offset };
+}
 const QWERTY_LOWER_WHITE_CODES = ["KeyZ","KeyX","KeyC","KeyV","KeyB","KeyN","KeyM","Comma","Period","Slash"];
 const QWERTY_LOWER_BLACK_CODES = [
   "KeyS", "KeyD", "KeyF", "KeyG", "KeyH", "KeyJ", "KeyK", "KeyL", "Semicolon", "Quote"
@@ -10994,11 +14141,17 @@ function noteOn(midi){
     const mesh = midiKeyMap.get(Number(midi));
     // Visual feedback: apply glow for keyboard-triggered notes
     if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch(e){}
+    if(recordState.recordMode && recordState.silentMode) return;
     withInstrumentForSide(side, ()=> NoteEngine.noteOn(Number(midi), mesh));
   }catch(e){ console.warn('noteOn failed', e); }
 }
 function noteOff(midi){
-  try{ NoteEngine.noteOff(Number(midi)); }catch(e){ console.warn('noteOff failed', e); }
+  try{
+    const mesh = midiKeyMap.get(Number(midi));
+    if(mesh) try{ applyKeyGlow(mesh, Number(midi), false); }catch(e){}
+    if(recordState.recordMode && recordState.silentMode) return;
+    NoteEngine.noteOff(Number(midi));
+  }catch(e){ console.warn('noteOff failed', e); }
 }
 
 function sustainPedalDown(){
@@ -11037,6 +14190,28 @@ function sustainPedalUp(){
 }
 
 function handleKeyDown(ev){
+  if(trackValueEditState.active){
+    const handled = handleTrackValueKey(ev);
+    if(handled){
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
+  if(trackRenameState.active){
+    const handled = handleTrackRenameKey(ev);
+    if(handled){
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
   // Allow modifier shortcuts to pass through
   if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
   const code = ev.code;
@@ -11095,6 +14270,16 @@ function handleKeyDown(ev){
 }
 
 function handleKeyUp(ev){
+  if(trackValueEditState.active){
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
+  if(trackRenameState.active){
+    ev.preventDefault();
+    ev.stopPropagation();
+    return;
+  }
   const code = ev.code;
   if(code === 'Space'){
     ev.preventDefault();

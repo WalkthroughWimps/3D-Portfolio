@@ -1,411 +1,595 @@
-// Tablet screen overlay for the music page (piano tablet)
-// Creates a canvas texture on the `pe'rPad_screen` mesh and
-// draws a sheet-music style UI with a yellow frame and controls.
 
-import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+// Recording engine for the music page.
+// Moved from music-piano-controls.v2.js to keep recording logic isolated.
 
-// Palette shared with piano scene: yellow frame + white-key glow green
-const PALETTE = {
-  bg: '#050913',          // tablet background
-  frame: '#ffd54f',       // yellow frame
-  staffLines: '#f5f5f5',  // light staff lines
-  staffBars: '#e0e0e0',   // bar lines / beat ticks
-  text: '#f5f5f5',
-  panelBg: '#060a12',
-  panelBorder: '#ffd54f',
-  // Match GlowMaterials['keys_white_glow'].color (0x17FF1C)
-  accentGreen: '#17ff1c'
+const DEFAULT_CLAMP = (value, min, max) => {
+  if(!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
 };
 
-// Layout helper: computes content rect, panel area, staff areas, bars and beats
-function computeLayout(CW, CH, margin, opts = {}) {
-  const bars = opts.bars || 4;
-  const beatsPerBar = opts.beatsPerBar || 4;
-
-  const contentRect = {
-    x: margin,
-    y: margin,
-    w: CW - margin * 2,
-    h: CH - margin * 2
+function createRecordingEngine(){
+  const state = {
+    tracks: [],
+    deleted: [],
+    maxDeleted: 6,
+    recording: false,
+    recordMode: false,
+    countIn: false,
+    startMs: 0,
+    transportStartSec: 0,
+    transportLeadInSec: 0,
+    countInClock: null,
+    countInUntilMs: 0,
+    countInTimer: null,
+    metronomeTimer: null,
+    nextTickMs: 0,
+    selectedTrackId: null,
+    divisionsCollapsed: { left: false, right: false },
+    trackScrollY: 0,
+    trackScrollMax: 0,
+    pianoRollOffset: 0,
+    playheadMs: 0,
+    playing: false,
+    playbackTimers: [],
+    playbackStartMs: 0,
+    recordOffsetMs: 0,
+    tempoMode: 'stretch',
+    recordTab: 'tracks',
+    activeBySide: { left: null, right: null, single: null },
+    monitorDuringRecord: false,
+    tempoBpm: 120,
+    timeSignature: { top: 4, bottom: 4 },
+    metronome: { enabled: false, leadInBars: 2, volume: 0.85 },
+    metronomeNextTickSec: 0,
+    metronomeBeatIndex: 0,
+    silentMode: false,
+    master: { volume: 1 },
+    trackNameHistory: [],
+    trackNameHistoryLimit: 120,
+    trackNameHistoryScroll: 0,
+    trackScrollToBottom: false,
+    deleteConfirmTrackId: null,
+    deleteConfirmTransferUp: false,
+    deleteConfirmTransferDown: false
   };
 
-  const panelFrac = 0.16; // narrow control strip
-  const gutterX = Math.round(contentRect.w * 0.02);
-  const panelRect = {
-    x: contentRect.x,
-    y: contentRect.y,
-    w: Math.round(contentRect.w * panelFrac),
-    h: contentRect.h
+  let recordTrackSeq = 1;
+  let deps = {
+    getNowMs: () => Date.now(),
+    getAudioTimeSec: () => 0,
+    render: () => {},
+    getInstrumentSnapshotForSide: () => ({ id: null, name: 'Instrument' }),
+    noteOn: () => {},
+    noteOff: () => {},
+    panic: () => {},
+    clampRange: DEFAULT_CLAMP,
+    getDualMode: () => false,
+    playMetronomeClick: () => {}
   };
 
-  const rightInset = Math.round(contentRect.w * 0.035); // extra breathing room on right
-  const staffRect = {
-    x: panelRect.x + panelRect.w + gutterX,
-    y: contentRect.y,
-    w: contentRect.w - panelRect.w - gutterX - rightInset,
-    h: contentRect.h
+  const setDependencies = (next) => {
+    deps = Object.assign({}, deps, next || {});
   };
 
-  // Vertical padding so staff blocks have similar margins top/bottom
-  const topPad = Math.round(staffRect.h * 0.12);
-  const bottomPad = topPad;
-  const usableH = staffRect.h - topPad - bottomPad;
-  const gap = Math.round(usableH * 0.10);
-  const bandH = Math.floor((usableH - gap) / 2);
+  const clampRange = (value, min, max) => deps.clampRange(value, min, max);
 
-  const trebleRect = {
-    x: staffRect.x,
-    y: staffRect.y + topPad,
-    w: staffRect.w,
-    h: bandH
-  };
-  const bassRect = {
-    x: staffRect.x,
-    y: trebleRect.y + trebleRect.h + gap,
-    w: staffRect.w,
-    h: bandH
-  };
-
-  const barWidth = staffRect.w / bars;
-  const barRects = [];
-  const beatX = [];
-  for (let b = 0; b < bars; b++) {
-    const bx = staffRect.x + b * barWidth;
-    const bw = barWidth;
-    barRects.push({ x: bx, y: staffRect.y, w: bw, h: staffRect.h });
-    const beats = [];
-    for (let i = 0; i < beatsPerBar; i++) {
-      const t = (i + 0.5) / beatsPerBar; // center of beat
-      beats.push(bx + bw * t);
-    }
-    beatX.push(beats);
+  function ensureSelectedRecordTrack(){
+    if(state.selectedTrackId && state.tracks.some((t)=>t.id === state.selectedTrackId)) return;
+    state.selectedTrackId = state.tracks.length ? state.tracks[0].id : null;
   }
-
-  return {
-    contentRect,
-    panelRect,
-    staffRect,
-    trebleRect,
-    bassRect,
-    bars,
-    beatsPerBar,
-    barRects,
-    beatX
-  };
-}
-
-function drawTabletFrame(ctx, CW, CH, margin) {
-  ctx.fillStyle = PALETTE.bg;
-  ctx.fillRect(0, 0, CW, CH);
-  ctx.strokeStyle = PALETTE.frame;
-  ctx.lineWidth = 4;
-  ctx.strokeRect(margin + 0.5, margin + 0.5, CW - margin * 2 - 1, CH - margin * 2 - 1);
-}
-
-function drawStaffBand(ctx, rect) {
-  const lineGap = rect.h / 10; // 11-line system (0..10), middle implied
-  ctx.strokeStyle = PALETTE.staffLines;
-  ctx.lineWidth = 3;
-  ctx.lineCap = 'round';
-  // Draw top 5 and bottom 5 lines; leave center gap where middle line will appear only for notes
-  for (let i = 0; i < 5; i++) {
-    const y = rect.y + i * lineGap;
-    ctx.beginPath();
-    ctx.moveTo(rect.x, Math.round(y) + 0.5);
-    ctx.lineTo(rect.x + rect.w, Math.round(y) + 0.5);
-    ctx.stroke();
-  }
-  for (let i = 6; i < 11; i++) {
-    const y = rect.y + i * lineGap;
-    ctx.beginPath();
-    ctx.moveTo(rect.x, Math.round(y) + 0.5);
-    ctx.lineTo(rect.x + rect.w, Math.round(y) + 0.5);
-    ctx.stroke();
-  }
-}
-
-function drawBarsAndBeats(ctx, layout) {
-  const { trebleRect, bassRect, barRects, beatsPerBar } = layout;
-  ctx.strokeStyle = PALETTE.staffBars;
-  ctx.lineWidth = 3;
-  const lineGapTop = trebleRect.h / 10;
-  const lineGapBot = bassRect.h / 10;
-  const topBandTop = trebleRect.y;
-  const topBandBottom = trebleRect.y + lineGapTop * 10;   // full 11-line band (0..10)
-  const bottomBandTop = bassRect.y;
-  const bottomBandBottom = bassRect.y + lineGapBot * 10;  // full 11-line band
-
-  // Bar lines: one at each bar start plus a final at the end
-  const totalBars = barRects.length;
-  for (let i = 0; i <= totalBars; i++) {
-    const brIndex = (i === totalBars) ? totalBars - 1 : i;
-    const br = barRects[brIndex];
-    const x = Math.round(i === totalBars ? (br.x + br.w) : br.x);
-    // top band (full 11-line range, middle line implied by gap only in staff renderer)
-    ctx.beginPath();
-    ctx.moveTo(x + 0.5, topBandTop);
-    ctx.lineTo(x + 0.5, topBandBottom);
-    ctx.stroke();
-    // bottom band
-    ctx.beginPath();
-    ctx.moveTo(x + 0.5, bottomBandTop);
-    ctx.lineTo(x + 0.5, bottomBandBottom);
-    ctx.stroke();
-  }
-
-  // Note-entry guide lines (sky blue), 4 per bar per staff band
-  ctx.save();
-  ctx.strokeStyle = '#87ceeb'; // sky blue
-  ctx.lineWidth = 1.5;
-  barRects.forEach((br) => {
-    const bx = br.x;
-    const bw = br.w;
-    for (let i = 0; i < beatsPerBar; i++) {
-      const t = (i + 0.5) / beatsPerBar;
-      const x = bx + bw * t;
-      // From just below first line to just above last line in each 11-line band
-      const bandSpanTop = (topBandBottom - topBandTop);
-      const bandSpanBot = (bottomBandBottom - bottomBandTop);
-      const topPadSeg = bandSpanTop * 0.06;
-      const botPadSeg = bandSpanBot * 0.06;
-      // top staff band
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, topBandTop + topPadSeg);
-      ctx.lineTo(x + 0.5, topBandBottom - topPadSeg);
-      ctx.stroke();
-      // bottom staff band
-      ctx.beginPath();
-      ctx.moveTo(x + 0.5, bottomBandTop + botPadSeg);
-      ctx.lineTo(x + 0.5, bottomBandBottom - botPadSeg);
-      ctx.stroke();
-    }
-  });
-  ctx.restore();
-}
-
-// Map a vertical canvas Y position within a staff band to a staff index 0..10
-// Intentionally unused helper for mapping Y to staff index; keep for future use.
-// eslint-disable-next-line no-unused-vars
-function _yToStaffIndex(y, rect) {
-  const lineGap = rect.h / 10;
-  const rel = (y - rect.y) / lineGap;
-  return Math.max(0, Math.min(10, Math.round(rel)));
-}
-
-// Simple note-head drawing for quarter notes
-function drawQuarterNote(ctx, x, y, color) {
-  const rx = 10;
-  const ry = 9; // slightly taller than space between staff lines
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(-Math.PI / 8);
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-// Draw all user-entered notes on top of grid
-function drawNotes(ctx, layout, state) {
-  if (!state || !state.notes || state.notes.length === 0) return;
-  const { trebleRect, bassRect, beatsPerBar, barRects } = layout;
-  const lineGapTop = trebleRect.h / 10;
-  const lineGapBot = bassRect.h / 10;
-  state.notes.forEach((note) => {
-    const barRect = barRects[note.bar];
-    if (!barRect) return;
-    const bx = barRect.x;
-    const bw = barRect.w;
-    const beatCenter = bx + bw * ((note.beat + 0.5) / beatsPerBar);
-    const isTop = note.staff === 'top';
-    const bandRect = isTop ? trebleRect : bassRect;
-    const lineGap = isTop ? lineGapTop : lineGapBot;
-    const y = bandRect.y + note.position * lineGap;
-    drawQuarterNote(ctx, beatCenter, y, PALETTE.accentGreen);
-  });
-}
-
-function drawControlPanel(ctx, layout, state) {
-  const { panelRect } = layout;
-  const r = panelRect;
-
-  ctx.fillStyle = PALETTE.panelBg;
-  ctx.fillRect(r.x, r.y, r.w, r.h);
-  ctx.strokeStyle = PALETTE.panelBorder;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
-
-  const pad = Math.round(r.w * 0.16);
-  const playH = Math.round(r.h * 0.10);
-  const playRect = {
-    x: r.x + pad,
-    y: r.y + pad,
-    w: r.w - pad * 2,
-    h: playH
-  };
-
-  // Play/pause button
-  const playing = !!(state && state.playback && state.playback.isPlaying);
-  ctx.save();
-  ctx.globalAlpha = 0.88; // let tablet texture show through
-  ctx.fillStyle = playing ? PALETTE.accentGreen : '#111722';
-  const radius = Math.round(playRect.h * 0.35);
-  roundRect(ctx, playRect.x, playRect.y, playRect.w, playRect.h, radius);
-  ctx.fill();
-  ctx.restore();
-
-  // Icon
-  ctx.fillStyle = PALETTE.text;
-  ctx.strokeStyle = PALETTE.text;
-  const cx = playRect.x + playRect.w * 0.5;
-  const cy = playRect.y + playRect.h * 0.5;
-  const iconW = playRect.w * 0.14;
-  const iconH = playRect.h * 0.46;
-  ctx.beginPath();
-  if (!playing) {
-    // Play triangle
-    ctx.moveTo(cx - iconW * 0.4, cy - iconH * 0.5);
-    ctx.lineTo(cx - iconW * 0.4, cy + iconH * 0.5);
-    ctx.lineTo(cx + iconW * 0.6, cy);
-    ctx.closePath();
-    ctx.fill();
-  } else {
-    // Pause bars
-    const barW = iconW * 0.32;
-    ctx.fillRect(cx - barW - barW * 0.3, cy - iconH * 0.5, barW, iconH);
-    ctx.fillRect(cx + barW * 0.3, cy - iconH * 0.5, barW, iconH);
-  }
-
-  // Note/rest selector slots
-  const selectorTop = playRect.y + playRect.h + pad * 1.3;
-  const slotH = Math.round(r.h * 0.09);
-  const gapY = Math.round(r.h * 0.03);
-  const labels = ['Quarter Note', 'Quarter Rest'];
-  const selectedIndex = state && typeof state.selectedToolIndex === 'number'
-    ? state.selectedToolIndex
-    : 0;
-
-  ctx.font = `${Math.round(slotH * 0.40)}px system-ui, sans-serif`;
-  ctx.textBaseline = 'middle';
-
-  labels.forEach((label, i) => {
-    const y = selectorTop + i * (slotH + gapY);
-    const slotRect = { x: r.x + pad, y, w: r.w - pad * 2, h: slotH };
-    const isSel = i === selectedIndex;
-    ctx.save();
-    ctx.globalAlpha = 0.88;
-    ctx.fillStyle = isSel ? 'rgba(23,255,28,0.18)' : 'rgba(255,255,255,0.03)';
-    roundRect(ctx, slotRect.x, slotRect.y, slotRect.w, slotRect.h, Math.round(slotH * 0.4));
-    ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle = isSel ? PALETTE.accentGreen : PALETTE.staffBars;
-    ctx.lineWidth = 2;
-    roundRect(ctx, slotRect.x, slotRect.y, slotRect.w, slotRect.h, Math.round(slotH * 0.4));
-    ctx.stroke();
-
-    ctx.fillStyle = PALETTE.text;
-    ctx.textAlign = 'center';
-    ctx.fillText(label, slotRect.x + slotRect.w / 2, slotRect.y + slotRect.h / 2);
-    ctx.textAlign = 'start';
-  });
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  const radius = Math.max(0, Math.min(r, Math.min(w, h) / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + w - radius, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
-  ctx.lineTo(x + w, y + h - radius);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
-  ctx.lineTo(x + radius, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
-}
-
-// Utility to attach a canvas texture and initial sheet UI to the tablet screen.
-// Call this from the piano scene once the GLB is loaded and added to the scene.
-
-export function setupMusicTabletScreen(rootObject3D) {
-  if (!rootObject3D || !rootObject3D.isObject3D) return null;
-
-  let screenMesh = rootObject3D.getObjectByName("pe'rPad_screen");
-  if (!screenMesh) {
-    rootObject3D.traverse(obj => {
-      if (!screenMesh && obj.isMesh && /pe'rpad_screen/i.test(obj.name || '')) {
-        screenMesh = obj;
-      }
+  function refreshTrackNumbers(){
+    state.tracks.forEach((track, idx) => {
+      track.displayNumber = idx + 1;
+      track.name = `Track ${track.displayNumber}`;
     });
   }
-  if (!screenMesh || !screenMesh.material) return null;
-
-  const CW = 2048;
-  const CH = 2048;
-  const canvas = document.createElement('canvas');
-  canvas.width = CW;
-  canvas.height = CH;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-
-  const margin = 30;
-  const layout = computeLayout(CW, CH, margin, { bars: 4, beatsPerBar: 4 });
-
-  drawTabletFrame(ctx, CW, CH, margin);
-  drawStaffBand(ctx, layout.trebleRect);
-  drawStaffBand(ctx, layout.bassRect);
-  drawBarsAndBeats(ctx, layout);
-  const initialState = {
-    playback: { isPlaying: false },
-    selectedToolIndex: 0,
-    // Single test note: first beat of first bar, roughly middle of top staff
-    notes: [
-      { staff: 'top', bar: 0, beat: 0, position: 5, midi: 72 }
-    ]
-  };
-  drawControlPanel(ctx, layout, initialState);
-  drawNotes(ctx, layout, initialState);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  texture.flipY = false;
-
-  // If UVs only occupy a sub-rect, remap so our canvas fills it
-  try {
-    const geo = screenMesh.geometry;
-    if (geo && geo.attributes && geo.attributes.uv) {
-      const uv = geo.attributes.uv;
-      let umin = 1, vmin = 1, umax = 0, vmax = 0;
-      for (let i = 0; i < uv.count; i++) {
-        const u = uv.getX(i);
-        const v = uv.getY(i);
-        if (u < umin) umin = u;
-        if (u > umax) umax = u;
-        if (v < vmin) vmin = v;
-        if (v > vmax) vmax = v;
+  function createRecordTrack(side){
+    return {
+      id: recordTrackSeq++,
+      name: `Track ${recordTrackSeq - 1}`,
+      side,
+      displayNumber: 0,
+      customName: '',
+      events: [],
+      recordEnabled: false,
+      instrumentId: null,
+      instrumentName: null,
+      createdAt: Date.now(),
+      recording: false,
+      muted: false,
+      solo: false,
+      volume: 0.5,
+      syncMs: 0,
+      transpose: 0,
+      reversed: false
+    };
+  }
+  function normalizeRecordTracksForMode(){
+    if(deps.getDualMode()){
+      const single = state.tracks.find((t)=>t.side === 'single');
+      if(single) single.side = 'left';
+      if(!state.tracks.some((t)=>t.side === 'left')) state.tracks.push(createRecordTrack('left'));
+      if(!state.tracks.some((t)=>t.side === 'right')) state.tracks.push(createRecordTrack('right'));
+    } else {
+      if(!state.tracks.some((t)=>t.side === 'single')){
+        const left = state.tracks.find((t)=>t.side === 'left');
+        if(left) left.side = 'single';
+        if(!state.tracks.some((t)=>t.side === 'single')) state.tracks.push(createRecordTrack('single'));
       }
-      const ur = Math.max(1e-4, umax - umin);
-      const vr = Math.max(1e-4, vmax - vmin);
-      const repU = 1 / ur;
-      const repV = 1 / vr;
-      const offU = -umin / ur;
-      const offV = -vmin / vr;
-      texture.repeat.set(repU, repV);
-      texture.offset.set(offU, offV);
     }
-  } catch {
-    // Fallback: leave texture at default mapping
+    refreshTrackNumbers();
+    ensureSelectedRecordTrack();
+  }
+  function getRecordTrackForSide(side){
+    normalizeRecordTracksForMode();
+    let track = state.tracks.find((t)=>t.side === side);
+    if(!track && side === 'left') track = state.tracks.find((t)=>t.side === 'single');
+    if(!track){
+      track = createRecordTrack(side);
+      state.tracks.push(track);
+    }
+    ensureSelectedRecordTrack();
+    return track;
   }
 
-  const mat = Array.isArray(screenMesh.material) ? screenMesh.material[0] : screenMesh.material;
-  mat.map = texture;
-  mat.emissive = new THREE.Color(0xffffff);
-  mat.emissiveIntensity = 1.0;
-  mat.emissiveMap = texture;
-  mat.needsUpdate = true;
+  function getSelectedRecordTrack(){
+    ensureSelectedRecordTrack();
+    if(!state.selectedTrackId) return null;
+    return state.tracks.find((t)=>t.id === state.selectedTrackId) || null;
+  }
 
-  return { canvas, ctx, texture, screenMesh, layout, state: initialState };
+  function selectRecordTrack(trackId){
+    if(state.tracks.some((t)=>t.id === trackId)){
+      state.selectedTrackId = trackId;
+      deps.render();
+    }
+  }
+
+  function setRecordPanelTab(tabId){
+    const next = (tabId === 'piano') ? 'piano' : 'tracks';
+    state.recordTab = next;
+    deps.render();
+  }
+  function setTrackRecordEnabled(trackId){
+    let enabled = false;
+    state.tracks.forEach((t)=>{
+      if(t.id === trackId){
+        t.recordEnabled = !t.recordEnabled;
+        enabled = t.recordEnabled;
+      } else {
+        t.recordEnabled = false;
+      }
+    });
+    if(enabled) state.selectedTrackId = trackId;
+    deps.render();
+  }
+
+  function toggleTrackMute(trackId){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track) return;
+    track.muted = !track.muted;
+    deps.render();
+  }
+
+  function toggleTrackSolo(trackId){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track) return;
+    track.solo = !track.solo;
+    deps.render();
+  }
+
+  function getPlayableRecordTracks(){
+    if(!state.tracks.length) return [];
+    const soloed = state.tracks.filter((t)=>t.solo);
+    const source = soloed.length ? soloed : state.tracks;
+    return source.filter((t)=>!t.muted);
+  }
+  function addRecordTrack(){
+    const side = deps.getDualMode()
+      ? ((getSelectedRecordTrack() && getSelectedRecordTrack().side) || 'left')
+      : 'single';
+    const track = createRecordTrack(side);
+    state.tracks.push(track);
+    state.selectedTrackId = track.id;
+    state.trackScrollToBottom = true;
+    refreshTrackNumbers();
+    deps.render();
+  }
+
+  function deleteRecordTrack(trackId){
+    if(state.tracks.length <= 1) return;
+    const idx = state.tracks.findIndex((t)=>t.id === trackId);
+    if(idx === -1) return;
+    const removed = state.tracks.splice(idx, 1)[0];
+    if(removed){
+      state.deleted.unshift(removed);
+      if(state.deleted.length > state.maxDeleted) state.deleted.pop();
+    }
+    refreshTrackNumbers();
+    ensureSelectedRecordTrack();
+    deps.render();
+  }
+
+  function undeleteRecordTrack(){
+    const restored = state.deleted.shift();
+    if(!restored) return;
+    state.tracks.push(restored);
+    state.selectedTrackId = restored.id;
+    refreshTrackNumbers();
+    deps.render();
+  }
+
+  function duplicateRecordTrack(trackId){
+    const src = state.tracks.find((t)=>t.id === trackId);
+    if(!src) return;
+    const dup = createRecordTrack(src.side);
+    dup.name = `${src.name} Copy`;
+    dup.events = src.events.map((e)=>Object.assign({}, e));
+    dup.instrumentId = src.instrumentId;
+    dup.instrumentName = src.instrumentName;
+    dup.volume = src.volume;
+    dup.syncMs = src.syncMs;
+    dup.transpose = src.transpose;
+    dup.reversed = src.reversed;
+    dup.customName = src.customName || '';
+    state.tracks.push(dup);
+    state.selectedTrackId = dup.id;
+    refreshTrackNumbers();
+    deps.render();
+  }
+  function transposeRecordTrack(trackId, semis){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track || !Number.isFinite(semis)) return;
+    track.transpose += semis;
+    track.events.forEach((e)=>{
+      if(e && Number.isFinite(e.note)){
+        const next = Math.max(0, Math.min(127, e.note + semis));
+        e.note = next;
+      }
+    });
+    deps.render();
+  }
+
+  function reverseRecordTrack(trackId){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track || !track.events.length) return;
+    const last = track.events.reduce((m, e)=> Math.max(m, e.timeMs || 0), 0);
+    track.events.forEach((e)=>{ e.timeMs = Math.max(0, last - (e.timeMs || 0)); });
+    track.reversed = !track.reversed;
+    deps.render();
+  }
+
+  function swapTrackInstrument(trackId){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track) return;
+    const side = track.side === 'right' ? 'right' : 'left';
+    const snap = deps.getInstrumentSnapshotForSide(side);
+    track.instrumentId = snap.id;
+    track.instrumentName = snap.name;
+    deps.render();
+  }
+
+  function adjustTrackVolume(trackId, delta){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track) return;
+    track.volume = clampRange((track.volume || 0.5) + delta, 0, 1);
+    deps.render();
+  }
+
+  function adjustTrackSync(trackId, delta){
+    const track = state.tracks.find((t)=>t.id === trackId);
+    if(!track) return;
+    track.syncMs = clampRange((track.syncMs || 0) + delta, -5000, 5000);
+    deps.render();
+  }
+
+  function adjustMasterVolume(delta){
+    state.master.volume = clampRange((state.master.volume || 1) + delta, 0, 2);
+    deps.render();
+  }
+  function setRecordTempo(delta){
+    const next = clampRange((state.tempoBpm || 120) + delta, 30, 220);
+    state.tempoBpm = Math.round(next);
+    if(state.recording && state.metronome.enabled){
+      startMetronome();
+    }
+    deps.render();
+  }
+
+  function toggleMetronome(){
+    state.metronome.enabled = !state.metronome.enabled;
+    if(state.metronome.enabled) startMetronome();
+    else stopMetronome();
+    deps.render();
+  }
+
+  function toggleLeadIn(){
+    state.metronome.leadInBars = state.metronome.leadInBars ? 0 : 2;
+    deps.render();
+  }
+
+  function toggleTempoMode(){
+    state.tempoMode = state.tempoMode === 'pitch' ? 'stretch' : 'pitch';
+    deps.render();
+  }
+
+  function toggleSilentMode(){
+    state.silentMode = !state.silentMode;
+    deps.render();
+  }
+
+  function stopMetronome(){
+    if(state.metronomeTimer){
+      clearInterval(state.metronomeTimer);
+      state.metronomeTimer = null;
+    }
+  }
+
+  function startMetronome(){
+    if(!state.metronome.enabled) return;
+    stopMetronome();
+    const bpm = state.tempoBpm || 120;
+    const beatSec = 60 / Math.max(30, bpm);
+    const leadInSec = state.transportLeadInSec || 0;
+    const baseSec = state.transportStartSec ? (state.transportStartSec - leadInSec) : deps.getAudioTimeSec();
+    const nowSec = deps.getAudioTimeSec();
+    state.metronomeBeatIndex = Math.max(0, Math.floor((nowSec - baseSec) / beatSec));
+    state.metronomeNextTickSec = baseSec + state.metronomeBeatIndex * beatSec;
+    const lookaheadSec = 0.15;
+    state.metronomeTimer = setInterval(() => {
+      const currentSec = deps.getAudioTimeSec();
+      const scheduleUntil = currentSec + lookaheadSec;
+      while(state.metronomeNextTickSec <= scheduleUntil){
+        const beatsPerBar = Math.max(1, Math.round(state.timeSignature && state.timeSignature.top ? state.timeSignature.top : 4));
+        const accent = (state.metronomeBeatIndex % beatsPerBar) === 0;
+        deps.playMetronomeClick(accent, state.metronomeNextTickSec);
+        state.metronomeBeatIndex += 1;
+        state.metronomeNextTickSec += beatSec;
+      }
+    }, 30);
+  }
+  function startRecordingSession(options){
+    if(state.recording) return;
+    if(state.playing && !state.monitorDuringRecord) stopRecordPlayback();
+    state.recording = true;
+    state.recordMode = true;
+    const nowSec = deps.getAudioTimeSec();
+    const beatMs = 60000 / Math.max(30, (state.tempoBpm || 120));
+    const skipLeadIn = options && options.skipLeadIn;
+    const beatsPerBar = Math.max(1, Math.round(state.timeSignature && state.timeSignature.top ? state.timeSignature.top : 4));
+    const leadInBeats = (!skipLeadIn && state.metronome.enabled) ? (state.metronome.leadInBars || 0) * beatsPerBar : 0;
+    const leadInMs = leadInBeats > 0 ? leadInBeats * beatMs : 0;
+    const leadInSec = leadInMs / 1000;
+    state.countIn = leadInMs > 0;
+    state.transportLeadInSec = leadInSec;
+    state.transportStartSec = nowSec + leadInSec;
+    state.startMs = state.transportStartSec * 1000;
+    state.countInUntilMs = state.startMs;
+    state.recordOffsetMs = Math.max(0, state.playheadMs || 0);
+    if(state.countInTimer){
+      clearTimeout(state.countInTimer);
+      state.countInTimer = null;
+    }
+    if(state.countIn){
+      state.countInTimer = setTimeout(() => {
+        state.countIn = false;
+        state.countInTimer = null;
+        deps.render();
+      }, leadInMs);
+    }
+    state.activeBySide = { left: null, right: null, single: null };
+    startMetronome();
+    const armed = state.tracks.find((t)=>t.recordEnabled) || getSelectedRecordTrack();
+    if(armed){
+      state.tracks.forEach((t)=>{ if(t !== armed) t.recordEnabled = false; });
+      armed.recordEnabled = true;
+      const snap = deps.getInstrumentSnapshotForSide(armed.side === 'right' ? 'right' : 'left');
+      armed.instrumentId = snap.id;
+      armed.instrumentName = snap.name;
+      armed.recording = true;
+      state.activeBySide.single = armed;
+      state.activeBySide.left = armed;
+      state.activeBySide.right = armed;
+    }
+    if(state.monitorDuringRecord){
+      playRecordPlayback({ allowWhileRecording: true, excludeTrackId: armed ? armed.id : null });
+    }
+    deps.render();
+  }
+
+  function stopRecordingSession(){
+    if(!state.recording) return;
+    state.recording = false;
+    state.countIn = false;
+    state.countInUntilMs = 0;
+    if(state.countInTimer){
+      clearTimeout(state.countInTimer);
+      state.countInTimer = null;
+    }
+    state.activeBySide = { left: null, right: null, single: null };
+    state.tracks.forEach((t)=>{ t.recording = false; });
+    stopMetronome();
+    deps.render();
+  }
+
+  function enterRecordMode(){
+    state.recordMode = true;
+    deps.render();
+  }
+
+  function exitRecordMode(){
+    if(state.recording) stopRecordingSession();
+    if(state.playing) stopRecordPlayback();
+    state.recordMode = false;
+    deps.render();
+  }
+  function recordNoteEvent(type, midi, velocity, side){
+    if(!state.recording) return;
+    const nowSec = deps.getAudioTimeSec();
+    if(nowSec < state.transportStartSec) return;
+    const elapsed = Math.max(0, (nowSec - state.transportStartSec) * 1000);
+    const adjusted = elapsed + (state.recordOffsetMs || 0);
+    state.playheadMs = adjusted;
+    const targetSide = deps.getDualMode() ? side : 'single';
+    const track = state.activeBySide[targetSide];
+    if(!track) return;
+    const snap = deps.getInstrumentSnapshotForSide(side);
+    if(!track.instrumentId) track.instrumentId = snap.id;
+    if(!track.instrumentName) track.instrumentName = snap.name;
+    track.events.push({
+      timeMs: adjusted,
+      type,
+      note: Number(midi),
+      velocity: Number.isFinite(velocity) ? velocity : 1,
+      instrumentId: snap.id,
+      instrumentName: snap.name
+    });
+  }
+
+  function buildRecordNoteSpans(track){
+    if(!track || !track.events || !track.events.length) return [];
+    const syncMs = Number.isFinite(track.syncMs) ? track.syncMs : 0;
+    const events = track.events.slice().sort((a,b)=> (a.timeMs || 0) - (b.timeMs || 0));
+    const active = new Map();
+    const spans = [];
+    for(const ev of events){
+      if(!ev || !Number.isFinite(ev.note)) continue;
+      const t = Math.max(0, (ev.timeMs || 0) + syncMs);
+      const note = Number(ev.note);
+      if(ev.type === 'on'){
+        active.set(note, t);
+      } else if(ev.type === 'off'){
+        if(active.has(note)){
+          spans.push({ note, startMs: active.get(note), endMs: t });
+          active.delete(note);
+        }
+      }
+    }
+    const tail = events.length ? Math.max(0, (events[events.length - 1].timeMs || 0) + syncMs) : 0;
+    active.forEach((startMs, note) => {
+      spans.push({ note, startMs, endMs: Math.max(startMs + 80, tail) });
+    });
+    return spans;
+  }
+  function stopRecordPlayback(){
+    state.playing = false;
+    state.playbackStartMs = 0;
+    state.playbackTimers.forEach((t)=>clearTimeout(t));
+    state.playbackTimers = [];
+    if(state.metronome.enabled) stopMetronome();
+    try{ deps.panic(); }catch(e){}
+    deps.render();
+  }
+
+  function playRecordPlayback(options){
+    const allowWhileRecording = !!(options && options.allowWhileRecording);
+    if(state.playing || (state.recording && !allowWhileRecording)) return;
+    let tracks = getPlayableRecordTracks();
+    if(options && options.excludeTrackId){
+      tracks = tracks.filter((t)=>t.id !== options.excludeTrackId);
+    }
+    if(!tracks.length) return;
+    state.playing = true;
+    if(state.metronome.enabled) startMetronome();
+    const playhead = Math.max(0, state.playheadMs || 0);
+    const rate = Math.max(0.25, (state.tempoBpm || 120) / 120);
+    const pitchMode = state.tempoMode === 'pitch';
+    const semis = pitchMode ? Math.round(12 * Math.log2(rate)) : 0;
+    const nowSec = deps.getAudioTimeSec();
+    const nextTransportStart = nowSec - (playhead / 1000);
+    if(!(state.recording && allowWhileRecording)){
+      state.transportStartSec = nextTransportStart;
+    }
+    state.playbackStartMs = nowSec * 1000;
+    state.playbackTimers = [];
+    tracks.forEach((track)=>{
+      const syncMs = Number.isFinite(track.syncMs) ? track.syncMs : 0;
+      track.events.forEach((ev)=>{
+        if(!ev || !Number.isFinite(ev.timeMs)) return;
+        const eventTime = (ev.timeMs || 0) + syncMs;
+        if(eventTime < playhead) return;
+        const delay = Math.max(0, (eventTime - playhead) / rate);
+        const timer = setTimeout(() => {
+          if(!state.playing) return;
+          const baseNote = Number.isFinite(ev.note) ? ev.note : null;
+          const shifted = (baseNote == null) ? null : Math.max(0, Math.min(127, baseNote + semis));
+          if(ev.type === 'on' && shifted != null) deps.noteOn(shifted);
+          if(ev.type === 'off' && shifted != null) deps.noteOff(shifted);
+        }, delay);
+        state.playbackTimers.push(timer);
+      });
+    });
+    const duration = tracks.reduce((m, t)=> {
+      const syncMs = Number.isFinite(t.syncMs) ? t.syncMs : 0;
+      return Math.max(m, t.events.reduce((mm, e)=> Math.max(mm, (e.timeMs || 0) + syncMs), 0));
+    }, 0);
+    const endDelay = Math.max(0, (duration - playhead) / rate) + 120;
+    state.playbackTimers.push(setTimeout(() => stopRecordPlayback(), endDelay));
+    if(!(state.recording && allowWhileRecording)){
+      const uiTimer = setInterval(() => {
+        if(!state.playing){
+          clearInterval(uiTimer);
+          return;
+        }
+        const nowMs = deps.getNowMs();
+        state.playheadMs = Math.max(0, playhead + (nowMs - state.playbackStartMs) * rate);
+        deps.render();
+      }, 60);
+      state.playbackTimers.push(uiTimer);
+    }
+  }
+
+  function toggleMonitorDuringRecord(){
+    state.monitorDuringRecord = !state.monitorDuringRecord;
+    if(state.recording){
+      if(state.monitorDuringRecord){
+        playRecordPlayback({ allowWhileRecording: true, excludeTrackId: state.selectedTrackId });
+      } else if(state.playing){
+        stopRecordPlayback();
+      }
+    }
+    deps.render();
+  }
+  return {
+    state,
+    setDependencies,
+    normalizeRecordTracksForMode,
+    getRecordTrackForSide,
+    getSelectedRecordTrack,
+    setRecordPanelTab,
+    selectRecordTrack,
+    setTrackRecordEnabled,
+    toggleTrackMute,
+    toggleTrackSolo,
+    getPlayableRecordTracks,
+    addRecordTrack,
+    deleteRecordTrack,
+    undeleteRecordTrack,
+    duplicateRecordTrack,
+    transposeRecordTrack,
+    reverseRecordTrack,
+    swapTrackInstrument,
+    adjustTrackVolume,
+    adjustTrackSync,
+    adjustMasterVolume,
+    setRecordTempo,
+    toggleMetronome,
+    toggleLeadIn,
+    toggleTempoMode,
+    toggleSilentMode,
+    startRecordingSession,
+    stopRecordingSession,
+    enterRecordMode,
+    exitRecordMode,
+    recordNoteEvent,
+    buildRecordNoteSpans,
+    playRecordPlayback,
+    toggleMonitorDuringRecord,
+    stopRecordPlayback
+  };
+}
+
+export const recording = createRecordingEngine();
+export function configureRecordingEngine(deps){
+  recording.setDependencies(deps);
 }

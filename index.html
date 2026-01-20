@@ -652,12 +652,14 @@
 
                 showPermissionIfNeeded();
                 loadVideo(currentVideoKey);
+                updateA11yDebugFlags();
             });
 
             resetBtn.addEventListener('click', ()=>{
                 try { localStorage.removeItem('site.a11y.settings'); } catch {}
                 window.SiteA11y.apply(window.SiteA11y.get());
                 hydrate();
+                updateA11yDebugFlags();
             });
 
             // Top tabs behavior
@@ -788,6 +790,26 @@
                 document.getElementById('a11y_focus_outlines').checked = (s.focusOutline === 'always');
             }
 
+            function updateA11yDebugFlags(){
+                if(typeof window.SiteA11y?.get !== 'function') return;
+                const settings = window.SiteA11y.get();
+                const flags = {
+                    'Reduced motion': settings.reducedMotion ? 'T' : 'F',
+                    'High contrast': settings.highContrast ? 'T' : 'F',
+                    'Large text': settings.textScale === 'large' ? 'T' : 'F',
+                    'Always focus outlines': settings.focusOutline === 'always' ? 'T' : 'F',
+                };
+                const actions = {};
+                if(saveBtn) actions['Save a11y prefs'] = () => saveBtn.click();
+                if(resetBtn) actions['Reset a11y prefs'] = () => resetBtn.click();
+                if(typeof window.registerDebugHooks === 'function'){
+                    window.registerDebugHooks({ flags, actions });
+                }
+            }
+
+            window.addEventListener('debug-ui-ready', updateA11yDebugFlags);
+            updateA11yDebugFlags();
+
             document.addEventListener('DOMContentLoaded', ()=>{
                 hydrate();
                 showPermissionIfNeeded();
@@ -828,5 +850,6 @@
             }
         }
     </script>
+<script type="module">import { loadDebugIfEnabled } from "./debug/debug-loader.js"; loadDebugIfEnabled();</script>
 </body>
 </html>

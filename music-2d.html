@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Music - 2D Recording</title>
+  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="template.css">
+  <link rel="stylesheet" href="music-2d.css">
+  <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.8.1/dist/soundfont-player.js"></script>
+  <script type="module" src="music-2d.js"></script>
+  <style>
+    :root {
+      --bg: #03070d;
+      --panel: rgba(4, 12, 24, 0.95);
+      --panel-border: rgba(82, 254, 79, 0.85);
+      --panel-glow: rgba(82, 254, 79, 0.15);
+      --text: #f4fff4;
+      --text-muted: #8fa2b5;
+      --accent: #52fe4f;
+    }
+    body {
+      background: linear-gradient(180deg, #03070d 0%, #010205 60%, #000 100%);
+    }
+    .music-2d-shell {
+      background: radial-gradient(circle at top left, rgba(82, 254, 79, 0.2), transparent 45%),
+        radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.04), transparent 60%);
+    }
+    .music-2d-stage,
+    .music-2d-panel {
+      border-radius: 16px;
+    }
+    .music-2d-stage {
+      background: var(--panel);
+    }
+    .music-2d-panel {
+      background: rgba(6, 14, 28, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .music-2d-toolbar {
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .record-controls button {
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(82, 254, 79, 0.08);
+    }
+    .track-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 10px;
+      padding: 0.65rem 0.9rem;
+      gap: 0.75rem;
+    }
+    .track-row.active {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(82, 254, 79, 0.25);
+    }
+    .track-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+    .track-controls {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .track-controls button {
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      background: rgba(82, 254, 79, 0.08);
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+    .track-controls button:hover {
+      border-color: var(--accent);
+    }
+    .music-2d-keyboard {
+      border-radius: 14px;
+    }
+  </style>
+</head>
+<body class="music-2d-body">
+  <div class="music-2d-shell">
+    <header class="music-2d-header">
+      <div class="music-2d-backlink">
+        <a class="music-2d-link" href="music.html">Return to 3D</a>
+      </div>
+      <div class="music-2d-heading">
+        <h1>Recorder Control Room</h1>
+        <p>All recording, metronome and instrument controls in a performant 2D view.</p>
+      </div>
+      <div id="recordStatus" class="music-2d-status">Idle</div>
+    </header>
+    <section class="music-2d-main">
+      <div class="music-2d-stage-layout">
+        <div class="track-column">
+          <div class="tracklist-header">
+            <h2>Tracks</h2>
+            <button id="addTrackButton" type="button">+ Track</button>
+          </div>
+          <div id="trackList" class="track-list"></div>
+        </div>
+        <div class="stage-screen">
+          <div id="svgWrapper" class="music-2d-svg"></div>
+          <canvas id="pianoRollCanvas"></canvas>
+          <div id="instrumentOverlay" class="instrument-overlay hidden" role="dialog" aria-label="Instrument chooser">
+            <div class="instrument-overlay-panel">
+              <div class="instrument-overlay-title">Pick an instrument</div>
+              <div id="instrumentOptions" class="instrument-options"></div>
+              <button id="instrumentOverlayClose" type="button" class="text-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="music-2d-panel">
+        <div class="feature-panel">
+          <h3>Feature Flags</h3>
+          <div id="featureFlags" class="feature-flags"></div>
+        </div>
+        <div class="perf-panel" id="perfMonitor">Performance data will appear here.</div>
+      </div>
+    </section>
+    <section class="music-2d-toolbar">
+      <div class="record-controls">
+        <button id="recordStart" type="button">Start Recording</button>
+        <button id="recordStop" type="button">Stop</button>
+        <button id="playbackBtn" type="button">Play</button>
+        <label class="control-toggle">
+          <input type="checkbox" id="monitorDuringRecord">
+          Monitor during record
+        </label>
+      </div>
+    </section>
+    <section class="music-2d-keyboard">
+      <div id="qwertyLabels" class="qwerty-labels"></div>
+      <div id="keysContainer" class="keys-strip" role="application" aria-label="Piano keys"></div>
+    </section>
+  </div>
+<script type= module>import { loadDebugIfEnabled } from ./debug/debug-loader.js; loadDebugIfEnabled();</script>
+</body>
+</html>

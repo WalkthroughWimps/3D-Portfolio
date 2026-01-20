@@ -1,0 +1,256 @@
+body.music-2d-body {
+  background: #030505;
+  color: #f2fff6;
+  font-family: "Source Sans 3", system-ui, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+}
+.music-2d-shell {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+.music-2d-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.music-2d-logo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.2rem;
+}
+.music-2d-heading h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+.music-2d-heading p {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  color: rgba(255,255,255,0.7);
+}
+.music-2d-back {
+  background: #0f4d3c;
+  color: #fff;
+  border-radius: 999px;
+  padding: 0.5rem 1.1rem;
+  text-decoration: none;
+  font-weight: 600;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.music-2d-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.music-2d-stage-layout {
+  display: flex;
+  gap: 1rem;
+}
+.track-column {
+  width: 320px;
+  background: rgba(3, 10, 18, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 18px;
+  padding: 1.25rem;
+  box-shadow: inset 0 0 0 1px rgba(82, 254, 79, 0.05);
+}
+.stage-screen {
+  flex: 1;
+  position: relative;
+  min-height: 420px;
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: url("assets/svg/music-record-layout.svg") center / cover no-repeat #02090f;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.65);
+}
+.stage-screen canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.music-2d-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  padding: 2rem;
+  text-align: center;
+}
+.music-2d-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+.music-2d-actions button {
+  pointer-events: all;
+  border: none;
+  border-radius: 999px;
+  padding: 0.65rem 1.6rem;
+  font-weight: 600;
+  background: #2ddf76;
+  color: #041205;
+  cursor: pointer;
+}
+.music-2d-actions button:last-child {
+  background: #f24d49;
+  color: #fff;
+}
+.tracklist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+.track-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 360px;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+.track-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  background: rgba(2, 6, 14, 0.7);
+}
+.track-row.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(82, 254, 79, 0.25);
+}
+.track-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.track-name {
+  font-weight: 600;
+}
+.track-sub {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+.track-controls {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.track-controls button {
+  padding: 0.35rem 0.7rem;
+  background: rgba(82, 254, 79, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+.track-controls button:hover {
+  border-color: var(--accent);
+}
+.music-2d-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.feature-panel,
+.perf-panel {
+  flex: 1 1 280px;
+  background: rgba(5, 10, 18, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 1rem;
+}
+.feature-flags {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.4rem;
+}
+.feature-flags label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+.perf-panel {
+  min-height: 80px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+.music-2d-toolbar {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.5rem;
+}
+.control-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+.music-2d-keyboard {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 0.65rem;
+}
+.instrument-overlay {
+  position: absolute;
+  inset: 10% 14%;
+  background: rgba(2, 2, 6, 0.95);
+  border: 1px solid rgba(82, 254, 79, 0.8);
+  border-radius: 12px;
+  backdrop-filter: blur(12px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.instrument-overlay.hidden {
+  display: none;
+}
+.instrument-overlay-panel {
+  width: 100%;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.instrument-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+.instrument-options button {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(82, 254, 79, 0.08);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 0.5rem 0.75rem;
+}
+.instrument-options button:hover {
+  border-color: var(--accent);
+}
+.text-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+@media (max-width: 960px) {
+  .music-2d-stage-layout {
+    flex-direction: column;
+  }
+  .track-column {
+    width: 100%;
+  }
+}
