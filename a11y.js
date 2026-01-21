@@ -4,8 +4,11 @@
   const defaults = () => ({
     reducedMotion: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     highContrast: false,
-    textScale: 'normal', // 'normal' | 'large'
-    focusOutline: 'always' // 'always' | 'auto'
+    textScale: 1, // 1.0 = normal, up to ~1.25 for accessibility
+    focusOutline: 'auto', // 'always' | 'auto'
+    masterVolume: 0.25,
+    audioSyncMs: 0,
+    mute: false
   });
   function load(){
     try { const raw = localStorage.getItem(LS_KEY); if(!raw) return defaults();
@@ -21,8 +24,9 @@
     const root = document.documentElement;
     root.classList.toggle('a11y-motion-reduced', !!settings.reducedMotion);
     root.classList.toggle('a11y-contrast-high', !!settings.highContrast);
-    root.classList.toggle('a11y-text-large', settings.textScale === 'large');
     root.classList.toggle('a11y-focus-always', settings.focusOutline === 'always');
+    root.style.setProperty('--font-scale', String(typeof settings.textScale === 'number' ? settings.textScale : 1));
+    root.style.setProperty('--contrast-level', settings.highContrast ? '1' : '0');
   }
   function set(partial){
     const cur = load();

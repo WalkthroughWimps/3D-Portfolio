@@ -3,6 +3,7 @@ const HOOK_CATEGORIES = ['actions', 'flags', 'metrics'];
 
 let panel = null;
 let collapsed = false;
+let hidden = false;
 let rafId = null;
 let lastFrameTs = performance.now();
 let toggleBtnEl = null;
@@ -164,11 +165,31 @@ function updateToggleButtonsText() {
   visibilityBtnEl.textContent = visLabel;
 }
 
-function togglePanelVisibility() {
+function toggleCollapseState() {
   if (!panel) return;
   collapsed = !collapsed;
   panel.classList.toggle('collapsed', collapsed);
   updateToggleButtonsText();
+}
+
+function hidePanel() {
+  if (!panel || hidden) return;
+  panel.style.display = 'none';
+  hidden = true;
+}
+
+function showPanel() {
+  if (!panel || !hidden) return;
+  panel.style.display = '';
+  hidden = false;
+}
+
+function togglePanelHidden() {
+  if (hidden) {
+    showPanel();
+  } else {
+    hidePanel();
+  }
 }
 
 function setupPanel(pageName) {
@@ -216,23 +237,24 @@ function setupPanel(pageName) {
   startMetrics(metricsEl);
   updateToggleButtonsText();
 
-  toggleBtnEl.addEventListener('click', togglePanelVisibility);
-  visibilityBtnEl.addEventListener('click', togglePanelVisibility);
+  toggleBtnEl.addEventListener('click', toggleCollapseState);
+  visibilityBtnEl.addEventListener('click', toggleCollapseState);
   disableBtn.addEventListener('click', () => {
     disableDebug();
     window.location.reload();
   });
 
   const handleKeydown = (event) => {
-    if (!event.ctrlKey || !event.shiftKey || !event.altKey) return;
+    if (!(event.ctrlKey && event.shiftKey && event.altKey)) return;
     if (event.code === 'KeyD') {
       event.preventDefault();
-      togglePanelVisibility();
+      togglePanelHidden();
+      return;
     }
     if (event.code === 'Digit0') {
       event.preventDefault();
-      disableDebug();
-      window.location.reload();
+      hidePanel();
+      return;
     }
   };
   document.addEventListener('keydown', handleKeydown);

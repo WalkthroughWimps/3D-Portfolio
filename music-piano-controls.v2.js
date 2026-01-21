@@ -4617,8 +4617,9 @@ function renderTopPadGrid(){
     }catch(e){}
     return fallback;
   };
-  const greenPrimary = getCssVar('--green-primary', '#3fda84');
-  const greenSecondary = getCssVar('--green-secondary', '#1f8f4a');
+  const greenPrimary = getCssVar('--green-primary', '#091d12');
+  const greenSecondary = getCssVar('--green-secondary', '#036428');
+  const greenTertiary = getCssVar('--green-tertiary', '#bffbd6');
   const textLight = '#f1fff6';
   const uiPadX = Math.round(cellW * 0.12);
   const uiWidth = leftW - uiPadX * 2;
@@ -4827,29 +4828,31 @@ function renderTopPadGrid(){
   const rightPadY = Math.round(cellH * 0.7);
   const rightW = W - rightX;
   const gridBtnW = Math.round(rightW * 0.5);
-  const gridBtnH = Math.round(cellH * 0.6);
+  const gridBtnH = Math.round(cellH * 1.2);
   const gridBtnX = rightX + rightPadX;
   const gridBtnY = rightPadY;
-  ctx.fillStyle = showTopPadGrid ? greenSecondary : 'rgba(97, 28, 28, .85)';
+  ctx.fillStyle = showTopPadGrid ? greenSecondary : 'rgba(68, 7, 7, 0.85)';
   ctx.fillRect(gridBtnX, gridBtnY, gridBtnW, gridBtnH);
   ctx.strokeStyle = greenPrimary;
   ctx.lineWidth = 2;
   ctx.strokeRect(gridBtnX + 0.5, gridBtnY + 0.5, gridBtnW - 1, gridBtnH - 1);
-  ctx.fillStyle = showTopPadGrid ? '#ffffff' : greenPrimary;
+  ctx.fillStyle = showTopPadGrid ? '#ffffff' : greenTertiary;
   ctx.font = `700 ${Math.max(12, Math.round(gridBtnH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.fillText(showTopPadGrid ? 'Grid: On' : 'Grid: Off', gridBtnX + gridBtnW / 2, gridBtnY + gridBtnH / 2);
   topPadUiRects.gridToggle = { x: gridBtnX, y: gridBtnY, w: gridBtnW, h: gridBtnH };
+  
+ 
 
-  const toggleStartCol = 9.5;
-  const toggleEndCol = 11.5;
-  const toggleRowStart = 9;
+  const toggleStartCol = 8.8;
+  const toggleEndCol = 11.7;
+  const toggleRowStart = 8.5;
   const toggleX = toggleStartCol * cellW;
   const toggleY = toggleRowStart * cellH;
   const toggleW = (toggleEndCol - toggleStartCol) * cellW;
-  const toggleH = cellH * 2;
+  const toggleH = cellH * 3;
   const toggleHover = topPadHoverUi && topPadHoverUi.type === 'instrument-mode';
   ctx.save();
-  ctx.fillStyle = toggleHover ? 'rgba(110, 185, 255, 0.85)' : 'rgba(45, 115, 190, 0.75)';
+  ctx.fillStyle = toggleHover ? 'rgba(110, 185, 255, 0.85)' : 'rgba(1, 66, 14, 0.75)';
   ctx.fillRect(toggleX, toggleY, toggleW, toggleH);
   ctx.strokeStyle = toggleHover ? '#bfe1ff' : '#8fbbe8';
   ctx.lineWidth = Math.max(2, Math.round(cellH * 0.08));
@@ -4861,8 +4864,8 @@ function renderTopPadGrid(){
   const toggleLines = dualInstrumentMode
     ? ['USE ONE', 'INSTRUMENT']
     : ['USE TWO', 'INSTRUMENTS'];
-  const toggleFont = Math.max(11, Math.round(toggleH * 0.22));
-  const lineH = Math.round(toggleFont * 1.15);
+  const toggleFont = Math.max(11, Math.round(toggleH * 0.35));
+  const lineH = Math.round(toggleFont * 1.5);
   const centerY = toggleY + toggleH / 2 - (lineH * (toggleLines.length - 1)) / 2;
   ctx.font = `700 ${toggleFont}px "Source Sans 3", system-ui, sans-serif`;
   toggleLines.forEach((line, idx) => {
