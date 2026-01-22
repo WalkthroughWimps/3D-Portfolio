@@ -1,6 +1,19 @@
 import { assetUrl, isLocalDev } from "./assets-config.js";
 import { loadDebugIfEnabled } from "./debug/debug-loader.js";
 const isLocalHost = isLocalDev();
+const ATTRIBUTION_TEST_CASES = [
+    { musicTitle: "Pas Si Simple", sourceTitle: "Amelie", sourceType: "soundtrack" },
+    { musicTitle: "Any Song (parody)", sourceTitle: "Zico", sourceType: "" },
+    { musicTitle: "Mystery Track", sourceTitle: "", sourceType: "soundtrack" },
+    { musicTitle: "", sourceTitle: "Whatever", sourceType: "soundtrack" },
+    { musicTitle: "   Trim Me   ", sourceTitle: "  Some Film  ", sourceType: "soundtrack" },
+    { musicTitle: "No SourceType", sourceTitle: "A Film", sourceType: null },
+];
+const FULL_ATTR_TEST_KEYS = [
+    "test_full_complete",
+    "test_full_missing_creator_url",
+    "test_full_missing_license_url"
+];
 if (isLocalHost) {
     window.setAssetsBase = (urlOrBlank) => {
         if (!urlOrBlank) {
@@ -589,6 +602,18 @@ if (isLocalHost) {
             ensureAudioRouting();
             applyVolumeAndMuted();
             jumpVideo.play().catch(()=>{});
+        }
+        if (window.SiteUtils) {
+            ATTRIBUTION_TEST_CASES.forEach((test, index) => {
+                SiteUtils.renderMutedAudioAttribution(`#attr-test-${index + 1}`, test);
+            });
+            SiteUtils.loadAttributions().then(() => {
+                FULL_ATTR_TEST_KEYS.forEach((key, index) => {
+                    SiteUtils.renderFullAttributionByKey(`#full-attr-test-${index + 1}`, key, {
+                        missingText: "Attribution data unavailable for this key."
+                    });
+                });
+            }).catch(() => {});
         }
     });
 })();

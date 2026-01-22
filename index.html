@@ -6,6 +6,7 @@
     <title>Welcome • Site Setup</title>
     <link rel="stylesheet" href="template.css">
     <link rel="stylesheet" href="start-page.css">
+    <script src="/js/site-utils.js" defer></script>
     <script src="a11y.js" defer></script>
 </head>
 <body>
@@ -150,6 +151,25 @@
         </div>
 
     </main>
+
+    <!-- Temporary muted-attribution test harness; remove once verification is complete -->
+    <section id="attr-test-harness" aria-live="polite" style="margin:24px;gap:12px;display:flex;flex-direction:column;">
+        <p style="margin:0;font-weight:600;">Muted attribution formatting tests (remove after checking):</p>
+        <div id="attr-test-1"></div>
+        <div id="attr-test-2"></div>
+        <div id="attr-test-3"></div>
+        <div id="attr-test-4"></div>
+        <div id="attr-test-5"></div>
+        <div id="attr-test-6"></div>
+    </section>
+
+    <!-- Temporary full attribution rendering checks -->
+    <section id="full-attr-test-harness" aria-live="polite" style="margin:24px;gap:12px;display:flex;flex-direction:column;">
+        <p style="margin:0;font-weight:600;">Full attribution rendering tests (remove after verification):</p>
+        <div id="full-attr-test-1"></div>
+        <div id="full-attr-test-2"></div>
+        <div id="full-attr-test-3"></div>
+    </section>
 
     <!-- Permission modal -->
     <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">

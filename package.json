@@ -12,11 +12,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "cheerio": "^1.1.2",
     "eslint": "^9.39.1",
-    "globals": "^16.5.0"
+    "globals": "^16.5.0",
+    "xlsx": "^0.18.5"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "export:attributions": "node tools/export-attributions.mjs",
+    "imslp:import": "node tools/imslp_importer.mjs"
   },
   "keywords": [],
   "author": "",

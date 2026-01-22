@@ -8,6 +8,7 @@
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="template.css">
     <link rel="stylesheet" href="music.css">
+  <script src="/js/site-utils.js" defer></script>
   <script src="music.js" defer></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.0/gsap.min.js" defer></script>
   <!-- three.js + loaders for GLB -->
@@ -356,7 +357,7 @@
 
 
         </script>
-  <script>
+<script>
     // Hook up UV map control buttons (calls functions exposed by music-piano-controls.v2.js)
     (function(){
       const toggle = document.getElementById('uvToggleBtn');
@@ -374,6 +375,29 @@
       // reflect initial state after a brief delay to allow module to initialize
       setTimeout(updateLabel, 300);
     })();
+  </script>
+  <section class="attrib-tests" aria-live="polite" style="margin:16px 24px;display:flex;flex-direction:column;gap:8px;">
+    <p style="margin:0;font-weight:600;">Music page attribution validations (remove later):</p>
+    <div id="full-attr-music-1"></div>
+    <div id="full-attr-music-2"></div>
+    <div id="full-attr-music-3"></div>
+  </section>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!window.SiteUtils) return;
+      const keys = [
+        'test_full_complete',
+        'test_full_missing_source_url',
+        'test_full_with_changes'
+      ];
+      SiteUtils.loadAttributions().then(() => {
+        keys.forEach((key, index) => {
+          SiteUtils.renderFullAttributionByKey(`#full-attr-music-${index + 1}`, key, {
+            missingText: 'Attribution data unavailable.'
+          });
+        });
+      }).catch(() => {});
+    });
   </script>
 <script type="module">import { loadDebugIfEnabled } from "./debug/debug-loader.js"; loadDebugIfEnabled();</script>
 </body>

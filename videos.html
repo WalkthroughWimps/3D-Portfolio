@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="colors.css">
     <link rel="stylesheet" href="template.css">
     <link rel="stylesheet" href="videos.css">
+    <script src="/js/site-utils.js" defer></script>
     <!-- Material Symbols Rounded icon font for YouTube-like controls -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,400,0..1,-50..200" />
     <!-- Info text font (thicker humanist) -->
@@ -197,6 +198,29 @@
             document.documentElement.classList.add('videos-boot');
         </script>
         <script type="module" src="videos.js"></script>
+        <section class="attrib-tests" aria-live="polite" style="margin:16px 24px;display:flex;flex-direction:column;gap:8px;">
+            <p style="margin:0;font-weight:600;">Video page attribution snapshots (remove after checking):</p>
+            <div id="full-attr-video-1"></div>
+            <div id="full-attr-video-2"></div>
+            <div id="full-attr-video-3"></div>
+        </section>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                if (!window.SiteUtils) return;
+                const keys = [
+                    'test_full_missing_license_url',
+                    'test_full_missing_source_url',
+                    'test_full_with_changes'
+                ];
+                SiteUtils.loadAttributions().then(() => {
+                    keys.forEach((key, index) => {
+                        SiteUtils.renderFullAttributionByKey(`#full-attr-video-${index + 1}`, key, {
+                            missingText: 'Attribution data unavailable.'
+                        });
+                    });
+                }).catch(() => {});
+            });
+        </script>
 <script type="module">import { loadDebugIfEnabled } from "./debug/debug-loader.js"; loadDebugIfEnabled();</script>
 </body>
 
