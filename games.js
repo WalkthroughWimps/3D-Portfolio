@@ -31,28 +31,28 @@ const GAME_SPLASH_DURATIONS_MS = {
   'train-mania': 10000,
   plinko: 7000,
   'pick-a-square': 15000,
-  'big-bomb-blast': 7000
+  'you-be-the-server': 7000
 };
 const GAME_SPLASH_IMAGES = {
   battleship: '/games/battleship.png',
   'train-mania': '/games/train-mania.png',
   plinko: '/games/plinko.png',
   'pick-a-square': '/games/pick-a-square.png',
-  'big-bomb-blast': '/games/big-bomb-blast.png'
+  'you-be-the-server': '/games/you-be-the-server.png'
 };
 const GAME_THUMBS = {
   battleship: '/games/images/battleship.png',
   plinko: '/games/images/plinko.png',
   'pick-a-square': '/games/images/pick-a-square.png',
   'train-mania': '/games/images/train-mania.png',
-  'big-bomb-blast': '/games/images/big-bomb-blast.png'
+  'you-be-the-server': '/games/images/you-be-the-server.png'
 };
 const GAME_LABEL_SVGS = {
   battleship: null,
   plinko: null,
   'train-mania': null,
   'pick-a-square': null,
-  'big-bomb-blast': null
+  'you-be-the-server': null
 };
 const VIDEO_THUMBS = {
   reel: assetUrl('./Videos/games-page/video-games-reel.png'),

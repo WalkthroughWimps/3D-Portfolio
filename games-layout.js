@@ -5,7 +5,7 @@ export const GAME_LIST = [
   { id: 'plinko', label: 'Plinko', url: './games/plinko/index.html', renderMode: 'blit' },
   { id: 'train-mania', label: 'Train Mania', url: './games/train-mania/index.html', renderMode: 'blit' },
   { id: 'pick-a-square', label: 'Pick a Square', url: './games/pick-a-square/index.html', renderMode: 'blit' },
-  { id: 'big-bomb-blast', label: 'Big Bomb Blast', url: './games/big-bomb-blast/index.html', renderMode: 'blit' }
+  { id: 'you-be-the-server', label: 'You Be the Server', url: './games/you-be-the-server/index.html', renderMode: 'blit' }
 ];
 
 export const VIDEO_LIST = [
