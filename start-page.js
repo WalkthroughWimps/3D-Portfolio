@@ -607,13 +607,13 @@ if (isLocalHost) {
             ATTRIBUTION_TEST_CASES.forEach((test, index) => {
                 SiteUtils.renderMutedAudioAttribution(`#attr-test-${index + 1}`, test);
             });
-            SiteUtils.loadAttributions().then(() => {
-                FULL_ATTR_TEST_KEYS.forEach((key, index) => {
-                    SiteUtils.renderFullAttributionByKey(`#full-attr-test-${index + 1}`, key, {
-                        missingText: "Attribution data unavailable for this key."
+                SiteUtils.loadAttributions().then(() => {
+                    FULL_ATTR_TEST_KEYS.forEach((key, index) => {
+                        SiteUtils.renderFullAttributionByKey(`#full-attr-test-${index + 1}`, key, {
+                            missingText: ""
+                        });
                     });
-                });
-            }).catch(() => {});
+                }).catch(() => {});
         }
     });
 })();

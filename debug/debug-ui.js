@@ -1,5 +1,9 @@
-﻿import { disableDebug } from './debug-loader.js';
+﻿import { disableDebug, DEBUG_VISIBILITY_EVENT } from './debug-loader.js';
 const HOOK_CATEGORIES = ['actions', 'flags', 'metrics'];
+
+const emitVisibilityEvent = (show) => {
+  window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show } }));
+};
 
 let panel = null;
 let collapsed = false;
@@ -20,7 +24,7 @@ function createStyles() {
   style.textContent = `
     #debug-panel.debug-panel {
       position: fixed;
-      top: 16px;
+      top: calc(var(--header-height, 72px) + 48px);
       right: 16px;
       width: 320px;
       background: rgba(8, 8, 12, 0.95);
@@ -59,7 +63,9 @@ function createStyles() {
       padding: 8px 12px 10px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 10px;
+      max-height: min(60vh, calc(100vh - var(--header-height, 72px) - 48px));
+      overflow-y: auto;
     }
     .debug-panel__info div,
     .debug-panel__hooks div,
@@ -85,6 +91,17 @@ function createStyles() {
     .debug-panel__metrics {
       font-size: 11px;
       opacity: 0.85;
+    }
+    #debug-panel .instrument-level-panel,
+    #debug-panel .uv-mode-controls {
+      width: 100%;
+      margin: 0;
+    }
+    #debug-panel .instrument-level-panel {
+      border-radius: 10px;
+    }
+    #debug-panel .uv-mode-controls {
+      justify-content: flex-start;
     }
   `;
   return style;
@@ -138,6 +155,20 @@ function renderHooks() {
   });
 }
 
+const attachExternalSection = (selectorId) => {
+  if (!panel) return;
+  const body = panel.querySelector('.debug-panel__body');
+  const section = document.getElementById(selectorId);
+  if (!body || !section || body.contains(section)) return;
+  section.classList.add('debug-panel__external');
+  section.style.removeProperty('display');
+  body.appendChild(section);
+};
+
+const attachExternalSections = () => {
+  ['instrumentLevelPanel', 'uvModeControls'].forEach(attachExternalSection);
+};
+
 function startMetrics(displayEl) {
   if (!displayEl) return;
   const step = (timestamp) => {
@@ -176,12 +207,14 @@ function hidePanel() {
   if (!panel || hidden) return;
   panel.style.display = 'none';
   hidden = true;
+  emitVisibilityEvent(false);
 }
 
 function showPanel() {
   if (!panel || !hidden) return;
   panel.style.display = '';
   hidden = false;
+  emitVisibilityEvent(true);
 }
 
 function togglePanelHidden() {
@@ -218,6 +251,9 @@ function setupPanel(pageName) {
   `;
   document.head.appendChild(createStyles());
   document.body.appendChild(panel);
+  emitVisibilityEvent(true);
+  attachExternalSections();
+  emitVisibilityEvent(true);
 
   const infoEl = panel.querySelector('.debug-panel__info');
   const pageEl = panel.querySelector('.debug-panel__page-name');
@@ -283,3 +319,14 @@ export function registerDebugHooks(payload = {}) {
 
 window.DEBUG_HOOKS = hookStore;
 window.registerDebugHooks = registerDebugHooks;
+
+const handleDebugPanelVisibility = (event) => {
+  if (!event?.detail) return;
+  if (event.detail.show) {
+    showPanel();
+  } else {
+    hidePanel();
+  }
+};
+
+window.addEventListener(DEBUG_VISIBILITY_EVENT, handleDebugPanelVisibility);

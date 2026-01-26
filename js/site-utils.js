@@ -215,11 +215,13 @@ function renderFullAttribution(target, entry, opts = {}) {
         return null;
     }
 
-    const missingText = opts.missingText || "Attribution data unavailable.";
+    const missingText = clean(opts.missingText);
     const fragment = document.createDocumentFragment();
 
     if (!entry || typeof entry !== "object") {
-        appendText(fragment, missingText);
+        if (missingText) {
+            appendText(fragment, missingText);
+        }
         element.replaceChildren(fragment);
         return null;
     }
@@ -273,7 +275,7 @@ function renderFullAttribution(target, entry, opts = {}) {
         hasContent = true;
     }
 
-    if (!hasContent) {
+    if (!hasContent && missingText) {
         appendText(fragment, missingText);
     }
 

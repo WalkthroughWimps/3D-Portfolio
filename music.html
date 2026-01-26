@@ -128,87 +128,7 @@
       <div class="piano-notes" aria-live="polite" aria-atomic="true"></div>
     </section>
   
-    <!-- Fixed overlay for music UI: controls + play button -->
-    <div class="music-ui-overlay" aria-hidden="false">
-      <div class="piano-controls">
-        <div class="track-select">
-          <button id="trackBaby" data-track="baby" title="Play Baby track">Baby</button>
-          <button id="trackRaisins" data-track="raisins" title="Play Raisins track">Raisins</button>
-        </div>
-        <div class="track-select" style="margin-left:8px;">
-          <button id="trackForests" data-track="forests" title="Play Forests track">Forests</button>
-        </div>
-        <button id="restartPlayback" title="Restart from beginning">Restart</button>
-        <label for="playbackRate" style="display:flex; align-items:center; gap:6px; color:#e8fff4; font:12px monospace; margin-left:8px;">
-          Speed
-          <select id="playbackRate" aria-label="Playback speed">
-            <option value="0.75">0.75×</option>
-            <option value="0.85">0.85×</option>
-            <option value="1" selected>1×</option>
-            <option value="1.2">1.2×</option>
-            <option value="1.6">1.6×</option>
-            <option value="2">2×</option>
-          </select>
-        </label>
-        <!-- UV map controls: toggle/cycle or set directly to U/V -->
-        <div class="uv-map-controls" style="display:inline-flex; gap:6px; margin-left:12px; align-items:center;">
-          <button id="uvToggleBtn" title="Toggle UV map (none → U → V)">UV: Off</button>
-          <button id="uvUBtn" title="Show U color map">UV U</button>
-          <button id="uvVBtn" title="Show V color map">UV V</button>
-          <button id="uvCheckerBtn" title="Show checkerboard UV map">UV Checker</button>
-        </div>
-      </div>
-    </div>
-    <div class="instrument-level-panel" id="instrumentLevelPanel" aria-label="Instrument levels">
-      <button class="instrument-level-toggle" id="instrumentLevelToggle" type="button" aria-label="Toggle instrument panel"></button>
-      <div class="visualizer-container instrument-viz">
-        <div class="viz-meter">
-          <div class="viz-scale" aria-hidden="true">
-            <div class="viz-mark"><span>0</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-6</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-12</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-18</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-24</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-30</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-36</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-42</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-48</span><span class="viz-rule"></span></div>
-            <div class="viz-mark"><span>-54</span><span class="viz-rule"></span></div>
-          </div>
-          <canvas id="instrumentVisualizer" width="28" height="420"></canvas>
-        </div>
-        <div id="instrumentVizDb" class="viz-readout">dB: -inf</div>
-      </div>
-      <div class="instrument-level-controls">
-        <div class="instrument-level-row">
-          <label for="instrumentSiteVolume">Site volume</label>
-          <input id="instrumentSiteVolume" type="range" min="0" max="100" step="1" value="100" aria-label="Site volume percent">
-          <div id="instrumentSiteVolumeReadout" class="instrument-level-readout">100% (0.0 dB)</div>
-        </div>
-        <div class="instrument-level-row">
-          <label for="instrumentMasterGain">Instrument master</label>
-          <input id="instrumentMasterGain" type="range" min="0.2" max="3" step="0.01" value="1" aria-label="Instrument master gain">
-          <div id="instrumentMasterGainReadout" class="instrument-level-readout">1.00 (0.0 dB)</div>
-        </div>
-        <div class="instrument-level-row">
-          <div class="instrument-level-label-row">
-            <label for="instrumentCategorySelect">Category gain</label>
-            <select id="instrumentCategorySelect" aria-label="Instrument category"></select>
-          </div>
-          <input id="instrumentCategoryGain" type="range" min="0.2" max="2.5" step="0.01" value="1" aria-label="Instrument category gain">
-          <div id="instrumentCategoryGainReadout" class="instrument-level-readout">1.00 (0.0 dB)</div>
-        </div>
-        <div id="instrumentEffectiveReadout" class="instrument-level-effective">Effective: 1.00 (0.0 dB)</div>
-        <div class="instrument-level-row">
-          <div class="instrument-level-label-row">
-            <label for="instrumentAutoLevelBtn">Auto level</label>
-            <div class="instrument-level-target">Target: -6 dB</div>
-          </div>
-          <button id="instrumentAutoLevelBtn" type="button">Auto Level Current</button>
-          <div id="instrumentAutoGainReadout" class="instrument-level-readout">Auto gain: 1.00 (0.0 dB)</div>
-        </div>
-      </div>
-    </div>
+    <!-- Fixed overlay for music UI: removed in favor of Debug Mode placement -->
     <!-- Left-side backend picker (choose library) -->
     <div class="instrument-backend-picker" id="instrumentBackendPicker" aria-hidden="false" role="toolbar" aria-label="Instrument backend picker"></div>
     <!-- Left-side instrument picker -->
@@ -393,13 +313,73 @@
       SiteUtils.loadAttributions().then(() => {
         keys.forEach((key, index) => {
           SiteUtils.renderFullAttributionByKey(`#full-attr-music-${index + 1}`, key, {
-            missingText: 'Attribution data unavailable.'
+            missingText: ''
           });
         });
       }).catch(() => {});
     });
   </script>
-<script type="module">import { loadDebugIfEnabled } from "./debug/debug-loader.js"; loadDebugIfEnabled();</script>
+  <div id="debug-controls-template" class="debug-template" aria-hidden="true">
+    <div class="instrument-level-panel" id="instrumentLevelPanel" aria-label="Instrument levels">
+      <div class="visualizer-container instrument-viz">
+        <div class="viz-meter">
+          <div class="viz-scale" aria-hidden="true">
+            <div class="viz-mark"><span>0</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-6</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-12</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-18</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-24</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-30</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-36</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-42</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-48</span><span class="viz-rule"></span></div>
+            <div class="viz-mark"><span>-54</span><span class="viz-rule"></span></div>
+          </div>
+          <canvas id="instrumentVisualizer" width="28" height="420"></canvas>
+        </div>
+        <div id="instrumentVizDb" class="viz-readout">dB: -inf</div>
+      </div>
+      <div class="instrument-level-controls">
+        <div class="instrument-level-row">
+          <label for="instrumentSiteVolume">Site volume</label>
+          <input id="instrumentSiteVolume" type="range" min="0" max="100" step="1" value="100" aria-label="Site volume percent">
+          <div id="instrumentSiteVolumeReadout" class="instrument-level-readout">100% (0.0 dB)</div>
+        </div>
+        <div class="instrument-level-row">
+          <label for="instrumentMasterGain">Instrument master</label>
+          <input id="instrumentMasterGain" type="range" min="0.2" max="3" step="0.01" value="1" aria-label="Instrument master gain">
+          <div id="instrumentMasterGainReadout" class="instrument-level-readout">1.00 (0.0 dB)</div>
+        </div>
+        <div class="instrument-level-row">
+          <div class="instrument-level-label-row">
+            <label for="instrumentCategorySelect">Category gain</label>
+            <select id="instrumentCategorySelect" aria-label="Instrument category"></select>
+          </div>
+          <input id="instrumentCategoryGain" type="range" min="0.2" max="2.5" step="0.01" value="1" aria-label="Instrument category gain">
+          <div id="instrumentCategoryGainReadout" class="instrument-level-readout">1.00 (0.0 dB)</div>
+        </div>
+        <div id="instrumentEffectiveReadout" class="instrument-level-effective">Effective: 1.00 (0.0 dB)</div>
+        <div class="instrument-level-row">
+          <div class="instrument-level-label-row">
+            <label for="instrumentAutoLevelBtn">Auto level</label>
+            <div class="instrument-level-target">Target: -6 dB</div>
+          </div>
+          <button id="instrumentAutoLevelBtn" type="button">Auto Level Current</button>
+          <div id="instrumentAutoGainReadout" class="instrument-level-readout">Auto gain: 1.00 (0.0 dB)</div>
+        </div>
+      </div>
+    </div>
+    <div class="uv-mode-controls" id="uvModeControls">
+      <div class="uv-map-controls">
+        <button id="uvToggleBtn" title="Toggle UV map (none → U → V)">UV: Off</button>
+        <button id="uvUBtn" title="Show U color map">UV U</button>
+        <button id="uvVBtn" title="Show V color map">UV V</button>
+        <button id="uvCheckerBtn" title="Show checkerboard UV map">UV Checker</button>
+      </div>
+    </div>
+  </div>
+  <script type="module">import { loadDebugIfEnabled } from "./debug/debug-loader.js"; loadDebugIfEnabled();</script>
+  <script type="module" src="debug/debug-nav-toggle.js"></script>
 </body>
 
 </html>

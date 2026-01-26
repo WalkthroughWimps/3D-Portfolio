@@ -3815,7 +3815,6 @@ let panelHover = null;
 let lastBackboardPickLogMs = 0;
 let backboardClickPanel = null;
 let backboardPointerDown = false;
-let backboardDebugPreview = null;
 let backboardUvSampleLogged = false;
 // Backboard UV orientation correction (detect if UV island is rotated/flipped)
 // backboardUVCorrection: per-axis correction detected at load time
@@ -4072,16 +4071,7 @@ function createBackboardCanvas(aspect){
   backboardCanvas.width = backboardCssW;
   backboardCanvas.height = backboardCssH;
   backboardCanvas.id = 'uiDebugCanvas';
-  backboardCanvas.style.position = 'fixed';
-  backboardCanvas.style.left = '8px';
-  backboardCanvas.style.bottom = '8px';
-  backboardCanvas.style.width = '320px';
-  backboardCanvas.style.height = 'auto';
-  backboardCanvas.style.zIndex = '9999';
-  backboardCanvas.style.border = '2px solid magenta';
-  backboardCanvas.style.pointerEvents = 'none';
-  document.body.appendChild(backboardCanvas);
-  backboardDebugPreview = backboardCanvas;
+  backboardCanvas.style.display = 'none'; // keep the duplicated UI canvas hidden
 
   backboardCtx = backboardCanvas.getContext('2d');
   backboardTexture = new THREE.CanvasTexture(backboardCanvas);
