@@ -432,8 +432,6 @@ if (isLocalHost) {
                 const endQuat = activeCamera.quaternion.clone();
                 const wasDamping = controls.enableDamping;
                 controls.enableDamping = false;
-                controls.rotateLeft(0);
-                controls.rotateUp(0);
                 controls.target.copy(glbCenter);
                 activeCamera.position.copy(endPos);
                 activeCamera.quaternion.copy(endQuat);
