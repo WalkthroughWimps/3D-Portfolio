@@ -13,6 +13,8 @@ body {
     --hl-dark-color: var(--blue-dark);
     --hl-text-color: var(--blue-text-color);
 
+    --panel-height: 40vh;
+
     background-image: url('assets/overlays/overlay-about-dark.png');
     background-repeat: repeat;
     background-blend-mode: multiply;
@@ -48,7 +50,6 @@ body {
     min-width: 100%;
     max-width: 100%;
     height: 100%;
-    padding: 0;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -61,13 +62,12 @@ body {
     position: relative;
     inline-size: min(96vw, 1120px);
     margin: 0 auto 0 0;
-    padding: 14px 18px 12px;
+    padding: 50px 18px 0px 30px;
     line-height: 1.6;
     font-size: 1.05rem;
     background: color-mix(in oklab, var(--primary-color), transparent 40%);
     border: none;
     border-radius: 32px;
-    overflow: hidden;
     box-shadow: 0 8px 28px rgba(0, 0, 0, .25), 0 2px 8px rgba(0, 0, 0, .15);
     min-height: var(--panel-height, auto);
 }

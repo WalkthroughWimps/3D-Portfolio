@@ -410,7 +410,7 @@ function setupIntroVideo() {
   videoEl.addEventListener('stalled', updateLoad);
   updateLoad();
   if (!introState.forceReadyTimer) {
-    const readyFallbackMs = 5000;
+    const readyFallbackMs = 15000;
     introState.forceReadyTimer = setTimeout(() => {
       if (introState.done) return;
       if (introState.loadBar) introState.loadBar.style.width = '100%';

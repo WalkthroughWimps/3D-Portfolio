@@ -8,15 +8,201 @@
     <link rel="stylesheet" href="start-page.css">
     <script src="/js/site-utils.js" defer></script>
     <script src="a11y.js" defer></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+            }
+        }
+    </script>
 </head>
 <body>
+    <div class="nav-wrap">
+        <div class="navigation-bg">
+            <nav class="navigation">
+                <button id="debugToggleBtn" class="nav-icon nav-icon--debug settings-gear-btn" type="button" aria-pressed="false" aria-label="Toggle debug panels" title="Toggle debug panels">
+                    <?xml version="1.0" encoding="UTF-8"?><svg id="a" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36.66 36.66">
+                      <path id="b"
+                        d="M13.08,9.24c-3.14,1.81-5.25,5.21-5.25,9.09H2.05v-2s-.02-.07-.06-.07l-.4-.05c-.42-.06-1.05-.56-1.45-.94-.12-.12-.17-.3-.12-.46l.69-2.59c.04-.16.17-.29.34-.33.54-.14,1.33-.26,1.72-.09l.38.15s.07.01.08-.02l2.01-3.47s.01-.07-.02-.09l-.33-.25c-.33-.25-.63-1-.78-1.54-.04-.16,0-.34.12-.46l1.89-1.89c.12-.12.3-.16.46-.12.54.15,1.29.45,1.54.78l.25.33s.06.03.09.02l1.73-1,2.89,5Z"
+                        style="fill:var(--red-secondary);" />
+                      <path id="c"
+                        d="M13.08,27.42l-2.89,5-1.73-1s-.07-.01-.09.02l-.25.33c-.25.33-1,.63-1.54.78-.16.04-.34,0-.46-.12l-1.89-1.89c-.12-.12-.16-.3-.12-.46.15-.54.45-1.29.78-1.54l.33-.25s.03-.06.02-.09l-2.01-3.47s-.05-.04-.08-.02l-.38.15c-.39.17-1.18.05-1.72-.09-.17-.04-.3-.17-.34-.33L.02,21.85c-.05-.16,0-.34.12-.46.4-.38,1.03-.88,1.45-.94l.4-.05s.06-.03.06-.07v-2h5.78c0,3.88,2.11,7.28,5.25,9.09Z"
+                        style="fill:var(--green-secondary);" />
+                      <path id="d"
+                        d="M24.86,33.89c.17.39.05,1.18-.09,1.72-.04.17-.17.3-.33.34l-2.59.69c-.16.05-.34,0-.46-.12-.38-.4-.88-1.03-.94-1.45l-.05-.4s-.03-.06-.07-.06h-4s-.07.02-.07.06l-.05.4c-.06.42-.56,1.05-.94,1.45-.12.12-.3.17-.46.12l-2.59-.69c-.16-.04-.29-.17-.33-.34-.14-.54-.26-1.33-.09-1.72l.15-.38s.01-.07-.02-.08l-1.74-1.01,2.89-5c1.54.9,3.33,1.41,5.25,1.41s3.71-.51,5.25-1.41l2.89,5-1.74,1.01s-.04.05-.02.08l.15.38Z"
+                        style="fill:var(--yellow-secondary);" />
+                      <path id="e"
+                        d="M36.64,21.85l-.69,2.59c-.04.16-.17.29-.34.33-.54.14-1.33.26-1.72.09l-.38-.15s-.07-.01-.08.02l-2.01,3.47s-.01.07.02.09l.33.25c.33.25.63,1,.78,1.54.04.16,0,.34-.12.46l-1.89,1.89c-.12.12-.3.16-.46.12-.54-.15-1.29-.45-1.54-.78l-.25-.33s-.06-.03-.09-.02l-1.73,1-2.89-5c3.14-1.81,5.25-5.21,5.25-9.09h5.78v2s.02.07.06.07l.4.05c.42.06,1.05.56,1.45.94.12.12.17.3.12.46Z"
+                        style="fill: var(--purple-secondary);" />
+                      <path id="f"
+                        d="M36.52,15.27c-.4.38-1.03.88-1.45.94l-.4.05s-.06.03-.06.07v2h-5.78c0-3.88-2.11-7.28-5.25-9.09l2.89-5,1.73,1s.07.01.09-.02l.25-.33c.25-.33,1-.63,1.54-.78.16-.04.34,0,.46.12l1.89,1.89c.12.12.16.3.12.46-.15.54-.45,1.29-.78,1.54l-.33.25s-.03.06-.02.09l2.01,3.47s.05.04.08.02l.38-.15c.39-.17,1.18-.05,1.72.09.17.04.3.17.34.33l.69,2.59c.05.16,0,.34-.12.46Z"
+                        style="fill: var(--orange-secondary);" />
+                      <path id="g"
+                        d="M26.47,4.24l-2.89,5c-1.54-.9-3.33-1.41-5.25-1.41s-3.71.51-5.25,1.41l-2.89-5,1.74-1.01s.04-.05.02-.08l-.15-.38c-.17-.39-.05-1.18.09-1.72.04-.17.17-.3.33-.34L14.81.02c.16-.05.34,0,.46.12.38.4.88,1.03.94,1.45l.05.4s.03.06.07.06h4s.07-.02.07-.06l.05-.4c.06-.42.56-1.05.94-1.45.12-.12.3-.17.46-.12l2.59.69c.16.04.29.17.33.34.14.54.26,1.33.09,1.72l-.15.38s-.01.07.02.08l1.74,1.01Z"
+                        style="fill:var(--blue-secondary);" />
+                      <g id="h">
+                        <g id="i">
+                          <path d="M14.28,12.92c-1.65,1.23-2.71,3.2-2.71,5.41,0,3.09,2.07,5.69,4.91,6.5"
+                            style="fill:none; stroke:#000; stroke-miterlimit:10; stroke-width:1.5px;" />
+                          <polygon points="15.3 15.65 12.66 10.65 16.48 11.83 15.3 15.65" />
+                        </g>
+                        <g id="j">
+                          <path d="M22.38,23.74c1.65-1.23,2.71-3.2,2.71-5.41,0-3.09-2.07-5.69-4.91-6.5"
+                            style="fill:none; stroke:#000; stroke-miterlimit:10; stroke-width:1.5px;" />
+                          <polygon points="21.36 21.01 24 26.01 20.18 24.83 21.36 21.01" />
+                        </g>
+                      </g>
+                    </svg>
+                </button>
+            </nav>
+        </div>
+    </div>
+
+    <div class="bg-overlay">
+        <div id="settingsControllerScene" class="settings-controller-scene settings-controller-scene--full" aria-live="polite" aria-label="3D settings controller">
+            <canvas id="settingsControllerCanvas" class="settings-controller-canvas" role="presentation"></canvas>
+            <div id="settingsControllerStatus" class="settings-controller-status" role="status" aria-live="polite">
+                Loading 3D controller…
+            </div>
+        </div>
+    </div>
+
+    <div id="startPageControls" class="start-page-controls" style="display:none;">
     <a href="#main" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Skip to content</a>
-    <button id="settingsBtn" class="settings-overlay-btn" aria-haspopup="dialog" aria-controls="settingsModal">⚙</button>
     <main id="main" class="wrap" aria-labelledby="title">
         <header>
             <h1 id="title">Welcome</h1>
             <p class="lead" id="leadText">Let’s tune a few preferences so the site works best for you.</p>
         </header>
+
+        <section id="debugCameraPanel" class="debug-camera-panel" aria-label="Debug camera stats">
+            <div class="debug-camera-row">
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">Animation frame</div>
+                    <div class="debug-camera-anim">
+                        <span id="debugFrameValue" class="debug-camera-value">--</span>
+                        <span id="debugFramePercent" class="debug-camera-percent">--%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="debug-camera-row">
+                <span class="nav-icon debug-zoom-icon" aria-hidden="true">
+                    <?xml version="1.0" encoding="UTF-8"?><svg id="a" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36.66 36.66">
+                      <path id="b"
+                        d="M13.08,9.24c-3.14,1.81-5.25,5.21-5.25,9.09H2.05v-2s-.02-.07-.06-.07l-.4-.05c-.42-.06-1.05-.56-1.45-.94-.12-.12-.17-.3-.12-.46l.69-2.59c.04-.16.17-.29.34-.33.54-.14,1.33-.26,1.72-.09l.38.15s.07.01.08-.02l2.01-3.47s.01-.07-.02-.09l-.33-.25c-.33-.25-.63-1-.78-1.54-.04-.16,0-.34.12-.46l1.89-1.89c.12-.12.3-.16.46-.12.54.15,1.29.45,1.54.78l.25.33s.06.03.09.02l1.73-1,2.89,5Z"
+                        style="fill:var(--red-secondary);" />
+                      <path id="c"
+                        d="M13.08,27.42l-2.89,5-1.73-1s-.07-.01-.09.02l-.25.33c-.25.33-1,.63-1.54.78-.16.04-.34,0-.46-.12l-1.89-1.89c-.12-.12-.16-.3-.12-.46.15-.54.45-1.29.78-1.54l.33-.25s.03-.06.02-.09l-2.01-3.47s-.05-.04-.08-.02l-.38.15c-.39.17-1.18.05-1.72-.09-.17-.04-.3-.17-.34-.33L.02,21.85c-.05-.16,0-.34.12-.46.4-.38,1.03-.88,1.45-.94l.4-.05s.06-.03.06-.07v-2h5.78c0,3.88,2.11,7.28,5.25,9.09Z"
+                        style="fill:var(--green-secondary);" />
+                      <path id="d"
+                        d="M24.86,33.89c.17.39.05,1.18-.09,1.72-.04.17-.17.3-.33.34l-2.59.69c-.16.05-.34,0-.46-.12-.38-.4-.88-1.03-.94-1.45l-.05-.4s-.03-.06-.07-.06h-4s-.07.02-.07.06l-.05.4c-.06.42-.56,1.05-.94,1.45-.12.12-.3.17-.46.12l-2.59-.69c-.16-.04-.29-.17-.33-.34-.14-.54-.26-1.33-.09-1.72l.15-.38s.01-.07-.02-.08l-1.74-1.01,2.89-5c1.54.9,3.33,1.41,5.25,1.41s3.71-.51,5.25-1.41l2.89,5-1.74,1.01s-.04.05-.02.08l.15.38Z"
+                        style="fill:var(--yellow-secondary);" />
+                      <path id="e"
+                        d="M36.64,21.85l-.69,2.59c-.04.16-.17.29-.34.33-.54.14-1.33.26-1.72.09l-.38-.15s-.07-.01-.08.02l-2.01,3.47s-.01.07.02.09l.33.25c.33.25.63,1,.78,1.54.04.16,0,.34-.12.46l-1.89,1.89c-.12.12-.3.16-.46.12-.54-.15-1.29-.45-1.54-.78l-.25-.33s-.06-.03-.09-.02l-1.73,1-2.89-5c3.14-1.81,5.25-5.21,5.25-9.09h5.78v2s.02.07.06.07l.4.05c.42.06,1.05.56,1.45.94.12.12.17.3.12.46Z"
+                        style="fill: var(--purple-secondary);" />
+                      <path id="f"
+                        d="M36.52,15.27c-.4.38-1.03.88-1.45.94l-.4.05s-.06.03-.06.07v2h-5.78c0-3.88-2.11-7.28-5.25-9.09l2.89-5,1.73,1s.07.01.09-.02l.25-.33c.25-.33,1-.63,1.54-.78.16-.04.34,0,.46.12l1.89,1.89c.12.12.16.3.12.46-.15.54-.45,1.29-.78,1.54l-.33.25s-.03.06-.02.09l2.01,3.47s.05.04.08.02l.38-.15c.39-.17,1.18-.05,1.72.09.17.04.3.17.34.33l.69,2.59c.05.16,0,.34-.12.46Z"
+                        style="fill: var(--orange-secondary);" />
+                      <path id="g"
+                        d="M26.47,4.24l-2.89,5c-1.54-.9-3.33-1.41-5.25-1.41s-3.71.51-5.25,1.41l-2.89-5,1.74-1.01s.04-.05.02-.08l-.15-.38c-.17-.39-.05-1.18.09-1.72.04-.17.17-.3.33-.34L14.81.02c.16-.05.34,0,.46.12.38.4.88,1.03.94,1.45l.05.4s.03.06.07.06h4s.07-.02.07-.06l.05-.4c.06-.42.56-1.05.94-1.45.12-.12.3-.17.46-.12l2.59.69c.16.04.29.17.33.34.14.54.26,1.33.09,1.72l-.15.38s-.01.07.02.08l1.74,1.01Z"
+                        style="fill:var(--blue-secondary);" />
+                      <g id="h">
+                        <g id="i">
+                          <path d="M14.28,12.92c-1.65,1.23-2.71,3.2-2.71,5.41,0,3.09,2.07,5.69,4.91,6.5"
+                            style="fill:none; stroke:#000; stroke-miterlimit:10; stroke-width:1.5px;" />
+                          <polygon points="15.3 15.65 12.66 10.65 16.48 11.83 15.3 15.65" />
+                        </g>
+                        <g id="j">
+                          <path d="M22.38,23.74c1.65-1.23,2.71-3.2,2.71-5.41,0-3.09-2.07-5.69-4.91-6.5"
+                            style="fill:none; stroke:#000; stroke-miterlimit:10; stroke-width:1.5px;" />
+                          <polygon points="21.36 21.01 24 26.01 20.18 24.83 21.36 21.01" />
+                        </g>
+                      </g>
+                    </svg>
+                </span>
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">Camera zoom</div>
+                    <div id="debugZoomValue" class="debug-camera-value">--</div>
+                </div>
+            </div>
+            <div class="debug-camera-row">
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">Camera rotation</div>
+                    <div class="debug-camera-rot-grid">
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">X</span>
+                            <span id="debugRotXValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Y</span>
+                            <span id="debugRotYValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Z</span>
+                            <span id="debugRotZValue" class="debug-camera-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="debug-camera-row">
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">Controls enabled</div>
+                    <div class="debug-camera-rot-grid">
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Rotate</span>
+                            <span id="debugRotateEnabled" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Zoom</span>
+                            <span id="debugZoomEnabled" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Pan</span>
+                            <span id="debugPanEnabled" class="debug-camera-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="debug-camera-row">
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">Camera position</div>
+                    <div class="debug-camera-rot-grid">
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">X</span>
+                            <span id="debugPosXValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Y</span>
+                            <span id="debugPosYValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Z</span>
+                            <span id="debugPosZValue" class="debug-camera-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="debug-camera-row">
+                <div class="debug-camera-info">
+                    <div class="debug-camera-label">GLB center</div>
+                    <div class="debug-camera-rot-grid">
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">X</span>
+                            <span id="debugGlbXValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Y</span>
+                            <span id="debugGlbYValue" class="debug-camera-value">--</span>
+                        </div>
+                        <div class="debug-camera-rot">
+                            <span class="debug-camera-rot-label">Z</span>
+                            <span id="debugGlbZValue" class="debug-camera-value">--</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <div class="top-tabs">
             <div id="topTabA11y" class="tab active">Accessibility</div>
@@ -125,9 +311,6 @@
                             <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="10" value="0" aria-label="A/V sync (ms)">
                             <button class="arrow-btn" id="syncRight">&gt;</button>
                         </div>
-                        <div id="settingsPanel" class="settings-panel">
-                            <div id="settingsA11ySummary" class="hidden">Accessibility saved. Use the main controls to edit.</div>
-                        </div>
                         <div class="mouse-legend" aria-hidden="true">
                             <img class="mouse-icon" src="assets/SVG/mouse-LMB.svg" alt="Left mouse button">
                             <img class="mouse-icon" src="assets/SVG/mouse_RMB.svg" alt="Right mouse button">
@@ -151,25 +334,6 @@
         </div>
 
     </main>
-
-    <!-- Temporary muted-attribution test harness; remove once verification is complete -->
-    <section id="attr-test-harness" aria-live="polite" style="margin:24px;gap:12px;display:flex;flex-direction:column;">
-        <p style="margin:0;font-weight:600;">Muted attribution formatting tests (remove after checking):</p>
-        <div id="attr-test-1"></div>
-        <div id="attr-test-2"></div>
-        <div id="attr-test-3"></div>
-        <div id="attr-test-4"></div>
-        <div id="attr-test-5"></div>
-        <div id="attr-test-6"></div>
-    </section>
-
-    <!-- Temporary full attribution rendering checks -->
-    <section id="full-attr-test-harness" aria-live="polite" style="margin:24px;gap:12px;display:flex;flex-direction:column;">
-        <p style="margin:0;font-weight:600;">Full attribution rendering tests (remove after verification):</p>
-        <div id="full-attr-test-1"></div>
-        <div id="full-attr-test-2"></div>
-        <div id="full-attr-test-3"></div>
-    </section>
 
     <!-- Permission modal -->
     <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
@@ -209,6 +373,7 @@
                 </div>
             </div>
         </div>
+    </div>
     </div>
 
     <script type="module" src="start-page.js" defer></script>

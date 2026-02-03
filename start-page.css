@@ -1,6 +1,99 @@
 :root { color-scheme: light dark; }
 html,body { height:100%; }
-body { margin:0; font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif; background: #0f1115; color: #e7f6f0; overflow-y:auto; }
+body {
+    margin:0;
+    font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Arial, sans-serif;
+    background: #0f1115;
+    color: #e7f6f0;
+    background-image: url("assets/overlays/overlay-about-dark.png");
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+    overflow: hidden;
+    min-height: 100vh;
+}
+.bg-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 5px;
+    z-index: 1;
+    pointer-events: none;
+}
+
+#debug-panel .start-page-controls {
+    width: 100%;
+}
+#debug-panel .wrap {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+}
+#debug-panel section {
+    margin: 8px 0;
+}
+#debug-panel .jump-container {
+    max-width: 100%;
+    margin: 0;
+}
+#debug-panel .debug-camera-panel {
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.1);
+    background: rgba(0,0,0,.25);
+}
+#debug-panel .debug-camera-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#debug-panel .debug-zoom-icon {
+    --nav-icon-size: 28px;
+}
+#debug-panel .debug-camera-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+#debug-panel .debug-camera-value {
+    font-size: 14px;
+    font-weight: 700;
+}
+#debug-panel .debug-camera-anim {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+#debug-panel .debug-camera-percent {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.7;
+}
+#debug-panel .debug-camera-rot-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 6px;
+}
+#debug-panel .debug-camera-rot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+}
+#debug-panel .debug-camera-rot-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
 .wrap { max-width: 960px; margin: 0 auto; padding: 12px 16px 24px; box-sizing:border-box; }
 header { margin: 4px 0 8px; }
 h1 { margin: 0 0 8px; font-size: clamp(22px, 4vw, 36px); }
@@ -70,7 +163,54 @@ canvas#visualizer { width:28px; height:420px; background:transparent; display:bl
 .viz-readout { font-size:12px; opacity:.85; }
 
 /* Settings overlay inside jump container */
-.settings-panel { margin-top:12px; }
+.settings-panel { margin-top:12px; position:relative; }
+.settings-controller-scene {
+    position:relative;
+    width:100%;
+    height: clamp(240px, 40vh, 420px);
+    min-height:240px;
+    max-height:420px;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);
+    background: radial-gradient(circle at top, rgba(42,161,152,.35), transparent 60%), #0f1115;
+}
+.settings-controller-scene.settings-controller-scene--full {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    pointer-events: auto;
+    background: radial-gradient(circle at top, rgba(42,161,152,.35), transparent 60%), rgba(15,17,21,.92);
+}
+.settings-controller-canvas {
+    width:100%;
+    height:100%;
+    display:block;
+    background:#0f1115;
+}
+.settings-controller-status {
+    position:absolute;
+    left:12px;
+    right:12px;
+    bottom:12px;
+    background:rgba(5,12,18,.85);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:12px;
+    color:#f9fffd;
+    text-align:center;
+}
+.settings-controller-scene.controller-ready .settings-controller-status {
+    display:none;
+}
+.settings-controller-scene.controller-ready {
+    border-color: rgba(42,161,152,.6);
+    box-shadow: 0 0 20px rgba(42,161,152,.3);
+}
 .settings-overlay-btn { position:fixed; right:18px; top:18px; background:transparent; border:1px solid rgba(255,255,255,.06); padding:8px; border-radius:8px; cursor:pointer; }
 .settings-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
 .settings-modal.open { display:flex; }

@@ -92,6 +92,12 @@ function createStyles() {
       font-size: 11px;
       opacity: 0.85;
     }
+    .debug-panel__notice {
+      margin-top: 8px;
+      font-weight: 700;
+      color: #ff5a4f;
+      letter-spacing: 0.2px;
+    }
     #debug-panel .instrument-level-panel,
     #debug-panel .uv-mode-controls {
       width: 100%;
@@ -155,18 +161,23 @@ function renderHooks() {
   });
 }
 
-const attachExternalSection = (selectorId) => {
+const attachExternalSection = (selectorId, position = 'bottom') => {
   if (!panel) return;
   const body = panel.querySelector('.debug-panel__body');
   const section = document.getElementById(selectorId);
   if (!body || !section || body.contains(section)) return;
   section.classList.add('debug-panel__external');
   section.style.removeProperty('display');
-  body.appendChild(section);
+  if (position === 'top') {
+    body.insertBefore(section, body.firstChild);
+  } else {
+    body.appendChild(section);
+  }
 };
 
 const attachExternalSections = () => {
-  ['instrumentLevelPanel', 'uvModeControls'].forEach(attachExternalSection);
+  attachExternalSection('startPageControls', 'top');
+  ['instrumentLevelPanel', 'uvModeControls'].forEach((id) => attachExternalSection(id, 'bottom'));
 };
 
 function startMetrics(displayEl) {
@@ -239,14 +250,15 @@ function setupPanel(pageName) {
       <button class="debug-panel__toggle" type="button">Hide</button>
     </div>
     <div class="debug-panel__body">
-      <div class="debug-panel__info"></div>
       <div class="debug-panel__hooks"></div>
       <div class="debug-panel__metrics"></div>
       <div class="debug-panel__actions"></div>
+      <div class="debug-panel__info"></div>
     </div>
     <div class="debug-panel__footer">
       <button class="debug-panel__disable" type="button">Disable Debug Mode</button>
       <button class="debug-panel__visibility" type="button">Collapse</button>
+      <div class="debug-panel__notice">Reminder: check copyright info is correct.</div>
     </div>
   `;
   document.head.appendChild(createStyles());
