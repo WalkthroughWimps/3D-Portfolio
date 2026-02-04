@@ -5,6 +5,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 const isLocalHost = isLocalDev();
 const SETTINGS_CONTROLLER_GLB = assetUrl("glb/settings-controller.glb");
+const WELCOME_JINGLE_SRC = assetUrl("music/welcome-jingle.wav");
 let settingsControllerReadyResolve = () => {};
 let hasSignaledSettingsControllerReady = false;
 const settingsControllerReady = new Promise((resolve) => {
@@ -110,10 +111,57 @@ if (isLocalHost) {
         const debugGlbXValue = document.getElementById('debugGlbXValue');
         const debugGlbYValue = document.getElementById('debugGlbYValue');
         const debugGlbZValue = document.getElementById('debugGlbZValue');
+        const resetCameraAnim = document.getElementById('resetCameraAnim');
+        const animDurationCustom = document.getElementById('animDurationCustom');
+        const animDurationCustomValue = document.getElementById('animDurationCustomValue');
+        const animDurationFocus = document.getElementById('animDurationFocus');
+        const animDurationFocusValue = document.getElementById('animDurationFocusValue');
+        const animShiftStart = document.getElementById('animShiftStart');
+        const animShiftStartValue = document.getElementById('animShiftStartValue');
+        const animEasePower = document.getElementById('animEasePower');
+        const animEasePowerValue = document.getElementById('animEasePowerValue');
 
     function setTabInfo(text){
         if(tabInfo){
             tabInfo.textContent = text;
+        }
+    }
+
+    function bindAnimTuningControls(){
+        if(animDurationCustom && animDurationCustomValue){
+            animDurationCustom.value = String(animTuning.customDurationMs);
+            animDurationCustomValue.textContent = `${animTuning.customDurationMs}ms`;
+            animDurationCustom.addEventListener('input', () => {
+                animTuning.customDurationMs = parseInt(animDurationCustom.value, 10) || animTuning.customDurationMs;
+                animDurationCustomValue.textContent = `${animTuning.customDurationMs}ms`;
+            });
+        }
+        if(resetCameraAnim){
+            resetCameraAnim.addEventListener('click', () => resetCustomCameraAnimation());
+        }
+        if(animDurationFocus && animDurationFocusValue){
+            animDurationFocus.value = String(animTuning.focusDurationMs);
+            animDurationFocusValue.textContent = `${animTuning.focusDurationMs}ms`;
+            animDurationFocus.addEventListener('input', () => {
+                animTuning.focusDurationMs = parseInt(animDurationFocus.value, 10) || animTuning.focusDurationMs;
+                animDurationFocusValue.textContent = `${animTuning.focusDurationMs}ms`;
+            });
+        }
+        if(animShiftStart && animShiftStartValue){
+            animShiftStart.value = String(animTuning.focusShiftStart.toFixed(2));
+            animShiftStartValue.textContent = animTuning.focusShiftStart.toFixed(2);
+            animShiftStart.addEventListener('input', () => {
+                animTuning.focusShiftStart = parseFloat(animShiftStart.value) || animTuning.focusShiftStart;
+                animShiftStartValue.textContent = animTuning.focusShiftStart.toFixed(2);
+            });
+        }
+        if(animEasePower && animEasePowerValue){
+            animEasePower.value = String(animTuning.easePower.toFixed(1));
+            animEasePowerValue.textContent = animTuning.easePower.toFixed(1);
+            animEasePower.addEventListener('input', () => {
+                animTuning.easePower = parseFloat(animEasePower.value) || animTuning.easePower;
+                animEasePowerValue.textContent = animTuning.easePower.toFixed(1);
+            });
         }
     }
 
@@ -144,20 +192,33 @@ if (isLocalHost) {
         dirLight.position.set(2, 4, 3);
         scene.add(ambient, dirLight);
 
-        const controls = new OrbitControls(activeCamera, renderer.domElement);
-        controls.enablePan = false;
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.08;
-        controls.autoRotate = false;
-        controls.autoRotateSpeed = 0.5;
-        controls.minDistance = 0.05;
-        controls.maxDistance = Infinity;
-        controls.target.set(0, 1, 0);
-        controls.mouseButtons = {
-            LEFT: THREE.MOUSE.PAN,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.ROTATE
+        let controls = null;
+        const applyControlsConfig = (controlsInstance) => {
+            if(!controlsInstance) return;
+            controlsInstance.enablePan = false;
+            controlsInstance.enableDamping = true;
+            controlsInstance.dampingFactor = 0.08;
+            controlsInstance.autoRotate = false;
+            controlsInstance.autoRotateSpeed = 0.5;
+            controlsInstance.minDistance = 5;
+            controlsInstance.maxDistance = 12;
+            controlsInstance.mouseButtons = {
+                LEFT: THREE.MOUSE.PAN,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: THREE.MOUSE.ROTATE
+            };
         };
+        const createOrbitControls = (camera) => {
+            if(controls){
+                controls.dispose();
+                controls = null;
+            }
+            controls = new OrbitControls(camera, renderer.domElement);
+            applyControlsConfig(controls);
+            return controls;
+        };
+        createOrbitControls(activeCamera);
+        controls.target.set(0, 1, 0);
 
         function setUserCameraControlsEnabled(isEnabled){
             if(!controls) return;
@@ -232,7 +293,9 @@ if (isLocalHost) {
         let screenCanvas = null;
         let screenCtx = null;
         let screenTexture = null;
-        let okRect = { x: 0.4, y: 0.72, w: 0.2, h: 0.12 };
+        let allowAudioRect = { x: 0.34, y: 0.72, w: 0.16, h: 0.12 };
+        let muteAudioRect = { x: 0.54, y: 0.72, w: 0.24, h: 0.12 };
+        let pendingAudioAllowed = null;
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
@@ -247,6 +310,16 @@ if (isLocalHost) {
         let shouldTrackControls = false;
         let lastControlsEnabled = null;
         const FORCE_MANUAL_CAMERA = true;
+        const USE_CUSTOM_CAMERA_ANIM = false;
+        const animTuning = {
+            customDurationMs: 5000,
+            focusDurationMs: 520,
+            focusShiftStart: 0.75,
+            easePower: 3
+        };
+        window.animTuning = animTuning;
+        let focusAnim = null;
+        let customCameraAnim = null;
         const CAMERA_ANIM_POS = [
             [-0.005232, 4.233088, 1.427375],
             [-0.005232, 4.233088, 1.427375],
@@ -366,6 +439,199 @@ if (isLocalHost) {
             controls.update();
         }
 
+        function easeInOutCubic(t){
+            return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+        }
+
+        function easeInOutPower(t, power){
+            const p = Math.max(0.5, Math.min(6, power || 3));
+            return t < 0.5
+                ? Math.pow(2 * t, p) / 2
+                : 1 - Math.pow(-2 * t + 2, p) / 2;
+        }
+
+        function easeOutBack(t){
+            const s = 1.4;
+            const c3 = s + 1;
+            return 1 + c3 * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+        }
+
+        function findMeshByName(model, predicate){
+            if(!model || typeof predicate !== 'function') return null;
+            let found = null;
+            model.traverse((node) => {
+                if(found || !node.isMesh) return;
+                const name = (node.name || '').toLowerCase();
+                if(predicate(name, node)) found = node;
+            });
+            return found;
+        }
+
+        function getScreenFocusPoint(model){
+            const screen = findMeshByName(model, (name) => name === 'control-screen' || name === 'control_screen');
+            if(screen){
+                const box = new THREE.Box3().setFromObject(screen);
+                return box.getCenter(new THREE.Vector3());
+            }
+            const bounds = new THREE.Box3().setFromObject(model);
+            return bounds.getCenter(new THREE.Vector3());
+        }
+
+        function getComfortFocusPoint(model){
+            const comfort = findMeshByName(model, (name) => name.includes('comfort') || name.includes('custom'));
+            if(comfort){
+                const box = new THREE.Box3().setFromObject(comfort);
+                return box.getCenter(new THREE.Vector3());
+            }
+            const bounds = new THREE.Box3().setFromObject(model);
+            const center = bounds.getCenter(new THREE.Vector3());
+            const size = bounds.getSize(new THREE.Vector3());
+            return center.add(new THREE.Vector3(0, size.y * 0.2, 0));
+        }
+
+        function startCustomCameraAnimation(model){
+            if(!activeCamera || !controls || !model) return;
+            const glbBounds = new THREE.Box3().setFromObject(model);
+            const glbCenter = glbBounds.getCenter(new THREE.Vector3());
+            const screenTarget = getScreenFocusPoint(model);
+            const comfortTarget = getComfortFocusPoint(model);
+            const startTarget = controls.target.clone();
+            const startPos = activeCamera.position.clone();
+            const dir = startPos.clone().sub(startTarget).normalize();
+            const startDistance = startPos.distanceTo(startTarget);
+            const endDistance = controls.maxDistance || 12;
+
+            customCameraAnim = {
+                startTime: performance.now(),
+                durationMs: animTuning.customDurationMs,
+                startTarget,
+                screenTarget,
+                comfortTarget,
+                glbCenter,
+                dir,
+                startDistance,
+                endDistance
+            };
+            controls.enabled = false;
+        }
+
+        function updateCustomCameraAnimation(){
+            if(!customCameraAnim || !activeCamera || !controls) return false;
+            const now = performance.now();
+            const t = (now - customCameraAnim.startTime) / customCameraAnim.durationMs;
+            const k = Math.min(1, Math.max(0, t));
+            const zoomEase = easeInOutPower(k, animTuning.easePower);
+            const distance = customCameraAnim.startDistance
+                + (customCameraAnim.endDistance - customCameraAnim.startDistance) * zoomEase;
+
+            const shiftStart = Math.min(0.95, Math.max(0.5, animTuning.focusShiftStart));
+            const shiftDenom = Math.max(0.05, 1 - shiftStart);
+            const targetPhase = k < shiftStart
+                ? easeInOutPower(k / shiftStart, animTuning.easePower)
+                : easeInOutPower((k - shiftStart) / shiftDenom, animTuning.easePower);
+            const target = k < shiftStart
+                ? customCameraAnim.screenTarget.clone().lerp(customCameraAnim.comfortTarget, targetPhase)
+                : customCameraAnim.comfortTarget.clone().lerp(customCameraAnim.glbCenter, targetPhase);
+
+            controls.target.copy(target);
+            activeCamera.position.copy(target.clone().add(customCameraAnim.dir.clone().multiplyScalar(distance)));
+            activeCamera.lookAt(target);
+            activeCamera.updateMatrixWorld(true);
+
+            if(k >= 1){
+                customCameraAnim = null;
+                const wasDamping = controls.enableDamping;
+                controls.enableDamping = false;
+                controls.update();
+                controls.enableDamping = wasDamping;
+                controls.enableRotate = true;
+                controls.enableZoom = true;
+                controls.enabled = true;
+                return false;
+            }
+            return true;
+        }
+
+        function resetCustomCameraAnimation(){
+            const model = settingsControllerBridge.model;
+            if(!model || !activeCamera || !controls) return;
+            focusAnim = null;
+            customCameraAnim = null;
+            cameraTween = null;
+            cameraTargetTime = null;
+            pendingAudioAllowed = null;
+
+            const screenTarget = getScreenFocusPoint(model);
+            const dir = activeCamera.position.clone().sub(controls.target);
+            if(dir.lengthSq() < 1e-6){
+                dir.set(0, 0, 1);
+            }
+            dir.normalize();
+            const distance = controls.minDistance || 5;
+
+            controls.target.copy(screenTarget);
+            activeCamera.position.copy(screenTarget.clone().add(dir.multiplyScalar(distance)));
+            activeCamera.lookAt(screenTarget);
+            activeCamera.updateMatrixWorld(true);
+            setUserCameraControlsEnabled(false);
+            introActive = true;
+        }
+
+        function startFocusAnimation(target, { zoomToMin = false, durationMs = null } = {}){
+            if(!activeCamera || !controls || !target) return;
+            const startTarget = controls.target.clone();
+            const startPos = activeCamera.position.clone();
+            const startDistance = startPos.distanceTo(startTarget);
+            const dir = startPos.clone().sub(startTarget).normalize();
+            const endDistance = zoomToMin ? controls.minDistance : startDistance;
+            const effectiveDuration = durationMs !== null ? durationMs : animTuning.focusDurationMs;
+
+            focusAnim = {
+                startTime: performance.now(),
+                durationMs: effectiveDuration,
+                startTarget,
+                endTarget: target.clone(),
+                startDistance,
+                endDistance,
+                dir
+            };
+
+            controls.enabled = false;
+        }
+
+        function updateFocusAnimation(){
+            if(!focusAnim || !activeCamera || !controls) return false;
+            const now = performance.now();
+            const t = (now - focusAnim.startTime) / focusAnim.durationMs;
+            const k = Math.min(1, Math.max(0, t));
+            const targetEase = easeInOutPower(k, animTuning.easePower);
+            const zoomEase = easeInOutPower(k, animTuning.easePower);
+            const target = focusAnim.startTarget.clone().lerp(focusAnim.endTarget, targetEase);
+            const distance = focusAnim.startDistance + (focusAnim.endDistance - focusAnim.startDistance) * zoomEase;
+
+            controls.target.copy(target);
+            activeCamera.position.copy(target.clone().add(focusAnim.dir.clone().multiplyScalar(distance)));
+            activeCamera.updateMatrixWorld(true);
+
+            if(k >= 1){
+                focusAnim = null;
+                const wasDamping = controls.enableDamping;
+                controls.enableDamping = false;
+                controls.update();
+                controls.enableDamping = wasDamping;
+                controls.enableRotate = true;
+                controls.enableZoom = true;
+                controls.enabled = true;
+                return false;
+            }
+            return true;
+        }
+
+        function computeLookAtQuaternion(position, target, up){
+            const m = new THREE.Matrix4().lookAt(position, target, up);
+            return new THREE.Quaternion().setFromRotationMatrix(m);
+        }
+
         function startManualCameraTween(){
             if(!activeCamera) return;
             logCamEvent('startManualCameraTween()');
@@ -418,7 +684,22 @@ if (isLocalHost) {
             if(rot0 && rot1){
                 const q0 = new THREE.Quaternion(rot0[0], rot0[1], rot0[2], rot0[3]);
                 const q1 = new THREE.Quaternion(rot1[0], rot1[1], rot1[2], rot1[3]);
-                activeCamera.quaternion.copy(q0.slerp(q1, s));
+                const animQuat = q0.slerp(q1, s);
+                let finalQuat = animQuat;
+                if(settingsControllerBridge.model){
+                    const blendWindow = 0.12;
+                    const blendStart = 1 - blendWindow;
+                    const blendRaw = (t - blendStart) / blendWindow;
+                    const blend = Math.min(1, Math.max(0, blendRaw));
+                    if(blend > 0){
+                        const box = new THREE.Box3().setFromObject(settingsControllerBridge.model);
+                        const center = box.getCenter(new THREE.Vector3());
+                        const lookQuat = computeLookAtQuaternion(activeCamera.position, center, activeCamera.up);
+                        const eased = 1 - Math.pow(1 - blend, 3);
+                        finalQuat = animQuat.slerp(lookQuat, eased);
+                    }
+                }
+                activeCamera.quaternion.copy(finalQuat);
             }
             activeCamera.updateMatrixWorld(true);
             cameraTween.frame += 1;
@@ -430,20 +711,33 @@ if (isLocalHost) {
                 const glbCenter = box.getCenter(new THREE.Vector3());
                 const endPos = activeCamera.position.clone();
                 const endQuat = activeCamera.quaternion.clone();
-                const wasDamping = controls.enableDamping;
-                controls.enableDamping = false;
-                controls.target.copy(glbCenter);
                 activeCamera.position.copy(endPos);
                 activeCamera.quaternion.copy(endQuat);
                 activeCamera.updateMatrixWorld(true);
-                controls.update();
-                controls.update();
-                controls.enableDamping = wasDamping;
                 cameraTween = null;
                 lastCameraFrame = total - 1;
                 shouldTrackControls = true;
                 usesGltfCamera = false;
-                setUserCameraControlsEnabled(true);
+                if(pendingAudioAllowed !== null){
+                    applyAudioPermission(pendingAudioAllowed);
+                    pendingAudioAllowed = null;
+                }
+                cameraTween = null;
+                const finalPos = activeCamera.position.clone();
+                const finalQuat = activeCamera.quaternion.clone();
+                const center = model
+                    ? new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
+                    : new THREE.Vector3(0, 0, 0);
+                createOrbitControls(activeCamera);
+                controls.enabled = false;
+                controls.enableRotate = true;
+                controls.enableZoom = true;
+                controls.target.copy(center);
+                activeCamera.position.copy(finalPos);
+                activeCamera.quaternion.copy(finalQuat);
+                activeCamera.updateMatrixWorld(true);
+                controls.update();
+                controls.enabled = true;
                 lastControlsEnabled = controls.enabled;
             }
             return true;
@@ -494,8 +788,25 @@ if (isLocalHost) {
                 model.updateMatrixWorld(true);
             }
             usesGltfCamera = false;
-            setUserCameraControlsEnabled(true);
-            syncControlsToCamera(model);
+            if(pendingAudioAllowed !== null){
+                applyAudioPermission(pendingAudioAllowed);
+                pendingAudioAllowed = null;
+            }
+            const finalPos = activeCamera.position.clone();
+            const finalQuat = activeCamera.quaternion.clone();
+            const center = model
+                ? new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
+                : new THREE.Vector3(0, 0, 0);
+            createOrbitControls(activeCamera);
+            controls.enabled = false;
+            controls.enableRotate = true;
+            controls.enableZoom = true;
+            controls.target.copy(center);
+            activeCamera.position.copy(finalPos);
+            activeCamera.quaternion.copy(finalQuat);
+            activeCamera.updateMatrixWorld(true);
+            controls.update();
+            controls.enabled = true;
             cameraTargetTime = null;
         }
 
@@ -763,15 +1074,29 @@ if (isLocalHost) {
             ctx.textBaseline = 'middle';
             ctx.fillText('Hello, person', size * 0.5, cellHeight * 1.1);
 
-            const okX = okRect.x * size;
-            const okY = okRect.y * height;
-            const okW = okRect.w * size;
-            const okH = okRect.h * height;
             ctx.fillStyle = '#010718';
-            ctx.fillRect(okX, okY, okW, okH);
+            ctx.font = '900 34px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
+            ctx.fillText('Allow audio for this site?', size * 0.5, cellHeight * 2.2);
+
+            const allowX = allowAudioRect.x * size;
+            const allowY = allowAudioRect.y * height;
+            const allowW = allowAudioRect.w * size;
+            const allowH = allowAudioRect.h * height;
+            const muteX = muteAudioRect.x * size;
+            const muteY = muteAudioRect.y * height;
+            const muteW = muteAudioRect.w * size;
+            const muteH = muteAudioRect.h * height;
+            ctx.fillStyle = '#010718';
+            ctx.fillRect(allowX, allowY, allowW, allowH);
             ctx.fillStyle = '#f0e2ff';
             ctx.font = '900 36px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
-            ctx.fillText('OK', okX + okW / 2, okY + okH / 2);
+            ctx.fillText('OK', allowX + allowW / 2, allowY + allowH / 2);
+            ctx.fillStyle = 'rgba(1, 7, 24, 0.9)';
+            ctx.fillRect(muteX, muteY, muteW, muteH);
+            ctx.fillStyle = '#f0e2ff';
+            ctx.font = '800 24px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
+            ctx.fillText('Leave site', muteX + muteW / 2, muteY + muteH / 2 - 12);
+            ctx.fillText('muted', muteX + muteW / 2, muteY + muteH / 2 + 12);
             ctx.fillStyle = '#010718';
             ctx.font = '800 22px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
             ctx.textAlign = 'left';
@@ -813,6 +1138,16 @@ if (isLocalHost) {
         }
 
         function animate(){
+            if(updateCustomCameraAnimation()){
+                renderer.render(scene, activeCamera);
+                requestAnimationFrame(animate);
+                return;
+            }
+            if(updateFocusAnimation()){
+                renderer.render(scene, activeCamera);
+                requestAnimationFrame(animate);
+                return;
+            }
             if(controls && controls.enabled){
                 controls.update();
             }
@@ -1144,8 +1479,22 @@ enabled: ${!!cameraAction?.enabled}`;
             }
         }
 
+        function isSmallFocusTarget(hitObject, model){
+            if(!hitObject || !model) return false;
+            const name = (hitObject.name || '').toLowerCase();
+            if(name === 'control-screen' || name === 'control_screen') return true;
+            const objBox = new THREE.Box3().setFromObject(hitObject);
+            const objSize = objBox.getSize(new THREE.Vector3());
+            const objMax = Math.max(objSize.x, objSize.y, objSize.z);
+            const modelBox = new THREE.Box3().setFromObject(model);
+            const modelSize = modelBox.getSize(new THREE.Vector3());
+            const modelMax = Math.max(modelSize.x, modelSize.y, modelSize.z);
+            if(modelMax <= 0) return false;
+            return objMax <= modelMax * 0.35;
+        }
+
         function handlePointerDown(event){
-            if(event.button !== 0) return;
+            if(event.button !== 0 && event.button !== 1) return;
             const rect = settingsControllerCanvas.getBoundingClientRect();
             if(rect.width === 0 || rect.height === 0) return;
             pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1153,6 +1502,15 @@ enabled: ${!!cameraAction?.enabled}`;
             raycaster.setFromCamera(pointer, activeCamera);
             const hits = raycaster.intersectObjects(model.children, true);
             if(!hits.length) return;
+            if(event.button === 1){
+                event.preventDefault();
+                const hit = hits[0];
+                if(isSmallFocusTarget(hit.object, model)){
+                    const focusPoint = hit.point.clone();
+                    startFocusAnimation(focusPoint, { zoomToMin: true });
+                }
+                return;
+            }
             if(introActive){
                 const hit = hits[0];
                 const findOkNode = (node) => {
@@ -1164,36 +1522,57 @@ enabled: ${!!cameraAction?.enabled}`;
                     }
                     return false;
                 };
-                let okHit = false;
+                let allowHit = false;
+                let muteHit = false;
                 if(hit.uv && screenTexture && screenTexture.repeat){
                     let u = hit.uv.x * screenTexture.repeat.x + screenTexture.offset.x;
                     let v = hit.uv.y * screenTexture.repeat.y + screenTexture.offset.y;
                     u = ((u % 1) + 1) % 1;
                     v = ((v % 1) + 1) % 1;
-                    const withinOk = u >= okRect.x && u <= okRect.x + okRect.w && v >= okRect.y && v <= okRect.y + okRect.h;
-                    okHit = withinOk || findOkNode(hit.object);
-                    if(okHit && cameraAction && !FORCE_MANUAL_CAMERA){
+                    const withinAllow = u >= allowAudioRect.x && u <= allowAudioRect.x + allowAudioRect.w
+                        && v >= allowAudioRect.y && v <= allowAudioRect.y + allowAudioRect.h;
+                    const withinMute = u >= muteAudioRect.x && u <= muteAudioRect.x + muteAudioRect.w
+                        && v >= muteAudioRect.y && v <= muteAudioRect.y + muteAudioRect.h;
+                    allowHit = withinAllow || findOkNode(hit.object);
+                    muteHit = withinMute;
+                    if((allowHit || muteHit) && cameraAction && !FORCE_MANUAL_CAMERA){
                         introActive = false;
-                        setUserCameraControlsEnabled(false);
-                        cameraAction.enabled = true;
-                        cameraAction.reset();
-                        cameraAction.paused = false;
-                        cameraTargetTime = getCameraHoldTime(cameraAction.getClip());
-                        cameraAction.play();
+                        pendingAudioAllowed = allowHit;
+                        if(allowHit){
+                            playWelcomeJingle(true);
+                        }
+                        if(USE_CUSTOM_CAMERA_ANIM){
+                            startCustomCameraAnimation(model);
+                        }else{
+                            setUserCameraControlsEnabled(false);
+                            cameraAction.enabled = true;
+                            cameraAction.reset();
+                            cameraAction.paused = false;
+                            cameraTargetTime = getCameraHoldTime(cameraAction.getClip());
+                            cameraAction.play();
+                        }
                         return;
                     }
                 }
-                if(introActive && okHit){
+                if(introActive && (allowHit || muteHit)){
                     introActive = false;
-                    if(cameraEnableTimer){
-                        clearTimeout(cameraEnableTimer);
+                    pendingAudioAllowed = allowHit;
+                    if(allowHit){
+                        playWelcomeJingle(true);
                     }
-                    const totalFrames = getManualCameraTotalFrames();
-                    const durationMs = (totalFrames / CAMERA_ANIM_EXPECTED_FPS) * 1000;
-                    cameraEnableTimer = setTimeout(() => {
-                        setUserCameraControlsEnabled(true);
-                    }, durationMs);
-                    startManualCameraTween();
+                    if(USE_CUSTOM_CAMERA_ANIM){
+                        startCustomCameraAnimation(model);
+                    }else{
+                        if(cameraEnableTimer){
+                            clearTimeout(cameraEnableTimer);
+                        }
+                        const totalFrames = getManualCameraTotalFrames();
+                        const durationMs = (totalFrames / CAMERA_ANIM_EXPECTED_FPS) * 1000;
+                        cameraEnableTimer = setTimeout(() => {
+                            setUserCameraControlsEnabled(true);
+                        }, durationMs);
+                        startManualCameraTween();
+                    }
                 }
                 return;
             }
@@ -1210,6 +1589,13 @@ enabled: ${!!cameraAction?.enabled}`;
             }
 
             settingsControllerCanvas.addEventListener('pointerdown', handlePointerDown);
+            settingsControllerCanvas.addEventListener('wheel', (event) => {
+                if(event.deltaY <= 0) return;
+                if(!model || !controls) return;
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                startFocusAnimation(center, { zoomToMin: false });
+            }, { passive: true });
             settingsControllerCanvas.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
             });
@@ -1272,6 +1658,7 @@ enabled: ${!!cameraAction?.enabled}`;
     let currentVideoKey = 'counts';
     let storedVolume = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '0.25');
     let storedMuted = (localStorage.getItem(AUDIO_MUTED_KEY) === 'true');
+    let welcomeJingle = null;
     // default sync to 270 ms if nothing stored
     let storedSync = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '270', 10);
     let isOrchestrating = false;
@@ -1284,27 +1671,39 @@ enabled: ${!!cameraAction?.enabled}`;
     function showPermissionIfNeeded(){
         const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY);
         if(allowed === null){
-            permModal.classList.remove('hidden');
-            permModal.style.display = 'flex';
+            permModal.classList.add('hidden');
+            permModal.style.display = 'none';
         }
     }
 
-    permAllow.addEventListener('click', async ()=>{
-        localStorage.setItem(AUDIO_ALLOWED_KEY, 'true');
-        localStorage.setItem(AUDIO_MUTED_KEY, 'false');
-        storedMuted = false;
-        storedVolume = 0.25;
-        localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+    function applyAudioPermission(allowed){
+        localStorage.setItem(AUDIO_ALLOWED_KEY, allowed ? 'true' : 'false');
+        if(allowed){
+            localStorage.setItem(AUDIO_MUTED_KEY, 'false');
+            storedMuted = false;
+            if(!Number.isFinite(storedVolume)){
+                storedVolume = 0.25;
+            }
+            localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+            ensureAudioRouting();
+            applyVolumeAndMuted();
+            if(audioCtx){
+                audioCtx.resume().catch(()=>{});
+            }
+        }else{
+            localStorage.setItem(AUDIO_MUTED_KEY, 'true');
+            storedMuted = true;
+            applyVolumeAndMuted();
+        }
         permModal.classList.add('hidden');
         permModal.style.display = 'none';
-        ensureAudioRouting();
-        applyVolumeAndMuted();
-        try{ await audioCtx.resume(); }catch(e){}
+    }
+
+    permAllow.addEventListener('click', async ()=>{
+        applyAudioPermission(true);
     });
     permDeny.addEventListener('click', ()=>{
-        localStorage.setItem(AUDIO_ALLOWED_KEY, 'false');
-        permModal.classList.add('hidden');
-        permModal.style.display = 'none';
+        applyAudioPermission(false);
     });
 
     // Create audio context and routing to apply delay to audio and visualizer
@@ -1379,6 +1778,19 @@ enabled: ${!!cameraAction?.enabled}`;
         if(volumeDisplay){
             volumeDisplay.textContent = `Volume: ${Math.round(storedVolume * 100)}%`;
         }
+    }
+
+    function playWelcomeJingle(forceUnmute = false){
+        if(!forceUnmute && storedMuted) return;
+        if(!welcomeJingle){
+            welcomeJingle = new Audio(WELCOME_JINGLE_SRC);
+            welcomeJingle.preload = 'auto';
+        }
+        const volume = Number.isFinite(storedVolume) ? storedVolume : 0.25;
+        welcomeJingle.muted = !forceUnmute && storedMuted;
+        welcomeJingle.volume = Math.max(0, Math.min(1, volume));
+        try{ welcomeJingle.currentTime = 0; }catch(e){}
+        welcomeJingle.play().catch(()=>{});
     }
 
     function setVolumeFromPercent(percent){
@@ -1747,6 +2159,7 @@ enabled: ${!!cameraAction?.enabled}`;
         const actions = {};
         if(saveBtn) actions['Save a11y prefs'] = () => saveBtn.click();
         if(resetBtn) actions['Reset a11y prefs'] = () => resetBtn.click();
+        actions['Reset camera anim'] = () => resetCustomCameraAnimation();
         if(typeof window.registerDebugHooks === 'function'){
             window.registerDebugHooks({ flags, actions });
         }
@@ -1757,6 +2170,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
     document.addEventListener('DOMContentLoaded', ()=>{
         initSettingsControllerScene();
+        bindAnimTuningControls();
         hydrate();
         showPermissionIfNeeded();
         storedVolume = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || storedVolume);
