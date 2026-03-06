@@ -1,5 +1,6 @@
 import { assetUrl, isLocalDev } from "./assets-config.js";
-import { loadDebugIfEnabled } from "./debug/debug-loader.js";
+import { loadDebugIfEnabled, DEBUG_VISIBILITY_EVENT } from "./debug/debug-loader.js";
+import { getSceneLightingValue, setSceneLightingValue, getLightScaleForValue, MAX_LIGHT_RATIO } from "./scene-lighting-sync.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -18,7 +19,16 @@ const settingsControllerBridge = {
     camera: null,
     model: null,
     controls: null,
-    canvas: null
+    canvas: null,
+    knobVolNode: null,
+    knobSyncNode: null,
+    knobContrastNode: null,
+    knobContrastNodes: [],
+    knobDefaults: null,
+    knobConstraints: null,
+    knobHitboxes: null,
+    knobAxisValues: { vol: 0, sync: 0, contrast: 0.5 },
+    updateKnobTransformsFromState: null
 };
 function signalSettingsControllerReady() {
     if (hasSignaledSettingsControllerReady) return;
@@ -42,6 +52,239 @@ if (isLocalHost) {
         location.reload();
     };
 }
+
+function initStartPageUILayoutTabs() {
+    const leftColumn = document.getElementById("uiLeftColumn");
+    const rightColumn = document.getElementById("uiRightColumn");
+    if (!rightColumn) return;
+    rightColumn.classList.add("ui-right--debug-host");
+    let debugPanelsShown = true;
+
+    const tabs = Array.from(rightColumn.querySelectorAll(".ui-tab[data-panel]"));
+    const panels = Array.from(rightColumn.querySelectorAll(".ui-panel[id]"));
+    if (!tabs.length || !panels.length) return;
+
+    const rightTabsShell = rightColumn.querySelector(".ui-right-tabs");
+    if (rightTabsShell) rightTabsShell.hidden = true;
+    panels.forEach((panelEl) => {
+        panelEl.hidden = true;
+        panelEl.classList.remove("is-active");
+    });
+
+    const moveIfPresent = (selector, targetId) => {
+        const node = document.querySelector(selector);
+        const target = document.getElementById(targetId);
+        if (!node || !target) return false;
+        if (target.contains(node)) return true;
+        target.appendChild(node);
+        return true;
+    };
+    const dockDebugPanel = () => {
+        const node = document.getElementById("debug-panel");
+        if (!node) return false;
+        if (node.parentElement === rightColumn) return true;
+        rightColumn.appendChild(node);
+        return true;
+    };
+
+    const moveToLeftOverlay = (selector) => {
+        if (!leftColumn) return false;
+        const node = document.querySelector(selector);
+        if (!node) return false;
+        if (leftColumn.contains(node)) return true;
+        leftColumn.appendChild(node);
+        return true;
+    };
+
+    dockDebugPanel();
+    moveToLeftOverlay(".cam-anim-debug-panel");
+
+    const camTab = rightColumn.querySelector('.ui-tab[data-panel="panel-cam"]');
+    const camPanel = document.getElementById("panel-cam");
+    if (camTab) camTab.hidden = true;
+    if (camPanel) camPanel.hidden = true;
+
+    let mergedTabsObserver = null;
+    const ensureMergedDebugTabs = () => {
+        const debugPanelEl = document.getElementById("debug-panel");
+        if (!debugPanelEl || !rightColumn.contains(debugPanelEl)) return false;
+        debugPanelEl.classList.add("debug-panel--start-docked-single");
+
+        const bodyEl = debugPanelEl.querySelector(".debug-panel__body");
+        if (!bodyEl) return false;
+
+        let mergedStrip = debugPanelEl.querySelector(".debug-panel__tabs-merged");
+        if (!mergedStrip) {
+            mergedStrip = document.createElement("div");
+            mergedStrip.className = "debug-panel__tabs debug-panel__tabs-merged";
+            mergedStrip.setAttribute("role", "tablist");
+            mergedStrip.setAttribute("aria-label", "Debug tabs");
+            debugPanelEl.insertBefore(mergedStrip, bodyEl);
+        }
+
+        const sourceButtons = Array.from(debugPanelEl.querySelectorAll(
+            ".debug-panel__tabs--left .debug-panel__tab[data-tab-group][data-tab-target], .debug-panel__tabs--right .debug-panel__tab[data-tab-group][data-tab-target]"
+        ));
+        if (!sourceButtons.length) return false;
+
+        const sourceKeySet = new Set(sourceButtons.map((btn) => `${btn.dataset.tabGroup}:${btn.dataset.tabTarget}`));
+        const existingMerged = Array.from(mergedStrip.querySelectorAll(".debug-panel__tab[data-source-key]"));
+        const existingKeySet = new Set(existingMerged.map((btn) => btn.dataset.sourceKey));
+        const needsRebuild = sourceButtons.length !== existingMerged.length
+            || Array.from(sourceKeySet).some((key) => !existingKeySet.has(key));
+
+        if (needsRebuild) {
+            mergedStrip.innerHTML = "";
+            sourceButtons.forEach((srcBtn) => {
+                const key = `${srcBtn.dataset.tabGroup}:${srcBtn.dataset.tabTarget}`;
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "debug-panel__tab";
+                btn.dataset.sourceKey = key;
+                btn.dataset.sourceGroup = srcBtn.dataset.tabGroup || "";
+                btn.dataset.sourceTarget = srcBtn.dataset.tabTarget || "";
+                btn.setAttribute("role", "tab");
+                btn.textContent = (srcBtn.textContent || "").trim();
+                btn.addEventListener("click", () => {
+                    srcBtn.click();
+                    syncMergedDebugTabs();
+                });
+                mergedStrip.appendChild(btn);
+            });
+        }
+
+        const syncMergedDebugTabs = () => {
+            const currentSources = Array.from(debugPanelEl.querySelectorAll(
+                ".debug-panel__tabs--left .debug-panel__tab[data-tab-group][data-tab-target], .debug-panel__tabs--right .debug-panel__tab[data-tab-group][data-tab-target]"
+            ));
+            let activeGroup = "right";
+            currentSources.forEach((srcBtn) => {
+                const key = `${srcBtn.dataset.tabGroup}:${srcBtn.dataset.tabTarget}`;
+                const mergedBtn = mergedStrip.querySelector(`.debug-panel__tab[data-source-key="${key}"]`);
+                if (!mergedBtn) return;
+                const active = srcBtn.classList.contains("is-active");
+                mergedBtn.hidden = !!srcBtn.hidden;
+                mergedBtn.classList.toggle("is-active", active);
+                mergedBtn.setAttribute("aria-selected", active ? "true" : "false");
+                mergedBtn.setAttribute("tabindex", active ? "0" : "-1");
+                if (active) activeGroup = srcBtn.dataset.tabGroup || activeGroup;
+            });
+            debugPanelEl.dataset.activeDebugGroup = activeGroup;
+        };
+
+        syncMergedDebugTabs();
+        if (mergedTabsObserver) mergedTabsObserver.disconnect();
+        mergedTabsObserver = new MutationObserver(() => {
+            ensureMergedDebugTabs();
+        });
+        mergedTabsObserver.observe(debugPanelEl, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+            attributeFilter: ["class", "hidden", "aria-selected"]
+        });
+        return true;
+    };
+
+    let debugDockToggle = null;
+    let leftPanelHideToggle = null;
+    const ensureHideButtons = () => {
+        const legacyDockToggle = rightColumn.querySelector(":scope > .ui-debug-panels-toggle");
+        if (legacyDockToggle && legacyDockToggle.parentElement === rightColumn) {
+            legacyDockToggle.remove();
+        }
+        const debugPanelEl = document.getElementById("debug-panel");
+        if (debugPanelEl) {
+            debugDockToggle = debugPanelEl.querySelector(".ui-debug-panels-toggle");
+            if (!debugDockToggle) {
+                debugDockToggle = document.createElement("button");
+                debugDockToggle.type = "button";
+                debugDockToggle.className = "ui-debug-panels-toggle ui-debug-panels-toggle--right";
+                debugDockToggle.textContent = "HIDE PANEL";
+                debugDockToggle.setAttribute("aria-label", "Hide debug control panel");
+                debugPanelEl.appendChild(debugDockToggle);
+                debugDockToggle.addEventListener("click", () => {
+                    window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show: false } }));
+                });
+            }
+        }
+        const leftInfoPanel = document.querySelector(".cam-anim-debug-panel");
+        if (leftInfoPanel) {
+            leftPanelHideToggle = leftInfoPanel.querySelector(".ui-debug-panels-toggle--left");
+            if (!leftPanelHideToggle) {
+                leftPanelHideToggle = document.createElement("button");
+                leftPanelHideToggle.type = "button";
+                leftPanelHideToggle.className = "ui-debug-panels-toggle ui-debug-panels-toggle--left";
+                leftPanelHideToggle.textContent = "HIDE PANEL";
+                leftPanelHideToggle.setAttribute("aria-label", "Hide debug info panel");
+                leftInfoPanel.appendChild(leftPanelHideToggle);
+                leftPanelHideToggle.addEventListener("click", () => {
+                    window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show: false } }));
+                });
+            }
+        }
+        return !!(debugPanelEl || leftInfoPanel);
+    };
+    const applyDebugDockToggleTheme = () => {
+        const debugPanelEl = document.getElementById("debug-panel");
+        const isLapis = debugPanelEl?.getAttribute("data-color-flip") === "1";
+        const nextTheme = isLapis ? "rose" : "lapis";
+        if (debugDockToggle) debugDockToggle.dataset.theme = nextTheme;
+        if (leftPanelHideToggle) leftPanelHideToggle.dataset.theme = nextTheme;
+    };
+    const setDebugPanelsShown = (show) => {
+        debugPanelsShown = !!show;
+        const debugPanelEl = document.getElementById("debug-panel");
+        const leftInfoPanel = document.querySelector(".cam-anim-debug-panel");
+        if (debugPanelEl) {
+            debugPanelEl.classList.toggle("debug-panel--dock-hidden-right", !debugPanelsShown);
+        }
+        if (leftInfoPanel) {
+            leftInfoPanel.classList.toggle("cam-anim-debug-panel--hidden-left", !debugPanelsShown);
+        }
+        applyDebugDockToggleTheme();
+    };
+    ensureHideButtons();
+    applyDebugDockToggleTheme();
+
+    let debugPanelThemeObserver = null;
+    const connectDebugPanelThemeObserver = () => {
+        const debugPanelEl = document.getElementById("debug-panel");
+        if (!debugPanelEl) return false;
+        if (debugPanelThemeObserver) {
+            debugPanelThemeObserver.disconnect();
+        }
+        debugPanelThemeObserver = new MutationObserver(applyDebugDockToggleTheme);
+        debugPanelThemeObserver.observe(debugPanelEl, { attributes: true, attributeFilter: ["data-color-flip"] });
+        applyDebugDockToggleTheme();
+        return true;
+    };
+    connectDebugPanelThemeObserver();
+    ensureMergedDebugTabs();
+    ensureHideButtons();
+    setDebugPanelsShown(true);
+
+    window.addEventListener(DEBUG_VISIBILITY_EVENT, (event) => {
+        if (!event?.detail) return;
+        setDebugPanelsShown(!!event.detail.show);
+    });
+
+    const observer = new MutationObserver(() => {
+        dockDebugPanel();
+        moveToLeftOverlay(".cam-anim-debug-panel");
+        connectDebugPanelThemeObserver();
+        ensureMergedDebugTabs();
+        ensureHideButtons();
+        setDebugPanelsShown(debugPanelsShown);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initStartPageUILayoutTabs, { once: true });
+} else {
+    initStartPageUILayoutTabs();
+}
 // Bind controls to SiteA11y and implement jump UI with visualizer
 (function(){
     // Helper storage keys
@@ -49,6 +292,54 @@ if (isLocalHost) {
     const AUDIO_VOLUME_KEY = 'site.audio.volume';
     const AUDIO_SYNC_KEY = 'site.audio.sync';
     const AUDIO_MUTED_KEY = 'site.audio.muted';
+    const CONTRAST_VALUE_KEY = 'site.contrast.value';
+    const BRIGHTNESS_VALUE_KEY = 'site.start.brightness';
+    const lightingState = {
+        lux: Number.NaN,
+        emi: Number.NaN,
+        overlay: Number.NaN
+    };
+    const clamp01Value = (value) => {
+        const parsed = Number(value);
+        if(!Number.isFinite(parsed)) return null;
+        return Math.max(0, Math.min(1, parsed));
+    };
+    const getLuxValue = () => {
+        if(Number.isFinite(lightingState.lux)) return lightingState.lux;
+        const fallback = clamp01Value(getSceneLightingValue());
+        lightingState.lux = fallback ?? 1;
+        return lightingState.lux;
+    };
+    const setLuxValue = (value) => {
+        const next = clamp01Value(value);
+        if(next === null) return getLuxValue();
+        lightingState.lux = next;
+        setSceneLightingValue(next);
+        return next;
+    };
+    const getEmiValue = () => {
+        if(Number.isFinite(lightingState.emi)) return lightingState.emi;
+        try{
+            const parsed = clamp01Value(localStorage.getItem(CONTRAST_VALUE_KEY));
+            if(parsed === null){
+                try{ localStorage.setItem(CONTRAST_VALUE_KEY, '0.5'); }catch(e){}
+                lightingState.emi = 0.5;
+                return lightingState.emi;
+            }
+            lightingState.emi = parsed;
+            return lightingState.emi;
+        }catch(e){
+            lightingState.emi = 0.5;
+            return lightingState.emi;
+        }
+    };
+    const setEmiValue = (value) => {
+        const next = clamp01Value(value);
+        if(next === null) return getEmiValue();
+        lightingState.emi = next;
+        try{ localStorage.setItem(CONTRAST_VALUE_KEY, String(next)); }catch(e){}
+        return next;
+    };
 
     // File paths (relative to site root)
     const MEDIA = {
@@ -87,11 +378,50 @@ if (isLocalHost) {
     const settingsModal = document.getElementById('settingsModal');
     const leadText = document.getElementById('leadText');
     const settingsControllerScene = document.getElementById('settingsControllerScene');
+    const bgOverlay = document.querySelector('.bg-overlay');
     const settingsControllerCanvas = document.getElementById('settingsControllerCanvas');
     const settingsControllerStatus = document.getElementById('settingsControllerStatus');
     const settingsControllerGridCols = null;
     const settingsControllerGridRows = null;
     const settingsControllerInfo = null;
+    const emissiveListPanel = document.getElementById('emissiveListPanel');
+    const emissiveList = document.getElementById('emissiveList');
+    const emissiveOutputBtn = document.getElementById('emissiveOutputBtn');
+    const emissiveOutput = document.getElementById('emissiveOutput');
+    const emissiveTabSelect = document.getElementById('emissiveTabSelect');
+    const emissiveTabAdjust = document.getElementById('emissiveTabAdjust');
+    const emissiveSelectPanel = document.getElementById('emissiveSelectPanel');
+    const emissiveAdjustPanel = document.getElementById('emissiveAdjustPanel');
+    const emissiveSelectAll = document.getElementById('emissiveSelectAll');
+    const emissiveSelectNone = document.getElementById('emissiveSelectNone');
+    let activeSettingsView = 'accessibility';
+    const getBackgroundBrightness = () => {
+        if(Number.isFinite(lightingState.overlay)){
+            return Math.max(0, Math.min(1, lightingState.overlay));
+        }
+        try{
+            const raw = localStorage.getItem(BRIGHTNESS_VALUE_KEY);
+            const parsed = clamp01Value(raw);
+            if(parsed === null){
+                try{ localStorage.setItem(BRIGHTNESS_VALUE_KEY, '0'); }catch(e){}
+                lightingState.overlay = 0;
+                return 0;
+            }
+            lightingState.overlay = parsed;
+            return lightingState.overlay;
+        }catch(e){
+            lightingState.overlay = 0;
+            return 0;
+        }
+    };
+
+        const setBackgroundBrightness = (value) => {
+            const next = clamp01Value(value);
+            if(next === null) return getBackgroundBrightness();
+            lightingState.overlay = next;
+            try{ localStorage.setItem(BRIGHTNESS_VALUE_KEY, String(next)); }catch(e){}
+            return next;
+        };
 
         const topTabA11y = document.getElementById('topTabA11y');
         const topTabAudio = document.getElementById('topTabAudio');
@@ -111,7 +441,18 @@ if (isLocalHost) {
         const debugGlbXValue = document.getElementById('debugGlbXValue');
         const debugGlbYValue = document.getElementById('debugGlbYValue');
         const debugGlbZValue = document.getElementById('debugGlbZValue');
+        const debugCameraPanel = document.getElementById('debugCameraPanel');
+        const toggleBrightnessControl = document.getElementById('toggleBrightnessControl');
+        const toggleEmissionControl = document.getElementById('toggleEmissionControl');
+        const luxControlSlider = document.getElementById('luxControlSlider');
+        const luxControlInput = document.getElementById('luxControlInput');
+        const emiControlSlider = document.getElementById('emiControlSlider');
+        const emiControlInput = document.getElementById('emiControlInput');
+        const overlayBlendSlider = document.getElementById('overlayBlendSlider');
+        const overlayBlendInput = document.getElementById('overlayBlendInput');
         const resetCameraAnim = document.getElementById('resetCameraAnim');
+        const uiAnimSpeedSlider = document.getElementById('uiAnimSpeed');
+        const uiAnimSpeedValue = document.getElementById('uiAnimSpeedValue');
         const animDurationCustom = document.getElementById('animDurationCustom');
         const animDurationCustomValue = document.getElementById('animDurationCustomValue');
         const animDurationFocus = document.getElementById('animDurationFocus');
@@ -120,6 +461,10 @@ if (isLocalHost) {
         const animShiftStartValue = document.getElementById('animShiftStartValue');
         const animEasePower = document.getElementById('animEasePower');
         const animEasePowerValue = document.getElementById('animEasePowerValue');
+        let contrastKnobTrackerEl = document.getElementById('contrastKnobTrackerLine');
+        let lightingDebugLineEl = null;
+        let knobSidesLineEl = null;
+        let lightingDebugState = { source: 'init', knob: '-' };
 
     function setTabInfo(text){
         if(tabInfo){
@@ -127,7 +472,359 @@ if (isLocalHost) {
         }
     }
 
+    function updateLightingToggleLabels(){
+        if(toggleBrightnessControl){
+            toggleBrightnessControl.textContent = `Lux: ${settingsControllerBridge.luxControlEnabled ? 'on' : 'off'}`;
+        }
+        if(toggleEmissionControl){
+            toggleEmissionControl.textContent = `Emi: ${settingsControllerBridge.emissionControlEnabled ? 'on' : 'off'}`;
+        }
+    }
+
+    function clamp01(value){
+        if(!Number.isFinite(value)) return null;
+        return Math.max(0, Math.min(1, value));
+    }
+
+    function syncLuxInputs(){
+        const value = Math.max(0, Math.min(1, getLuxValue()));
+        if(luxControlSlider) luxControlSlider.value = value.toFixed(2);
+        if(luxControlInput) luxControlInput.value = value.toFixed(2);
+    }
+
+    function syncEmiInputs(){
+        const value = Math.max(0, Math.min(1, getEmiValue()));
+        if(emiControlSlider) emiControlSlider.value = value.toFixed(2);
+        if(emiControlInput) emiControlInput.value = value.toFixed(2);
+    }
+
+    function syncOverlayInputs(){
+        const value = Math.max(0, Math.min(1, getBackgroundBrightness()));
+        if(overlayBlendSlider) overlayBlendSlider.value = value.toFixed(2);
+        if(overlayBlendInput) overlayBlendInput.value = value.toFixed(2);
+    }
+
+    function ensureLightingDebugLine(){
+        if(!debugCameraPanel) return;
+        if(!contrastKnobTrackerEl || !contrastKnobTrackerEl.isConnected){
+            const tracker = document.createElement('div');
+            tracker.id = 'contrastKnobTrackerLine';
+            tracker.className = 'debug-camera-value';
+            tracker.style.marginBottom = '4px';
+            tracker.style.fontSize = '12px';
+            tracker.style.opacity = '0.95';
+            tracker.style.whiteSpace = 'normal';
+            tracker.textContent = 'Contrast knob loc: pending';
+            debugCameraPanel.insertBefore(tracker, debugCameraPanel.firstChild);
+            contrastKnobTrackerEl = tracker;
+        }
+        if(!lightingDebugLineEl || !lightingDebugLineEl.isConnected){
+            const line = document.createElement('div');
+            line.id = 'lightingDebugLine';
+            line.className = 'debug-camera-value';
+            line.style.marginTop = '4px';
+            line.style.fontSize = '12px';
+            line.style.opacity = '0.95';
+            line.style.whiteSpace = 'normal';
+            debugCameraPanel.appendChild(line);
+            lightingDebugLineEl = line;
+        }
+        if(!knobSidesLineEl || !knobSidesLineEl.isConnected){
+            const sides = document.createElement('div');
+            sides.id = 'knobSidesLine';
+            sides.className = 'debug-camera-value';
+            sides.style.marginTop = '4px';
+            sides.style.fontSize = '11px';
+            sides.style.opacity = '0.85';
+            sides.style.whiteSpace = 'normal';
+            debugCameraPanel.appendChild(sides);
+            knobSidesLineEl = sides;
+        }
+    }
+
+    function updateContrastKnobTrackerLine(){
+        if(!contrastKnobTrackerEl) return;
+        const node = settingsControllerBridge.knobContrastNode;
+        const constraints = settingsControllerBridge.knobConstraints;
+        const constraint = constraints?.contrastAll?.get(node?.uuid) || constraints?.contrast || null;
+        const canvas = settingsControllerCanvas;
+        const camera = settingsControllerBridge.camera;
+        if(!node || !constraint || !node.parent){
+            contrastKnobTrackerEl.textContent = 'Contrast knob loc: unavailable';
+            return;
+        }
+        const axis = constraint.axis;
+        const raw = node.position[axis];
+        const denom = Math.max(1e-6, (constraint.max - constraint.min));
+        const t = Math.max(0, Math.min(1, (raw - constraint.min) / denom));
+        let sx = Number.NaN;
+        let sy = Number.NaN;
+        if(canvas && camera){
+            const rect = canvas.getBoundingClientRect();
+            if(rect.width > 0 && rect.height > 0){
+                const world = node.parent.localToWorld(node.position.clone());
+                const ndc = world.project(camera);
+                sx = ((ndc.x + 1) * 0.5) * rect.width;
+                sy = ((1 - ndc.y) * 0.5) * rect.height;
+            }
+        }
+        contrastKnobTrackerEl.textContent =
+            `Contrast knob loc: node=${node.name || '(unnamed)'} axis=${axis} raw=${raw.toFixed(4)} t=${t.toFixed(3)} local=(${node.position.x.toFixed(3)},${node.position.y.toFixed(3)},${node.position.z.toFixed(3)}) screen=(${Number.isFinite(sx) ? sx.toFixed(1) : '?'},${Number.isFinite(sy) ? sy.toFixed(1) : '?'})`;
+    }
+
+    function getConstraintScreenData(node, constraint, canvasRect, camera){
+        if(!node || !node.parent || !constraint || !camera) return null;
+        const rect = canvasRect || settingsControllerCanvas?.getBoundingClientRect();
+        if(!rect?.width || !rect?.height) return null;
+        const toScreen = (axisValue) => {
+            const local = node.position.clone();
+            local[constraint.axis] = axisValue;
+            const world = node.parent.localToWorld(local.clone());
+            const ndc = world.project(camera);
+            return new THREE.Vector2(
+                ((ndc.x + 1) * 0.5) * rect.width,
+                ((1 - ndc.y) * 0.5) * rect.height
+            );
+        };
+        const pMin = toScreen(constraint.min);
+        const pMax = toScreen(constraint.max);
+        const minOnLeft = pMin.x <= pMax.x;
+        return {
+            pMin,
+            pMax,
+            t0Side: minOnLeft ? 'left' : 'right',
+            t1Side: minOnLeft ? 'right' : 'left',
+            leftValue: minOnLeft ? constraint.min : constraint.max,
+            rightValue: minOnLeft ? constraint.max : constraint.min
+        };
+    }
+    
+
+    // Cache of "screen semantic" left/right mapping per knob so we can stay consistent
+    // across transient states where camera / parent / rect isn't ready yet.
+    const knobScreenSemanticCache = {
+        contrast: null, // { leftValue, rightValue, axis }
+        contrastAll: new Map() // uuid -> { leftValue, rightValue, axis }
+    };
+
+    function getSemanticConstraintLR(node, constraint, canvasRect, camera, cacheKey){
+        const info = getConstraintScreenData(node, constraint, canvasRect, camera);
+        if(info){
+            const payload = { leftValue: info.leftValue, rightValue: info.rightValue, axis: constraint.axis };
+            if(cacheKey === 'contrast'){
+                knobScreenSemanticCache.contrast = payload;
+            }else if(cacheKey && node?.uuid){
+                knobScreenSemanticCache.contrastAll.set(node.uuid, payload);
+            }
+            return { ...info, axis: constraint.axis };
+        }
+        // Fallback to last known mapping
+        if(cacheKey === 'contrast' && knobScreenSemanticCache.contrast){
+            const c = knobScreenSemanticCache.contrast;
+            return { leftValue: c.leftValue, rightValue: c.rightValue, axis: c.axis };
+        }
+        if(cacheKey && node?.uuid){
+            const c = knobScreenSemanticCache.contrastAll.get(node.uuid);
+            if(c) return { leftValue: c.leftValue, rightValue: c.rightValue, axis: c.axis };
+        }
+        return null;
+    }
+
+    function getKnobSideInfo(type){
+        const canvas = settingsControllerCanvas;
+        const camera = settingsControllerBridge.camera;
+        const constraints = settingsControllerBridge.knobConstraints;
+        let node = type === 'sync'
+            ? settingsControllerBridge.knobSyncNode
+            : (type === 'contrast' ? settingsControllerBridge.knobContrastNode : settingsControllerBridge.knobVolNode);
+        let constraint = constraints?.[type];
+        if(type === 'contrast' && (!node || !constraint)){
+            const nodes = settingsControllerBridge.knobContrastNodes || [];
+            const all = constraints?.contrastAll;
+            const first = nodes.find((n) => all?.get(n.uuid));
+            if(first){
+                node = first;
+                constraint = all.get(first.uuid);
+            }
+        }
+        if(!canvas || !camera || !node || !node.parent || !constraint) return null;
+        const info = getConstraintScreenData(node, constraint, canvas.getBoundingClientRect(), camera);
+        if(!info) return null;
+        return { t0Side: info.t0Side, t1Side: info.t1Side, p0: info.pMin, p1: info.pMax };
+    }
+
+    function updateKnobSidesLine(){
+        if(!knobSidesLineEl) return;
+        const lux = getKnobSideInfo('sync');
+        const contrast = getKnobSideInfo('contrast');
+        const luxText = lux ? `Lux t0:${lux.t0Side} t1:${lux.t1Side}` : 'Lux t0:? t1:?';
+        const contrastText = contrast ? `Contrast t0:${contrast.t0Side} t1:${contrast.t1Side}` : 'Contrast t0:? t1:?';
+        knobSidesLineEl.textContent = `${luxText} | ${contrastText}`;
+    }
+
+    function updateLightingDebugLine(source, knobType){
+        ensureLightingDebugLine();
+        if(source) lightingDebugState.source = source;
+        if(knobType) lightingDebugState.knob = knobType;
+        if(!lightingDebugLineEl) return;
+        const lux = Math.max(0, Math.min(1, getLuxValue()));
+        const emi = Math.max(0, Math.min(1, getEmiValue()));
+        const contrastNodeName = settingsControllerBridge.knobContrastNode?.name || '(none)';
+        lightingDebugLineEl.textContent =
+            `DBG src:${lightingDebugState.source} knob:${lightingDebugState.knob} Lux:${lux.toFixed(2)} Emi:${emi.toFixed(2)} CNode:${contrastNodeName}`;
+        updateContrastKnobTrackerLine();
+        updateKnobSidesLine();
+    }
+
+    function syncEmiToEmissiveSliderRanges(value){
+        const v = Math.max(0, Math.min(1, Number(value)));
+        if(!Number.isFinite(v)) return;
+        const emissiveState = settingsControllerBridge.emissiveControlState;
+        const saveScales = settingsControllerBridge.saveEmissiveScales;
+        if(!emissiveState || typeof saveScales !== 'function') return;
+        const sliderList = document.getElementById('emissiveSliderList');
+        if(!sliderList) return;
+        let changed = false;
+        sliderList.querySelectorAll('input[type="range"][data-path]').forEach((slider) => {
+            const min = Number.isFinite(parseFloat(slider.min)) ? parseFloat(slider.min) : 0;
+            const max = Number.isFinite(parseFloat(slider.max)) ? parseFloat(slider.max) : 1;
+            const next = min + ((max - min) * v);
+            slider.value = String(next);
+            const path = slider.dataset.path;
+            if(path){
+                emissiveState.scales.set(path, next);
+                changed = true;
+            }
+            const row = slider.closest('.emissive-slider-item');
+            const valueEl = row ? row.querySelector('.emissive-slider-value') : null;
+            if(valueEl) valueEl.textContent = next.toFixed(2);
+        });
+        if(changed) saveScales();
+    }
+
+    function applyLuxFromSource(value, source){
+        const next = setLuxValue(value);
+        applyLuxControls();
+        syncLuxInputs();
+        if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+            settingsControllerBridge.updateKnobTransformsFromState();
+        }
+        updateLightingDebugLine(source || 'lux', 'sync');
+        return next;
+    }
+
+    function applyEmiFromSource(value, source){
+        const next = setEmiValue(value);
+        syncEmiToEmissiveSliderRanges(next);
+        applyEmissionControls();
+        syncEmiInputs();
+        if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+            settingsControllerBridge.updateKnobTransformsFromState();
+        }
+        applyContrastLockPose();
+        updateLightingDebugLine(source || 'emi', 'contrast');
+        return next;
+    }
+
+    function applyOverlayFromSource(value, source){
+        const next = setBackgroundBrightness(value);
+        applyBackgroundBrightness(next);
+        syncOverlayInputs();
+        updateLightingDebugLine(source || 'overlay', '-');
+        return next;
+    }
+
+    function toggleOverlayBlendForDebugShortcut(){
+        const current = Math.max(0, Math.min(1, getBackgroundBrightness()));
+        const next = current >= 0.5 ? 0 : 1;
+        return applyOverlayFromSource(next, 'debug-shortcut');
+    }
+
+    window.toggleOverlayBlendForDebugShortcut = toggleOverlayBlendForDebugShortcut;
+
     function bindAnimTuningControls(){
+        ensureLightingDebugLine();
+        if(uiAnimSpeedSlider && uiAnimSpeedValue){
+            uiAnimSpeedSlider.value = String(uiAnimTuning.speed.toFixed(2));
+            uiAnimSpeedValue.textContent = `${uiAnimTuning.speed.toFixed(2)}x`;
+            uiAnimSpeedSlider.addEventListener('input', () => {
+                uiAnimTuning.speed = Math.max(0.05, parseFloat(uiAnimSpeedSlider.value) || 1);
+                uiAnimSpeedValue.textContent = `${uiAnimTuning.speed.toFixed(2)}x`;
+            });
+        }
+        if(luxControlSlider){
+            luxControlSlider.addEventListener('input', () => {
+                const next = clamp01(parseFloat(luxControlSlider.value));
+                if(next === null) return;
+                applyLuxFromSource(next, 'lux-slider');
+            });
+        }
+        if(luxControlInput){
+            luxControlInput.addEventListener('change', () => {
+                const next = clamp01(parseFloat(luxControlInput.value));
+                if(next === null) return;
+                applyLuxFromSource(next, 'lux-input');
+            });
+        }
+        if(emiControlSlider){
+            emiControlSlider.addEventListener('input', () => {
+                const next = clamp01(parseFloat(emiControlSlider.value));
+                if(next === null) return;
+                applyEmiFromSource(next, 'emi-slider');
+            });
+        }
+        if(emiControlInput){
+            const applyEmiInputValue = () => {
+                const next = clamp01(parseFloat(emiControlInput.value));
+                if(next === null) return;
+                applyEmiFromSource(next, 'emi-input');
+            };
+            emiControlInput.addEventListener('input', applyEmiInputValue);
+            emiControlInput.addEventListener('change', applyEmiInputValue);
+        }
+        if(overlayBlendSlider){
+            overlayBlendSlider.addEventListener('input', () => {
+                const next = clamp01(parseFloat(overlayBlendSlider.value));
+                if(next === null) return;
+                applyOverlayFromSource(next, 'overlay-slider');
+            });
+        }
+        if(overlayBlendInput){
+            const applyOverlayInputValue = () => {
+                const next = clamp01(parseFloat(overlayBlendInput.value));
+                if(next === null) return;
+                applyOverlayFromSource(next, 'overlay-input');
+            };
+            overlayBlendInput.addEventListener('input', applyOverlayInputValue);
+            overlayBlendInput.addEventListener('change', applyOverlayInputValue);
+        }
+        if(toggleBrightnessControl){
+            toggleBrightnessControl.addEventListener('click', () => {
+                settingsControllerBridge.luxControlEnabled = !settingsControllerBridge.luxControlEnabled;
+                if(settingsControllerBridge.luxControlEnabled){
+                    settingsControllerBridge.syncLuxValueToKnob?.();
+                }
+                settingsControllerBridge.syncLuxControlsToToggle?.(settingsControllerBridge.luxControlEnabled);
+                updateLightingToggleLabels();
+                registerLightingDebugActions();
+            });
+        }
+        if(toggleEmissionControl){
+            toggleEmissionControl.addEventListener('click', () => {
+                settingsControllerBridge.emissionControlEnabled = !settingsControllerBridge.emissionControlEnabled;
+                if(settingsControllerBridge.emissionControlEnabled){
+                    settingsControllerBridge.syncEmissionValueToKnob?.();
+                }
+                settingsControllerBridge.syncEmissionControlsToToggle?.(settingsControllerBridge.emissionControlEnabled);
+                updateLightingToggleLabels();
+                registerLightingDebugActions();
+            });
+        }
+        updateLightingToggleLabels();
+        syncLuxInputs();
+        syncEmiInputs();
+        syncOverlayInputs();
+        updateLightingDebugLine('bind', '-');
         if(animDurationCustom && animDurationCustomValue){
             animDurationCustom.value = String(animTuning.customDurationMs);
             animDurationCustomValue.textContent = `${animTuning.customDurationMs}ms`;
@@ -180,8 +877,16 @@ if (isLocalHost) {
         });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.setClearColor(0x0f1115, 0);
+        renderer.setScissorTest(true);
 
         const scene = new THREE.Scene();
+        const axesScene = new THREE.Scene();
+        const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
+        axesCamera.position.set(0.8, 0.8, 2.2);
+        axesCamera.lookAt(0, 0, 0);
+        const axesRoot = new THREE.Group();
+        axesRoot.add(new THREE.AxesHelper(0.6));
+        axesScene.add(axesRoot);
 
         const fallbackCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
         fallbackCamera.position.set(0, 1.6, 4);
@@ -191,7 +896,711 @@ if (isLocalHost) {
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(2, 4, 3);
         scene.add(ambient, dirLight);
+        const lightingRig = [ambient, dirLight];
+        let lightingTargets = null;
+        const emissiveControlState = {
+            exclusions: new Set(),
+            scales: new Map()
+        };
+        settingsControllerBridge.emissiveControlState = emissiveControlState;
+        const EMISSIVE_EXCLUSIONS_KEY = 'scene.emissive.exclusions';
+        const EMISSIVE_SCALES_KEY = 'scene.emissive.scales';
+        const DEFAULT_EMISSIVE_INCLUDE = new Set([
+            'controller-box',
+            'control-panel',
+            'arrow-sync-left',
+            'arrow-sync-left-minus',
+            'arrow-sync-right',
+            'arrow-sync-right-plus',
+            'arrow-vol-down',
+            'arrow-vol-down-minus',
+            'arrow-vol-up',
+            'arrow-vol-up-plus',
+            'btn-accessibility',
+            'txt-acc',
+            'btn-reset',
+            'txt-reset',
+            'btn-save',
+            'txt-save',
+            'btn-vol-sync',
+            'txt-vol001',
+            'control-screen',
+            'info-panel',
+            'txt-info-panel014',
+            'knob-vol',
+            'txt-percent-sync',
+            'txt-percent-vol',
+            'txt-contrast',
+            'txt-contrast001',
+            'vol-meter-flip',
+            'feet',
+            'shape-switch-on',
+            'screwholes'
+        ].map((name) => name.toLowerCase()));
+        const CONTRAST_EMISSIVE_LOCK = new Set([
+            'btn-accessibility',
+            'txt-acc',
+            'btn-reset',
+            'txt-reset',
+            'btn-save',
+            'txt-save',
+            'btn-vol-sync',
+            'txt-vol001'
+        ].map((name) => name.toLowerCase()));
+        let animatedNodeNames = new Set();
+        let emissiveAnimatedNodes = new Set();
+        let animatedEmissiveMaterials = new Set();
+        let emissiveStrengthBindings = [];
+        let loggedEmissiveTracks = false;
+        let manualEmissiveTargets = [];
+        let manualEmissiveDirection = 1;
+        let loggedManualEmissives = false;
+        const EMISSIVE_ANIM_NAME_MARKERS = ['emission', 'emissive', 'glow'];
+        let syncPercentLabel = null;
+        const syncPercentLabelTargets = [];
+        let syncPercentLabelCtx = null;
+        let syncPercentLabelTexture = null;
 
+        const CONTRAST_EXCLUDED_NAMES = new Set([
+            'btn-accessibility',
+            'btn-vol-sync',
+            'btn-save',
+            'btn-reset',
+            'txt-acc',
+            'txt-reset',
+            'txt-save',
+            'txt-vol',
+            'txt-audiosync',
+            'txt-volume',
+            'txt-contrast',
+            'txt-brightness'
+        ].map((name) => name.toLowerCase()));
+
+        const EMISSIVE_ANIM_MATERIALS = new Set([
+            'btn-glow-off',
+            'btn-glow-on',
+            'txt-active',
+            'txt-glow-off',
+            'txt-glow-on'
+        ].map((name) => name.toLowerCase()));
+
+        const isButtonTextName = (name) => {
+            if(!name) return false;
+            const lowered = String(name).toLowerCase();
+            if(CONTRAST_EXCLUDED_NAMES.has(lowered)) return true;
+            return lowered.startsWith('btn-')
+                || lowered.startsWith('btn_')
+                || lowered.startsWith('txt-')
+                || lowered.startsWith('txt_');
+        };
+
+        const isButtonTextPath = (path) => {
+            if(!path) return false;
+            return String(path)
+                .toLowerCase()
+                .split('/')
+                .some((segment) => isButtonTextName(segment));
+        };
+
+        let contrastLockPose = null;
+        const storeContrastLockPose = () => {
+            const node = settingsControllerBridge.knobContrastNode;
+            if(!node) return;
+            node.updateMatrixWorld(true);
+            const quat = new THREE.Quaternion();
+            const scale = new THREE.Vector3();
+            const pos = new THREE.Vector3();
+            node.matrixWorld.decompose(pos, quat, scale);
+            contrastLockPose = { quat };
+        };
+
+        const applyContrastLockPose = () => {
+            if(!contrastLockPose) return;
+            const node = settingsControllerBridge.knobContrastNode;
+            if(!node || !node.parent) return;
+            node.parent.updateMatrixWorld(true);
+            const parentQuat = node.parent.getWorldQuaternion(new THREE.Quaternion());
+            const localQuat = parentQuat.invert().multiply(contrastLockPose.quat.clone());
+            node.quaternion.copy(localQuat);
+        };
+
+        const captureLightingTargets = (model) => {
+            const ignoredEmissionNames = new Set([
+                'txt-glow-on',
+                'txt-glow-off',
+                'btn-glow-on',
+                'btn-glow-off',
+                'btn-glow-on-2',
+                'btn-glow-off-2'
+            ]);
+            const genericNamePattern = /^(plane|cube|cylinder|sphere|circle|cone|torus|mesh|object|text|curve|surface|grid|empty|null)([._-]?\d+)*$/i;
+            const isMeaningfulName = (name) => {
+                if(!name) return false;
+                const trimmed = String(name).trim();
+                if(!trimmed) return false;
+                return !genericNamePattern.test(trimmed);
+            };
+            const getControlNode = (node, root) => {
+                let current = node;
+                while(current && current !== root){
+                    const name = (current.name || '').toLowerCase();
+                    if(ignoredEmissionNames.has(name)) return null;
+                    if(isMeaningfulName(current.name)) return current;
+                    current = current.parent;
+                }
+                return null;
+            };
+            const emissiveTargets = [];
+            model.traverse((child) => {
+                if(!child || !child.isMesh || !child.material) return;
+                const name = (child.name || '').toLowerCase();
+                if(ignoredEmissionNames.has(name)) return;
+                const controlNode = getControlNode(child, model);
+                if(!controlNode) return;
+                const materials = Array.isArray(child.material) ? child.material : [child.material];
+                const controlName = (controlNode.name || '').toLowerCase();
+                const nodeName = (child.name || '').toLowerCase();
+                const contrastLocked = CONTRAST_EMISSIVE_LOCK.has(controlName)
+                    || CONTRAST_EMISSIVE_LOCK.has(nodeName)
+                    || animatedNodeNames.has(controlName)
+                    || animatedNodeNames.has(nodeName)
+                    || isButtonTextName(controlName)
+                    || isButtonTextName(nodeName);
+                materials.forEach((mat, idx) => {
+                    if(!mat || !('emissiveIntensity' in mat)) return;
+                    if(contrastLocked){
+                        const cloned = mat.clone();
+                        cloned.userData = { ...(mat.userData || {}), contrastLocked: true };
+                        if(Array.isArray(child.material)){
+                            child.material[idx] = cloned;
+                        }else{
+                            child.material = cloned;
+                        }
+                        mat = cloned;
+                    }else{
+                        if(!mat.userData) mat.userData = {};
+                        if(mat.userData.contrastLocked !== true){
+                            mat.userData.contrastLocked = false;
+                        }
+                    }
+                    if(!mat.userData) mat.userData = {};
+                    if(!Number.isFinite(mat.userData.maxEmissiveIntensity)){
+                        const base = (Number.isFinite(mat.emissiveIntensity) && mat.emissiveIntensity > 0)
+                            ? mat.emissiveIntensity
+                            : 1;
+                        mat.userData.maxEmissiveIntensity = base;
+                    }
+                    emissiveTargets.push({ node: child, material: mat, controlNode });
+                });
+            });
+            lightingRig.forEach((light) => {
+                if(!light || typeof light.intensity !== 'number') return;
+                if(!light.userData) light.userData = {};
+                if(!Number.isFinite(light.userData.maxIntensity)){
+                    light.userData.maxIntensity = light.intensity / MAX_LIGHT_RATIO;
+                }
+            });
+            return { emissiveTargets, lights: [...lightingRig] };
+        };
+
+        function updateSyncPercentLabel(){
+            if(!syncPercentLabel || !syncPercentLabelCtx || !syncPercentLabelTexture) return;
+            const knobPos = Number.isFinite(settingsControllerBridge.knobAxisValues?.contrast)
+                ? settingsControllerBridge.knobAxisValues.contrast
+                : getContrastValue();
+            const contrastValue = Math.round(Math.max(0, Math.min(1, knobPos)) * 100);
+            const ctx = syncPercentLabelCtx;
+            const w = ctx.canvas.width;
+            const h = ctx.canvas.height;
+            ctx.clearRect(0, 0, w, h);
+            ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+            ctx.fillRect(0, 0, w, h);
+            ctx.fillStyle = '#ff2a2a';
+            ctx.font = '64px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${contrastValue}`, w / 2, h / 2);
+            syncPercentLabelTargets.forEach((mesh) => {
+                if(!mesh || !mesh.isMesh || !mesh.material) return;
+                if(mesh.material.map !== syncPercentLabelTexture){
+                    mesh.material.map = syncPercentLabelTexture;
+                    mesh.material.transparent = true;
+                    mesh.material.depthWrite = false;
+                    mesh.material.needsUpdate = true;
+                }
+            });
+            syncPercentLabelTexture.needsUpdate = true;
+        }
+        settingsControllerBridge.updateSyncPercentLabel = updateSyncPercentLabel;
+
+        const bindSyncPercentLabelMesh = (mesh) => {
+            if(!mesh || !mesh.isMesh || !syncPercentLabelTexture) return;
+            if(!mesh.material || Array.isArray(mesh.material)){
+                mesh.material = new THREE.MeshBasicMaterial({
+                    map: syncPercentLabelTexture,
+                    transparent: true,
+                    depthWrite: false
+                });
+            }else{
+                mesh.material.map = syncPercentLabelTexture;
+                mesh.material.transparent = true;
+                mesh.material.depthWrite = false;
+                mesh.material.needsUpdate = true;
+            }
+            if(!syncPercentLabelTargets.includes(mesh)){
+                syncPercentLabelTargets.push(mesh);
+            }
+            if(!syncPercentLabel){
+                syncPercentLabel = mesh;
+            }
+        };
+
+        const initSyncPercentLabel = (node) => {
+            if(!node) return;
+            if(!syncPercentLabelTexture || !syncPercentLabelCtx){
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+                if(!ctx) return;
+                const texture = new THREE.CanvasTexture(canvas);
+                texture.flipY = false;
+                if('colorSpace' in texture){
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                }else{
+                    texture.encoding = THREE.sRGBEncoding;
+                }
+                texture.needsUpdate = true;
+                syncPercentLabelCtx = ctx;
+                syncPercentLabelTexture = texture;
+            }
+            if(node.isMesh){
+                bindSyncPercentLabelMesh(node);
+                updateSyncPercentLabel();
+                return;
+            }
+            const preferredMeshes = [];
+            const fallbackMeshes = [];
+            node.traverse((desc) => {
+                if(!desc?.isMesh) return;
+                const descName = (desc.name || '').toLowerCase();
+                if(descName.includes('text')){
+                    preferredMeshes.push(desc);
+                }else{
+                    fallbackMeshes.push(desc);
+                }
+            });
+            const targets = preferredMeshes.length ? preferredMeshes : fallbackMeshes.slice(0, 1);
+            targets.forEach((mesh) => bindSyncPercentLabelMesh(mesh));
+            updateSyncPercentLabel();
+        };
+
+        const getContrastValue = () => {
+            return getEmiValue();
+        };
+
+        const setContrastValue = (value) => {
+            return setEmiValue(value);
+        };
+
+        settingsControllerBridge.luxControlEnabled = true;
+        settingsControllerBridge.emissionControlEnabled = true;
+
+        const isControlScreenPath = (value) => {
+            const name = (value || '').toLowerCase();
+            return name.includes('control-screen') || name.includes('control_screen');
+        };
+        const isSpeakerPlatePath = (value) => {
+            const name = (value || '').toLowerCase();
+            return name.includes('speaker-plate') || name.includes('speaker_plate');
+        };
+
+        const mapContrastKnobToValue = (t) => t;
+        const mapContrastValueToKnob = (value) => value;
+        const forceLuxAndContrastRight = () => {
+            applyLuxFromSource(1, 'force-init');
+            const tRight = 1;
+            const emiAtRight = mapContrastKnobToValue(tRight);
+            applyEmiFromSource(emiAtRight, 'force-init');
+            const allContrast = settingsControllerBridge.knobContrastNodes || [];
+            const allConstraints = settingsControllerBridge.knobConstraints?.contrastAll;
+            const camera = settingsControllerBridge.camera || activeCamera;
+            const canvasRect = settingsControllerCanvas?.getBoundingClientRect();
+            allContrast.forEach((node) => {
+                const c = allConstraints?.get(node.uuid);
+                if(!node || !c) return;
+                const info = getSemanticConstraintLR(node, c, canvasRect, camera, 'contrastAll');
+                if(info){
+                    node.position[c.axis] = info.rightValue;
+                }
+            });
+            settingsControllerBridge.knobAxisValues.contrast = 1;
+        };
+
+        
+
+        const getEmissiveNodePath = (node, root) => {
+            const segments = [];
+            let current = node;
+            while(current && current !== root){
+                const name = current.name || '';
+                if(name){
+                    segments.push(name);
+                }else{
+                    const index = current.parent ? current.parent.children.indexOf(current) : -1;
+                    segments.push(`unnamed-${index >= 0 ? index : 'x'}`);
+                }
+                current = current.parent;
+            }
+            return segments.reverse().join('/');
+        };
+
+        const loadEmissiveExclusions = () => {
+            try{
+                const raw = localStorage.getItem(EMISSIVE_EXCLUSIONS_KEY);
+                const parsed = raw ? JSON.parse(raw) : [];
+                if(Array.isArray(parsed)){
+                    emissiveControlState.exclusions = new Set(parsed.map(String));
+                }
+            }catch(e){
+                emissiveControlState.exclusions = new Set();
+            }
+        };
+
+        const loadEmissiveScales = () => {
+            try{
+                const raw = localStorage.getItem(EMISSIVE_SCALES_KEY);
+                const parsed = raw ? JSON.parse(raw) : null;
+                const next = new Map();
+                if(parsed && typeof parsed === 'object'){
+                    Object.entries(parsed).forEach(([key, value]) => {
+                        const v = Number(value);
+                        if(Number.isFinite(v)){
+                            next.set(key, Math.max(0, Math.min(2, v)));
+                        }
+                    });
+                }
+                emissiveControlState.scales = next;
+            }catch(e){
+                emissiveControlState.scales = new Map();
+            }
+        };
+
+        const saveEmissiveExclusions = () => {
+            const payload = JSON.stringify([...emissiveControlState.exclusions]);
+            localStorage.setItem(EMISSIVE_EXCLUSIONS_KEY, payload);
+        };
+
+        const saveEmissiveScales = () => {
+            const payload = {};
+            emissiveControlState.scales.forEach((value, key) => {
+                payload[key] = value;
+            });
+            localStorage.setItem(EMISSIVE_SCALES_KEY, JSON.stringify(payload));
+        };
+        settingsControllerBridge.saveEmissiveScales = saveEmissiveScales;
+
+        const buildEmissiveList = (model, emissiveTargets) => {
+            if(!emissiveList) return;
+            emissiveList.innerHTML = '';
+            const sliderList = document.getElementById('emissiveSliderList');
+            if(sliderList){
+                sliderList.innerHTML = '';
+            }
+            const seen = new Map();
+            emissiveTargets.forEach((entry) => {
+                if(!entry?.controlNode) return;
+                const path = getEmissiveNodePath(entry.controlNode, model);
+                if(seen.has(path)) return;
+                seen.set(path, entry.controlNode);
+            });
+            const entries = [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+            if(entries.length && entries.every(([path]) => emissiveControlState.exclusions.has(path))){
+                // Recovery path: if everything is excluded, restore a visible default.
+                emissiveControlState.exclusions.clear();
+                saveEmissiveExclusions();
+            }
+            if(emissiveControlState.exclusions.size === 0){
+                let defaultIncludeCount = 0;
+                entries.forEach(([, node]) => {
+                    const name = (node?.name || '').toLowerCase();
+                    if(DEFAULT_EMISSIVE_INCLUDE.has(name)){
+                        defaultIncludeCount += 1;
+                    }
+                });
+                if(defaultIncludeCount > 0){
+                    entries.forEach(([path, node]) => {
+                        const name = (node?.name || '').toLowerCase();
+                        if(!DEFAULT_EMISSIVE_INCLUDE.has(name)){
+                            emissiveControlState.exclusions.add(path);
+                        }
+                    });
+                }else{
+                    // Fallback for model/name variations: keep all emissive targets enabled.
+                    emissiveControlState.exclusions.clear();
+                }
+                saveEmissiveExclusions();
+            }
+            entries.forEach(([path, node]) => {
+                const labelText = `${node.name}`;
+                const li = document.createElement('li');
+                li.className = 'emissive-list-item';
+                const id = `emissive-${path.replace(/[^a-z0-9_-]/gi, '_')}`;
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.id = id;
+                input.checked = !emissiveControlState.exclusions.has(path);
+                input.addEventListener('change', () => {
+                    if(input.checked){
+                        emissiveControlState.exclusions.delete(path);
+                    }else{
+                        emissiveControlState.exclusions.add(path);
+                    }
+                    saveEmissiveExclusions();
+                    if(sliderList){
+                        const slider = sliderList.querySelector(`input[data-path="${CSS.escape(path)}"]`);
+                        const row = slider?.closest('.emissive-slider-item');
+                        if(slider){
+                            slider.disabled = !input.checked;
+                        }
+                        if(row){
+                            row.classList.toggle('is-disabled', !input.checked);
+                        }
+                    }
+                    applyEmissionControls();
+                });
+                const label = document.createElement('label');
+                label.setAttribute('for', id);
+                label.textContent = labelText;
+                li.appendChild(input);
+                li.appendChild(label);
+                emissiveList.appendChild(li);
+
+                if(sliderList){
+                    const row = document.createElement('div');
+                    row.className = 'emissive-slider-item';
+                    row.classList.toggle('is-disabled', emissiveControlState.exclusions.has(path));
+                    const sliderLabel = document.createElement('label');
+                    sliderLabel.textContent = labelText;
+                    const slider = document.createElement('input');
+                    slider.type = 'range';
+                    slider.min = '0';
+                    slider.max = '2';
+                    slider.step = '0.01';
+                    slider.dataset.path = path;
+                    const initialScale = emissiveControlState.scales.get(path);
+                    slider.value = Number.isFinite(initialScale) ? String(initialScale) : '1';
+                    slider.disabled = emissiveControlState.exclusions.has(path);
+                    const value = document.createElement('span');
+                    value.className = 'emissive-slider-value';
+                    value.textContent = Number(slider.value).toFixed(2);
+                    slider.addEventListener('input', () => {
+                        const v = Math.max(0, Math.min(2, parseFloat(slider.value) || 0));
+                        emissiveControlState.scales.set(path, v);
+                        value.textContent = v.toFixed(2);
+                        saveEmissiveScales();
+                        applyEmissionControls();
+                    });
+                    row.appendChild(sliderLabel);
+                    row.appendChild(slider);
+                    row.appendChild(value);
+                    sliderList.appendChild(row);
+                }
+            });
+        };
+
+        const setEmissiveTab = (next) => {
+            if(!emissiveTabSelect || !emissiveTabAdjust || !emissiveSelectPanel || !emissiveAdjustPanel) return;
+            const isSelect = next === 'select';
+            emissiveTabSelect.classList.toggle('is-active', isSelect);
+            emissiveTabAdjust.classList.toggle('is-active', !isSelect);
+            emissiveTabSelect.setAttribute('aria-selected', isSelect ? 'true' : 'false');
+            emissiveTabAdjust.setAttribute('aria-selected', isSelect ? 'false' : 'true');
+            emissiveSelectPanel.classList.toggle('is-active', isSelect);
+            emissiveAdjustPanel.classList.toggle('is-active', !isSelect);
+        };
+
+        if(emissiveTabSelect){
+            emissiveTabSelect.addEventListener('click', () => setEmissiveTab('select'));
+        }
+        if(emissiveTabAdjust){
+            emissiveTabAdjust.addEventListener('click', () => setEmissiveTab('adjust'));
+        }
+
+        if(emissiveSelectAll){
+            emissiveSelectAll.addEventListener('click', () => {
+                if(!emissiveList) return;
+                emissiveList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                    if(input.checked) return;
+                    input.checked = true;
+                    input.dispatchEvent(new Event('change'));
+                });
+            });
+        }
+
+        if(emissiveSelectNone){
+            emissiveSelectNone.addEventListener('click', () => {
+                if(!emissiveList) return;
+                emissiveList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                    if(!input.checked) return;
+                    input.checked = false;
+                    input.dispatchEvent(new Event('change'));
+                });
+            });
+        }
+
+        if(emissiveOutputBtn && emissiveOutput){
+            emissiveOutputBtn.addEventListener('click', () => {
+                if(!emissiveList) return;
+                const selected = [];
+                emissiveList.querySelectorAll('input[type="checkbox"]').forEach((input) => {
+                    if(input.checked){
+                        const label = emissiveList.querySelector(`label[for="${input.id}"]`);
+                        if(label) selected.push(label.textContent.trim());
+                    }
+                });
+                emissiveOutput.value = selected.join('\n');
+            });
+        }
+
+        const applyBackgroundBrightness = (value) => {
+            const v = Math.max(0, Math.min(1, Number(value)));
+            if(!Number.isFinite(v)) return;
+            document.documentElement.style.setProperty('--start-overlay-light', String(v));
+            if(bgOverlay){
+                bgOverlay.style.setProperty('--start-overlay-light', String(v));
+            }
+        };
+
+        const applyLuxValue = (value) => {
+            if(!lightingTargets) return;
+            const v = Math.max(0, Math.min(1, Number(value)));
+            if(!Number.isFinite(v)) return;
+            const lightScale = getLightScaleForValue(v);
+            lightingTargets.lights.forEach((light) => {
+                const maxIntensity = Number.isFinite(light?.userData?.maxIntensity)
+                    ? light.userData.maxIntensity
+                    : light.intensity / MAX_LIGHT_RATIO;
+                light.intensity = maxIntensity * lightScale;
+            });
+        };
+
+        const applyEmissiveValue = (value) => {
+            if(!lightingTargets) return;
+            const v = Math.max(0, Math.min(1, Number(value)));
+            if(!Number.isFinite(v)) return;
+            lightingTargets.emissiveTargets.forEach((target) => {
+                const mat = target.material;
+                const node = target.node;
+                const controlNode = target.controlNode;
+                if(!mat || !node || !controlNode) return;
+                if(EMISSIVE_ANIM_MATERIALS.has((mat.name || '').toLowerCase())
+                    || animatedEmissiveMaterials.has((mat.name || '').toLowerCase())){
+                    return;
+                }
+                const path = getEmissiveNodePath(controlNode, settingsControllerBridge.model || controlNode);
+                const meshPath = getEmissiveNodePath(node, settingsControllerBridge.model || node);
+                const nodeNameLower = (node.name || '').toLowerCase();
+                const controlNameLower = (controlNode.name || '').toLowerCase();
+                const isEmissiveAnimated = emissiveAnimatedNodes.has(nodeNameLower)
+                    || emissiveAnimatedNodes.has(controlNameLower)
+                    || EMISSIVE_ANIM_NAME_MARKERS.some((marker) => nodeNameLower.includes(marker))
+                    || EMISSIVE_ANIM_NAME_MARKERS.some((marker) => controlNameLower.includes(marker));
+                if(isEmissiveAnimated){
+                    return;
+                }
+                if(emissiveControlState.exclusions.has(path)){
+                    mat.emissiveIntensity = 0;
+                    mat.needsUpdate = true;
+                    return;
+                }
+                const scale = emissiveControlState.scales.get(path);
+                const maxEmissive = Number.isFinite(mat?.userData?.maxEmissiveIntensity)
+                    ? mat.userData.maxEmissiveIntensity
+                    : ((Number.isFinite(mat.emissiveIntensity) && mat.emissiveIntensity > 0) ? mat.emissiveIntensity : 1);
+                if(isControlScreenPath(path)
+                    || isControlScreenPath(meshPath)
+                    || isControlScreenPath(node?.name)
+                    || isSpeakerPlatePath(path)
+                    || isSpeakerPlatePath(meshPath)
+                    || isSpeakerPlatePath(node?.name)){
+                    return;
+                }
+                const contrastLocked = mat?.userData?.contrastLocked === true || isButtonTextPath(path) || isButtonTextPath(meshPath);
+                let contrastApplied = 1;
+                if(!contrastLocked){
+                    contrastApplied = 1;
+                }
+                const scaleApplied = Number.isFinite(scale) ? scale : 1;
+                mat.emissiveIntensity = maxEmissive * v * contrastApplied * scaleApplied;
+                mat.needsUpdate = true;
+            });
+            updateSyncPercentLabel();
+        };
+
+        const applySceneLightingValue = (value) => {
+            applyLuxValue(value);
+            applyEmissiveValue(value);
+        };
+
+        function applyLuxControls(){
+            if(!settingsControllerBridge.luxControlEnabled) return;
+            applyLuxValue(getLuxValue());
+        }
+
+        function applyEmissionControls(){
+            if(!settingsControllerBridge.emissionControlEnabled) return;
+            applyEmissiveValue(getEmiValue());
+        }
+
+        function syncLuxControlsToToggle(enabled){
+            if(enabled){
+                applyLuxControls();
+            }
+        }
+
+        function syncEmissionControlsToToggle(enabled){
+            if(enabled){
+                applyEmissionControls();
+            }
+        }
+
+        function syncLuxValueToKnob(){
+            const knobValue = Number.isFinite(settingsControllerBridge.knobAxisValues?.sync)
+                ? settingsControllerBridge.knobAxisValues.sync
+                : 0.5;
+            applyLuxFromSource(knobValue, 'syncLuxToKnob');
+        }
+
+        function syncEmissionValueToKnob(){
+            const contrastValue = getContrastValue();
+            const knobValue = mapContrastValueToKnob(contrastValue);
+            settingsControllerBridge.knobAxisValues.contrast = knobValue;
+            applyEmiFromSource(mapContrastKnobToValue(knobValue), 'syncEmiToKnob');
+        }
+
+        settingsControllerBridge.applyLuxControls = applyLuxControls;
+        settingsControllerBridge.applyEmissionControls = applyEmissionControls;
+        settingsControllerBridge.syncLuxControlsToToggle = syncLuxControlsToToggle;
+        settingsControllerBridge.syncEmissionControlsToToggle = syncEmissionControlsToToggle;
+        settingsControllerBridge.syncLuxValueToKnob = syncLuxValueToKnob;
+        settingsControllerBridge.syncEmissionValueToKnob = syncEmissionValueToKnob;
+
+        window.addEventListener('sceneLightingChanged', (event) => {
+            const nextValue = clamp01Value(event?.detail?.value ?? getSceneLightingValue());
+            if(nextValue !== null) lightingState.lux = nextValue;
+            applyLuxControls();
+            syncLuxInputs();
+            if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+                settingsControllerBridge.updateKnobTransformsFromState();
+            }
+            if(!knobDragState || knobDragState.type !== 'contrast'){
+                applyContrastLockPose();
+            }
+            updateLightingDebugLine('sceneLightingChanged', knobDragState?.type || '-');
+        });
+
+        const FORCE_CAMERA_UNLOCKED = true;
         let controls = null;
         const applyControlsConfig = (controlsInstance) => {
             if(!controlsInstance) return;
@@ -204,7 +1613,7 @@ if (isLocalHost) {
             controlsInstance.maxDistance = 12;
             controlsInstance.mouseButtons = {
                 LEFT: THREE.MOUSE.PAN,
-                MIDDLE: THREE.MOUSE.DOLLY,
+                MIDDLE: THREE.MOUSE.PAN,
                 RIGHT: THREE.MOUSE.ROTATE
             };
         };
@@ -222,6 +1631,19 @@ if (isLocalHost) {
 
         function setUserCameraControlsEnabled(isEnabled){
             if(!controls) return;
+            if(FORCE_CAMERA_UNLOCKED){
+                controls.enabled = true;
+                controls.enableRotate = true;
+                controls.enableZoom = true;
+                controls.enablePan = true;
+                controls.mouseButtons = {
+                    LEFT: THREE.MOUSE.ROTATE,
+                    MIDDLE: THREE.MOUSE.DOLLY,
+                    RIGHT: THREE.MOUSE.PAN
+                };
+                controls.update();
+                return;
+            }
             console.log('[settings controls]', isEnabled ? 'enabled' : 'disabled');
             controls.enabled = !!isEnabled;
             controls.enableRotate = !!isEnabled;
@@ -229,38 +1651,58 @@ if (isLocalHost) {
             controls.enablePan = false;
             controls.mouseButtons = {
                 LEFT: THREE.MOUSE.PAN,
-                MIDDLE: THREE.MOUSE.DOLLY,
+                MIDDLE: THREE.MOUSE.PAN,
                 RIGHT: THREE.MOUSE.ROTATE
             };
             controls.update();
         }
 
-        setUserCameraControlsEnabled(false);
+        function setPreIntroZoomEnabled(isEnabled){
+            if(!controls) return;
+            if(FORCE_CAMERA_UNLOCKED){
+                controls.enabled = true;
+                controls.enableRotate = true;
+                controls.enableZoom = true;
+                controls.enablePan = true;
+                controls.mouseButtons = {
+                    LEFT: THREE.MOUSE.ROTATE,
+                    MIDDLE: THREE.MOUSE.DOLLY,
+                    RIGHT: THREE.MOUSE.PAN
+                };
+                controls.update();
+                return;
+            }
+            controls.enabled = !!isEnabled;
+            controls.enableZoom = !!isEnabled;
+            controls.enableRotate = false;
+            controls.enablePan = false;
+            controls.mouseButtons = {
+                LEFT: THREE.MOUSE.PAN,
+                MIDDLE: THREE.MOUSE.PAN,
+                RIGHT: THREE.MOUSE.ROTATE
+            };
+            controls.update();
+        }
+
+        if(FORCE_CAMERA_UNLOCKED){
+            setUserCameraControlsEnabled(true);
+        }else{
+            setUserCameraControlsEnabled(false);
+            setPreIntroZoomEnabled(true);
+        }
 
         let camAnimDebugEl = document.getElementById('camAnimDebug');
         if(!camAnimDebugEl){
             camAnimDebugEl = document.createElement('div');
             camAnimDebugEl.id = 'camAnimDebug';
-            camAnimDebugEl.style.cssText = `
-        position: fixed;
-        left: 12px;
-        bottom: 12px;
-        z-index: 99999;
-        font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-        background: rgba(0,0,0,0.65);
-        color: #d8ffef;
-        border: 1px solid rgba(255,255,255,0.15);
-        border-radius: 10px;
-        padding: 10px 12px;
-        max-width: 460px;
-        white-space: pre;
-        pointer-events: none;
-    `;
+            camAnimDebugEl.className = 'cam-anim-debug-panel';
             document.body.appendChild(camAnimDebugEl);
         }
-        let camAnimDebugVisible = true;
         const camAnimLog = [];
         const MAX_CAM_LOG = 16;
+        const uiFrameLog = [];
+        const MAX_UI_LOG = 48;
+        let lastUiFrameLogged = null;
         const logCamEvent = (message) => {
             const stamp = (performance.now() / 1000).toFixed(2);
             camAnimLog.push(`${stamp}s ${message}`);
@@ -268,33 +1710,33 @@ if (isLocalHost) {
                 camAnimLog.shift();
             }
         };
-        if(settingsBtn){
-            settingsBtn.addEventListener('click', () => {
-                camAnimDebugVisible = !camAnimDebugVisible;
-                camAnimDebugEl.style.display = camAnimDebugVisible ? '' : 'none';
-            });
-        }
-
         let uiMixer = null;
         let cameraMixer = null;
         let usesGltfCamera = false;
         let clip = null;
         let uiAction = null;
+        let emissiveAction = null;
+        let emissionActions = [];
         let cameraAction = null;
         let cameraTargetTime = null;
         let targetTime = null;
         let animationJumpBackFrame = null;
-        const TOTAL_FRAMES = 90;
-        const ACCESSIBILITY_FRAME = 1;
-        const AUDIO_FRAME = 15;
-        const RETURN_FRAME = 30;
+        const TOTAL_FRAMES = 30;
+        const CAMERA_START_FRAME = 1;
+        const CAMERA_END_FRAME = 30;
+        const UI_START_FRAME = 1;
+        const UI_END_FRAME = 30;
+        const ACCESSIBILITY_FRAME = UI_START_FRAME;
+        const AUDIO_FRAME = 45;
+        const RETURN_FRAME = UI_END_FRAME;
         const FRAME_EPSILON = 0.1;
         let introActive = true;
         let screenCanvas = null;
         let screenCtx = null;
         let screenTexture = null;
-        let allowAudioRect = { x: 0.34, y: 0.72, w: 0.16, h: 0.12 };
-        let muteAudioRect = { x: 0.54, y: 0.72, w: 0.24, h: 0.12 };
+        let animationInfoLines = [];
+        let allowAudioRect = { x: 0.27, y: 0.66, w: 0.24, h: 0.18 };
+        let muteAudioRect = { x: 0.53, y: 0.66, w: 0.24, h: 0.18 };
         let pendingAudioAllowed = null;
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
@@ -302,11 +1744,12 @@ if (isLocalHost) {
         const interactiveNames = new Set(['btn-accessibility', 'btn-vol-sync', 'btn-save']);
         const glbBounds = new THREE.Box3();
         const glbCenter = new THREE.Vector3();
+        const KNOB_VOL_RANGE = 0.56;
+        const KNOB_SYNC_RANGE = 0.56;
+        const KNOB_CONTRAST_RANGE = 0.56;
         const CAMERA_ANIM_FRAMES = 120;
         // Multiplier for manual camera tween length. 1 = original speed.
         const CAMERA_ANIM_SPEED_MULTIPLIER = 5;
-        const CAMERA_ANIM_EXPECTED_FPS = 60;
-        let cameraEnableTimer = null;
         let shouldTrackControls = false;
         let lastControlsEnabled = null;
         const FORCE_MANUAL_CAMERA = true;
@@ -318,8 +1761,40 @@ if (isLocalHost) {
             easePower: 3
         };
         window.animTuning = animTuning;
+        const uiAnimTuning = {
+            speed: 1
+        };
+        window.uiAnimTuning = uiAnimTuning;
+
+        function configureOneShot(action){
+            action.enabled = true;
+            action.clampWhenFinished = true;
+            action.setLoop(THREE.LoopOnce, 0);
+            action.setEffectiveWeight(1);
+        }
+
+        function playOneShot(action, direction){
+            configureOneShot(action);
+            const dur = action.getClip().duration;
+            action.time = direction > 0 ? 0.0 : dur;
+            action.paused = false;
+            action.setEffectiveTimeScale(direction);
+            action.play();
+        }
+
+        function playEmissionActions(direction){
+            if(!emissionActions.length) return;
+            emissionActions.forEach((action) => {
+                playOneShot(action, direction);
+            });
+        }
+        window.knobAxisValues = settingsControllerBridge.knobAxisValues;
         let focusAnim = null;
         let customCameraAnim = null;
+        let middlePointerState = null;
+        let lastMiddleClickTime = 0;
+        let pendingMiddleSingleClick = null;
+        let knobDragState = null;
         const CAMERA_ANIM_POS = [
             [-0.005232, 4.233088, 1.427375],
             [-0.005232, 4.233088, 1.427375],
@@ -404,17 +1879,33 @@ if (isLocalHost) {
             uiAction.paused = true;
             uiAction.time = frameToTime(frame);
             uiMixer.setTime(uiAction.time);
+            if(emissiveAction){
+                emissiveAction.paused = true;
+                emissiveAction.time = uiAction.time;
+            }
+            if(emissiveStrengthBindings.length){
+                const t = uiAction.time;
+                emissiveStrengthBindings.forEach((binding) => {
+                    const value = binding.interpolant.evaluate(t);
+                    const v = Array.isArray(value) ? value[0] : value?.[0] ?? value;
+                    if(Number.isFinite(v)){
+                        binding.material.emissiveIntensity = v;
+                        binding.material.needsUpdate = true;
+                    }
+                });
+            }
         }
 
-        function frameToClipTime(frame, clipItem){
+        function frameToClipTime(frame, clipItem, startFrame, endFrame){
             if(!clipItem) return 0;
-            const clamped = Math.min(Math.max(frame, 1), TOTAL_FRAMES);
-            return ((clamped - 1) / (TOTAL_FRAMES - 1)) * clipItem.duration;
+            const span = Math.max(1, endFrame - startFrame);
+            const clamped = Math.min(Math.max(frame, startFrame), endFrame);
+            return ((clamped - startFrame) / span) * clipItem.duration;
         }
 
         function getCameraHoldTime(clipItem){
             if(!clipItem) return 0;
-            const base = frameToClipTime(RETURN_FRAME, clipItem);
+            const base = frameToClipTime(CAMERA_END_FRAME, clipItem, CAMERA_START_FRAME, CAMERA_END_FRAME);
             const end = Math.max(0, clipItem.duration - 1e-4);
             return Math.min(base, end);
         }
@@ -423,8 +1914,9 @@ if (isLocalHost) {
             if(!cameraAction || !cameraMixer) return;
             cameraAction.enabled = true;
             cameraAction.paused = true;
-            cameraAction.time = frameToClipTime(frame, cameraAction.getClip());
+            cameraAction.time = frameToClipTime(frame, cameraAction.getClip(), CAMERA_START_FRAME, CAMERA_END_FRAME);
             cameraMixer.setTime(cameraAction.time);
+            logCamEvent(`setCameraFrame(${frame}) time=${cameraAction.time.toFixed(4)}`);
         }
 
         function syncControlsToCamera(model){
@@ -524,8 +2016,8 @@ if (isLocalHost) {
             const distance = customCameraAnim.startDistance
                 + (customCameraAnim.endDistance - customCameraAnim.startDistance) * zoomEase;
 
-            const shiftStart = Math.min(0.95, Math.max(0.5, animTuning.focusShiftStart));
-            const shiftDenom = Math.max(0.05, 1 - shiftStart);
+            const shiftStart = Math.min(1, Math.max(0.5, animTuning.focusShiftStart));
+            const shiftDenom = Math.max(0, 1 - shiftStart);
             const targetPhase = k < shiftStart
                 ? easeInOutPower(k / shiftStart, animTuning.easePower)
                 : easeInOutPower((k - shiftStart) / shiftDenom, animTuning.easePower);
@@ -654,6 +2146,7 @@ if (isLocalHost) {
                 targetDistance: Number.isFinite(targetDistance) && targetDistance > 0.001 ? targetDistance : 2.5
             };
             lastCameraFrame = 0;
+            logCamEvent(`manual tween start camPos=${camPos.x.toFixed(3)},${camPos.y.toFixed(3)},${camPos.z.toFixed(3)}`);
             setUserCameraControlsEnabled(false);
         }
 
@@ -810,8 +2303,9 @@ if (isLocalHost) {
             cameraTargetTime = null;
         }
 
-        function startAnimationToFrame(frame, jumpBackFrame = null){
+        function startAnimationToFrame(frame, jumpBackFrame = null, options = {}){
             if(!uiAction || !clip || !uiMixer) return;
+            const { triggerEmissive = true } = options;
             const desiredTime = frameToTime(frame);
             if(Math.abs(uiAction.time - desiredTime) <= FRAME_EPSILON){
                 if(jumpBackFrame !== null){
@@ -819,27 +2313,85 @@ if (isLocalHost) {
                 }
                 return;
             }
+            const dir = desiredTime < uiAction.time ? -1 : 1;
+            manualEmissiveDirection = dir;
+            uiAction.timeScale = dir * (uiAnimTuning.speed || 1);
+            if(triggerEmissive){
+                playEmissionActions(dir);
+            }
             targetTime = desiredTime;
             animationJumpBackFrame = jumpBackFrame;
             uiAction.paused = false;
+            uiAction.play();
         }
 
         function isAtFrame(frame){
             return Math.abs(timeToFrame(uiAction?.time || 0) - frame) <= 0.6;
         }
 
-        function setAccessibilityView(){
-            if(isAtFrame(ACCESSIBILITY_FRAME)) return;
-            if(isAtFrame(AUDIO_FRAME)){
-                startAnimationToFrame(RETURN_FRAME, ACCESSIBILITY_FRAME);
-                return;
-            }
-            setFrame(ACCESSIBILITY_FRAME);
+        function isAtUiStart(){
+            if(!uiAction || !clip) return false;
+            return Math.abs((uiAction.time || 0) - frameToTime(UI_START_FRAME)) <= FRAME_EPSILON;
         }
 
-        function setAudioView(){
-            if(isAtFrame(AUDIO_FRAME)) return;
-            startAnimationToFrame(AUDIO_FRAME, null);
+        function isAtUiEnd(){
+            if(!uiAction || !clip) return false;
+            return Math.abs((uiAction.time || 0) - frameToTime(UI_END_FRAME)) <= FRAME_EPSILON;
+        }
+
+        function setAccessibilityView(options = {}){
+            const { triggerEmissive = true } = options;
+            activeSettingsView = 'accessibility';
+            if(isAtUiStart()) return false;
+            let started = false;
+            if(isAtUiEnd()){
+                startAnimationToFrame(UI_START_FRAME, null, { triggerEmissive });
+                started = true;
+            }
+            if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+                settingsControllerBridge.updateKnobTransformsFromState();
+            }
+            updateSyncPercentLabel();
+            return started;
+        }
+
+        function reverseVolSyncAnimation(){
+            if(!uiAction || !clip) return;
+            if(isAtUiEnd()){
+                startAnimationToFrame(UI_START_FRAME, null);
+                return;
+            }
+            if(isAtUiStart()) return;
+            startAnimationToFrame(UI_START_FRAME, null);
+        }
+
+        function setAudioView(options = {}){
+            const { triggerEmissive = true } = options;
+            activeSettingsView = 'audio';
+            if(isAtUiEnd()) return false;
+            let started = false;
+            if(isAtUiStart()){
+                startAnimationToFrame(UI_END_FRAME, null, { triggerEmissive });
+                started = true;
+            }
+            if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+                settingsControllerBridge.updateKnobTransformsFromState();
+            }
+            updateSyncPercentLabel();
+            return started;
+        }
+
+        function toggleVolSyncAnimation(){
+            if(!uiAction || !clip) return;
+            if(isAtUiStart()){
+                startAnimationToFrame(UI_END_FRAME, null);
+                return;
+            }
+            if(isAtUiEnd()){
+                startAnimationToFrame(UI_START_FRAME, null);
+                return;
+            }
+            startAnimationToFrame(UI_END_FRAME, null);
         }
 
         settingsControllerBridge.setAccessibilityView = setAccessibilityView;
@@ -1008,75 +2560,72 @@ if (isLocalHost) {
             screenCanvas = canvas;
             screenCtx = ctx;
 
-            ctx.fillStyle = '#f0e2ff';
+            // Dark green test (to verify material tinting).
+            ctx.fillStyle = '#021b02';
             ctx.fillRect(0, 0, size, height);
 
-            ctx.strokeStyle = 'rgba(6, 16, 56, 0.35)';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(140, 216, 255, 0.65)';
+            ctx.lineWidth = 1;
             const cols = 20;
             const rows = 12;
-            for(let c = 0; c <= cols; c++){
-                const x = (c / cols) * size;
-                ctx.beginPath();
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, height);
-                ctx.stroke();
-            }
-            for(let r = 0; r <= rows; r++){
-                const y = (r / rows) * height;
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(size, y);
-                ctx.stroke();
-            }
-
-            ctx.fillStyle = '#010718';
-            ctx.font = '900 40px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            for(let c = 0; c < cols; c++){
-                const letter = String.fromCharCode(65 + c);
-                const x = ((c + 0.5) / cols) * size;
-                ctx.fillText(letter, x, 6);
-            }
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
+            const cellWidth = size / cols;
+            const cellHeight = height / rows;
+            const cornerX = cellWidth / 16;
+            const cornerY = cellHeight / 16;
             for(let r = 0; r < rows; r++){
-                const number = String(r + 1);
-                const y = ((r + 0.5) / rows) * height;
-                ctx.fillText(number, 6, y);
+                const y0 = r * cellHeight;
+                const y1 = y0 + cellHeight;
+                for(let c = 0; c < cols; c++){
+                    const x0 = c * cellWidth;
+                    const x1 = x0 + cellWidth;
+                    ctx.beginPath();
+                    // Top-left corner
+                    ctx.moveTo(x0, y0 + cornerY);
+                    ctx.lineTo(x0, y0);
+                    ctx.lineTo(x0 + cornerX, y0);
+                    // Top-right corner
+                    ctx.moveTo(x1 - cornerX, y0);
+                    ctx.lineTo(x1, y0);
+                    ctx.lineTo(x1, y0 + cornerY);
+                    // Bottom-left corner
+                    ctx.moveTo(x0, y1 - cornerY);
+                    ctx.lineTo(x0, y1);
+                    ctx.lineTo(x0 + cornerX, y1);
+                    // Bottom-right corner
+                    ctx.moveTo(x1 - cornerX, y1);
+                    ctx.lineTo(x1, y1);
+                    ctx.lineTo(x1, y1 - cornerY);
+                    ctx.stroke();
+                }
             }
 
-            const fps = clip ? ((TOTAL_FRAMES - 1) / Math.max(clip.duration, 0.001)) : 30;
-            const lines = [];
-            if(clip){
-                lines.push(`Animation Clip: ${clip.name || 'unnamed'}`);
-                const nodes = Array.isArray(animatedNodes) ? animatedNodes : [];
-                lines.push(`Animated nodes (${nodes.length}):`);
-                nodes.forEach((nodeName) => {
-                    lines.push(`- ${nodeName}`);
-                });
-            }else{
-                lines.push('Animation Clip: none');
+            ctx.fillStyle = 'rgba(216, 196, 255, 0.28)';
+            ctx.font = '14px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            for(let r = 0; r < rows; r++){
+                for(let c = 0; c < cols; c++){
+                    const label = `${String.fromCharCode(65 + c)}${r + 1}`;
+                    const x = ((c / cols) * size) + 8;
+                    const y = ((r / rows) * height) + 6;
+                    ctx.fillText(label, x, y);
+                }
             }
 
-            const cellWidth = size / 20;
-            const cellHeight = height / 12;
-            const infoX = cellWidth * 1.5;
-            const infoY = cellHeight * 1.5;
-            const infoWidth = size - infoX - (cellWidth * 0.5);
-            const infoHeight = height - infoY - (cellHeight * 0.5);
-            ctx.fillStyle = 'rgba(240, 226, 255, 0.97)';
-            ctx.fillRect(infoX, infoY, infoWidth, infoHeight);
-            ctx.fillStyle = '#010718';
-            ctx.font = '900 44px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
+            const infoWidth = size * 0.86;
+            const infoHeight = height * 0.74;
+            const infoX = (size - infoWidth) * 0.5;
+            const infoY = height * 0.12;
+            // Keep info background transparent so grid labels remain visible.
+            ctx.fillStyle = '#e5cafc';
+            ctx.font = '34px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText('Hello, person', size * 0.5, cellHeight * 1.1);
+            ctx.fillText('Hello, person', size * 0.5, infoY + infoHeight * 0.18);
 
-            ctx.fillStyle = '#010718';
-            ctx.font = '900 34px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
-            ctx.fillText('Allow audio for this site?', size * 0.5, cellHeight * 2.2);
+            ctx.fillStyle = '#e5cafc';
+            ctx.font = '26px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.fillText('Allow audio for this site?', size * 0.5, infoY + infoHeight * 0.34);
 
             const allowX = allowAudioRect.x * size;
             const allowY = allowAudioRect.y * height;
@@ -1086,45 +2635,22 @@ if (isLocalHost) {
             const muteY = muteAudioRect.y * height;
             const muteW = muteAudioRect.w * size;
             const muteH = muteAudioRect.h * height;
-            ctx.fillStyle = '#010718';
+            const shadowOffset = 3;
+            ctx.fillStyle = 'rgba(170, 170, 180, 0.58)';
+            ctx.fillRect(allowX + shadowOffset, allowY + shadowOffset, allowW, allowH);
+            ctx.fillStyle = '#8cd8ff';
             ctx.fillRect(allowX, allowY, allowW, allowH);
-            ctx.fillStyle = '#f0e2ff';
-            ctx.font = '900 36px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
+            ctx.fillStyle = '#0b1440';
+            ctx.font = '24px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
             ctx.fillText('OK', allowX + allowW / 2, allowY + allowH / 2);
-            ctx.fillStyle = 'rgba(1, 7, 24, 0.9)';
+            ctx.fillStyle = 'rgba(170, 170, 180, 0.58)';
+            ctx.fillRect(muteX + shadowOffset, muteY + shadowOffset, muteW, muteH);
+            ctx.fillStyle = '#f5b7d9';
             ctx.fillRect(muteX, muteY, muteW, muteH);
-            ctx.fillStyle = '#f0e2ff';
-            ctx.font = '800 24px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
-            ctx.fillText('Leave site', muteX + muteW / 2, muteY + muteH / 2 - 12);
-            ctx.fillText('muted', muteX + muteW / 2, muteY + muteH / 2 + 12);
-            ctx.fillStyle = '#010718';
-            ctx.font = '800 22px "Arial Black", "Trebuchet MS", system-ui, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            const text = lines.join('\n');
-            const padding = 16;
-            const maxWidth = infoWidth - padding * 2;
-            let x = infoX + padding;
-            let y = infoY + padding;
-            const lineHeight = 28;
-            text.split('\n').forEach((line) => {
-                const words = line.split(' ');
-                let current = '';
-                words.forEach((word) => {
-                    const test = current ? `${current} ${word}` : word;
-                    if(ctx.measureText(test).width > maxWidth && current){
-                        ctx.fillText(current, x, y);
-                        y += lineHeight;
-                        current = word;
-                    }else{
-                        current = test;
-                    }
-                });
-                if(current){
-                    ctx.fillText(current, x, y);
-                    y += lineHeight;
-                }
-            });
+            ctx.fillStyle = '#3c1f54';
+            ctx.font = '18px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
+            ctx.fillText('LEAVE SITE', muteX + muteW / 2, muteY + muteH / 2 - 14);
+            ctx.fillText('MUTED', muteX + muteW / 2, muteY + muteH / 2 + 14);
 
             const texture = new THREE.CanvasTexture(canvas);
             texture.flipY = false;
@@ -1139,12 +2665,12 @@ if (isLocalHost) {
 
         function animate(){
             if(updateCustomCameraAnimation()){
-                renderer.render(scene, activeCamera);
+                renderSceneWithAxes();
                 requestAnimationFrame(animate);
                 return;
             }
             if(updateFocusAnimation()){
-                renderer.render(scene, activeCamera);
+                renderSceneWithAxes();
                 requestAnimationFrame(animate);
                 return;
             }
@@ -1153,22 +2679,33 @@ if (isLocalHost) {
             }
             const delta = clock.getDelta();
             if(uiMixer && uiAction){
+                if(!uiAction.paused){
+                    uiMixer.update(delta);
+                }
                 if(targetTime !== null && !uiAction.paused){
-                    const nextTime = uiAction.time + delta;
-                    if(nextTime >= targetTime){
+                    const reached = uiAction.timeScale >= 0
+                        ? uiAction.time >= targetTime
+                        : uiAction.time <= targetTime;
+                    if(reached){
                         uiAction.time = targetTime;
                         uiAction.paused = true;
+                        uiAction.timeScale = 1;
+                        if(emissiveAction){
+                            emissiveAction.time = uiAction.time;
+                            emissiveAction.paused = true;
+                            emissiveAction.setEffectiveTimeScale(1);
+                        }
                         targetTime = null;
                         uiMixer.setTime(uiAction.time);
                         if(animationJumpBackFrame !== null){
                             setFrame(animationJumpBackFrame);
                             animationJumpBackFrame = null;
                         }
-                    }else{
-                        uiAction.time = nextTime;
-                        uiMixer.setTime(uiAction.time);
                     }
                 }
+            }
+            if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+                settingsControllerBridge.updateKnobTransformsFromState();
             }
             if(cameraMixer && cameraAction && !cameraAction.paused){
                 if(cameraTargetTime !== null){
@@ -1187,6 +2724,34 @@ if (isLocalHost) {
                     cameraMixer.update(delta);
                 }
             }
+            if(manualEmissiveTargets.length && uiAction && clip){
+                const startT = frameToTime(UI_START_FRAME);
+                const endT = frameToTime(UI_END_FRAME);
+                const span = Math.max(1e-6, endT - startT);
+                const raw = (uiAction.time - startT) / span;
+                const progress = Math.max(0, Math.min(1, raw));
+                const forward = manualEmissiveDirection >= 0;
+                const t = forward ? progress : (1 - progress);
+                manualEmissiveTargets.forEach((entry) => {
+                    const base = entry.base;
+                    const value = entry.mode === 'on'
+                        ? base * (1 - t)
+                        : base * t;
+                    entry.material.emissiveIntensity = value;
+                    entry.material.needsUpdate = true;
+                });
+            }
+            if(emissiveStrengthBindings.length){
+                const t = uiAction?.time ?? 0;
+                emissiveStrengthBindings.forEach((binding) => {
+                    const value = binding.interpolant.evaluate(t);
+                    const v = Array.isArray(value) ? value[0] : value?.[0] ?? value;
+                    if(Number.isFinite(v)){
+                        binding.material.emissiveIntensity = v;
+                        binding.material.needsUpdate = true;
+                    }
+                });
+            }
             stepManualCameraTween();
             if(shouldTrackControls && controls && lastControlsEnabled !== null && controls.enabled !== lastControlsEnabled){
                 console.log('controls.enabled changed', lastControlsEnabled, '->', controls.enabled, 'at', (performance.now() / 1000).toFixed(2));
@@ -1196,6 +2761,19 @@ if (isLocalHost) {
                 const clipName = cameraAction?.getClip?.()?.name ?? '(no clip)';
                 const clipDur = cameraAction?.getClip?.()?.duration ?? 0;
                 const t = cameraAction?.time ?? 0;
+                if(uiAction && clip){
+                    const uiFrame = Math.round(timeToFrame(uiAction.time || 0));
+                    if(uiFrame !== lastUiFrameLogged){
+                        if(uiFrame === 1 || uiFrame === 16){
+                            uiFrameLog.push('\n');
+                        }
+                        uiFrameLog.push(String(uiFrame));
+                        if(uiFrameLog.length > MAX_UI_LOG){
+                            uiFrameLog.shift();
+                        }
+                        lastUiFrameLogged = uiFrame;
+                    }
+                }
                 let debugText =
 `CAM ANIM DEBUG
 usesGltfCamera: ${usesGltfCamera}
@@ -1206,6 +2784,21 @@ time: ${Number(t).toFixed(4)}
 cameraTargetTime: ${cameraTargetTime === null ? 'null' : Number(cameraTargetTime).toFixed(4)}
 paused: ${!!cameraAction?.paused}
 enabled: ${!!cameraAction?.enabled}`;
+                if(uiFrameLog.length){
+                    debugText += `\n\nUI FRAMES\n${uiFrameLog.join(' ').replace(/\\n\\s*/g, '\\n')}`;
+                }
+                if(uiAction && clip){
+                    debugText += `\n\nUI STATE\nuiClip: ${clip.name || '(unnamed)'}`
+                        + `\nuiClipDur: ${Number(clip.duration || 0).toFixed(4)}`
+                        + `\nuiTracks: ${clip.tracks?.length || 0}`
+                        + `\nuiPaused: ${!!uiAction.paused}`
+                        + `\nuiTime: ${Number(uiAction.time || 0).toFixed(4)}`
+                        + `\nuiTarget: ${targetTime === null ? 'null' : Number(targetTime).toFixed(4)}`
+                        + `\nuiFrame: ${Math.round(timeToFrame(uiAction.time || 0))}`;
+                }
+                if(animationInfoLines.length){
+                    debugText += `\n\nANIMATION INFO\n${animationInfoLines.join('\n')}`;
+                }
                 if(camAnimLog.length){
                     debugText += `\n\nEVENT LOG\n${camAnimLog.join('\n')}`;
                 }
@@ -1260,8 +2853,30 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(debugGlbYValue) debugGlbYValue.textContent = glbCenter.y.toFixed(3);
                 if(debugGlbZValue) debugGlbZValue.textContent = glbCenter.z.toFixed(3);
             }
-            renderer.render(scene, activeCamera);
+            if(debugCameraPanel){
+                ensureLightingDebugLine();
+                updateContrastKnobTrackerLine();
+            }
+            renderSceneWithAxes();
             requestAnimationFrame(animate);
+        }
+
+        function renderSceneWithAxes(){
+            if(lastWidth < 2 || lastHeight < 2) return;
+            renderer.setViewport(0, 0, lastWidth, lastHeight);
+            renderer.setScissor(0, 0, lastWidth, lastHeight);
+            renderer.render(scene, activeCamera);
+            if(settingsControllerBridge.model){
+                settingsControllerBridge.model.getWorldQuaternion(axesRoot.quaternion);
+            }
+            const axisSize = Math.max(70, Math.round(Math.min(lastWidth, lastHeight) * 0.18));
+            const axisPadding = Math.round(Math.max(10, axisSize * 0.15));
+            const axisX = axisPadding;
+            const axisY = Math.max(axisPadding, lastHeight - axisSize - axisPadding);
+            renderer.setViewport(axisX, axisY, axisSize, axisSize);
+            renderer.setScissor(axisX, axisY, axisSize, axisSize);
+            renderer.clearDepth();
+            renderer.render(axesScene, axesCamera);
         }
 
         resizeScene();
@@ -1277,6 +2892,8 @@ enabled: ${!!cameraAction?.enabled}`;
             if(!model) return;
             scene.add(model);
             model.updateMatrixWorld(true);
+            loadEmissiveExclusions();
+            loadEmissiveScales();
 
             const allClips = gltf.animations || [];
             console.group('[SettingsController GLB] Animations');
@@ -1285,13 +2902,171 @@ enabled: ${!!cameraAction?.enabled}`;
             });
             console.groupEnd();
             const animatedNodes = new Set();
+            const emissiveAnimNodes = new Set();
+            const emissiveAnimMaterials = new Set();
+            emissiveStrengthBindings = [];
             allClips.forEach((clipItem) => {
                 clipItem.tracks.forEach((track) => {
                     const name = typeof track.name === 'string' ? track.name : '';
                     const nodeName = name.split('.')[0].trim();
                     if(nodeName) animatedNodes.add(nodeName);
+                    const lower = name.toLowerCase();
+                    const hasEmissiveTrack = lower.includes('emissiveintensity')
+                        || lower.includes('emission')
+                        || lower.includes('emissive')
+                        || lower.includes('glow');
+                    if(hasEmissiveTrack && nodeName){
+                        emissiveAnimNodes.add(nodeName);
+                    }
+                    const materialMatch = name.match(/materials\[(\d+)\]\.(.+)/i);
+                    if(materialMatch){
+                        const pathTail = materialMatch[2].toLowerCase();
+                        if(pathTail.includes('emissive') || pathTail.includes('emission') || pathTail.includes('glow')){
+                            const idx = parseInt(materialMatch[1], 10);
+                            if(Number.isFinite(idx) && gltf.materials && gltf.materials[idx]?.name){
+                                emissiveAnimMaterials.add(gltf.materials[idx].name.toLowerCase());
+                                const mat = gltf.materials[idx];
+                                if(track.ValueTypeName === 'number' || track.ValueTypeName === 'scalar' || track.ValueTypeName === undefined){
+                                    emissiveStrengthBindings.push({
+                                        material: mat,
+                                        track,
+                                        interpolant: track.createInterpolant()
+                                    });
+                                }
+                            }
+                        }
+                    } else if(lower.includes('material') && hasEmissiveTrack){
+                        const parts = name.split('.');
+                        if(parts.length > 1){
+                            const matName = parts[0].replace(/^materials\//i, '').trim();
+                            if(matName){
+                                emissiveAnimMaterials.add(matName.toLowerCase());
+                            }
+                        }
+                    }
                 });
             });
+            animatedNodeNames = new Set([...animatedNodes].map((name) => name.toLowerCase()));
+            emissiveAnimatedNodes = new Set([...emissiveAnimNodes].map((name) => name.toLowerCase()));
+            animatedEmissiveMaterials = new Set([...emissiveAnimMaterials]);
+            if(!loggedEmissiveTracks){
+                console.group('[Emissive Strength Tracks]');
+                if(emissiveStrengthBindings.length){
+                    emissiveStrengthBindings.forEach((binding) => {
+                        const times = Array.from(binding.track.times || []);
+                        const values = Array.from(binding.track.values || []);
+                        console.log({
+                            material: binding.material?.name || '(unnamed)',
+                            track: binding.track.name,
+                            times,
+                            values: values.slice(0, 12)
+                        });
+                    });
+                }else{
+                    const emissiveTrackNames = [];
+                    allClips.forEach((clipItem) => {
+                        clipItem.tracks.forEach((track) => {
+                            const name = typeof track.name === 'string' ? track.name.toLowerCase() : '';
+                            if(name.includes('emissive') || name.includes('emission') || name.includes('glow')){
+                                emissiveTrackNames.push(track.name);
+                            }
+                        });
+                    });
+                    console.log({
+                        bindings: 0,
+                        emissiveTrackNames
+                    });
+                }
+                console.groupEnd();
+                loggedEmissiveTracks = true;
+            }
+            const sortedAnimatedNodes = [...animatedNodes].sort();
+
+            lightingTargets = captureLightingTargets(model);
+            applyLuxControls();
+            applyEmissionControls();
+            applyBackgroundBrightness(getBackgroundBrightness());
+            manualEmissiveTargets = [];
+            const normalizeBaseName = (label) => {
+                if(!label) return '';
+                return String(label)
+                    .toLowerCase()
+                    .replace(/([._-])\d+$/,'')
+                    .trim();
+            };
+            const classifyEmissiveMode = (label) => {
+                if(!label) return null;
+                const n = String(label).toLowerCase();
+                const isGlow = n.includes('glow');
+                const isTxt = n.includes('txt');
+                const isBtn = n.includes('btn');
+                const isOn = n.includes('-on') || n.endsWith('on') || n.includes('_on');
+                const isOff = n.includes('-off') || n.endsWith('off') || n.includes('_off');
+                if((isGlow || isTxt || isBtn) && isOn) return 'on';
+                if((isGlow || isTxt || isBtn) && isOff) return 'off';
+                return null;
+            };
+            if(lightingTargets?.emissiveTargets){
+                lightingTargets.emissiveTargets.forEach((target) => {
+                    const mat = target.material;
+                    const node = target.node;
+                    const controlNode = target.controlNode;
+                    if(!mat) return;
+                    const matName = mat.name || '';
+                    const mode = classifyEmissiveMode(matName)
+                        || classifyEmissiveMode(node?.name)
+                        || classifyEmissiveMode(controlNode?.name);
+                    if(mode){
+                        const baseName = normalizeBaseName(matName || node?.name || controlNode?.name || '');
+                        const base = Number.isFinite(mat?.userData?.maxEmissiveIntensity)
+                            ? mat.userData.maxEmissiveIntensity
+                            : ((Number.isFinite(mat.emissiveIntensity) && mat.emissiveIntensity > 0) ? mat.emissiveIntensity : 1);
+                        manualEmissiveTargets.push({
+                            material: mat,
+                            mode,
+                            base,
+                            baseName
+                        });
+                    }
+                });
+            }
+            if(!loggedManualEmissives){
+                console.group('[Manual Emissive Targets]');
+                console.log(manualEmissiveTargets.map((entry) => ({
+                    material: entry.material?.name || '(unnamed)',
+                    mode: entry.mode,
+                    base: entry.base
+                })));
+                console.groupEnd();
+                loggedManualEmissives = true;
+            }
+            if(lightingTargets?.emissiveTargets && emissiveList){
+                buildEmissiveList(model, lightingTargets.emissiveTargets);
+                syncEmiToEmissiveSliderRanges(getContrastValue());
+                applyEmissionControls();
+                if(emissiveListPanel) emissiveListPanel.hidden = false;
+            }
+            let percentSyncNode = null;
+            model.traverse((child) => {
+                if(percentSyncNode || !child || !child.isObject3D) return;
+                const name = (child.name || '').toLowerCase();
+                if(name === 'txt-percent-sync' || name.includes('txt-percent-sync')){
+                    // Bind only to the text target, never to the parent/frame.
+                    if(child.isMesh){
+                        percentSyncNode = child;
+                    }else{
+                        let meshDesc = null;
+                        child.traverse((desc) => {
+                            if(meshDesc || !desc?.isMesh) return;
+                            meshDesc = desc;
+                        });
+                        percentSyncNode = meshDesc || child;
+                    }
+                }
+            });
+            if(percentSyncNode){
+                initSyncPercentLabel(percentSyncNode);
+            }
 
             const findCameraNode = () => {
                 if(gltf.cameras && gltf.cameras.length){
@@ -1336,47 +3111,74 @@ enabled: ${!!cameraAction?.enabled}`;
                 });
             };
 
-            const splitClipByCamera = (clipItem) => {
-                if(!cameraNode || !clipItem) return { cameraOnly: null, uiOnly: null };
-                const cameraTracks = [];
-                const uiTracks = [];
-                clipItem.tracks.forEach((track) => {
+            const buildCameraClip = (clipItem) => {
+                if(!cameraNode || !clipItem) return null;
+                const cameraTracks = clipItem.tracks.filter((track) => {
                     const name = typeof track.name === 'string' ? track.name : '';
-                    if(name.startsWith(`${cameraNode.name}.`)){
-                        cameraTracks.push(track);
-                    }else{
-                        uiTracks.push(track);
-                    }
+                    return name.startsWith(`${cameraNode.name}.`);
                 });
-                const cameraOnly = cameraTracks.length
-                    ? new THREE.AnimationClip(`${clipItem.name || 'camera'}-camera`, clipItem.duration, cameraTracks)
-                    : null;
-                const uiOnly = uiTracks.length
-                    ? new THREE.AnimationClip(`${clipItem.name || 'ui'}-ui`, clipItem.duration, uiTracks)
-                    : null;
-                return { cameraOnly, uiOnly };
+                if(!cameraTracks.length) return null;
+                return cameraTracks.length === clipItem.tracks.length
+                    ? clipItem
+                    : new THREE.AnimationClip(`${clipItem.name || 'camera'}-camera`, clipItem.duration, cameraTracks);
             };
 
-            let cameraClip = allClips.find(hasCameraTrack) || null;
-            let uiClip = allClips.find((clipItem) => !hasCameraTrack(clipItem)) || null;
-            if(!uiClip && cameraClip){
-                const split = splitClipByCamera(cameraClip);
-                if(split.cameraOnly) cameraClip = split.cameraOnly;
-                if(split.uiOnly) uiClip = split.uiOnly;
-            }
-            if(!uiClip){
-                uiClip = allClips[0] || null;
-            }
-            if(uiClip && cameraNode){
-                const uiTracks = uiClip.tracks.filter((track) => {
-                    const name = typeof track.name === 'string' ? track.name : '';
-                    return !name.startsWith(`${cameraNode.name}.`);
+            const buildUiClip = (clips) => {
+                if(!clips || !clips.length) return null;
+                const uiClips = [];
+                const emissiveTracks = [];
+                clips.forEach((clipItem) => {
+                    if(!clipItem || !clipItem.tracks?.length) return;
+                    clipItem.tracks.forEach((track) => {
+                        const name = typeof track.name === 'string' ? track.name.toLowerCase() : '';
+                        if(name.includes('emissive') || name.includes('emission') || name.includes('glow') || name.includes('materials/')){
+                            emissiveTracks.push(track);
+                        }
+                    });
+                    if(!cameraNode){
+                        uiClips.push(clipItem);
+                        return;
+                    }
+                    const uiTracks = clipItem.tracks.filter((track) => {
+                        const name = typeof track.name === 'string' ? track.name : '';
+                        const nodeName = name.split('.')[0].trim().toLowerCase();
+                        const isContrastKnobTrack = nodeName.includes('knob') && nodeName.includes('contrast');
+                        return !name.startsWith(`${cameraNode.name}.`) && !isContrastKnobTrack;
+                    });
+                    if(!uiTracks.length) return;
+                    const uiDuration = Number.isFinite(clipItem.duration) && clipItem.duration > 0 ? clipItem.duration : -1;
+                    uiClips.push(new THREE.AnimationClip(`${clipItem.name || 'ui'}-ui`, uiDuration, uiTracks));
                 });
-                if(uiTracks.length !== uiClip.tracks.length){
-                    uiClip = uiTracks.length
-                        ? new THREE.AnimationClip(`${uiClip.name || 'ui'}-ui`, uiClip.duration, uiTracks)
-                        : null;
+                const combinedTracks = [];
+                uiClips.forEach((clipItem) => {
+                    if(clipItem?.tracks?.length){
+                        combinedTracks.push(...clipItem.tracks);
+                    }
+                });
+                if(!combinedTracks.length) return null;
+                const uiClip = new THREE.AnimationClip('ui-combined', -1, combinedTracks);
+                if(emissiveTracks.length){
+                    uiClip.userData = { ...(uiClip.userData || {}), emissiveTracks };
                 }
+                return uiClip;
+            };
+
+            let cameraClip = buildCameraClip(allClips.find(hasCameraTrack) || null);
+            let uiClip = buildUiClip(allClips);
+            if(!uiClip && allClips.length){
+                const fallback = allClips.find((clipItem) => !hasCameraTrack(clipItem)) || allClips[0];
+                if(fallback && fallback.tracks?.length){
+                    uiClip = fallback;
+                }
+            }
+            if(uiClip){
+                animationInfoLines = [
+                    `Animation Clip: ${uiClip.name || 'unnamed'}`,
+                    `Animated nodes (${sortedAnimatedNodes.length}):`,
+                    ...sortedAnimatedNodes.map((nodeName) => `- ${nodeName}`)
+                ];
+            }else{
+                animationInfoLines = ['Animation Clip: none'];
             }
 
             if(!uiMixer){
@@ -1389,6 +3191,17 @@ enabled: ${!!cameraAction?.enabled}`;
                 uiAction.setLoop(THREE.LoopOnce, 1);
                 uiAction.play();
                 setFrame(ACCESSIBILITY_FRAME);
+                const emissiveTracks = uiClip.userData?.emissiveTracks || [];
+                if(emissiveTracks.length){
+                    const emissiveClip = new THREE.AnimationClip('emissive-only', -1, emissiveTracks);
+                    emissiveAction = uiMixer.clipAction(emissiveClip);
+                    emissiveAction.clampWhenFinished = true;
+                    emissiveAction.setLoop(THREE.LoopOnce, 1);
+                    emissiveAction.play();
+                    emissionActions = [emissiveAction].filter(Boolean);
+                }else{
+                    emissionActions = [];
+                }
             }
 
             if(cameraClip && !FORCE_MANUAL_CAMERA){
@@ -1400,16 +3213,21 @@ enabled: ${!!cameraAction?.enabled}`;
                 cameraAction.setLoop(THREE.LoopOnce, 1);
                 cameraAction.paused = true;
                 cameraAction.enabled = true;
-                setCameraFrame(ACCESSIBILITY_FRAME);
+                logCamEvent(`cameraClip init name=${cameraClip.name || 'unnamed'} dur=${cameraClip.duration.toFixed(4)} time=${cameraAction.time.toFixed(4)}`);
+                setCameraFrame(CAMERA_START_FRAME);
                 if(activeCamera){
                     activeCamera.updateMatrixWorld(true);
                 }
+            }
+            if(cameraClip && FORCE_MANUAL_CAMERA){
+                logCamEvent(`cameraClip found but skipped (FORCE_MANUAL_CAMERA=true) name=${cameraClip.name || 'unnamed'} dur=${cameraClip.duration.toFixed(4)}`);
             }
             if(!cameraClip || FORCE_MANUAL_CAMERA){
                 cameraAction = null;
                 cameraMixer = null;
                 usesGltfCamera = false;
                 setUserCameraControlsEnabled(false);
+                logCamEvent('manual camera path active');
                 syncControlsToCamera(model);
             }
 
@@ -1447,10 +3265,209 @@ enabled: ${!!cameraAction?.enabled}`;
                 }
             });
 
+            let knobVolNode = null;
+            let knobSyncNode = null;
+            let knobContrastNode = null;
+            const knobContrastNodes = [];
+            const pushUniqueNode = (list, node) => {
+                if(!node) return;
+                if(!list.includes(node)) list.push(node);
+            };
+            model.traverse((child) => {
+                if(!child || !child.isObject3D) return;
+                const name = (child.name || '').toLowerCase();
+                if(!knobVolNode && (name.includes('knob-vol') || name.includes('knob_vol') || name.includes('knobvol'))){
+                    knobVolNode = child;
+                }
+                if(!knobSyncNode && (name.includes('knob-sync') || name.includes('knob_sync') || name.includes('knobsync'))){
+                    knobSyncNode = child;
+                }
+                if(name.includes('knob-contrast') || name.includes('knob_contrast') || name.includes('knobcontrast')){
+                    if(!knobContrastNode){
+                        knobContrastNode = child;
+                    }
+                    pushUniqueNode(knobContrastNodes, child);
+                }
+            });
+            const gasketByType = { vol: null, sync: null, contrast: null };
+            const detectorByType = { vol: null, sync: null, contrast: null };
+            const findGasketForType = (type) => {
+                if(gasketByType[type]) return gasketByType[type];
+                let found = null;
+                model.traverse((child) => {
+                    if(found || !child || !child.isObject3D) return;
+                    const name = (child.name || '').toLowerCase();
+                    if(!name.includes('gasket')) return;
+                    if(type === 'vol' && (name.includes('-vol') || name.includes('_vol') || name.includes('vol'))){
+                        found = child;
+                    }
+                    if(type === 'sync' && (name.includes('-sync') || name.includes('_sync') || name.includes('sync'))){
+                        found = child;
+                    }
+                    if(type === 'contrast' && (name.includes('-contrast') || name.includes('_contrast') || name.includes('contrast'))){
+                        found = child;
+                    }
+                });
+                gasketByType[type] = found;
+                return found;
+            };
+            const findDetectorForType = (type) => {
+                if(detectorByType[type]) return detectorByType[type];
+                let found = null;
+                model.traverse((child) => {
+                    if(found || !child || !child.isObject3D) return;
+                    const name = (child.name || '').toLowerCase();
+                    if(!name.includes('detector')) return;
+                    if(type === 'vol' && (name.includes('-vol') || name.includes('_vol') || name.includes('vol'))){
+                        found = child;
+                    }
+                    if(type === 'sync' && (name.includes('-sync') || name.includes('_sync') || name.includes('sync'))){
+                        found = child;
+                    }
+                    if(type === 'contrast' && (name.includes('-contrast') || name.includes('_contrast') || name.includes('contrast'))){
+                        found = child;
+                    }
+                });
+                detectorByType[type] = found;
+                return found;
+            };
+            const findClosestKnobToType = (type) => {
+                const gasket = findGasketForType(type) || findDetectorForType(type);
+                if(!gasket) return null;
+                const target = new THREE.Box3().setFromObject(gasket).getCenter(new THREE.Vector3());
+                let best = null;
+                let bestDistSq = Infinity;
+                model.traverse((child) => {
+                    if(!child || !child.isObject3D) return;
+                    const name = (child.name || '').toLowerCase();
+                    if(!name.includes('knob')) return;
+                    if(name.includes('gasket') || name.includes('detector') || name.includes('hitbox')) return;
+                    const center = new THREE.Box3().setFromObject(child).getCenter(new THREE.Vector3());
+                    const distSq = center.distanceToSquared(target);
+                    if(!Number.isFinite(distSq)) return;
+                    if(distSq < bestDistSq){
+                        bestDistSq = distSq;
+                        best = child;
+                    }
+                });
+                return best;
+            };
+            // Some GLB revisions use generic knob names, so include the physically nearest knob.
+            const inferredContrastKnob = findClosestKnobToType('contrast');
+            if(inferredContrastKnob){
+                pushUniqueNode(knobContrastNodes, inferredContrastKnob);
+                if(!knobContrastNode) knobContrastNode = inferredContrastKnob;
+            }
+            settingsControllerBridge.knobVolNode = knobVolNode;
+            settingsControllerBridge.knobSyncNode = knobSyncNode;
+            settingsControllerBridge.knobContrastNode = knobContrastNode;
+            settingsControllerBridge.knobContrastNodes = knobContrastNodes;
+            settingsControllerBridge.knobDefaults = {
+                vol: knobVolNode ? knobVolNode.position.clone() : null,
+                sync: knobSyncNode ? knobSyncNode.position.clone() : null,
+                contrast: knobContrastNode ? knobContrastNode.position.clone() : null
+            };
+            const cornersFromBox = (box) => {
+                const { min, max } = box;
+                return [
+                    new THREE.Vector3(min.x, min.y, min.z),
+                    new THREE.Vector3(min.x, min.y, max.z),
+                    new THREE.Vector3(min.x, max.y, min.z),
+                    new THREE.Vector3(min.x, max.y, max.z),
+                    new THREE.Vector3(max.x, min.y, min.z),
+                    new THREE.Vector3(max.x, min.y, max.z),
+                    new THREE.Vector3(max.x, max.y, min.z),
+                    new THREE.Vector3(max.x, max.y, max.z)
+                ];
+            };
+            const getAxisFromGasket = (gasketNode, knobNode) => {
+                if(!gasketNode || !knobNode || !knobNode.parent) return null;
+                const gasketBox = new THREE.Box3().setFromObject(gasketNode);
+                const localCorners = cornersFromBox(gasketBox).map((corner) => knobNode.parent.worldToLocal(corner.clone()));
+                const ranges = {
+                    x: Math.max(...localCorners.map((p) => p.x)) - Math.min(...localCorners.map((p) => p.x)),
+                    y: Math.max(...localCorners.map((p) => p.y)) - Math.min(...localCorners.map((p) => p.y)),
+                    z: Math.max(...localCorners.map((p) => p.z)) - Math.min(...localCorners.map((p) => p.z))
+                };
+                const axis = Object.entries(ranges).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+                return axis;
+            };
+            const buildConstraint = (type, knobNode, fallbackRange) => {
+                if(!knobNode || !knobNode.parent) return null;
+                let axis = type === 'vol' ? 'x' : 'z';
+                if(type === 'contrast'){
+                    axis = getAxisFromGasket(findGasketForType('contrast'), knobNode) || 'x';
+                }
+                const gasket = findGasketForType(type);
+                if(!gasket){
+                    const base = knobNode.position[axis];
+                    return { axis, min: base - fallbackRange * 0.5, max: base + fallbackRange * 0.5 };
+                }
+                const gasketBox = new THREE.Box3().setFromObject(gasket);
+                const localVals = cornersFromBox(gasketBox).map((corner) => {
+                    const local = knobNode.parent.worldToLocal(corner.clone());
+                    return local[axis];
+                });
+                let min = Math.min(...localVals);
+                let max = Math.max(...localVals);
+                if(!Number.isFinite(min) || !Number.isFinite(max) || Math.abs(max - min) < 1e-4){
+                    const base = knobNode.position[axis];
+                    min = base - fallbackRange * 0.5;
+                    max = base + fallbackRange * 0.5;
+                }
+                return { axis, min, max };
+            };
+            const contrastConstraints = new Map();
+            knobContrastNodes.forEach((node) => {
+                const constraint = buildConstraint('contrast', node, KNOB_CONTRAST_RANGE);
+                if(constraint) contrastConstraints.set(node.uuid, constraint);
+            });
+            settingsControllerBridge.knobConstraints = {
+                vol: buildConstraint('vol', knobVolNode, KNOB_VOL_RANGE),
+                sync: buildConstraint('sync', knobSyncNode, KNOB_SYNC_RANGE),
+                contrast: buildConstraint('contrast', knobContrastNode, KNOB_CONTRAST_RANGE),
+                contrastAll: contrastConstraints
+            };
+            const addGasketHitbox = (type, gasketNode) => {
+                if(!gasketNode || !gasketNode.parent) return null;
+                const box = new THREE.Box3().setFromObject(gasketNode);
+                const centerWorld = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                const modelCenter = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
+                let offset = new THREE.Vector3(0, 0, 0);
+                if(type === 'contrast'){
+                    const outward = centerWorld.clone().sub(modelCenter).normalize();
+                    offset = Number.isFinite(outward.lengthSq()) && outward.lengthSq() > 0
+                        ? outward.multiplyScalar(0.05)
+                        : new THREE.Vector3(0, 0.05, 0);
+                }
+                const hitSize = new THREE.Vector3(
+                    Math.max(0.06, size.x * 1.45),
+                    Math.max(0.06, size.y * 1.8),
+                    Math.max(0.06, size.z * 1.45)
+                );
+                const hitbox = new THREE.Mesh(
+                    new THREE.BoxGeometry(hitSize.x, hitSize.y, hitSize.z),
+                    new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+                );
+                hitbox.name = `hitbox-gasket-${type}`;
+                hitbox.userData.knobType = type;
+                const localPos = model.worldToLocal(centerWorld.add(offset));
+                hitbox.position.copy(localPos);
+                model.add(hitbox);
+                return hitbox;
+            };
+            settingsControllerBridge.knobHitboxes = {
+                vol: addGasketHitbox('vol', findDetectorForType('vol') || findGasketForType('vol')),
+                sync: addGasketHitbox('sync', findDetectorForType('sync') || findGasketForType('sync')),
+                contrast: addGasketHitbox('contrast', findDetectorForType('contrast') || findGasketForType('contrast'))
+            };
+            updateKnobTransformsFromState();
+
             const primaryScreen = screenTextureTargets[0] || null;
             const uvBounds = primaryScreen ? findUvBounds(primaryScreen) : null;
             const screenAspect = primaryScreen ? getMeshAspect(primaryScreen) : null;
-            const screenTextureBuilt = buildControlScreenTexture(clip, uvBounds, screenAspect, [...animatedNodes].sort());
+            const screenTextureBuilt = buildControlScreenTexture(clip, uvBounds, screenAspect, sortedAnimatedNodes);
             screenTexture = screenTextureBuilt;
             if(screenTexture){
                 let applied = false;
@@ -1465,11 +3482,17 @@ enabled: ${!!cameraAction?.enabled}`;
                         material.forEach((mat) => {
                             if(mat && 'map' in mat){
                                 mat.map = screenTexture;
+                                if('color' in mat && mat.color){
+                                    mat.color.set(0xffffff);
+                                }
                                 mat.needsUpdate = true;
                             }
                         });
                     }else if(material && 'map' in material){
                         material.map = screenTexture;
+                        if('color' in material && material.color){
+                            material.color.set(0xffffff);
+                        }
                         material.needsUpdate = true;
                     }
                     applied = true;
@@ -1479,18 +3502,216 @@ enabled: ${!!cameraAction?.enabled}`;
             }
         }
 
-        function isSmallFocusTarget(hitObject, model){
-            if(!hitObject || !model) return false;
-            const name = (hitObject.name || '').toLowerCase();
-            if(name === 'control-screen' || name === 'control_screen') return true;
-            const objBox = new THREE.Box3().setFromObject(hitObject);
-            const objSize = objBox.getSize(new THREE.Vector3());
-            const objMax = Math.max(objSize.x, objSize.y, objSize.z);
-            const modelBox = new THREE.Box3().setFromObject(model);
-            const modelSize = modelBox.getSize(new THREE.Vector3());
-            const modelMax = Math.max(modelSize.x, modelSize.y, modelSize.z);
-            if(modelMax <= 0) return false;
-            return objMax <= modelMax * 0.35;
+        function findKnobType(node){
+            let current = node;
+            while(current){
+                if(current.userData && (current.userData.knobType === 'vol' || current.userData.knobType === 'sync' || current.userData.knobType === 'contrast')){
+                    return current.userData.knobType;
+                }
+                if(current === settingsControllerBridge.knobContrastNode) return 'contrast';
+                if(current === settingsControllerBridge.knobSyncNode) return 'sync';
+                if(current === settingsControllerBridge.knobVolNode) return 'vol';
+                if((settingsControllerBridge.knobContrastNodes || []).includes(current)) return 'contrast';
+                const name = (current.name || '').toLowerCase();
+                const isKnobOrGasket = name.includes('knob') || name.includes('gasket') || name.includes('detector');
+                if(isKnobOrGasket && (name.includes('-contrast') || name.includes('_contrast') || name.includes('knobcontrast') || name.includes('contrast'))){
+                    return 'contrast';
+                }
+                if(isKnobOrGasket && (name.includes('-sync') || name.includes('_sync') || name.includes('knobsync') || name.includes('sync'))){
+                    return 'sync';
+                }
+                if(isKnobOrGasket && (name.includes('-vol') || name.includes('_vol') || name.includes('knobvol') || name.includes('volume') || name.includes('vol'))){
+                    return 'vol';
+                }
+                current = current.parent;
+            }
+            return null;
+        }
+
+        function getKnobTFromClient(knobState, clientX, clientY){
+            const rect = settingsControllerCanvas.getBoundingClientRect();
+            const point = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
+            const ab = knobState.pMax.clone().sub(knobState.pMin);
+            const abLenSq = Math.max(1e-6, ab.lengthSq());
+            let t = point.clone().sub(knobState.pMin).dot(ab) / abLenSq;
+            t = Math.max(0, Math.min(1, t));
+            return t;
+        }
+
+        function resolveKnobTypeFromPointer(clientX, clientY, hitObject){
+            const fallbackType = findKnobType(hitObject);
+            const constraints = settingsControllerBridge.knobConstraints;
+            if(!activeCamera || !settingsControllerCanvas || !constraints) return fallbackType;
+            const rect = settingsControllerCanvas.getBoundingClientRect();
+            if(!rect.width || !rect.height) return fallbackType;
+            const point = new THREE.Vector2(clientX - rect.left, clientY - rect.top);
+            const toScreen = (node, constraint) => {
+                if(!node || !node.parent || !constraint) return null;
+                const toPt = (axisValue) => {
+                    const local = node.position.clone();
+                    local[constraint.axis] = axisValue;
+                    const world = node.parent.localToWorld(local.clone());
+                    const ndc = world.clone().project(activeCamera);
+                    return new THREE.Vector2(
+                        ((ndc.x + 1) * 0.5) * rect.width,
+                        ((1 - ndc.y) * 0.5) * rect.height
+                    );
+                };
+                const p0 = toPt(constraint.min);
+                const p1 = toPt(constraint.max);
+                return { p0, p1 };
+            };
+            const distToSegment = (p, a, b) => {
+                const ab = b.clone().sub(a);
+                const abLenSq = Math.max(1e-6, ab.lengthSq());
+                let t = p.clone().sub(a).dot(ab) / abLenSq;
+                t = Math.max(0, Math.min(1, t));
+                const proj = a.clone().add(ab.multiplyScalar(t));
+                return p.distanceTo(proj);
+            };
+
+            const candidates = [];
+            const addCandidate = (type, node, constraint) => {
+                const seg = toScreen(node, constraint);
+                if(!seg) return;
+                const d = distToSegment(point, seg.p0, seg.p1);
+                candidates.push({ type, d });
+            };
+            addCandidate('vol', settingsControllerBridge.knobVolNode, constraints.vol);
+            addCandidate('sync', settingsControllerBridge.knobSyncNode, constraints.sync);
+            if(settingsControllerBridge.knobContrastNodes?.length && constraints.contrastAll){
+                settingsControllerBridge.knobContrastNodes.forEach((node) => {
+                    const c = constraints.contrastAll.get(node.uuid);
+                    addCandidate('contrast', node, c);
+                });
+            }else{
+                addCandidate('contrast', settingsControllerBridge.knobContrastNode, constraints.contrast);
+            }
+            if(!candidates.length) return fallbackType;
+            candidates.sort((a, b) => a.d - b.d);
+            const best = candidates[0];
+            return best.d <= 90 ? best.type : fallbackType;
+        }
+
+        function applyKnobStateFromT(type, t){
+            const clamped = Math.max(0, Math.min(1, t));
+            if(type === 'vol'){
+                if(activeSettingsView === 'accessibility'){
+                    settingsControllerBridge.knobAxisValues.vol = clamped;
+                    applyOverlayFromSource(1 - clamped, 'knob-drag');
+                    updateKnobTransformsFromState();
+                    updateLightingDebugLine('knob-drag', 'vol');
+                    return;
+                }
+                settingsControllerBridge.knobAxisValues.vol = clamped;
+                setVolumeFromPercent(Math.round(clamped * 100));
+                updateKnobTransformsFromState();
+                updateLightingDebugLine('knob-drag', 'vol');
+                return;
+            }
+            if(type === 'sync'){
+                if(activeSettingsView === 'accessibility'){
+                    settingsControllerBridge.knobAxisValues.sync = clamped;
+                    if(settingsControllerBridge.luxControlEnabled){
+                        applyLuxFromSource(clamped, 'knob-drag');
+                    }
+                    updateKnobTransformsFromState();
+                    updateLightingDebugLine('knob-drag', 'sync');
+                    return;
+                }
+                settingsControllerBridge.knobAxisValues.sync = clamped;
+                const nextSync = Math.round(-3000 + (clamped * 6000));
+                applySyncValue(nextSync);
+                if(syncSlider) syncSlider.value = String(storedSync);
+                if(modalSync) modalSync.value = String(storedSync);
+                updateKnobTransformsFromState();
+                updateLightingDebugLine('knob-drag', 'sync');
+                return;
+            }
+            if(type === 'contrast'){
+                settingsControllerBridge.knobAxisValues.contrast = clamped;
+                if(settingsControllerBridge.emissionControlEnabled){
+                    applyEmiFromSource(mapContrastKnobToValue(clamped), 'knob-drag');
+                }
+                updateKnobTransformsFromState();
+                storeContrastLockPose();
+                updateLightingDebugLine('knob-drag', 'contrast');
+                return;
+            }
+        }
+
+        function updateKnobTransformsFromState(){
+            const volNode = settingsControllerBridge.knobVolNode;
+            const syncNode = settingsControllerBridge.knobSyncNode;
+            const contrastNode = settingsControllerBridge.knobContrastNode;
+            const contrastNodes = settingsControllerBridge.knobContrastNodes || [];
+            const defaults = settingsControllerBridge.knobDefaults;
+            const constraints = settingsControllerBridge.knobConstraints;
+            if(!defaults) return;
+            if(volNode && defaults.vol && constraints?.vol){
+                const volNorm = Math.max(0, Math.min(1, storedVolume));
+                const volRange = constraints.vol.max - constraints.vol.min;
+                volNode.position.x = constraints.vol.min + (volNorm * volRange);
+                settingsControllerBridge.knobAxisValues.vol = volNorm;
+            }
+            if(syncNode && defaults.sync && constraints?.sync){
+                const syncNorm = activeSettingsView === 'accessibility'
+                    ? (settingsControllerBridge.luxControlEnabled
+                        ? Math.max(0, Math.min(1, getLuxValue()))
+                        : (Number.isFinite(settingsControllerBridge.knobAxisValues?.sync)
+                            ? settingsControllerBridge.knobAxisValues.sync
+                            : 0.5))
+                    : Math.max(0, Math.min(1, (storedSync + 3000) / 6000));
+                const syncRange = constraints.sync.max - constraints.sync.min;
+                syncNode.position.z = constraints.sync.min + (syncNorm * syncRange);
+                settingsControllerBridge.knobAxisValues.sync = syncNorm;
+            }
+            if(volNode && defaults.vol && constraints?.vol && activeSettingsView === 'accessibility'){
+                const volNorm = 1 - getBackgroundBrightness();
+                const volRange = constraints.vol.max - constraints.vol.min;
+                volNode.position.x = constraints.vol.min + (volNorm * volRange);
+                settingsControllerBridge.knobAxisValues.vol = volNorm;
+            }
+            if(contrastNode && defaults.contrast && constraints?.contrast){
+                const contrastNorm = Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
+                const info = getSemanticConstraintLR(
+                    contrastNode,
+                    constraints.contrast,
+                    settingsControllerCanvas?.getBoundingClientRect(),
+                    settingsControllerBridge.camera || activeCamera,
+                    'contrast'
+                );
+                if(info){
+                    const contrastRange = info.rightValue - info.leftValue;
+                    contrastNode.position[constraints.contrast.axis] = info.leftValue + (contrastNorm * contrastRange);
+                }else{
+                    const contrastRange = constraints.contrast.max - constraints.contrast.min;
+                    contrastNode.position[constraints.contrast.axis] = constraints.contrast.min + (contrastNorm * contrastRange);
+                }
+                settingsControllerBridge.knobAxisValues.contrast = contrastNorm;
+            }
+            if(contrastNodes.length && constraints?.contrastAll){
+                const contrastNorm = Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
+                contrastNodes.forEach((node) => {
+                    const constraint = constraints.contrastAll.get(node.uuid);
+                    if(!constraint) return;
+                    const info = getSemanticConstraintLR(
+                        node,
+                        constraint,
+                        settingsControllerCanvas?.getBoundingClientRect(),
+                        settingsControllerBridge.camera || activeCamera,
+                        'contrastAll'
+                    );
+                    if(info){
+                        const contrastRange = info.rightValue - info.leftValue;
+                        node.position[constraint.axis] = info.leftValue + (contrastNorm * contrastRange);
+                    }else{
+                        const contrastRange = constraint.max - constraint.min;
+                        node.position[constraint.axis] = constraint.min + (contrastNorm * contrastRange);
+                    }
+                });
+                settingsControllerBridge.knobAxisValues.contrast = contrastNorm;
+            }
         }
 
         function handlePointerDown(event){
@@ -1501,18 +3722,35 @@ enabled: ${!!cameraAction?.enabled}`;
             pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(pointer, activeCamera);
             const hits = raycaster.intersectObjects(model.children, true);
-            if(!hits.length) return;
+            const ignoredHitNames = new Set([
+                'txt-glow-on',
+                'txt-glow-off',
+                'btn-glow-on',
+                'btn-glow-off',
+                'btn-glow-on-2',
+                'btn-glow-off-2'
+            ]);
+            const shouldIgnoreHit = (obj) => {
+                const name = (obj?.name || '').toLowerCase();
+                return ignoredHitNames.has(name);
+            };
+            const firstHit = hits.find((hit) => !shouldIgnoreHit(hit.object)) || null;
             if(event.button === 1){
+                if(introActive || targetTime !== null || !controls || !controls.enabled) return;
                 event.preventDefault();
-                const hit = hits[0];
-                if(isSmallFocusTarget(hit.object, model)){
-                    const focusPoint = hit.point.clone();
-                    startFocusAnimation(focusPoint, { zoomToMin: true });
-                }
+                controls.enablePan = true;
+                middlePointerState = {
+                    downAt: performance.now(),
+                    x: event.clientX,
+                    y: event.clientY,
+                    point: firstHit ? firstHit.point.clone() : null
+                };
                 return;
             }
+            if(!firstHit) return;
             if(introActive){
-                const hit = hits[0];
+                if(event.button !== 0) return;
+                const hit = firstHit;
                 const findOkNode = (node) => {
                     let current = node;
                     while(current){
@@ -1537,6 +3775,7 @@ enabled: ${!!cameraAction?.enabled}`;
                     muteHit = withinMute;
                     if((allowHit || muteHit) && cameraAction && !FORCE_MANUAL_CAMERA){
                         introActive = false;
+                        setPreIntroZoomEnabled(false);
                         pendingAudioAllowed = allowHit;
                         if(allowHit){
                             playWelcomeJingle(true);
@@ -1556,6 +3795,7 @@ enabled: ${!!cameraAction?.enabled}`;
                 }
                 if(introActive && (allowHit || muteHit)){
                     introActive = false;
+                    setPreIntroZoomEnabled(false);
                     pendingAudioAllowed = allowHit;
                     if(allowHit){
                         playWelcomeJingle(true);
@@ -1563,39 +3803,162 @@ enabled: ${!!cameraAction?.enabled}`;
                     if(USE_CUSTOM_CAMERA_ANIM){
                         startCustomCameraAnimation(model);
                     }else{
-                        if(cameraEnableTimer){
-                            clearTimeout(cameraEnableTimer);
-                        }
-                        const totalFrames = getManualCameraTotalFrames();
-                        const durationMs = (totalFrames / CAMERA_ANIM_EXPECTED_FPS) * 1000;
-                        cameraEnableTimer = setTimeout(() => {
-                            setUserCameraControlsEnabled(true);
-                        }, durationMs);
                         startManualCameraTween();
                     }
                 }
                 return;
             }
-                let target = hits[0].object;
+            if(event.button === 0 && controls){
+                const knobType = resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit.object);
+                if(knobType){
+                    updateLightingDebugLine('pointerdown', knobType);
+                }
+                if(knobType && settingsControllerBridge.knobDefaults){
+                    let knobNode = knobType === 'vol'
+                        ? settingsControllerBridge.knobVolNode
+                        : knobType === 'sync'
+                            ? settingsControllerBridge.knobSyncNode
+                            : settingsControllerBridge.knobContrastNode;
+                    if(knobType === 'contrast'){
+                        let current = firstHit.object;
+                        const allContrast = settingsControllerBridge.knobContrastNodes || [];
+                        while(current){
+                            if(allContrast.includes(current)){
+                                knobNode = current;
+                                break;
+                            }
+                            current = current.parent;
+                        }
+                    }
+                    const constraint = knobType === 'contrast'
+                        ? (settingsControllerBridge.knobConstraints?.contrastAll?.get(knobNode?.uuid)
+                            || settingsControllerBridge.knobConstraints?.contrast)
+                        : settingsControllerBridge.knobConstraints?.[knobType];
+                    if(!knobNode || !knobNode.parent || !constraint) return;
+                    const canvasRect = settingsControllerCanvas.getBoundingClientRect();
+                    const makeScreenPoint = (axisValue) => {
+                        const local = knobNode.position.clone();
+                        local[constraint.axis] = axisValue;
+                        const world = knobNode.parent.localToWorld(local.clone());
+                        const ndc = world.clone().project(activeCamera);
+                        return new THREE.Vector2(
+                            ((ndc.x + 1) * 0.5) * canvasRect.width,
+                            ((1 - ndc.y) * 0.5) * canvasRect.height
+                        );
+                    };
+                    const screenInfo = knobType === 'contrast'
+                        ? getSemanticConstraintLR(
+                            knobNode,
+                            constraint,
+                            canvasRect,
+                            settingsControllerBridge.camera || activeCamera,
+                            'contrastAll'
+                        )
+                        : null;
+                    const pMin = screenInfo ? makeScreenPoint(screenInfo.leftValue) : makeScreenPoint(constraint.min);
+                    const pMax = screenInfo ? makeScreenPoint(screenInfo.rightValue) : makeScreenPoint(constraint.max);
+                    const axisVec = pMax.clone().sub(pMin);
+                    const pointerInvert = false;
+                    knobDragState = {
+                        type: knobType,
+                        pMin,
+                        pMax,
+                        axisDir: axisVec.clone().normalize(),
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        isDragging: false,
+                        pointerInvert,
+                        lastRawT: getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY)
+                    };
+                    controls.enabled = false;
+                    return;
+                }
+            }
+                let target = firstHit.object;
                 while(target && !interactiveNames.has(target.name)){
                     target = target.parent;
                 }
                 if(!target) return;
                 if(target.name === 'btn-accessibility'){
-                    setAccessibilityView();
+                    reverseVolSyncAnimation();
                 }else if(target.name === 'btn-vol-sync' || target.name === 'btn-save'){
-                    setAudioView();
+                    toggleVolSyncAnimation();
+                }
+        }
+
+        function handlePointerMove(event){
+            if(!knobDragState) return;
+            const dx = event.clientX - knobDragState.startX;
+            const dy = event.clientY - knobDragState.startY;
+            const moved = Math.hypot(dx, dy);
+            if(!knobDragState.isDragging){
+                if(moved < 10) return;
+                knobDragState.isDragging = true;
+            }
+            const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
+            const t = knobDragState.pointerInvert ? (1 - rawT) : rawT;
+            knobDragState.lastRawT = rawT;
+            applyKnobStateFromT(knobDragState.type, t);
+        }
+
+        function handlePointerUp(event){
+            if(event.button === 0 && knobDragState){
+                if(!knobDragState.isDragging){
+                    const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
+                    const t = knobDragState.pointerInvert ? (1 - rawT) : rawT;
+                    applyKnobStateFromT(knobDragState.type, t);
+                }
+                knobDragState = null;
+                if(controls){
+                    controls.enabled = true;
                 }
             }
+            if(event.button !== 1) return;
+            if(controls){
+                controls.enablePan = false;
+            }
+            if(!middlePointerState || !controls || !controls.enabled){
+                middlePointerState = null;
+                return;
+            }
 
-            settingsControllerCanvas.addEventListener('pointerdown', handlePointerDown);
-            settingsControllerCanvas.addEventListener('wheel', (event) => {
-                if(event.deltaY <= 0) return;
-                if(!model || !controls) return;
-                const box = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                startFocusAnimation(center, { zoomToMin: false });
-            }, { passive: true });
+            const now = performance.now();
+            const duration = now - middlePointerState.downAt;
+            const dx = event.clientX - middlePointerState.x;
+            const dy = event.clientY - middlePointerState.y;
+            const moved = Math.hypot(dx, dy);
+            const isShortClick = duration <= 240 && moved <= 6;
+            if(!isShortClick){
+                middlePointerState = null;
+                return;
+            }
+
+            const isDouble = (now - lastMiddleClickTime) <= 320;
+            const clickPoint = middlePointerState.point ? middlePointerState.point.clone() : null;
+            if(isDouble){
+                if(pendingMiddleSingleClick){
+                    clearTimeout(pendingMiddleSingleClick.timerId);
+                    pendingMiddleSingleClick = null;
+                }
+                const bounds = new THREE.Box3().setFromObject(model);
+                const centerPoint = bounds.getCenter(new THREE.Vector3());
+                startFocusAnimation(centerPoint, { zoomToMin: false, durationMs: 320 });
+            }else if(clickPoint){
+                pendingMiddleSingleClick = {
+                    timerId: setTimeout(() => {
+                        startFocusAnimation(clickPoint, { zoomToMin: false, durationMs: 320 });
+                        pendingMiddleSingleClick = null;
+                    }, 320)
+                };
+            }
+            lastMiddleClickTime = now;
+            middlePointerState = null;
+        }
+
+            settingsControllerCanvas.addEventListener('pointerdown', handlePointerDown, { capture: true });
+            settingsControllerCanvas.addEventListener('pointerup', handlePointerUp);
+            settingsControllerCanvas.addEventListener('pointercancel', handlePointerUp);
+            settingsControllerCanvas.addEventListener('pointermove', handlePointerMove);
             settingsControllerCanvas.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
             });
@@ -1604,9 +3967,15 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(event.target && /input|textarea|select/i.test(event.target.tagName)) return;
                 const key = event.key.toLowerCase();
                 if(key === 'a'){
-                    setAccessibilityView();
+                    const started = setAccessibilityView({ triggerEmissive: false });
+                    if(started){
+                        playEmissionActions(-1);
+                    }
                 }else if(key === 'v'){
-                    setAudioView();
+                    const started = setAudioView({ triggerEmissive: false });
+                    if(started){
+                        playEmissionActions(1);
+                    }
                 }
             });
 
@@ -1618,6 +3987,12 @@ enabled: ${!!cameraAction?.enabled}`;
             settingsControllerBridge.model = model;
             settingsControllerBridge.controls = controls;
             settingsControllerBridge.canvas = settingsControllerCanvas;
+            settingsControllerBridge.updateKnobTransformsFromState = updateKnobTransformsFromState;
+            if(!contrastLockPose){
+                storeContrastLockPose();
+            }
+            forceLuxAndContrastRight();
+            updateKnobSidesLine();
             signalSettingsControllerReady();
         }, undefined, (error)=>{
             console.warn("Settings controller GLB load failed", error);
@@ -1743,6 +4118,12 @@ enabled: ${!!cameraAction?.enabled}`;
         storedSync = parseInt(ms, 10) || 0;
         localStorage.setItem(AUDIO_SYNC_KEY, String(storedSync));
         syncDisplay.textContent = `Sync: ${storedSync} ms`;
+        if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+            settingsControllerBridge.updateKnobTransformsFromState();
+        }
+        if(typeof settingsControllerBridge.updateSyncPercentLabel === 'function'){
+            settingsControllerBridge.updateSyncPercentLabel();
+        }
 
         if(window.siteConfig) window.siteConfig.audioSyncMs = storedSync;
 
@@ -1768,6 +4149,9 @@ enabled: ${!!cameraAction?.enabled}`;
         localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
         localStorage.setItem(AUDIO_MUTED_KEY, storedMuted ? 'true':'false');
         updateVolumeUI();
+        if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
+            settingsControllerBridge.updateKnobTransformsFromState();
+        }
         resetPeakHold();
     }
 
@@ -2167,6 +4551,40 @@ enabled: ${!!cameraAction?.enabled}`;
 
     window.addEventListener('debug-ui-ready', updateA11yDebugFlags);
     updateA11yDebugFlags();
+
+    function registerLightingDebugActions(){
+        if(typeof window.registerDebugHooks !== 'function') return;
+        const actions = {
+            'Toggle lux control': () => {
+                settingsControllerBridge.luxControlEnabled = !settingsControllerBridge.luxControlEnabled;
+                if(settingsControllerBridge.luxControlEnabled){
+                    settingsControllerBridge.syncLuxValueToKnob?.();
+                }
+                settingsControllerBridge.syncLuxControlsToToggle?.(settingsControllerBridge.luxControlEnabled);
+                registerLightingDebugActions();
+            },
+            'Toggle emission control': () => {
+                settingsControllerBridge.emissionControlEnabled = !settingsControllerBridge.emissionControlEnabled;
+                if(settingsControllerBridge.emissionControlEnabled){
+                    settingsControllerBridge.syncEmissionValueToKnob?.();
+                }
+                settingsControllerBridge.syncEmissionControlsToToggle?.(settingsControllerBridge.emissionControlEnabled);
+                registerLightingDebugActions();
+            },
+            'Toggle overlay blend': () => {
+                toggleOverlayBlendForDebugShortcut();
+            }
+        };
+        const flags = {
+            'Lux control': settingsControllerBridge.luxControlEnabled ? 'T' : 'F',
+            'Emission control': settingsControllerBridge.emissionControlEnabled ? 'T' : 'F'
+        };
+        window.registerDebugHooks({ actions, flags });
+        updateLightingToggleLabels();
+    }
+
+    window.addEventListener('debug-ui-ready', registerLightingDebugActions);
+    registerLightingDebugActions();
 
     document.addEventListener('DOMContentLoaded', ()=>{
         initSettingsControllerScene();
