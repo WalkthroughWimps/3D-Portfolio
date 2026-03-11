@@ -1,0 +1,253 @@
+/* Body Styling */
+body {
+    --dark-color: var(--blue-dark);
+    --primary-color: var(--blue-primary);
+    --secondary-color: var(--blue-secondary);
+    --tertiary-color: var(--blue-tertiary);
+    --text-color: var(--blue-text-color);
+    --grey-color: var(--blue-grey);
+    --hl-primary-color: var(--orange-primary);
+    --hl-secondary-color: var(--orange-secondary);
+    --hl-tertiary-color: var(--orange-tertiary);
+    --hl-dark-color: var(--orange-dark);
+    --hl-text-color: var(--orange-text-color);
+    --controls-bg: var(--primary-color);
+    --controls-fg: var(--hl-primary-color);
+
+    /* Videos page font hooks */
+    --videos-heading-font: var(--reel-heading-font, 'Fascinate Inline', system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
+    --videos-info-font: var(--reel-info-font, 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, system-ui, sans-serif);
+
+    /* Shared block sizing for video + info */
+    --reel-block-width: 75%;
+    --reel-block-max: min(820px, 80vw);   
+    background-image: url('../assets/overlays/overlay-videos-dark.png');
+    background-repeat: repeat;
+    background-blend-mode: multiply;
+}
+
+.frame-trio {
+    display: grid;
+    grid-template-columns: 1fr min(90vw, clamp(540px, 980px, 100vh)) 1fr;
+    align-items: start;
+    justify-content: center;
+    gap: clamp(75px, 8vw, 100px);
+    margin: 0 auto;
+    max-width: 2000px;
+}
+
+/* Make side frames match main content frame width/skin */
+.side-frame {
+    inline-size: auto;
+    min-height: 300px;
+}
+.side-frame.left { justify-self: end; }
+.side-frame.right { justify-self: start; }
+
+/* Shared width wrapper so video + info compute from same box */
+.reel-block { width: var(--reel-block-width); max-width: var(--reel-block-max); margin: 0 auto; }
+
+.main-text {
+    margin: 0px;
+    padding: 0px;
+    border: 0px;
+}
+
+.reel-left, .reel-right {
+    fill: var(--orange-tertiary);
+}
+
+.camera {
+    fill: var(--blue-tertiary);
+}
+
+.head-bg {
+    fill: var(--panel-color);
+}
+
+/* Content panel uses template.css unified styles */
+
+/* Reel title: approximate Nordique Inline with a bold expanded sans, letterspacing and stroke */
+.reel-heading {
+    font-family: var(--videos-heading-font);
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    font-size: clamp(1.4rem, 4vw, 2.4rem);
+    line-height: 1.1;
+    text-align: center;
+    color: var(--hl-text-color, #ffe);
+    text-shadow: 0 1px 0 rgba(0,0,0,.25);
+    margin: 0 0 .75rem;
+}
+
+/* Info text: approximate Abadi with humanist sans stack */
+.reel-info {
+    font-family: var(--videos-info-font);
+    font-weight: 500;
+    font-size: clamp(1rem, 1.9vw, 1.2rem);
+    line-height: 1.55;
+    color: var(--text-color);
+    width: 100%;
+    max-width: none;
+    margin: 0.5rem auto 1.25rem;
+    text-align: left;
+    text-indent: 0;
+}
+.content .reel-info { padding: 0; }
+.reel-info.tail { margin-top: 1rem; opacity: .95; }
+
+/* Responsive 16:9 frame between heading and text */
+.video-frame {
+    width: 100%;
+    max-width: none;
+    margin: 0.5rem auto 0.75rem;
+    aspect-ratio: 16/9;
+    border-radius: 12px;
+    box-shadow: inset 0 0 0 2px color-mix(in oklab, var(--secondary-color), transparent 15%), 0 10px 28px rgba(0,0,0,.35);
+}
+
+/* Video.js player should fill the frame but respect 16:9 */
+.video-frame .video-js { width: 100%; height: 100%; border-radius: 12px; overflow: hidden; }
+.video-frame .vjs-poster, .video-frame video { object-fit: contain; }
+
+/* Side frames: empty content frames to the left/right */
+.side-frame {
+    inline-size: min(32vw, 420px);
+    min-height: 240px;
+    margin-top: 1rem;
+}
+.side-frame.left { margin-left: auto; margin-right: 1rem; }
+.side-frame.right { margin-left: 1rem; margin-right: auto; }
+
+/* Edge reveal overlays to lighten the frame edges and show pattern */
+.edge-reveal {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 42px;
+    pointer-events: none;
+    z-index: 2;
+}
+.intro-skip {
+    position: fixed;
+    top: 92px;
+    left: 24px;
+    z-index: 12;
+    font-family: var(--videos-info-font);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--hl-tertiary-color);
+    background: color-mix(in oklab, var(--primary-color) 82%, transparent);
+    border: 2px solid color-mix(in oklab, var(--hl-secondary-color) 70%, transparent);
+    border-radius: 999px;
+    padding: 6px 12px;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.35);
+    transition: opacity 240ms ease, transform 240ms ease;
+}
+.intro-skip:hover { transform: translateY(-1px); }
+.intro-skip.hidden { opacity: 0; pointer-events: none; }
+
+.intro-gate {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.55));
+    color: var(--hl-tertiary-color);
+    text-align: center;
+    font-family: var(--videos-info-font);
+    opacity: 1;
+    transition: opacity 360ms ease;
+}
+.intro-gate.is-hidden { display: none; }
+.videos-boot .intro-gate {
+    display: flex;
+    opacity: 1;
+}
+.videos-boot .intro-load-bar {
+    width: 12%;
+    animation: intro-load-pulse 1.1s ease-in-out infinite;
+}
+.videos-boot .intro-play { opacity: 0.8; }
+.intro-play {
+    border: 2px solid var(--hl-secondary-color);
+    background: color-mix(in oklab, var(--primary-color) 78%, transparent);
+    color: var(--hl-tertiary-color);
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+    padding: 10px 18px;
+    border-radius: 999px;
+    cursor: pointer;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.35);
+}
+.intro-play[disabled] {
+    color: var(--hl-secondary-color);
+    border-color: color-mix(in oklab, var(--hl-secondary-color) 80%, transparent);
+    cursor: not-allowed;
+    opacity: 0.75;
+}
+.intro-load {
+    width: min(420px, 70vw);
+    height: 8px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--primary-color) 50%, transparent);
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.35);
+}
+.intro-load-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--hl-primary-color);
+    transition: width 160ms ease;
+}
+.intro-load-text {
+    font-size: 0.95rem;
+    color: var(--hl-text-color);
+    opacity: 0.9;
+}
+
+@keyframes intro-load-pulse {
+    0% { transform: translateX(0); opacity: 0.6; }
+    50% { transform: translateX(35%); opacity: 1; }
+    100% { transform: translateX(0); opacity: 0.6; }
+}
+
+/* Tablet intro stage: video overlays the GLB, then fades out to reveal the model */
+.tablet-stage { position: fixed; inset: 0; z-index: 0; }
+.viewer-wrap {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: transparent; /* body's overlay provides the background */
+}
+.tablet-intro {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 2;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 600ms ease;
+}
+.tablet-intro.visible { opacity: 1; }
+.tablet-intro.hidden { opacity: 0; }
+.gl-canvas {
+    position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    opacity: 1; z-index: 1; /* visible by default */
+}
+.gl-canvas.visible { opacity: 1; }
+
+
+
+
+/* Ensure the page header sits above the stage */
+.header { position: relative; z-index: 10; }

@@ -1,0 +1,918 @@
+:root {
+    color-scheme: light dark;
+    --start-overlay-light: 0;
+}
+html,body { height:100%; }
+body {
+    margin:0;
+    font: 16px/1.5 "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif;
+    background: #0f1115;
+    color: #e7f6f0;
+    overflow: hidden;
+    min-height: 100vh;
+}
+:root {
+    --panel-width: min(360px, 42vw);
+    --panel-gap: 16px;
+    --debug-hide-tab-overhang: 44px;
+    --debug-panel-slide-ease: cubic-bezier(.2, .95, .25, 1.25);
+}
+
+.ui-layout {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+    position: relative;
+}
+
+.ui-left,
+.ui-right {
+    width: var(--panel-width);
+    box-sizing: border-box;
+    position: fixed;
+    top: var(--panel-gap);
+    bottom: var(--panel-gap);
+    height: auto;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.ui-left {
+    left: 0;
+    padding: var(--panel-gap);
+    display: flex;
+    flex-direction: column;
+    gap: var(--panel-gap);
+    overflow: visible;
+}
+
+.ui-center {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    min-width: 0;
+    width: 100vw;
+}
+
+.ui-right {
+    right: 0;
+    padding: var(--panel-gap);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: visible;
+    position: fixed;
+}
+
+.ui-right-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    pointer-events: auto;
+}
+
+.ui-right.ui-right--debug-host .ui-right-tabs,
+.ui-right.ui-right--debug-host .ui-panel {
+    display: none !important;
+}
+
+.ui-debug-panels-toggle {
+    position: absolute;
+    top: 10px;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    border: 1px solid rgba(255,255,255,.22);
+    padding: 10px 8px;
+    inline-size: 40px;
+    min-height: 132px;
+    box-sizing: border-box;
+    font-size: 10px;
+    line-height: 1.1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    pointer-events: auto;
+    z-index: 6;
+    box-shadow: 0 10px 24px rgba(0,0,0,.35);
+    backdrop-filter: blur(4px);
+    color: #d4f7ff;
+    background: linear-gradient(180deg, rgba(40, 61, 89, 0.95), rgba(27, 41, 64, 0.97));
+}
+
+.ui-debug-panels-toggle--right {
+    left: 0;
+    transform: translateX(calc(-100% + 2px));
+    border-right: none;
+    border-radius: 10px 0 0 10px;
+}
+
+.ui-debug-panels-toggle--left {
+    right: 0;
+    transform: translateX(calc(100% - 2px));
+    border-left: none;
+    border-radius: 0 10px 10px 0;
+    writing-mode: vertical-lr;
+}
+
+.ui-debug-panels-toggle[data-theme="rose"] {
+    color: #ffe7ef;
+    background: linear-gradient(180deg, rgba(100, 53, 66, 0.95), rgba(77, 39, 50, 0.97));
+}
+
+.ui-debug-panels-toggle[data-theme="lapis"] {
+    color: #d4f7ff;
+    background: linear-gradient(180deg, rgba(40, 61, 89, 0.95), rgba(27, 41, 64, 0.97));
+}
+
+.ui-debug-panels-toggle:hover {
+    filter: brightness(1.08);
+}
+
+.ui-debug-panels-toggle:focus-visible {
+    outline: 2px solid rgba(255,255,255,.8);
+    outline-offset: 2px;
+}
+
+.cam-anim-debug-panel {
+    transition: transform 320ms var(--debug-panel-slide-ease), opacity 180ms ease;
+    transform: translateX(0);
+    will-change: transform, opacity;
+    position: fixed;
+    overflow: visible;
+}
+
+.cam-anim-debug-panel--hidden-left {
+    transform: translateX(calc(-100% - var(--panel-gap) - var(--debug-hide-tab-overhang)));
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel {
+    transition: transform 320ms var(--debug-panel-slide-ease), opacity 180ms ease;
+    transform: translateX(0);
+    will-change: transform, opacity;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--dock-hidden-right {
+    transform: translateX(calc(100% + var(--panel-gap) + var(--debug-hide-tab-overhang)));
+}
+
+.ui-right.ui-right--debug-host {
+    overflow: visible;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel {
+    width: calc(100% + var(--panel-gap)) !important;
+    margin-right: calc(var(--panel-gap) * -1) !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-bouncing .debug-panel__column--left,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-bouncing .debug-panel__column--right {
+    animation: none !important;
+}
+
+.ui-tab {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(12, 18, 28, 0.7);
+    color: rgba(231, 246, 240, 0.85);
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.ui-tab.is-active {
+    background: rgba(42,161,152,.22);
+    color: #e7f6f0;
+}
+
+.ui-panel {
+    display: none;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    pointer-events: auto;
+    height: 100%;
+}
+
+.ui-panel.is-active {
+    display: flex;
+    flex-direction: column;
+}
+
+button,
+input,
+select,
+textarea {
+    font-family: "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif;
+}
+.bg-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 5px;
+    z-index: 1;
+    pointer-events: none;
+    isolation: isolate;
+}
+.bg-overlay::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("../assets/overlays/overlay-start-dark.png");
+    background-repeat: repeat;
+    opacity: calc(1 - var(--start-overlay-light, 0));
+    transition: opacity 0.15s linear;
+    pointer-events: none;
+    z-index: 0;
+}
+.bg-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("../assets/overlays/overlay-start-light.png");
+    background-repeat: repeat;
+    opacity: var(--start-overlay-light, 0);
+    transition: opacity 0.15s linear;
+    pointer-events: none;
+    z-index: 0;
+}
+.bg-overlay > * {
+    position: relative;
+    z-index: 1;
+    pointer-events: auto;
+}
+
+#startPageControls,
+#emissiveListPanel,
+#debug-panel {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+}
+
+#startPageControls {
+    overflow-y: auto !important;
+    z-index: auto !important;
+    pointer-events: auto !important;
+}
+
+#debug-panel .start-page-controls {
+    width: 100%;
+}
+#debug-panel .wrap {
+    max-width: 100%;
+    padding: 0;
+    margin: 0;
+}
+#debug-panel section {
+    margin: 8px 0;
+}
+#debug-panel .jump-container {
+    max-width: 100%;
+    margin: 0;
+}
+#debug-panel .debug-camera-panel {
+    margin: 8px 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,.1);
+    background: rgba(0,0,0,.25);
+}
+#debug-panel .debug-camera-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+#debug-panel .debug-camera-label {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+#debug-panel .debug-camera-value {
+    font-size: 14px;
+    font-weight: 700;
+}
+#debug-panel .debug-camera-anim {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+#debug-panel .debug-camera-percent {
+    font-size: 12px;
+    font-weight: 600;
+    opacity: 0.7;
+}
+#debug-panel .debug-camera-rot-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 6px;
+}
+#debug-panel .debug-camera-rot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(0,0,0,.2);
+}
+#debug-panel .debug-camera-rot-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+#debug-panel .debug-camera-row--tuning {
+    align-items: flex-start;
+    margin-top: 8px;
+}
+#debug-panel .debug-camera-slider {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+}
+#debug-panel .debug-camera-slider--stacked {
+    flex-direction: column;
+    align-items: stretch;
+}
+#debug-panel .debug-camera-slider--stacked .debug-camera-btn {
+    width: fit-content;
+}
+#debug-panel .debug-camera-inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1 1 auto;
+    min-width: 140px;
+}
+#debug-panel .debug-camera-inline input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 80px;
+}
+#debug-panel .debug-camera-input {
+    width: 64px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.2);
+    background: rgba(0,0,0,.25);
+    color: inherit;
+    font-size: 11px;
+}
+#debug-panel .debug-camera-slider input[type="range"] {
+    flex: 1 1 auto;
+}
+#debug-panel.debug-panel {
+    top: 16px;
+    bottom: 16px;
+    height: calc(100vh - 32px);
+    display: flex;
+    flex-direction: column;
+}
+#debug-panel .debug-panel__body {
+    max-height: none;
+    flex: 1 1 auto;
+}
+#debug-panel .debug-panel__footer {
+    margin-top: auto;
+}
+#debug-panel .debug-camera-btn {
+    margin-top: 6px;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 12px 16px 24px; box-sizing:border-box; }
+header { margin: 4px 0 8px; }
+h1 { margin: 0 0 8px; font-size: clamp(22px, 4vw, 36px); }
+p.lead { margin: 0; opacity: .9; }
+section { background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 16px; margin: 16px 0; }
+.section-title { font-size: 18px; margin: 0 0 12px; }
+.row { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.control { display:flex; align-items:center; justify-content:space-between; gap: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(0,0,0,.25); border: 1px solid rgba(255,255,255,.08); }
+.control label { font-weight: 600; }
+.hint { font-size: 12px; opacity: .8; }
+.radios { display:flex; gap: 12px; }
+.actions { display:flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+button.primary { background: #2aa198; color: #fff; border: 1px solid #6ff; padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+button.secondary { background: rgba(255,255,255,.06); color:#fff; border: 1px solid rgba(255,255,255,.15); padding: 10px 14px; border-radius: 8px; cursor: pointer; }
+
+/* Jump UI styles */
+.jump-container { display:none; max-width: 980px; margin: 8px auto; background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:12px; box-sizing:border-box; }
+.top-tabs { display:flex; gap:12px; margin: 0 0 12px; }
+.tab { padding:8px 12px; background: rgba(0,0,0,.25); border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.06); transition: background 0.2s ease, border-color 0.2s ease; }
+.tab:hover { border-color: rgba(255,255,255,.4); }
+.tab.active { background: #1b5d49; border-color: #1b5d49; color: #e2fff9; box-shadow: 0 0 0 1px rgba(255,255,255,0.4); }
+.video-tabs { display:flex; gap:12px; margin:4px 0 6px; justify-content:center; }
+.jump-body { display:flex; gap:16px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+.media-layout { display:flex; gap:16px; align-items:stretch; flex:1; width:100%; }
+.video-area { flex:1; display:flex; flex-direction:column; align-items:center; gap:12px; position:relative; }
+.tab-info {
+    position:absolute;
+    top:8px;
+    right:8px;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 12px;
+    color: #d8ffef;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+.video-wrapper { width: min(640px, 100%); aspect-ratio: 4 / 3; background:#000; display:flex; align-items:center; justify-content:center; position:relative; }
+video#jumpVideo { width:100%; height:100%; background:#000; object-fit: fill; }
+.controls-row { display:flex; gap:12px; align-items:center; margin-top:-2px; width:100%; justify-content:space-between; }
+.jump-actions { display:flex; justify-content:flex-end; margin-top:16px; }
+
+.sync-controls { display:flex; flex-direction:column; gap:12px; width:100%; align-items:center; }
+.sync-row { display:flex; align-items:center; gap:8px; width:100%; justify-content:center; }
+.sync-row .arrow-btn { flex:0 0 auto; }
+.sync-row .sync-slider { width:100%; max-width:500px; }
+.mouse-legend { width:100%; display:flex; gap:12px; align-items:center; justify-content:center; }
+.mouse-icon { width:78px; height:auto; }
+.volume-column { width:120px; display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px; background: rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.06); border-radius:12px; justify-content:space-between; align-self:stretch; }
+.volume-slider-wrapper { display:flex; flex-direction:column; align-items:center; gap:6px; flex:1; width:100%; }
+.volume-slider-vertical { appearance: slider-vertical; -webkit-appearance: slider-vertical; writing-mode: bt-lr; width:36px; height:220px; }
+.volume-display { font-size: 12px; opacity: .8; text-align:center; }
+.volume-label { font-weight:600; }
+.arrow-btn.vertical { width:32px; height:32px; padding:0; }
+.video-select { display:flex; gap:8px; margin-left:8px; }
+.hidden { display:none !important; }
+.permission-modal { position:fixed; left:0; right:0; top:0; bottom:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+.permission-box { background:#0f1115; border:1px solid rgba(255,255,255,.08); padding:18px; border-radius:10px; max-width:560px; }
+
+/* Visualizer */
+.visualizer-container { width:150px; height:480px; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:8px; }
+.viz-meter { display:flex; align-items:stretch; gap:6px; }
+.viz-scale { display:flex; flex-direction:column; justify-content:space-between; height:420px; font-size:11px; opacity:.75; }
+.viz-mark { display:flex; align-items:center; gap:6px; }
+.viz-rule { width:18px; height:1px; background:rgba(255,255,255,.25); }
+canvas#visualizer { width:28px; height:420px; background:transparent; display:block; }
+.viz-readout { font-size:12px; opacity:.85; }
+
+/* Settings overlay inside jump container */
+.settings-panel { margin-top:12px; position:relative; }
+.settings-controller-scene {
+    position:relative;
+    width:100%;
+    height: clamp(240px, 40vh, 420px);
+    min-height:240px;
+    max-height:420px;
+    border-radius:12px;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,.08);
+    background: transparent;
+}
+.settings-controller-scene.settings-controller-scene--full {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    max-width: none;
+    max-height: none;
+    pointer-events: auto;
+    background: transparent;
+}
+.settings-controller-canvas {
+    width:100%;
+    height:100%;
+    display:block;
+    background: transparent;
+}
+.settings-controller-status {
+    position:absolute;
+    left:12px;
+    right:12px;
+    bottom:12px;
+    background:rgba(5,12,18,.85);
+    border:1px solid rgba(255,255,255,.1);
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:12px;
+    color:#f9fffd;
+    text-align:center;
+}
+.settings-controller-scene.controller-ready .settings-controller-status {
+    display:none;
+}
+.settings-controller-scene.controller-ready {
+    border-color: rgba(42,161,152,.6);
+    box-shadow: 0 0 20px rgba(42,161,152,.3);
+}
+.emissive-list-panel {
+    position: fixed;
+    left: var(--panel-gap);
+    top: var(--panel-gap);
+    width: var(--panel-width);
+    height: calc(50vh - (var(--panel-gap) * 1.5));
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(6, 10, 18, 0.82);
+    backdrop-filter: blur(6px);
+    pointer-events: auto;
+    z-index: 2;
+    overflow: hidden;
+}
+.emissive-list-panel,
+#debug-panel.debug-panel,
+#startPageControls,
+.cam-anim-debug-panel {
+    overflow-y: auto;
+    overflow-x: hidden;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+.emissive-list-header {
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.8;
+}
+.emissive-tabs {
+    display: inline-flex;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(12, 18, 28, 0.7);
+}
+.emissive-tab {
+    border: none;
+    background: transparent;
+    color: rgba(231, 246, 240, 0.8);
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+.emissive-tab.is-active {
+    background: rgba(42,161,152,.22);
+    color: #e7f6f0;
+}
+.emissive-tab-panel {
+    display: none;
+    gap: 8px;
+    flex-direction: column;
+}
+.emissive-tab-panel.is-active {
+    display: flex;
+}
+.emissive-list-actions {
+    display: flex;
+    gap: 8px;
+}
+.emissive-action-btn {
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(12, 18, 28, 0.7);
+    color: #e7f6f0;
+    font-size: 11px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.emissive-list-body {
+    flex: 1 1 auto;
+    overflow: auto;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.08);
+    background: rgba(8, 12, 20, 0.7);
+    padding: 6px;
+    max-height: none;
+}
+.emissive-slider-body {
+    max-height: 200px;
+}
+.emissive-slider-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.emissive-slider-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 8px;
+    font-size: 11px;
+}
+.emissive-slider-item label {
+    grid-column: 1 / -1;
+    opacity: 0.9;
+}
+.emissive-slider-item input[type="range"] {
+    width: 100%;
+}
+.emissive-slider-value {
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
+.emissive-slider-item.is-disabled {
+    opacity: 0.45;
+}
+.emissive-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.emissive-list-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    line-height: 1.3;
+}
+.emissive-list-item input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+}
+.emissive-output-btn {
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(42,161,152,.18);
+    color: #e7f6f0;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+.emissive-output {
+    width: 100%;
+    resize: vertical;
+    min-height: 80px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.12);
+    background: rgba(8, 12, 20, 0.7);
+    color: #e7f6f0;
+    font-size: 11px;
+    padding: 8px;
+}
+#debug-panel.debug-panel {
+    left: var(--panel-gap) !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: var(--panel-gap) !important;
+    top: calc(50vh + (var(--panel-gap) / 2)) !important;
+    width: var(--panel-width) !important;
+    height: calc(50vh - (var(--panel-gap) * 1.5)) !important;
+    overflow: hidden;
+}
+#debug-panel .debug-panel__body {
+    max-height: calc(100% - 76px);
+    overflow-y: auto;
+}
+.cam-anim-debug-panel {
+    position: fixed;
+    left: var(--panel-gap);
+    right: auto;
+    top: var(--panel-gap);
+    bottom: var(--panel-gap);
+    width: var(--panel-width);
+    height: auto;
+    z-index: 4;
+    font: 12px/1.35 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    background: rgba(0,0,0,0.65);
+    color: #d8ffef;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 10px 12px;
+    white-space: pre-wrap;
+    pointer-events: auto;
+}
+.settings-overlay-btn { position:fixed; right:18px; top:18px; background:transparent; border:1px solid rgba(255,255,255,.06); padding:8px; border-radius:8px; cursor:pointer; }
+.settings-modal { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(0,0,0,.6); }
+.settings-modal.open { display:flex; }
+.settings-box { background:#0f1115; border:1px solid rgba(255,255,255,.06); padding:16px; border-radius:10px; width:720px; max-width:95%; }
+.settings-tab { padding:8px 12px; border-radius:8px; cursor:pointer; border:1px solid rgba(255,255,255,.04); }
+.settings-tab.active { background:rgba(42,161,152,.12); }
+
+/* Dock debug/camera panels cleanly when relocated into right-column tab panels */
+.ui-panel #debug-panel.debug-panel,
+.ui-panel .cam-anim-debug-panel {
+    position: relative !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    transform: none !important;
+}
+
+.ui-panel > #startPageControls,
+.ui-panel > #emissiveListPanel,
+.ui-panel > #debug-panel.debug-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100% !important;
+}
+
+.ui-panel > #startPageControls {
+    display: block !important;
+    font-size: 11px;
+    line-height: 1.35;
+}
+
+.ui-panel > #startPageControls .wrap {
+    padding: 8px 10px 12px;
+}
+
+.ui-panel > #startPageControls h1 {
+    font-size: clamp(16px, 2vw, 22px);
+    line-height: 1.1;
+}
+
+.ui-panel > #startPageControls p.lead {
+    font-size: 10px;
+    line-height: 1.35;
+}
+
+.ui-panel > #startPageControls section {
+    padding: 10px;
+    margin: 10px 0;
+}
+
+.ui-panel > #emissiveListPanel {
+    max-height: none !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel {
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: none !important;
+    display: flex !important;
+    flex-direction: column;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.collapsed,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-hidden {
+    opacity: 1 !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-hidden .debug-panel__column--left,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-hidden .debug-panel__column--right {
+    transform: none !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.is-hidden .debug-panel__footer {
+    transform: none !important;
+    opacity: 1 !important;
+}
+
+.ui-panel #debug-panel.debug-panel {
+    display: flex !important;
+    flex-direction: column;
+}
+
+.ui-panel #debug-panel.debug-panel.collapsed,
+.ui-panel #debug-panel.debug-panel.is-hidden {
+    opacity: 1 !important;
+}
+
+.ui-panel #debug-panel.debug-panel.is-hidden .debug-panel__column--left,
+.ui-panel #debug-panel.debug-panel.is-hidden .debug-panel__column--right {
+    transform: none !important;
+}
+
+.ui-panel #debug-panel.debug-panel.is-hidden .debug-panel__footer {
+    transform: none !important;
+    opacity: 1 !important;
+}
+
+.ui-panel #debug-panel .debug-panel__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    padding: 0 6px 6px;
+    box-sizing: border-box;
+}
+
+.ui-panel #debug-panel .debug-panel__layout {
+    height: 100%;
+}
+
+.ui-panel #debug-panel .debug-panel__footer {
+    position: static !important;
+    left: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    opacity: 1 !important;
+    margin-top: 8px;
+    width: auto !important;
+    max-width: 100%;
+    align-self: stretch;
+}
+
+.ui-panel #debug-panel .debug-panel__footer-note {
+    margin-left: 0;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single {
+    --dbg-shell: rgba(100, 53, 66, 0.95);
+    --dbg-shell-2: rgba(77, 39, 50, 0.97);
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__header {
+    display: none !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__tabs-merged {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 8px 6px;
+    pointer-events: auto;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__tabs-merged .debug-panel__tab {
+    min-height: 34px;
+    text-align: left;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__column-header,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__tabs--left,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__tabs--right {
+    display: none !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__body {
+    padding-top: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    padding-left: 6px;
+    padding-right: 6px;
+    padding-bottom: 6px;
+    box-sizing: border-box;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__layout {
+    display: block;
+    height: 100%;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__column {
+    display: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    height: 100%;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single[data-active-debug-group="left"] .debug-panel__column--left,
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single[data-active-debug-group="right"] .debug-panel__column--right {
+    display: flex !important;
+    flex-direction: column;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__panes {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel.debug-panel--start-docked-single .debug-panel__pane {
+    height: 100%;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel .debug-panel__footer {
+    position: static !important;
+    left: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    opacity: 1 !important;
+    margin: 8px 6px 6px;
+    width: auto !important;
+    max-width: calc(100% - 12px);
+    align-self: stretch;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel .debug-panel__footer-note {
+    margin-left: 0;
+}
+
+/* Keep panel-local hide tabs visible outside the panel shells */
+.cam-anim-debug-panel {
+    overflow: visible !important;
+}
+
+.ui-right.ui-right--debug-host > #debug-panel.debug-panel {
+    overflow: visible !important;
+}
