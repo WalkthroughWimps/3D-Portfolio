@@ -23,7 +23,6 @@ const GAME_FRAME_HEIGHT = 720;
 const GAME_FRAME_ASPECT = GAME_FRAME_WIDTH / GAME_FRAME_HEIGHT;
 const DEBUG_SHOW_CSS3D_FRAME = false;
 const GAME_SPLASH_DURATION_MS = 3000;
-const USE_SHARED_CONTROLS_GAMES = true;
 const SHOW_GAME_AUDIO_PANEL = false;
 const GAME_AUDIO_MAX = 1.5;
 const GAME_SPLASH_DURATIONS_MS = {
@@ -305,7 +304,6 @@ let sharedControlsUi = null;
 let sharedControlsAdapter = null;
 let sharedControlsActive = null;
 let lastControlsDrawLog = 0;
-let sharedControlsVideo = null;
 let activeVideoRect = null;
 let gameUiLayout = null;
 
@@ -671,25 +669,21 @@ function setupScreenCanvas(mesh) {
 
   setupPlayer();
   drawScreen();
-  if (USE_SHARED_CONTROLS_GAMES) {
-    sharedControlsAdapter = createGamesVideoAdapter({
-      getViewportRect: getSharedControlsViewportRect,
-      getScreenRect: getSharedControlsScreenRect,
-      getActiveVideo: getSharedActiveVideo,
-      getActiveAudio: getSharedActiveAudio,
-      getContentMode: () => contentMode,
-      setVolume: setSharedVolume,
-      toggleMute: toggleSharedMute,
-      setPlaybackRate: setSharedPlaybackRate,
-      exit: exitSharedControls
-    });
-    sharedControlsUi = createVideoControlsUI();
-    sharedControlsUi.setViewportRectProvider(sharedControlsAdapter.getViewportRect);
-    sharedControlsUi.onAction = (action) => sharedControlsAdapter.dispatch(action);
-    console.log('%c[games] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
-  } else {
-    console.log('%c[games] legacy controls ENABLED', 'color:#ffaa00;font-weight:bold');
-  }
+  sharedControlsAdapter = createGamesVideoAdapter({
+    getViewportRect: getSharedControlsViewportRect,
+    getScreenRect: getSharedControlsScreenRect,
+    getActiveVideo: getSharedActiveVideo,
+    getActiveAudio: getSharedActiveAudio,
+    getContentMode: () => contentMode,
+    setVolume: setSharedVolume,
+    toggleMute: toggleSharedMute,
+    setPlaybackRate: setSharedPlaybackRate,
+    exit: exitSharedControls
+  });
+  sharedControlsUi = createVideoControlsUI();
+  sharedControlsUi.setViewportRectProvider(sharedControlsAdapter.getViewportRect);
+  sharedControlsUi.onAction = (action) => sharedControlsAdapter.dispatch(action);
+  console.log('%c[games] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
 }
 
 function applyDefaultCameraTransform() {
@@ -929,7 +923,7 @@ function setupPlayer() {
       videoReady = true;
       needsRedraw = true;
     });
-    playerVideo.addEventListener('play', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
+    playerVideo.addEventListener('play', () => { needsRedraw = true; });
     playerVideo.addEventListener('pause', () => { needsRedraw = true; });
     playerVideo.addEventListener('ended', () => { needsRedraw = true; });
     playerVideo.addEventListener('play', () => { startAudioForVideo(playerVideo, playerAudio); });
@@ -1547,8 +1541,8 @@ function startVideoReel(entry) {
     reelReady = true;
     needsRedraw = true;
   });
-  reelVideo.addEventListener('play', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
-  reelVideo.addEventListener('pause', () => { if (player) player.showControlsTemporarily(); needsRedraw = true; });
+  reelVideo.addEventListener('play', () => { needsRedraw = true; });
+  reelVideo.addEventListener('pause', () => { needsRedraw = true; });
   reelVideo.addEventListener('ended', () => { stopVideoReel(); });
   reelVideo.addEventListener('play', () => { startAudioForVideo(reelVideo, reelAudio); });
   reelVideo.addEventListener('pause', () => { if (reelAudio) reelAudio.pause(); });
@@ -1828,9 +1822,9 @@ function drawScreen() {
     }
 
   const isVideoContent = sharedControlsAdapter ? sharedControlsAdapter.isActive() : (contentMode === 'video' && !!getSharedActiveVideo());
-  if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && sharedControlsAdapter) {
-    if (sharedControlsActive !== isVideoContent) {
-      sharedControlsActive = isVideoContent;
+    if (sharedControlsUi && sharedControlsAdapter) {
+      if (sharedControlsActive !== isVideoContent) {
+        sharedControlsActive = isVideoContent;
       if (sharedControlsActive) {
         const screenRect = sharedControlsAdapter.getScreenRect?.();
         console.log('%c[games-controls] ACTIVE screenRect=' + JSON.stringify(screenRect), 'color:#00ffd5;font-weight:bold');
@@ -1850,60 +1844,16 @@ function drawScreen() {
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && sharedControlsAdapter && isVideoContent) {
+    if (sharedControlsUi && sharedControlsAdapter && isVideoContent) {
       const now = performance.now();
       if ((now - lastControlsDrawLog) >= 1000) {
         lastControlsDrawLog = now;
         const screenRect = sharedControlsAdapter.getScreenRect?.();
         console.log('%c[games-controls] draw using screenRect ' + JSON.stringify(screenRect), 'color:#00ccff');
       }
-      if (player && getSharedActiveVideo()) {
-        if (sharedControlsVideo !== getSharedActiveVideo()) {
-          sharedControlsVideo = getSharedActiveVideo();
-          bindPlayerToVideo(sharedControlsVideo, true);
-        }
-        if (player.state) {
-          if (!player.state.playingFull) {
-            player.state.playingFull = true;
-            player.state.fullIndex = 0;
-            player.state.activeIndex = 0;
-            player.showControlsTemporarily();
-          }
-          if (getSharedActiveVideo().paused || getSharedActiveVideo().ended) {
-            player.state.controlsVisible = 1;
-            player.state.controlsTarget = 1;
-          }
-        }
-      }
-    sharedControlsUi.setState(sharedControlsAdapter.getState());
-    sharedControlsUi.draw(ctx, {
-      drawLegacy: () => {
-        if (!player) return;
-        const bounds = sharedControlsAdapter.getScreenRect?.() || { x: 0, y: 0, w: W, h: H };
-        player.setControlsBounds(bounds);
-        if (CONTROLS_DRAW_FLIP_Y) {
-          ctx.save();
-          ctx.translate(0, bounds.y * 2 + bounds.h);
-          ctx.scale(1, -1);
-          player.updateControls();
-          player.drawControls();
-          ctx.restore();
-        } else {
-          player.updateControls();
-          player.drawControls();
-        }
-      }
-    });
-  } else if (!USE_SHARED_CONTROLS_GAMES && player) {
-    player.setControlsBounds(contentRect || { x: 0, y: 0, w: W, h: H });
-    const showControls = (contentMode !== 'menu') ||
-      (playerVideo && !playerVideo.paused && !playerVideo.ended) ||
-      (reelVideo && !reelVideo.paused && !reelVideo.ended);
-    if (showControls) {
-      player.updateControls();
-      player.drawControls();
+      sharedControlsUi.setState(sharedControlsAdapter.getState());
+      sharedControlsUi.draw(ctx);
     }
-  }
   ctx.restore();
 
   screenTexture.needsUpdate = true;
@@ -2231,11 +2181,7 @@ function handlePointerMove(ev) {
     }
     return;
   }
-  if (USE_SHARED_CONTROLS_GAMES && contentMode === 'video' && getSharedActiveVideo() && player && cameraZoomAlt) {
-    const mapped = mapControlsPoint({ x: hit.displayX, y: hit.displayY });
-    const event = toCanvasEvent(mapped.x, mapped.y);
-    player.handlePointerMove(event);
-    player.keepControlsVisible();
+  if (sharedControlsUi && contentMode === 'video' && getSharedActiveVideo()) {
     return;
   }
   if (isGameActive()) {
@@ -2252,26 +2198,25 @@ function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
   if (contentMode === 'menu' && ev.button === 2) return;
-  if (USE_SHARED_CONTROLS_GAMES && sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
+  if (sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
     const screenPt = mapPointerToScreenPixels(ev);
-      if (screenPt && player) {
-        if (player.state) {
-          player.state.playingFull = true;
-          player.state.fullIndex = 0;
-          player.state.activeIndex = 0;
-          player.state.controlsVisible = 1;
-          player.state.controlsTarget = 1;
-        }
-        const mapped = mapControlsPoint(screenPt);
-        const event = toCanvasEvent(mapped.x, mapped.y);
-        player.handleClick(event);
-        player.handlePointerDown(event);
-        player.keepControlsVisible();
-        console.log('[games] screen click px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', true);
+    if (screenPt) {
+      const handled = sharedControlsUi.handlePointerEvent(ev, {
+        canvasWidth: screenCanvas.width,
+        canvasHeight: screenCanvas.height
+      });
+      if (handled) {
+        console.log('[games] shared-controls click px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', true);
         ev.preventDefault();
         ev.stopPropagation();
         return;
       }
+      sharedControlsAdapter?.dispatch?.({ type: 'togglePlay' });
+      console.log('[games] surface toggle px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', false);
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
   }
   const hit = raycastScreen(ev);
   if (!hit) {
@@ -2352,23 +2297,6 @@ function handlePointerDown(ev) {
 
   if (isGameActive()) {
     dispatchGamePointerDown(hit, ev.button);
-  } else if (player) {
-    const videoRect = getVideoRect();
-    if (videoRect && pointInRect(hit.x, hit.y, videoRect)) {
-      const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
-      if (activeVideo && (activeVideo.paused || activeVideo.ended)) {
-        activeVideo.play().catch(() => {});
-        needsRedraw = true;
-      }
-    }
-
-    const event = toCanvasEvent(hit.x, hit.y);
-    player.handleClick(event);
-    player.handlePointerDown(event);
-
-    if (isPointInSpeedBadge(hit.x, hit.y, videoRect)) {
-      cycleSpeed();
-    }
   } else {
     // Ignore clicks outside game/video content.
   }
@@ -2461,9 +2389,6 @@ function handlePointerUp(ev) {
     try { renderer.domElement.releasePointerCapture(ev.pointerId); } catch (e) { /* ignore */ }
   }
   gameVolumeDrag = false;
-  if (contentMode === 'video' && player) {
-    player.handlePointerUp();
-  }
   if (isGameActive() && lastScreenHit) {
     dispatchGamePointerUp(lastScreenHit, ev.button);
   }
@@ -2501,7 +2426,7 @@ function handleKeyDown(ev) {
     prevent();
     if (activeVideo.paused) activeVideo.play().catch(() => {});
     else activeVideo.pause();
-    if (player) player.showControlsTemporarily();
+    needsRedraw = true;
     return;
   }
     if (key === 'm') {
@@ -2512,13 +2437,13 @@ function handleKeyDown(ev) {
       if (activeVideo) {
         try { activeVideo.muted = next; } catch (e) { /* ignore */ }
       }
-      if (player) player.showControlsTemporarily();
+      needsRedraw = true;
       return;
     }
-  if (key === 'j') { prevent(); seekBy(-10); if (player) player.showControlsTemporarily(); return; }
-  if (key === 'l') { prevent(); seekBy(10); if (player) player.showControlsTemporarily(); return; }
-  if (key === 'arrowleft') { prevent(); seekBy(-5); if (player) player.showControlsTemporarily(); return; }
-  if (key === 'arrowright') { prevent(); seekBy(5); if (player) player.showControlsTemporarily(); return; }
+  if (key === 'j') { prevent(); seekBy(-10); needsRedraw = true; return; }
+  if (key === 'l') { prevent(); seekBy(10); needsRedraw = true; return; }
+  if (key === 'arrowleft') { prevent(); seekBy(-5); needsRedraw = true; return; }
+  if (key === 'arrowright') { prevent(); seekBy(5); needsRedraw = true; return; }
     if (key === 'arrowup') {
       prevent();
       const { volume } = getStoredAudioSettings();
@@ -2528,7 +2453,7 @@ function handleKeyDown(ev) {
       if (activeVideo) {
         try { activeVideo.volume = next; activeVideo.muted = next <= 0.001; } catch (e) { /* ignore */ }
       }
-      if (player) player.showControlsTemporarily();
+      needsRedraw = true;
       return;
     }
     if (key === 'arrowdown') {
@@ -2540,13 +2465,13 @@ function handleKeyDown(ev) {
       if (activeVideo) {
         try { activeVideo.volume = next; activeVideo.muted = next <= 0.001; } catch (e) { /* ignore */ }
       }
-      if (player) player.showControlsTemporarily();
+      needsRedraw = true;
       return;
     }
-    if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
-    if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; if (player) player.showControlsTemporarily(); return; }
-    if (key === ',' && activeVideo.paused) { prevent(); seekBy(-1 / 30); if (player) player.showControlsTemporarily(); return; }
-    if (key === '.' && activeVideo.paused) { prevent(); seekBy(1 / 30); if (player) player.showControlsTemporarily(); return; }
+    if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; needsRedraw = true; return; }
+    if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; needsRedraw = true; return; }
+    if (key === ',' && activeVideo.paused) { prevent(); seekBy(-1 / 30); needsRedraw = true; return; }
+    if (key === '.' && activeVideo.paused) { prevent(); seekBy(1 / 30); needsRedraw = true; return; }
     if ('0123456789'.includes(key)) {
       prevent();
       const digit = parseInt(key, 10);

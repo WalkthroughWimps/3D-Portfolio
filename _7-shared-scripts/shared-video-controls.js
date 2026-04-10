@@ -344,10 +344,6 @@ export function createVideoControlsUI(options = {}) {
   }
 
   function draw(ctx, meta = {}) {
-    if (meta && typeof meta.drawLegacy === 'function') {
-      meta.drawLegacy();
-      return;
-    }
     if (!ctx || !ctx.canvas) return;
     const s = state.current;
     if (!s || !s.canPlay) return;

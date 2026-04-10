@@ -1485,6 +1485,7 @@ function formatTime(t) {
         tabletView: false,
         fullscreen: false,
         volumeHover: false,
+        hoveredControl: null,
         lastVolume: 0.6
       };
 
@@ -1932,7 +1933,7 @@ function formatTime(t) {
           // Helper: safe attempt to load a URL via a lightweight video element
           const warmTabletAnimation = async () => {
             try {
-              const path = resolveMediaUrl('tablet-animation.webm');
+              const path = encodeURI(assetUrl(videosPageConfig?.intro?.video || '../Renders/tablet-animation.webm'));
               if (!path) return;
               const v = createCorsVideo(path, { muted: true, loop: false, preload: 'auto' });
               // Fire load(); don't attach to DOM — just warm browser cache/connection
@@ -2244,7 +2245,7 @@ function formatTime(t) {
             const remaining = duration - (video.currentTime || 0);
             if (duration > 0 && remaining <= 1.0) {
               autoZoomOutTriggered = true;
-              startZoomOut(idx);
+              startZoomOut(idx, { keepPlaying: true });
             }
           }
         });
@@ -2271,7 +2272,7 @@ function formatTime(t) {
       let autoZoomOutTriggered = false;
       let lastHoverEntry = null;
       const previewWindows = entries.map(() => ({ until: 0 }));
-      const animation = { phase: 'idle', start: 0, from: null, to: null };
+      const animation = { phase: 'idle', start: 0, from: null, to: null, playOnComplete: false };
       const cellsBounds = (() => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         layout.cells.forEach((c) => {
@@ -2821,7 +2822,7 @@ function formatTime(t) {
         try {
           ensureVideoMuted(v);
           v.currentTime = 0;
-          v.play().catch(() => {});
+          v.pause();
         } catch (e) { /* ignore */ }
         if (!uiState.fullscreen) {
           setTabletView(true);
@@ -2829,19 +2830,23 @@ function formatTime(t) {
         animation.phase = 'in';
         animation.start = performance.now();
         animation.from = layout.cells[idx];
+        animation.playOnComplete = true;
         const frames = getActiveRects();
         const fillRect = computeVideoRect(frames.videoRect, v);
         animation.to = fillRect;
       }
 
-      function startZoomOut(idx) {
+      function startZoomOut(idx, options = {}) {
         if (idx === -1) return;
-        pauseFullPlayback(idx);
+        if (animation.phase === 'out' && fullIndex === idx) return;
+        const keepPlaying = !!options.keepPlaying;
+        if (!keepPlaying) pauseFullPlayback(idx);
         if (uiState.tabletView) setTabletView(false);
         animation.phase = 'out';
         animation.start = performance.now();
         animation.from = lastFullRect || animation.to || layout.cells[idx];
         animation.to = layout.cells[idx];
+        animation.playOnComplete = false;
         playingFull = false;
       }
 
@@ -2936,7 +2941,7 @@ function formatTime(t) {
         const clusterGapSmall = Math.max(4, Math.round(PAD * 0.24));
         const boxW = Math.round(ICON * 1.4);
         const boxH = Math.round(ICON * 0.95);
-        const dividerW = 0;
+        const dividerW = Math.max(3, Math.round(PAD * 0.18));
 
         // Compute from the right edge inward so removing the fullscreen icon
         // simply collapses space and shifts the remaining icons right.
@@ -2952,15 +2957,14 @@ function formatTime(t) {
         const tabletRect = { x: cursor, y: iconRowY, w: ICON, h: ICON };
         cursor -= clusterGap;
 
-        // No divider between speed/pitch and right-side icons
-
         // speed and pitch cluster (closer together)
         cursor -= boxW;
         const speedRect = { x: cursor, y: iconRowY, w: boxW, h: ICON };
         cursor -= clusterGapSmall;
         cursor -= boxW;
         const pitchRect = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
-        const dividerRect = null;
+        const dividerRightRect = { x: tabletRect.x - Math.round(clusterGap * 0.5) - Math.floor(dividerW / 2), y: iconRowY + Math.round(ICON * 0.14), w: dividerW, h: Math.round(ICON * 0.72) };
+        const dividerLeftRect = { x: pitchRect.x - Math.round(clusterGapSmall * 0.7) - Math.floor(dividerW / 2), y: iconRowY + Math.round(ICON * 0.14), w: dividerW, h: Math.round(ICON * 0.72) };
 
         return {
           barH: BAR_H,
@@ -2976,7 +2980,8 @@ function formatTime(t) {
           pitchRect: speedRect,
           tabletRect,
           fullscreenRect,
-          dividerRect,
+          dividerLeftRect,
+          dividerRightRect,
           progressRect,
           syncRect,
           syncSliderRect,
@@ -2987,14 +2992,26 @@ function formatTime(t) {
         };
       }
 
-      function drawIcon(ctxTarget, rect, glyph) {
+      function drawIcon(ctxTarget, rect, glyph, opts = {}) {
+        const hovered = !!opts.hovered;
+        const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
+        const scale = hovered ? 1.12 : 1;
         ctxTarget.save();
+        ctxTarget.globalAlpha = alpha;
         ctxTarget.fillStyle = iconColor;
         ctxTarget.textAlign = 'center';
         ctxTarget.textBaseline = 'middle';
+        if (hovered) {
+          ctxTarget.shadowColor = 'rgba(255,255,255,0.7)';
+          ctxTarget.shadowBlur = 14;
+        }
+        const cx = rect.x + rect.w / 2;
+        const cy = rect.y + rect.h / 2;
+        ctxTarget.translate(cx, cy);
+        ctxTarget.scale(scale, scale);
         const size = Math.round(rect.h * 0.9);
         ctxTarget.font = `${size}px ${iconFont}`;
-        ctxTarget.fillText(glyph, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
+        ctxTarget.fillText(glyph, 0, 1);
         ctxTarget.restore();
       }
 
@@ -3066,7 +3083,7 @@ function formatTime(t) {
         const clusterGapSmall = Math.max(4, Math.round(PAD * 0.24));
         const boxW = Math.round(ICON * 1.4);
         const boxH = Math.round(ICON * 0.95);
-        const dividerW = 0;
+        const dividerW = Math.max(3, Math.round(PAD * 0.18));
 
         // Match the fullscreen toggle behavior of the main controls; keep disabled by default.
         const ENABLE_FULLSCREEN_ICON = false; // toggle to true to re-enable
@@ -3081,14 +3098,14 @@ function formatTime(t) {
         cursor -= ICON;
         const tabletRect = { x: cursor, y: iconRowY, w: ICON, h: ICON };
         cursor -= clusterGap;
-        // no divider between speed/pitch and right-side icons
         // speed and pitch cluster
         cursor -= boxW;
         const speedRect = { x: cursor, y: iconRowY, w: boxW, h: ICON };
         cursor -= clusterGapSmall;
         cursor -= boxW;
         const pitchRect = { x: cursor, y: iconRowY + (ICON - boxH) / 2, w: boxW, h: boxH };
-        const dividerRect = null;
+        const dividerRightRect = { x: tabletRect.x - Math.round(clusterGap * 0.5) - Math.floor(dividerW / 2), y: iconRowY + Math.round(ICON * 0.14), w: dividerW, h: Math.round(ICON * 0.72) };
+        const dividerLeftRect = { x: pitchRect.x - Math.round(clusterGapSmall * 0.7) - Math.floor(dividerW / 2), y: iconRowY + Math.round(ICON * 0.14), w: dividerW, h: Math.round(ICON * 0.72) };
 
         return {
           surface: { x: 0, y: 0, w: CW, h: CH },
@@ -3100,23 +3117,25 @@ function formatTime(t) {
           pitchRect: speedRect,
           tabletRect,
           fullscreenRect,
-          dividerRect,
+          dividerLeftRect,
+          dividerRightRect,
           progressRect,
           barH: CH,
           fontFamily: '"Source Sans 3","Segoe UI",sans-serif'
         };
       }
 
-      function drawPanelIcon(ctx2, rect, glyph, alpha = 1) {
-        ctx2.save();
-        ctx2.globalAlpha = alpha;
-        ctx2.fillStyle = iconColor;
-        ctx2.textAlign = 'center';
-        ctx2.textBaseline = 'middle';
-        const size = Math.round(rect.h * 0.9);
-        ctx2.font = `${size}px ${iconFont}`;
-        ctx2.fillText(glyph, rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-        ctx2.restore();
+      function drawPanelIcon(ctx2, rect, glyph, alpha = 1, hovered = false) {
+        drawIcon(ctx2, rect, glyph, { alpha, hovered });
+      }
+
+      function drawControlDivider(ctxTarget, rect, alpha = 1) {
+        if (!ctxTarget || !rect) return;
+        ctxTarget.save();
+        ctxTarget.globalAlpha = alpha * 0.8;
+        ctxTarget.fillStyle = 'rgba(255,255,255,0.38)';
+        ctxTarget.fillRect(rect.x, rect.y, rect.w, rect.h);
+        ctxTarget.restore();
       }
 
       function drawPanelProgress(ctx2, rect, video, alpha = 1) {
@@ -3158,7 +3177,7 @@ function formatTime(t) {
         bottomPanelCtx.restore();
 
         // Top panel content
-        drawPanelIcon(topPanelCtx, topUI.backRect, 'arrow_back_2', a);
+        drawPanelIcon(topPanelCtx, topUI.backRect, 'arrow_back_2', a, uiState.hoveredControl === 'back');
         topPanelCtx.save();
         topPanelCtx.globalAlpha = a;
         topPanelCtx.fillStyle = iconColor;
@@ -3170,7 +3189,7 @@ function formatTime(t) {
 
           const syncMs = getStoredSyncMs();
           const syncRatio = Math.max(0, Math.min(1, (syncMs + SYNC_RANGE_MS) / (SYNC_RANGE_MS * 2)));
-          drawPanelIcon(topPanelCtx, topUI.syncRect, 'schedule', a);
+          drawPanelIcon(topPanelCtx, topUI.syncRect, 'schedule', a, uiState.hoveredControl === 'sync');
           topPanelCtx.save();
           topPanelCtx.globalAlpha = a;
           topPanelCtx.fillStyle = iconColor;
@@ -3194,10 +3213,10 @@ function formatTime(t) {
           topPanelCtx.fill();
           topPanelCtx.restore();
 
-          if (video) {
+        if (video) {
             // Bottom panel content
             const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
-            drawPanelIcon(bottomPanelCtx, botUI.playRect, playGlyph, a);
+            drawPanelIcon(bottomPanelCtx, botUI.playRect, playGlyph, a, uiState.hoveredControl === 'play');
 
           const { muted: effMuted, volume: effVolume } = getEffectiveAudioSettings();
           const volumeLevel = effMuted ? 0 : (effVolume || 0);
@@ -3206,28 +3225,27 @@ function formatTime(t) {
           else if (volumeLevel <= 0.3) volGlyph = 'volume_mute';
           else if (volumeLevel <= 0.7) volGlyph = 'volume_down';
           else volGlyph = 'volume_up';
-          drawPanelIcon(bottomPanelCtx, botUI.volumeRect, volGlyph, a);
+          drawPanelIcon(bottomPanelCtx, botUI.volumeRect, volGlyph, a, uiState.hoveredControl === 'volume');
 
-          if (uiState.volumeHover) {
-            bottomPanelCtx.save();
-            bottomPanelCtx.globalAlpha = a;
-            bottomPanelCtx.fillStyle = 'rgba(255,255,255,0.15)';
-            bottomPanelCtx.fillRect(botUI.volumeSliderRect.x, botUI.volumeSliderRect.y, botUI.volumeSliderRect.w, botUI.volumeSliderRect.h);
-            const filled = Math.max(0, Math.min(1, volumeLevel));
-            bottomPanelCtx.fillStyle = iconColor;
-            bottomPanelCtx.fillRect(botUI.volumeSliderRect.x, botUI.volumeSliderRect.y, botUI.volumeSliderRect.w * filled, botUI.volumeSliderRect.h);
-            const dotX = botUI.volumeSliderRect.x + botUI.volumeSliderRect.w * filled;
-            bottomPanelCtx.fillStyle = '#fff';
-            bottomPanelCtx.beginPath();
-            bottomPanelCtx.arc(dotX, botUI.volumeSliderRect.y + botUI.volumeSliderRect.h / 2, Math.max(4, Math.round(botUI.volumeSliderRect.h * 0.6)), 0, Math.PI * 2);
-            bottomPanelCtx.fill();
-            bottomPanelCtx.restore();
-          }
+          bottomPanelCtx.save();
+          bottomPanelCtx.globalAlpha = a;
+          bottomPanelCtx.fillStyle = 'rgba(255,255,255,0.15)';
+          bottomPanelCtx.fillRect(botUI.volumeSliderRect.x, botUI.volumeSliderRect.y, botUI.volumeSliderRect.w, botUI.volumeSliderRect.h);
+          const filled = Math.max(0, Math.min(1, volumeLevel));
+          bottomPanelCtx.fillStyle = iconColor;
+          bottomPanelCtx.fillRect(botUI.volumeSliderRect.x, botUI.volumeSliderRect.y, botUI.volumeSliderRect.w * filled, botUI.volumeSliderRect.h);
+          const dotX = botUI.volumeSliderRect.x + botUI.volumeSliderRect.w * filled;
+          bottomPanelCtx.fillStyle = '#fff';
+          bottomPanelCtx.beginPath();
+          bottomPanelCtx.arc(dotX, botUI.volumeSliderRect.y + botUI.volumeSliderRect.h / 2, Math.max(4, Math.round(botUI.volumeSliderRect.h * 0.6)), 0, Math.PI * 2);
+          bottomPanelCtx.fill();
+          bottomPanelCtx.restore();
 
           if (video && (video.paused || video.ended)) {
-            drawCenterPlayOverlay(ctrlCtx, ui.videoRect || ui.surfaceRect, iconColor, a);
+            const activeRects = getActiveRects();
+            const overlayRect = lastFullRect || activeRects?.videoRect || activeRects?.surfaceRect || contentSurfaceRect;
+            drawCenterPlayOverlay(ctrlCtx, overlayRect, iconColor, a);
           }
-              drawPanelIcon(bottomPanelCtx, botUI.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture', a);
           // Time display
           bottomPanelCtx.save();
           bottomPanelCtx.globalAlpha = a;
@@ -3262,8 +3280,10 @@ function formatTime(t) {
           bottomPanelCtx.fillText(pitchLabel[1], botUI.pitchRect.x + botUI.pitchRect.w / 2, botUI.pitchRect.y + botUI.pitchRect.h * 0.78);
           bottomPanelCtx.restore();
 
-          // Draw tablet/capture icon
-          drawPanelIcon(bottomPanelCtx, botUI.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture', a);
+          drawControlDivider(bottomPanelCtx, botUI.dividerLeftRect, a);
+          drawControlDivider(bottomPanelCtx, botUI.dividerRightRect, a);
+
+          drawPanelIcon(bottomPanelCtx, botUI.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture', a, uiState.hoveredControl === 'tablet');
           // Fullscreen icon intentionally removed (commented out). To re-enable,
           // uncomment the next line and set ENABLE_FULLSCREEN_ICON = true above.
           // drawPanelIcon(bottomPanelCtx, botUI.fullscreenRect, uiState.fullscreen ? 'fullscreen_exit' : 'fullscreen', a);
@@ -3291,8 +3311,8 @@ function formatTime(t) {
         ctrlCtx.restore();
 
         // Top bar content
-        ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.backRect, 'arrow_back_2'); ctrlCtx.restore();
-          ctrlCtx.save();
+        drawIcon(ctrlCtx, ui.backRect, 'arrow_back_2', { alpha, hovered: uiState.hoveredControl === 'back' });
+        ctrlCtx.save();
           ctrlCtx.fillStyle = textColor;
           ctrlCtx.textAlign = 'center';
           ctrlCtx.textBaseline = 'middle';
@@ -3305,7 +3325,7 @@ function formatTime(t) {
           // Sync slider (clock icon + bar)
           const syncMs = getStoredSyncMs();
           const syncRatio = Math.max(0, Math.min(1, (syncMs + SYNC_RANGE_MS) / (SYNC_RANGE_MS * 2)));
-          ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.syncRect, 'schedule'); ctrlCtx.restore();
+          drawIcon(ctrlCtx, ui.syncRect, 'schedule', { alpha, hovered: uiState.hoveredControl === 'sync' });
           ctrlCtx.save();
           ctrlCtx.globalAlpha = alpha;
           ctrlCtx.fillStyle = textColor;
@@ -3331,7 +3351,7 @@ function formatTime(t) {
 
         // Bottom left cluster: play + volume
         const playGlyph = video.paused ? 'play_circle' : 'pause_circle';
-        ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.playRect, playGlyph); ctrlCtx.restore();
+        drawIcon(ctrlCtx, ui.playRect, playGlyph, { alpha, hovered: uiState.hoveredControl === 'play' });
 
         // Volume icon & slider
         const { muted: effMuted, volume: effVolume } = getEffectiveAudioSettings();
@@ -3341,22 +3361,20 @@ function formatTime(t) {
         else if (volumeLevel <= 0.3) volGlyph = 'volume_mute';
         else if (volumeLevel <= 0.7) volGlyph = 'volume_down';
         else volGlyph = 'volume_up';
-        ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.volumeRect, volGlyph); ctrlCtx.restore();
-        if (uiState.volumeHover) {
-          ctrlCtx.save();
-          ctrlCtx.globalAlpha = alpha;
-          ctrlCtx.fillStyle = 'rgba(255,255,255,0.15)';
-          ctrlCtx.fillRect(ui.volumeSliderRect.x, ui.volumeSliderRect.y, ui.volumeSliderRect.w, ui.volumeSliderRect.h);
-          const filled = Math.max(0, Math.min(1, volumeLevel));
-          ctrlCtx.fillStyle = iconColor;
-          ctrlCtx.fillRect(ui.volumeSliderRect.x, ui.volumeSliderRect.y, ui.volumeSliderRect.w * filled, ui.volumeSliderRect.h);
-          const dotX = ui.volumeSliderRect.x + ui.volumeSliderRect.w * filled;
-          ctrlCtx.fillStyle = '#fff';
-          ctrlCtx.beginPath();
-          ctrlCtx.arc(dotX, ui.volumeSliderRect.y + ui.volumeSliderRect.h / 2, Math.max(4, Math.round(ui.volumeSliderRect.h * 0.6)), 0, Math.PI * 2);
-          ctrlCtx.fill();
-          ctrlCtx.restore();
-        }
+        drawIcon(ctrlCtx, ui.volumeRect, volGlyph, { alpha, hovered: uiState.hoveredControl === 'volume' });
+        ctrlCtx.save();
+        ctrlCtx.globalAlpha = alpha;
+        ctrlCtx.fillStyle = 'rgba(255,255,255,0.15)';
+        ctrlCtx.fillRect(ui.volumeSliderRect.x, ui.volumeSliderRect.y, ui.volumeSliderRect.w, ui.volumeSliderRect.h);
+        const filled = Math.max(0, Math.min(1, volumeLevel));
+        ctrlCtx.fillStyle = iconColor;
+        ctrlCtx.fillRect(ui.volumeSliderRect.x, ui.volumeSliderRect.y, ui.volumeSliderRect.w * filled, ui.volumeSliderRect.h);
+        const dotX = ui.volumeSliderRect.x + ui.volumeSliderRect.w * filled;
+        ctrlCtx.fillStyle = '#fff';
+        ctrlCtx.beginPath();
+        ctrlCtx.arc(dotX, ui.volumeSliderRect.y + ui.volumeSliderRect.h / 2, Math.max(4, Math.round(ui.volumeSliderRect.h * 0.6)), 0, Math.PI * 2);
+        ctrlCtx.fill();
+        ctrlCtx.restore();
 
         // Time display (center bottom)
         ctrlCtx.save();
@@ -3398,7 +3416,9 @@ function formatTime(t) {
         ctrlCtx.fillText(pitchLabel[1], ui.pitchRect.x + ui.pitchRect.w / 2, ui.pitchRect.y + ui.pitchRect.h * 0.78);
         ctrlCtx.restore();
 
-        ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture'); ctrlCtx.restore();
+        drawControlDivider(ctrlCtx, ui.dividerLeftRect, alpha);
+        drawControlDivider(ctrlCtx, ui.dividerRightRect, alpha);
+        drawIcon(ctrlCtx, ui.tabletRect, uiState.tabletView ? 'picture_in_picture_center' : 'capture', { alpha, hovered: uiState.hoveredControl === 'tablet' });
         // Fullscreen control removed for now. Uncomment to restore and set ENABLE_FULLSCREEN_ICON = true above.
         // ctrlCtx.save(); ctrlCtx.globalAlpha = alpha; drawIcon(ctrlCtx, ui.fullscreenRect, uiState.fullscreen ? 'fullscreen_exit' : 'fullscreen'); ctrlCtx.restore();
 
@@ -3419,8 +3439,13 @@ function formatTime(t) {
           if (t >= 1) {
             if (animation.phase === 'in') {
               animation.phase = 'hold';
+              if (animation.playOnComplete && fullIndex >= 0) {
+                animation.playOnComplete = false;
+                startFullPlayback(fullIndex);
+              }
             } else {
               animation.phase = 'idle';
+              animation.playOnComplete = false;
               fullIndex = -1;
               lastFullRect = null;
               return;
@@ -3497,8 +3522,12 @@ function formatTime(t) {
         };
 
         if (sharedControls && sharedControls.ui && sharedControls.adapter) {
+          if (topPanelMesh) topPanelMesh.visible = false;
+          if (bottomPanelMesh) bottomPanelMesh.visible = false;
+          ctrlCtx.clearRect(0, 0, controlsCanvas.width, controlsCanvas.height);
           try { sharedControls.ui.setState(sharedControls.adapter.getState()); } catch (e) { /* ignore */ }
           try { sharedControls.ui.draw(ctrlCtx, { drawLegacy: drawLegacyControls, alpha: chromeVisible }); } catch (e) { /* ignore */ }
+          ctx.drawImage(controlsCanvas, 0, 0);
         } else {
           drawLegacyControls();
         }
@@ -3551,12 +3580,13 @@ function formatTime(t) {
         const frames = getActiveRects();
         if (!frames) return;
         const uiScale = uiState.fullscreen ? fullscreenScale() : 1;
+        const isWithinRect = (r) => !!(pt && r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h);
 
         // Panel planes: pt is in panel-canvas coordinates.
         if (!uiState.fullscreen && pt && (pt.target === 'top' || pt.target === 'bottom')) {
           const video = fullVideos[fullIndex];
           if (!video) return;
-          const within = (r) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+          const within = (r) => isWithinRect(r);
 
           if (pt.target === 'top') {
             const topUI = buildTopPanelLayout();
@@ -3578,7 +3608,7 @@ function formatTime(t) {
             uiState.volumeHover = true;
             return;
           }
-          if (uiState.volumeHover && within(botUI.volumeSliderRect)) {
+          if (within(botUI.volumeSliderRect)) {
             const ratio = Math.max(0, Math.min(1, (pt.x - botUI.volumeSliderRect.x) / botUI.volumeSliderRect.w));
             uiState.lastVolume = ratio;
             setStoredVolumeFromRatio(ratio);
@@ -3603,7 +3633,7 @@ function formatTime(t) {
         }
         const ui = buildControlsLayout(frames.surfaceRect, lastFullRect, uiScale);
         const handled = { any: false };
-        const within = (r) => pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+        const within = (r) => isWithinRect(r);
         const video = fullVideos[fullIndex];
         if (within(ui.backRect)) {
           if (uiState.fullscreen) { /* fullscreen disabled */ }
@@ -3620,7 +3650,7 @@ function formatTime(t) {
           uiState.volumeHover = true;
           handled.any = true; return;
         }
-        if (uiState.volumeHover && within(ui.volumeSliderRect)) {
+        if (within(ui.volumeSliderRect)) {
           const ratio = Math.max(0, Math.min(1, (pt.x - ui.volumeSliderRect.x) / ui.volumeSliderRect.w));
           uiState.lastVolume = ratio;
           setStoredVolumeFromRatio(ratio);
@@ -3640,6 +3670,7 @@ function formatTime(t) {
         if (handled.any) return;
         // If click fell inside control bars but not on actionable UI, ignore to prevent play/pause toggles
         if (pt.y <= ui.topBar.y + ui.topBar.h || pt.y >= ui.bottomBar.y) return;
+        if (!within(ui.videoRect || lastFullRect || frames.videoRect || frames.surfaceRect)) return;
         if (video) { if (video.paused) startFullPlayback(fullIndex); else pauseFullPlayback(fullIndex); }
       }
 
@@ -3694,9 +3725,13 @@ function formatTime(t) {
               return;
             }
 
-            const inVol = (pt.x >= botUI.volumeRect.x && pt.x <= botUI.volumeRect.x + botUI.volumeRect.w && pt.y >= botUI.volumeRect.y && pt.y <= botUI.volumeRect.y + botUI.volumeRect.h) ||
-              (pt.x >= botUI.volumeSliderRect.x && pt.x <= botUI.volumeSliderRect.x + botUI.volumeSliderRect.w && pt.y >= botUI.volumeSliderRect.y && pt.y <= botUI.volumeSliderRect.y + botUI.volumeSliderRect.h);
-              uiState.volumeHover = !!inVol;
+            const within = (r) => pt && r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+            const inVol = within(botUI.volumeRect) || within(botUI.volumeSliderRect);
+            uiState.volumeHover = !!inVol;
+            uiState.hoveredControl = within(botUI.playRect) ? 'play'
+              : within(botUI.volumeRect) ? 'volume'
+              : within(botUI.tabletRect) ? 'tablet'
+              : null;
               return;
             }
             if (!uiState.fullscreen && pt && pt.target === 'top') {
@@ -3710,6 +3745,10 @@ function formatTime(t) {
                 ev.preventDefault?.();
                 return;
               }
+              const within = (r) => pt && r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+              uiState.hoveredControl = within(topUI.backRect) ? 'back'
+                : within(topUI.syncRect) ? 'sync'
+                : null;
               return;
             }
 
@@ -3752,11 +3791,18 @@ function formatTime(t) {
             const inVol = pt && ((pt.x >= ui.volumeRect.x && pt.x <= ui.volumeRect.x + ui.volumeRect.w && pt.y >= ui.volumeRect.y && pt.y <= ui.volumeRect.y + ui.volumeRect.h) ||
               (pt.x >= ui.volumeSliderRect.x && pt.x <= ui.volumeSliderRect.x + ui.volumeSliderRect.w && pt.y >= ui.volumeSliderRect.y && pt.y <= ui.volumeSliderRect.y + ui.volumeSliderRect.h));
             uiState.volumeHover = !!inVol;
+            const within = (r) => pt && r && pt.x >= r.x && pt.x <= r.x + r.w && pt.y >= r.y && pt.y <= r.y + r.h;
+            uiState.hoveredControl = within(ui.backRect) ? 'back'
+              : within(ui.syncRect) ? 'sync'
+              : within(ui.playRect) ? 'play'
+              : within(ui.volumeRect) ? 'volume'
+              : within(ui.tabletRect) ? 'tablet'
+              : null;
           }
         } else {
           const outOfSurface = !pt || !frames || pt.x < frames.surfaceRect.x || pt.y < frames.surfaceRect.y || pt.x > frames.surfaceRect.x + frames.surfaceRect.w || pt.y > frames.surfaceRect.y + frames.surfaceRect.h;
-          if (outOfSurface) { setHover(-1); return; }
-          if (pt.x < cellsBounds.minX || pt.x > cellsBounds.maxX || pt.y < cellsBounds.minY || pt.y > cellsBounds.maxY) { setHover(-1); return; }
+          if (outOfSurface) { uiState.hoveredControl = null; setHover(-1); return; }
+          if (pt.x < cellsBounds.minX || pt.x > cellsBounds.maxX || pt.y < cellsBounds.minY || pt.y > cellsBounds.maxY) { uiState.hoveredControl = null; setHover(-1); return; }
           const idx = cellIndexFromPoint(pt);
           setHover(idx);
         }
@@ -3765,6 +3811,7 @@ function formatTime(t) {
       function handlePointerLeave() {
         if (!playingFull) setHover(-1);
         uiState.volumeHover = false;
+        uiState.hoveredControl = null;
         dragState = null;
       }
 
@@ -3806,13 +3853,13 @@ function formatTime(t) {
           const overControls = pt.y <= ui.topBar.y + ui.topBar.h || pt.y >= ui.bottomBar.y;
           if (isDouble && !overControls) { clearPending(); /* fullscreen disabled */ /* toggleFullscreenMode(); */ return; }
           if (overControls) { clearPending(); handleFullClick(pt); return; }
+          const activeVideoRect = ui.videoRect || lastFullRect || targetRect || frames.videoRect || frames.surfaceRect;
+          const overVideo = activeVideoRect
+            && pt.x >= activeVideoRect.x && pt.x <= activeVideoRect.x + activeVideoRect.w
+            && pt.y >= activeVideoRect.y && pt.y <= activeVideoRect.y + activeVideoRect.h;
+          if (!overVideo) { clearPending(); return; }
           clearPending();
-          pendingClickPos = pt ? { x: pt.x, y: pt.y } : null;
-          pendingSingleClick = setTimeout(() => {
-            try { handleFullClick(pt); } catch (e) { /* ignore */ }
-            pendingSingleClick = null;
-            pendingClickPos = null;
-          }, 240);
+          handleFullClick(pt);
           return;
         }
         clearPending();

@@ -9,7 +9,7 @@ import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-con
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
-const USE_SHARED_CONTROLS = true;
+const USE_SHARED_CONTROLS = false;
 
 const videosPageConfig = {
   intro: {

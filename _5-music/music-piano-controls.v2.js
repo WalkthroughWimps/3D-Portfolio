@@ -10287,6 +10287,10 @@ function onPointerDown(e){
             }));
             const ev = { clientX: lx, clientY: ly };
             handled = !!topPadVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
+            if(!handled){
+              topPadVideo.ui.onAction?.({ type: 'togglePlay' });
+              handled = true;
+            }
           }
         }
         if(!handled && trackVideo.active && trackVideo.ui && topPadVideo.controlsRect){
@@ -10302,6 +10306,10 @@ function onPointerDown(e){
             }));
             const ev = { clientX: lx, clientY: ly };
             handled = !!trackVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
+            if(!handled){
+              trackVideo.ui.onAction?.({ type: 'togglePlay' });
+              handled = true;
+            }
           }
         }
         if(handled){
@@ -10500,18 +10508,22 @@ canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; r
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
 function handleTopPadVideoKeys(ev){
-  if(topPadVideo.mode !== 'playing') return;
+  const topPadActive = topPadVideo.mode === 'playing' && !!topPadVideo.hqVideo;
+  const trackActive = !!(trackVideo.active && trackVideo.hqVideo);
+  if(!topPadActive && !trackActive) return;
   const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : '';
   if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
   const key = (ev.key || '').toLowerCase();
   const shift = !!ev.shiftKey;
   const prevent = () => { try{ ev.preventDefault(); }catch(e){} };
-  const video = topPadVideo.hqVideo;
-  const audio = topPadVideo.audio;
+  const video = topPadActive ? topPadVideo.hqVideo : trackVideo.hqVideo;
+  const audio = topPadActive ? topPadVideo.audio : null;
   if(!video) return;
   if(key === ' ' || key === 'k'){
     prevent();
-    if(video.paused){
+    if(trackActive){
+      togglePlayPause();
+    } else if(video.paused){
       const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
       const targetTime = Math.max(0, (video.currentTime || 0) - (syncMs / 1000));
       try{ if(audio) audio.currentTime = targetTime; }catch(e){}
@@ -10524,14 +10536,30 @@ function handleTopPadVideoKeys(ev){
     renderTopPadGrid();
     return;
   }
-  if(key === 'm'){ prevent(); if(audio){ audio.muted = !audio.muted; } renderTopPadGrid(); return; }
+  if(key === 'm'){
+    prevent();
+    if(trackActive){
+      const settings = getStoredAudioSettings();
+      setStoredAudioSettings(settings.volume, !settings.muted);
+      applyInstrumentMix();
+    } else if(audio){
+      audio.muted = !audio.muted;
+    }
+    renderTopPadGrid();
+    return;
+  }
   if(key === 'j'){ prevent(); video.currentTime = Math.max(0, video.currentTime - 10); return; }
   if(key === 'l'){ prevent(); video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10); return; }
   if(key === 'arrowleft'){ prevent(); video.currentTime = Math.max(0, video.currentTime - 5); return; }
   if(key === 'arrowright'){ prevent(); video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 5); return; }
   if(key === 'arrowup'){
     prevent();
-    if(audio){
+    if(trackActive){
+      const settings = getStoredAudioSettings();
+      const next = Math.min(1, (settings.volume || 0) + 0.05);
+      setStoredAudioSettings(next, next <= 0.001);
+      applyInstrumentMix();
+    } else if(audio){
       audio.volume = Math.min(1, (audio.volume || 0) + 0.05);
       if(audio.volume > 0.001) audio.muted = false;
     }
@@ -10540,7 +10568,12 @@ function handleTopPadVideoKeys(ev){
   }
   if(key === 'arrowdown'){
     prevent();
-    if(audio){
+    if(trackActive){
+      const settings = getStoredAudioSettings();
+      const next = Math.max(0, (settings.volume || 0) - 0.05);
+      setStoredAudioSettings(next, next <= 0.001);
+      applyInstrumentMix();
+    } else if(audio){
       audio.volume = Math.max(0, (audio.volume || 0) - 0.05);
       if(audio.volume <= 0.001) audio.muted = true;
     }
