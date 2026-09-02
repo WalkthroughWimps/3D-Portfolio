@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "packageType": "rv-map-road-package",
+  "tripName": "Laverne to Colorado Springs Loop",
+  "expectedFiles": [
+    {
+      "name": "Laverne to Colorado Springs Loop road package.json",
+      "purpose": "Self-contained road package with trip corridor roads and Elements preview roads."
+    }
+  ],
+  "folderUse": "For this project, put the road package JSON in roads package/ next to this manifest, or use Choose roads folder.",
+  "browserNote": "The app can load a self-contained road package JSON through Choose roads folder.",
+  "generatedAt": "2026-06-23T23:34:12.015Z"
+}

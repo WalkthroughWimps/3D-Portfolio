@@ -99,3 +99,4 @@ rename-*.log
 *.BACKUP
 assets-move-report.txt
 console-export-*.log
+dist-labs-root/

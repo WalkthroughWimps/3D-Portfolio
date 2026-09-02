@@ -1,0 +1,10 @@
+{
+  "name": "RV Route Map Editor",
+  "short_name": "RV Map",
+  "start_url": "/admin/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#25313d",
+  "theme_color": "#25313d",
+  "icons": []
+}

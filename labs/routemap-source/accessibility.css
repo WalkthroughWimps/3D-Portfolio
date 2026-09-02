@@ -1,0 +1,62 @@
+:root {
+  --keyboard-focus: #1769aa;
+}
+.keyboard-only-toggle {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  left: auto;
+  z-index: 830;
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+  min-height: 32px;
+  width: auto;
+  max-width: max-content;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px 16px 10px 16px;
+  background: rgba(255, 253, 248, 0.94);
+  color: var(--control);
+  box-shadow: 0 8px 22px rgba(31, 41, 51, 0.16);
+  font-size: 0.7rem;
+  font-weight: 850;
+  cursor: pointer;
+  transition: border-radius 160ms ease, transform 160ms ease, background 160ms ease;
+}
+
+.keyboard-only-toggle:hover {
+  border-radius: 16px 10px 16px 10px;
+  transform: translateY(-1px) rotate(-1deg);
+}
+
+.keyboard-only-toggle[aria-pressed="true"] {
+  background: var(--control);
+  color: var(--control-text);
+}
+
+.keyboard-only-toggle .material-symbols-rounded {
+  font-size: 1.1rem;
+}
+
+html[data-keyboard-only="true"] :focus-visible {
+  outline: 3px solid var(--keyboard-focus);
+  outline-offset: 3px;
+}
+
+html[data-keyboard-only="true"] .keyboard-only-toggle:focus-visible {
+  outline-color: #fff;
+  box-shadow: 0 0 0 5px var(--keyboard-focus);
+}
+
+@media (max-width: 640px) {
+  .keyboard-only-toggle-label {
+    display: none;
+  }
+
+  .keyboard-only-toggle {
+    width: 32px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+}

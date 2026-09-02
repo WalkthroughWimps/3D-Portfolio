@@ -1,0 +1,2512 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RV Route Map</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2325313d'/%3E%3Cpath d='M6 19h20l-3 5H9zM8 12h16v8H8z' fill='%23fff8e8'/%3E%3Ccircle cx='11' cy='25' r='2' fill='%235bc5d7'/%3E%3Ccircle cx='22' cy='25' r='2' fill='%235bc5d7'/%3E%3C/svg%3E">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,600,0,0">
+  <link rel="stylesheet" href="styles.css?v=2f147-hidden-tab-panels">
+  <link rel="stylesheet" href="styles/sticker-animation.css?v=2f01">
+    <link rel="stylesheet" href="accessibility.css">
+  </head>
+  <body>
+    <main class="map-shell">
+      <section class="map-stage" aria-label="RV route map">
+        <div id="userMapViewport" class="user-map-viewport">
+          <div id="map" class="map-canvas"></div>
+        </div>
+        <div id="mediaStylePreview" class="media-style-preview" aria-label="Media style placeholder" hidden></div>
+        <div id="stickerMediaPreview" class="route-animation-icon-preview marker-preview secondary-preview-source" aria-label="Media preview" hidden></div>
+        <div id="markerPreview" class="route-animation-icon-preview marker-preview secondary-preview-source" aria-label="Marker preview" role="button" tabindex="0" hidden></div>
+        <section id="splashMediaPreview" class="splash-media-preview" aria-label="Splash screen device preview" hidden></section>
+        <div id="usersBuilderAdminGrid" class="users-builder-admin-grid" aria-label="Users builder panels" hidden></div>
+        <div id="userFrameLayoutLayer" class="user-frame-layout-layer" aria-label="User interface layout drawing area" hidden></div>
+        <div id="userDeviceFrame" class="user-device-frame" aria-hidden="true" hidden>
+          <div class="user-device-rail user-device-rail-top"></div>
+          <div class="user-device-rail user-device-rail-right"></div>
+          <div class="user-device-rail user-device-rail-bottom"></div>
+          <div class="user-device-rail user-device-rail-left"></div>
+          <div class="user-device-screen-aperture"></div>
+          <div id="userFrameBuilderTools" class="user-frame-builder-tools" aria-hidden="true"></div>
+        </div>
+        <div id="mapBoundsOverlay" class="map-bounds-overlay" aria-hidden="true" hidden></div>
+        <div id="deviceBoundsOverlay" class="device-bounds-overlay" aria-hidden="true" hidden></div>
+        <div id="editorPreviewGuide" class="editor-preview-guide" aria-hidden="true" hidden>
+          <div id="editorPreviewGuideViewport" class="editor-preview-guide-viewport">
+            <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-viewport-scale-top" data-editor-guide-handle="top" aria-label="Scale preview from map viewport top edge"></button>
+            <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-viewport-scale-right" data-editor-guide-handle="right" aria-label="Scale preview from map viewport right edge"></button>
+            <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-viewport-scale-bottom" data-editor-guide-handle="bottom" aria-label="Scale preview from map viewport bottom edge"></button>
+            <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-viewport-scale-left" data-editor-guide-handle="left" aria-label="Scale preview from map viewport left edge"></button>
+          </div>
+          <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-scale-top" data-editor-guide-handle="top" aria-label="Scale device preview from top edge"></button>
+          <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-scale-right" data-editor-guide-handle="right" aria-label="Scale device preview from right edge"></button>
+          <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-scale-bottom" data-editor-guide-handle="bottom" aria-label="Scale device preview from bottom edge"></button>
+          <button type="button" class="editor-preview-guide-handle editor-preview-guide-scale editor-preview-guide-scale-left" data-editor-guide-handle="left" aria-label="Scale device preview from left edge"></button>
+          <output id="editorPreviewGuideLabel" class="editor-preview-guide-label"></output>
+          <button type="button" class="editor-preview-guide-handle editor-preview-guide-move" data-editor-guide-handle="move" aria-label="Move device preview">✥</button>
+        </div>
+        <section id="welcomeFullCanvas" class="welcome-full-canvas leather-bg leather-brown" aria-label="Welcome page device preview" hidden></section>
+        <div id="userMapViewportResizeLayer" class="user-map-viewport-resize-layer" aria-hidden="true" hidden></div>
+        <div id="userDevicePreviewResizeLayer" class="user-device-preview-resize-layer" aria-hidden="true" hidden></div>
+        <aside id="elementsStyleDrawer" class="elements-style-drawer" aria-label="Layer style controls" aria-hidden="true"></aside>
+        <aside id="imagePreviewDrawer" class="image-preview-drawer" aria-label="Image preview" aria-hidden="true">
+          <button id="toggleImagePreviewDrawer" class="drawer-toggle-button" type="button" aria-label="Collapse image preview" aria-expanded="true">
+            <span aria-hidden="true">&gt;</span>
+          </button>
+          <div class="image-preview-drawer-body">
+            <strong id="imagePreviewTitle">Image preview</strong>
+            <div id="imagePreviewContent" class="image-preview-content"></div>
+          </div>
+        </aside>
+        <div class="map-top-utility-bar" aria-label="Map shortcuts">
+          <button id="siteModeToggle" class="site-mode-toggle" type="button" aria-pressed="false">USER site</button>
+          <div class="map-theme-utility-group">
+            <button id="topThemeButton" type="button" title="Open map themes">Theme</button>
+          </div>
+        </div>
+        <button id="userJumpToStart" class="user-jump-to-start" type="button" title="Jump to the start of the journey" aria-label="Jump to the start of the journey" hidden>Start</button>
+        <aside id="selectionShortcutDock" class="selection-shortcut-menu" aria-label="Selection shortcuts"></aside>
+        <div id="userMaterialControls" class="user-material-controls" aria-label="User site material controls">
+          <button id="userThemeButton" class="user-preview-button user-theme-button" type="button" aria-expanded="false">
+            <strong>Liberty</strong>
+            <span>Classic road map</span>
+          </button>
+          <button id="userMaterialButton" class="user-preview-button user-material-button" type="button" aria-expanded="false">
+            <strong>Leather</strong>
+            <span>Material</span>
+          </button>
+        </div>
+        <aside id="userThemePanel" class="user-theme-panel" aria-label="User theme picker" hidden></aside>
+        <aside id="userMaterialPanel" class="user-material-panel" aria-label="User material picker" hidden></aside>
+        <div id="usersBuilderWorkspace" class="users-builder-workspace leather-bg leather-brown" aria-hidden="true" hidden></div>
+        <section id="userSitePanelTop" class="user-site-controls user-site-panel-top" aria-label="Top user controls" hidden></section>
+        <section id="userSitePanelLeft" class="user-site-controls user-site-panel-left" aria-label="Left user controls" hidden></section>
+        <section id="userSitePanelRight" class="user-site-controls user-site-panel-right" aria-label="Right user controls" hidden></section>
+        <section id="userSitePanelBottom" class="user-site-controls user-site-panel-bottom" aria-label="Bottom user controls" hidden></section>
+        <section id="maintenanceMapControls" class="maintenance-map-controls" aria-label="Maintenance route controls" hidden>
+          <div id="maintenanceRouteIconGrid" class="maintenance-route-icon-grid" role="group" aria-label="Choose route animation icon">
+            <button type="button" data-maintenance-route-icon="🧸" aria-label="Teddy bear">🧸</button>
+            <button type="button" data-maintenance-route-icon="🦙" aria-label="Galloping llama">🦙</button>
+            <button type="button" data-maintenance-route-icon="🏎️" aria-label="Racecar">🏎️</button>
+            <button type="button" data-maintenance-route-icon="🌪️" aria-label="Tornado">🌪️</button>
+            <button type="button" data-maintenance-route-icon="🚐" aria-label="Camper van">🚐</button>
+            <button type="button" data-maintenance-route-icon="🚂" aria-label="Train">🚂</button>
+            <button type="button" data-maintenance-route-icon="⛵" aria-label="Sailboat">⛵</button>
+            <button type="button" data-maintenance-route-icon="🚀" aria-label="Rocket">🚀</button>
+            <button type="button" data-maintenance-route-icon="🤖" aria-label="Robot">🤖</button>
+            <button type="button" data-maintenance-route-icon="🐕" aria-label="Dog">🐕</button>
+            <button type="button" data-maintenance-route-icon="🐈" aria-label="Cat">🐈</button>
+            <button type="button" data-maintenance-route-icon="🛸" aria-label="Flying saucer">🛸</button>
+            <button type="button" data-maintenance-route-icon="🚜" aria-label="Tractor">🚜</button>
+            <button type="button" data-maintenance-route-icon="🦊" aria-label="Fox">🦊</button>
+            <button type="button" data-maintenance-route-icon="🦕" aria-label="Dinosaur">🦕</button>
+            <button type="button" data-maintenance-route-icon="🎈" aria-label="Balloon">🎈</button>
+          </div>
+          <label class="maintenance-route-icon-size"><span aria-hidden="true">−</span><input id="maintenanceRouteIconSize" type="range" min="28" max="88" value="54" aria-label="Route animation icon size"><span aria-hidden="true">+</span></label>
+        </section>
+        <label id="maintenanceMapZoomControl" class="maintenance-map-zoom" hidden><span>Zoom</span><input id="maintenanceMapZoom" type="range" min="3" max="18" step="0.1" value="8" aria-label="Map zoom"></label>
+        <aside id="usersAppearanceAdminPanel" class="users-appearance-admin-panel" aria-label="Users appearance admin panel" hidden>
+          <div class="users-appearance-sticky-tools">
+            <details id="usersAlignmentSection" class="users-editor-twirl users-alignment-section" open>
+              <summary>Alignment options</summary>
+              <div class="users-alignment-row">
+              <div class="users-alignment-tools" role="toolbar" aria-label="Align and arrange selected User UI objects">
+              <button type="button" data-user-arrange="left" aria-label="Align left" title="Align left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v18M8 7h10M8 12h7M8 17h12"/></svg></button>
+              <button type="button" data-user-arrange="center" aria-label="Align horizontal centers" title="Align centers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M5 7h14M7 12h10M4 17h16"/></svg></button>
+              <button type="button" data-user-arrange="right" aria-label="Align right" title="Align right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 3v18M6 7h10M9 12h7M4 17h12"/></svg></button>
+              <button type="button" data-user-arrange="top" aria-label="Align top" title="Align top"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h18M7 8v10M12 8v7M17 8v12"/></svg></button>
+              <button type="button" data-user-arrange="middle" aria-label="Align vertical centers" title="Align middles"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h18M7 5v14M12 7v10M17 4v16"/></svg></button>
+              <button type="button" data-user-arrange="bottom" aria-label="Align bottom" title="Align bottom"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18M7 6v10M12 9v7M17 4v12"/></svg></button>
+              <button type="button" data-user-arrange="distribute-x" aria-label="Distribute horizontal centers" title="Distribute horizontal centers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4v16M20 4v16M8 12h8M10 9v6M14 9v6"/></svg></button>
+              <button type="button" data-user-arrange="distribute-y" aria-label="Distribute vertical centers" title="Distribute vertical centers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16M4 20h16M12 8v8M9 10h6M9 14h6"/></svg></button>
+              <button type="button" data-user-arrange="space-x" aria-label="Space evenly horizontally" title="Space evenly horizontally"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5v14M8 7v10M16 7v10M21 5v14M10 12h4"/></svg></button>
+              <button type="button" data-user-arrange="space-y" aria-label="Space evenly vertically" title="Space evenly vertically"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14M7 8h10M7 16h10M5 21h14M12 10v4"/></svg></button>
+              <button id="usersArrangeGridButton" type="button" aria-expanded="false" aria-controls="usersArrangeGridMenu" aria-label="Arrange selected objects as a grid" title="Arrange as grid"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg></button>
+                <button id="usersSnapMenuButton" type="button" aria-expanded="false" aria-controls="usersSnapMenu" aria-label="Choose snapping mode" title="Snapping mode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v7a7 7 0 0 0 14 0V3M5 7h5M14 7h5M9 18v3M15 18v3"/></svg></button>
+              </div>
+              <div class="users-history-actions" aria-label="Users builder history controls">
+                <button id="usersUndoBuilder" type="button" disabled aria-label="Undo" title="Undo"><span class="material-symbols-rounded" aria-hidden="true">undo</span></button>
+                <button id="usersRedoBuilder" type="button" disabled aria-label="Redo" title="Redo"><span class="material-symbols-rounded" aria-hidden="true">redo</span></button>
+              </div>
+              </div>
+            </details>
+            <div id="usersArrangeGridMenu" class="users-arrange-popover" hidden>
+              <label>Columns <input id="usersArrangeGridColumns" type="number" min="1" max="12" value="2"></label>
+              <label>Gap <input id="usersArrangeGridGap" type="number" min="0" max="80" value="12"></label>
+              <button id="usersArrangeGridApply" type="button">Arrange</button>
+            </div>
+            <div id="usersSnapMenu" class="users-arrange-popover users-snap-menu" hidden>
+              <button type="button" data-user-snap="grid">▦ Snap to grid</button>
+              <button type="button" data-user-snap="objects">⊞ Snap to objects</button>
+              <button type="button" data-user-snap="smart">✦ Smart snap</button>
+              <button type="button" data-user-snap="none">○ No snap</button>
+            </div>
+            <section class="users-selection-editor" aria-label="Object editor">
+              <strong class="users-selection-editor-title">Layout editor</strong>
+              <div class="users-editor-subsection-bar" role="tablist" aria-label="Layout editor subsections">
+                <button type="button" role="tab" aria-selected="true" data-users-editor-pane="geometry">Geometry</button>
+                <button type="button" role="tab" aria-selected="false" data-users-editor-pane="control">Control</button>
+                <button type="button" role="tab" aria-selected="false" data-users-editor-pane="transform">Transform</button>
+              </div>
+              <div data-users-editor-content="geometry">
+                <div id="usersGeometryFields" class="users-geometry-fields" aria-label="Selected object geometry" hidden>
+                  <label>X <input type="text" inputmode="decimal" data-user-geometry="x"></label>
+                  <label>Y <input type="text" inputmode="decimal" data-user-geometry="y"></label>
+                  <label>W <input type="text" inputmode="decimal" data-user-geometry="width"></label>
+                  <label>H <input type="text" inputmode="decimal" data-user-geometry="height"></label>
+                  <label id="usersGeometryNameLabel" class="users-geometry-name" hidden>Name <input id="usersGeometryName" type="text" maxlength="80" autocomplete="off"></label>
+                  <label id="usersGeometryRotationLabel" class="users-geometry-rotation" hidden>Angle <input id="usersGeometryRotation" type="text" inputmode="decimal"></label>
+                  <label id="usersElementContainerLabel" class="users-geometry-container" hidden>Container <select id="usersElementContainer"></select></label>
+                  <div id="usersGeometryError" class="users-geometry-error" role="tooltip" hidden></div>
+                </div>
+              </div>
+              <div data-users-editor-content="control" hidden>
+                <div id="usersControlInspector" class="users-control-inspector" aria-label="Selected control settings" hidden>
+                  <label class="users-control-inspector-label">Label <input id="usersControlCustomLabel" type="text" maxlength="80" autocomplete="off"></label>
+                  <label class="users-control-inspector-toggle"><input id="usersControlShowLabel" type="checkbox" checked> Show label</label>
+                  <label class="users-control-inspector-container">Section <select id="usersControlContainer"></select></label>
+                  <div id="usersControlTypeOptions" class="users-control-type-options"></div>
+                </div>
+              </div>
+              <div class="users-transform-options" data-users-editor-content="transform" hidden>
+                <button id="usersFreeTransformToggle" class="users-free-transform-toggle" type="button" aria-pressed="false">
+                  <span>Free transform</span><kbd>F</kbd>
+                </button>
+                <small>Disables snapping and spacing barriers while keeping objects inside their frame.</small>
+              </div>
+            </section>
+          </div>
+          <div class="users-layout-preset-tools users-layout-preset-section panel-section" aria-label="User layout presets">
+            <p class="section-label">Layout Preset</p>
+            <label>
+              <span>Preset</span>
+              <select id="usersLayoutPresetSelect" aria-label="User layout preset"></select>
+            </label>
+            <button id="usersAddLayoutPreset" type="button">Add preset</button>
+            <div class="users-layout-preset-actions" aria-label="Manage layout preset">
+              <button id="usersRenameLayoutPreset" type="button">Rename</button>
+              <button id="usersDuplicateLayoutPreset" type="button">Duplicate</button>
+              <button id="usersDeleteLayoutPreset" type="button">Delete</button>
+              <button id="usersResetLayout" type="button">Clear layout</button>
+            </div>
+          </div>
+        </aside>
+        <button id="usView" class="us-view-button" type="button" title="View whole journey" aria-label="View whole journey">
+          <span>View whole journey</span>
+        </button>
+        <div class="map-control-cluster" aria-label="Map view controls">
+          <button id="zoomIn" class="map-zoom-control" type="button" title="Zoom in">+</button>
+          <button id="zoomOut" class="map-zoom-control" type="button" title="Zoom out">-</button>
+          <button id="resetView" type="button">Reset layout</button>
+          <button id="setMapView" type="button" title="Save this camera position for the current view">Set view</button>
+          <div class="map-pan-row" aria-label="Pan view">
+            <button id="panLeft" type="button" aria-label="Pan left">‹</button>
+            <button id="panRight" type="button" aria-label="Pan right">›</button>
+          </div>
+        </div>
+        <div class="map-feature-toolbar" aria-label="Show or hide map features">
+          <button id="featureToggleMarkers" type="button" aria-label="Toggle markers"></button>
+          <button id="featureToggleStopNames" type="button" aria-label="Toggle route stop names"></button>
+          <button id="featureToggleRoute" type="button" aria-label="Toggle route"></button>
+          <button id="featureToggleRouteIcon" type="button" aria-label="Toggle route animation icon"></button>
+          <button id="featureToggleLandmarks" type="button" aria-label="Toggle landmarks"></button>
+          <button id="musicTrackButton" class="music-track-button is-unassigned" type="button" aria-label="Assign music for this view" title="Assign music for this view"><span class="material-symbols-rounded" aria-hidden="true">music_note</span></button>
+          <input id="musicTrackInput" type="file" accept="audio/*" hidden>
+        </div>
+        <section class="map-overview-locks" aria-label="Overview zone controls" hidden>
+          <label class="toggle-button">
+            <input id="allowPan" type="checkbox">
+            <span>Allow pan</span>
+          </label>
+          <label class="toggle-button">
+            <input id="allowZoom" type="checkbox">
+            <span>Allow zoom</span>
+          </label>
+        </section>
+        <div id="emptyState" class="empty-state startup-loading-state">
+          <div class="startup-loading-card">
+            <img src="assets/jump images/jump image 00.png" alt="Jump image">
+            <span>Loading route...</span>
+            <div class="startup-loading-bar" aria-hidden="true">
+              <div class="startup-loading-bar-fill"></div>
+            </div>
+          </div>
+        </div>
+        <section id="welcomeGate" class="welcome-gate leather-bg leather-brown" aria-label="Welcome screen" aria-live="polite">
+          <div class="welcome-card embedded-panel">
+            <img id="welcomeGateImage" src="assets/jump images/jump image 00.png" alt="Travel loading image">
+            <strong id="welcomeGateTitle">RV Route Map</strong>
+            <p id="welcomeGateMessage" class="welcome-message">Journey around the country with freedom in your hair, open roads ahead, and every stop ready to become part of the story.</p>
+            <span id="welcomeGateStatus">Waiting on timer and map features.</span>
+            <small id="welcomeGateDetail">Loading roads and map features...</small>
+            <div class="welcome-progress" aria-hidden="true"><span id="welcomeGateProgressFill"></span></div>
+            <div id="welcomeGateConsent" class="welcome-gate-actions">
+              <span>Allow sound and video for this trip?</span>
+              <div><button id="welcomeGateDecline" type="button">Don't allow</button><button id="welcomeGateAllow" type="button">Allow</button></div>
+            </div>
+          </div>
+        </section>
+        <div id="usageOverlay" class="usage-overlay" aria-live="polite">FPS -- · Memory n/a</div>
+        <button id="previousDay" class="day-edge-control day-edge-control-previous" type="button" aria-label="Previous stop">
+          <span class="material-symbols-rounded" aria-hidden="true">chevron_left</span>
+        </button>
+        <button id="nextDay" class="day-edge-control day-edge-control-next" type="button" aria-label="Next stop">
+          <span class="material-symbols-rounded" aria-hidden="true">chevron_right</span>
+        </button>
+        <div id="zoneModifyMapPrompt" class="zone-modify-map-prompt" hidden>CHOOSE A DAY TO MODIFY</div>
+        <section id="mediaViewer" class="media-viewer" aria-label="Trip media viewer" hidden>
+          <div class="media-viewer-frame">
+            <header class="media-viewer-head">
+              <strong id="mediaViewerTitle">Trip media</strong>
+              <div>
+                <button id="mediaViewerViewport" type="button" aria-label="Fit media inside map">
+                  <span class="material-symbols-rounded" aria-hidden="true">fit_screen</span>
+                </button>
+                <button id="mediaViewerFullscreen" type="button" aria-label="Fill screen">
+                  <span class="material-symbols-rounded" aria-hidden="true">fullscreen</span>
+                </button>
+                <button id="closeMediaViewer" type="button" aria-label="Close media">
+                  <span class="material-symbols-rounded" aria-hidden="true">close</span>
+                </button>
+              </div>
+            </header>
+            <div id="mediaViewerContent" class="media-viewer-content"></div>
+            <div id="mediaViewerControls" class="media-viewer-controls">
+              <button id="mediaPlayPause" type="button" aria-label="Play">
+                <span class="material-symbols-rounded" aria-hidden="true">play_arrow</span>
+              </button>
+              <input id="mediaPlayhead" type="range" min="0" max="100" step="0.01" value="0" aria-label="Media playhead">
+              <span id="mediaTime">0:00 / 0:00</span>
+              <button id="mediaMute" type="button" aria-label="Mute">
+                <span class="material-symbols-rounded" aria-hidden="true">volume_up</span>
+              </button>
+              <input id="mediaVolume" type="range" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            </div>
+          </div>
+        </section>
+        <div class="playback-panel" aria-label="Route playback controls">
+          <button id="reverseRoute" type="button" title="Show previous stop">
+            <span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>
+            <span class="playback-command">Previous</span>
+            <span class="playback-target">Stop</span>
+          </button>
+          <span id="journeyProgress" class="journey-progress">Stop 1</span>
+          <button id="playRoute" type="button" title="Show next stop">
+            <span class="playback-command">Next</span>
+            <span class="playback-target">Stop</span>
+            <span class="material-symbols-rounded" aria-hidden="true">arrow_forward</span>
+          </button>
+          <button id="playTripAnimation" class="trip-animation-launch" type="button" title="Animate every journey in the US view" hidden>
+            <span class="material-symbols-rounded" aria-hidden="true">route</span>
+            <span>Play trip animation</span>
+          </button>
+          <input id="playbackSpeed" type="range" min="0.25" max="4" step="0.25" value="1" hidden>
+          <div class="story-navigation" aria-label="Story navigation">
+            <div><button id="previousJourney" type="button">Previous journey</button><button id="nextJourney" type="button">Next journey</button></div>
+            <div><button id="previousRoute" type="button">Previous route</button><button id="nextRoute" type="button">Next route</button></div>
+            <div><button id="previousStop" type="button">Previous stop</button><button id="nextStop" type="button">Next stop</button></div>
+            <div><button id="previousStoryDay" type="button">Previous day</button><button id="nextStoryDay" type="button">Next day</button></div>
+          </div>
+        </div>
+        <section id="userStoryDock" class="user-story-dock" aria-label="Story navigation" hidden>
+          <div class="story-dock-left"><button id="randomThemeButton" class="random-theme-button" type="button" title="Choose a random theme"><img src="assets/SVG/Truck and RV Outline.svg" alt=""></button><button id="storyThemeSelect" type="button">Theme&#10;select</button></div>
+          <button id="storyPrevious" class="story-previous" type="button" aria-label="Go back in the story">‹</button>
+          <button id="storyNext" class="story-next" type="button">Start story</button>
+          <div class="story-dock-right"><button id="storyJourneyView" type="button">Journey&#10;view</button><button id="storyUsView" type="button">US&#10;view</button></div>
+        </section>
+      </section>
+
+      <aside class="panel" aria-label="Route controls and details">
+        <div class="panel-tabs" role="tablist" aria-label="Panel tabs">
+          <button id="tabMapUi" type="button" role="tab" aria-selected="true" aria-controls="panelMapUi" data-panel-tab="map-ui">Map</button>
+          <button id="tabElements" type="button" role="tab" aria-selected="false" aria-controls="panelElements" data-panel-tab="elements">Themes</button>
+          <button id="tabTrips" type="button" role="tab" aria-selected="false" aria-controls="panelTrips" data-panel-tab="trips">Trips</button>
+          <button id="tabMedia" type="button" role="tab" aria-selected="false" aria-controls="panelMedia" data-panel-tab="media">Media</button>
+          <button id="tabUsers" type="button" role="tab" aria-selected="false" aria-controls="panelUsers" data-panel-tab="users">UI</button>
+          <button id="userRecordButton" class="panel-record-button" type="button" title="Record exposed controls" aria-label="Record exposed controls" aria-pressed="false">●</button>
+        </div>
+
+        <div class="panel-tab-panels">
+          <section class="pinned-journey-section" aria-label="Current journey">
+            <div class="pinned-section-side-tabs" role="group" aria-label="Show pinned controls">
+              <button type="button" class="pinned-side-tab" data-pinned-section-toggle="trip" aria-pressed="false" aria-label="Show or hide the Trip selector" title="Show or hide the Trip selector">T</button>
+              <button type="button" class="pinned-side-tab" data-pinned-section-toggle="journey" aria-pressed="true" aria-label="Show or hide the Journey selector" title="Show or hide the Journey selector">J</button>
+              <button type="button" class="pinned-side-tab" data-pinned-section-toggle="stop-day" aria-pressed="true" aria-label="Show or hide the paired Stop and Day controls" title="Show or hide the paired Stop and Day controls">S</button>
+              <button type="button" class="pinned-side-tab" data-pinned-section-toggle="route" aria-pressed="true" aria-label="Show or hide the Route selector" title="Show or hide the Route selector">R</button>
+            </div>
+            <details class="pinned-subsection pinned-trip-details" hidden>
+              <summary>
+                <span>Trip</span>
+                <label class="pinned-summary-picker">
+                  <select id="topTripSelect" aria-label="Trip"><option value="trip-1" selected>Trip 1</option></select>
+                  <input id="tripTierRenameInput" type="text" maxlength="80" hidden>
+                </label>
+                <button id="tripTierEditName" class="rename-inline-button" type="button">Edit name</button>
+              </summary>
+            </details>
+            <details class="pinned-subsection pinned-journey-details">
+              <summary>
+                <span>Journey</span>
+                <label class="pinned-summary-picker">
+                  <select id="tripSelect" aria-label="Journey"></select>
+                  <input id="tripRenameInput" type="text" maxlength="80" hidden>
+                </label>
+                <button id="journeyViewAll" class="rename-inline-button" type="button">Edit name</button>
+              </summary>
+            </details>
+            <details class="pinned-subsection pinned-day-details">
+              <summary>
+                <span>Stop</span>
+                <label class="pinned-summary-picker">
+                  <select id="routeDaySelect" aria-label="Stop"></select>
+                </label>
+                <button id="renameDayButton" class="rename-inline-button" type="button">Edit name</button>
+              </summary>
+              <div class="pinned-stop-subsection-bar">
+                <button id="stopDatesToggle" class="pinned-stop-twirl" type="button" aria-expanded="true">
+                  <span class="pinned-stop-twirl-arrow" aria-hidden="true">›</span><span>Dates</span>
+                </button>
+              </div>
+              <div id="stopDatesSubsection" class="stop-date-editor pinned-stop-subsection-content pinned-stop-dates" aria-label="Stop dates">
+                <label class="text-control pinned-stop-day-picker">
+                  <span>Day</span>
+                  <select id="stopDaySelect" aria-label="Day at selected stop"></select>
+                </label>
+                <label class="inline-start-toggle stop-day-sequence-toggle" title="Continue day numbers from previous stops">
+                  <input id="followStopDaySequence" type="checkbox">
+                  <span>Follow sequence</span>
+                </label>
+                <div class="stop-day-divider" aria-hidden="true"></div>
+                <div class="stop-date-fields">
+                  <label>
+                    <span>Arrive</span>
+                    <input id="stopArrivalDate" type="text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY">
+                  </label>
+                  <span class="stop-date-separator" aria-hidden="true">–</span>
+                  <label>
+                    <span>Leave</span>
+                    <input id="stopDepartureDate" type="text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY">
+                  </label>
+                  <button id="stopCalendarButton" class="stop-calendar-button" type="button" aria-label="Choose arrival and departure dates" aria-expanded="false">
+                    <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+                  </button>
+                </div>
+                <small id="stopDateMessage" class="stop-date-message" aria-live="polite"></small>
+                <div id="stopCalendarPopover" class="stop-calendar-popover" hidden>
+                  <div class="stop-calendar-header">
+                    <button id="stopCalendarPrevious" type="button" aria-label="Previous month">‹</button>
+                    <strong id="stopCalendarMonth"></strong>
+                    <button id="stopCalendarNext" type="button" aria-label="Next month">›</button>
+                  </div>
+                  <div class="stop-calendar-weekdays" aria-hidden="true">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                  </div>
+                  <div id="stopCalendarGrid" class="stop-calendar-grid" role="grid" aria-label="Choose stop date range"></div>
+                  <small id="stopCalendarHint">Choose arrival, then departure.</small>
+                </div>
+              </div>
+              <div id="dayRenameFields" class="day-rename-fields" hidden>
+                <input id="dayRenameNameInput" type="text" maxlength="80" placeholder="Stop name">
+                <div class="day-rename-linked-row">
+                  <input id="dayRenameStartInput" type="text" maxlength="120" placeholder="Start point">
+                  <label class="inline-start-toggle">
+                    <input id="dayRenameIndependentStartName" type="checkbox">
+                    <span>Different start</span>
+                  </label>
+                </div>
+                <input id="dayRenameEndInput" type="text" maxlength="120" placeholder="Endpoint">
+              </div>
+            </details>
+            <details class="pinned-subsection pinned-route-details">
+              <summary>
+                <span>Route</span>
+                <label class="pinned-summary-picker">
+                  <select id="pinnedRouteSelect" aria-label="Route"></select>
+                </label>
+                <label class="pinned-gps-toggle">
+                  <span>GPS</span>
+                  <input id="showEndpointGps" type="checkbox" checked>
+                </label>
+              </summary>
+              <div class="pinned-stop-subsection-bar">
+                <button id="stopStatsToggle" class="pinned-stop-twirl" type="button" aria-expanded="true">
+                  <span class="pinned-stop-twirl-arrow" aria-hidden="true">›</span><span>Route stats</span>
+                </button>
+              </div>
+              <div id="stopStatsSubsection" class="pinned-day-stats pinned-route-stats" aria-label="Route stats">
+                <div class="pinned-day-stats-top">
+                  <span>Distance</span>
+                  <strong id="distanceValue">--</strong>
+                </div>
+                <div class="pinned-day-stats-names">
+                  <div><span>Start:</span><strong id="startNameValue">--</strong></div>
+                  <div><span>End:</span><strong id="endNameValue">--</strong></div>
+                </div>
+                <div class="pinned-day-stats-gps">
+                  <span id="startGpsValue">--</span>
+                  <span id="endGpsValue">--</span>
+                </div>
+              </div>
+              <small id="statusText" class="pinned-route-status">Using untitled_map.kml</small>
+            </details>
+          </section>
+
+          <div id="panelMapUi" class="panel-tab-panel" role="tabpanel" aria-labelledby="tabMapUi" data-panel-tab-panel="map-ui">
+            <h1 id="routeTitle" class="sr-only">Untitled Map</h1>
+            <div id="routeDayButtons" class="day-buttons sr-only" aria-label="Route days"></div>
+            <section class="selection-section panel-section" aria-label="Map feature selection">
+              <p class="section-label">Selection</p>
+              <div class="selection-inline-types"><label><input id="selectionTypeStickers" type="checkbox" checked> Stickers</label><label><input id="selectionTypeLandmarks" type="checkbox" checked> Landmarks</label><label><input id="selectionTypeMarkers" type="checkbox" checked> Markers</label><label><input id="selectionTypeRouteIcon" type="checkbox" checked> Route icon</label></div>
+              <div class="selection-controls">
+                <button id="selectionSelectAll" type="button">Select all</button>
+                <button id="selectionSelectNone" type="button">Select none</button>
+                <button id="selectionSelectByType" type="button">By type</button>
+                <button id="selectionGroup" type="button">Group</button>
+                <button id="selectionUngroup" type="button">Ungroup</button>
+                <output id="selectionCount" aria-live="polite">0 selected</output>
+              </div>
+            </section>
+
+            <section class="journey-styles-section panel-section" aria-label="Journey styles">
+              <p class="section-label">Journey Styles</p>
+              <div class="journey-style-identity-row">
+                <label class="text-control journey-style-select"><span>Journey</span><select id="journeyStyleTarget"></select></label>
+                <label class="compact-color-control"><span>Inner route color</span><input id="journeyStyleColor" type="color" value="#d1495b"></label>
+              </div>
+              <div class="journey-label-controls">
+                <label class="text-control"><span>Route labels</span><select id="journeyStyleRouteLabelVisibility"><option value="always">Always show</option><option value="never">Never show</option><option value="hover">Show when hovered</option><option value="active">Show when active</option></select></label>
+                <label class="text-control"><span>Label text</span><select id="journeyStyleRouteLabelContent"><option value="all">Route name + start/end stops</option><option value="route">Route name only</option><option value="endpoints">Start/end stops only</option><option value="start">Start stop only</option><option value="end">End stop only</option></select></label>
+              </div>
+              <label class="range-control compact-joined-control">
+                <span>All journeys thickness</span>
+                <input id="journeyStyleUsWidth" type="range" min="2" max="24" step="1" value="6">
+                <output id="journeyStyleUsWidthValue" for="journeyStyleUsWidth">6</output>
+              </label>
+              <div class="journey-outline-controls">
+                <label class="compact-color-control"><span>Trip-wide outer stroke</span><input id="journeyStyleOutlineColor" type="color" value="#fffdf8"></label>
+                <label class="range-control compact-shape-slider"><span>Width</span><input id="journeyStyleOutlineWidth" type="range" min="0" max="16" step="0.5" value="4"><output id="journeyStyleOutlineWidthValue">4</output></label>
+                <label class="range-control compact-shape-slider"><span>Opacity</span><input id="journeyStyleOutlineOpacity" type="range" min="0" max="1" step="0.05" value="0.9"><output id="journeyStyleOutlineOpacityValue">0.9</output></label>
+              </div>
+              <fieldset class="journey-us-features compact-check-grid">
+                <legend>Show in US view</legend>
+                <label><input data-journey-us-feature="route" type="checkbox" checked> Route</label>
+                <label><input data-journey-us-feature="labels" type="checkbox" checked> Journey name</label>
+                <label><input data-journey-us-feature="landmarks" type="checkbox"> Landmarks</label>
+                <label><input data-journey-us-feature="stopMarkers" type="checkbox"> Stop markers</label>
+                <label><input data-journey-us-feature="mediaPins" type="checkbox"> Media pins</label>
+                <label><input data-journey-us-feature="stickers" type="checkbox" checked> Stickers</label>
+              </fieldset>
+            </section>
+
+            <section class="route-controls-section panel-section" aria-label="Overview route controls">
+              <p class="section-label">Routes</p>
+              <div class="route-color-controls">
+                <label>
+                  <span>Selected</span>
+                  <input id="selectedRouteColor" type="color" value="#2f8f46">
+                </label>
+                <label>
+                  <span>Preceding</span>
+                  <input id="precedingRouteColor" type="color" value="#2777d8">
+                </label>
+                <label>
+                  <span>Following</span>
+                  <input id="followingRouteColor" type="color" value="#d9442e">
+                </label>
+                <label>
+                  <span>Fill</span>
+                  <input id="routeFillColor" type="color" value="#111111">
+                </label>
+              </div>
+              <label class="toggle-button">
+                <input id="enableMapLibre" type="checkbox">
+                <span>Use OSM road basemap</span>
+              </label>
+              <label class="toggle-button">
+                <input id="animateOverviewRoutes" type="checkbox" checked>
+                <span>Animate hovered routes</span>
+              </label>
+              <label class="range-control">
+                <span>Animation time</span>
+                <input id="overviewRouteAnimationTime" type="range" min="0.1" max="2" step="0.1" value="0.6">
+                <output id="overviewRouteAnimationTimeValue" for="overviewRouteAnimationTime">0.6s</output>
+              </label>
+              <label class="range-control">
+                <span>Hover area inset</span>
+                <input id="overviewDeadZone" type="range" min="0" max="120" step="2" value="30">
+              </label>
+              <label class="range-control">
+                <span>Zone size</span>
+                <input id="overviewZoneSize" type="range" min="8" max="120" step="2" value="34">
+                <output id="overviewZoneSizeValue" for="overviewZoneSize">34</output>
+              </label>
+              <label class="text-control">
+                <span>Zone display</span>
+                <select id="zoneDisplayType">
+                  <option value="rectangle">Rectangle mode</option>
+                  <option value="route">Route mode</option>
+                </select>
+              </label>
+              <div id="routeZoneModeControls" class="route-zone-mode-controls" hidden>
+                <label class="range-control">
+                  <span>Route band size</span>
+                  <input id="routeZoneSize" type="range" min="1" max="80" step="1" value="22">
+                  <output id="routeZoneSizeValue" for="routeZoneSize">22</output>
+                </label>
+                <label class="range-control">
+                  <span>Route band offset</span>
+                  <input id="routeZoneOffset" type="range" min="-80" max="80" step="2" value="0">
+                  <output id="routeZoneOffsetValue" for="routeZoneOffset">0</output>
+                </label>
+              </div>
+              <button id="modifyZonesByDay" class="zone-modify-toggle" type="button" aria-expanded="false" aria-controls="dayZoneModifyPanel">Modify by day</button>
+              <div id="dayZoneModifyPanel" class="day-zone-modify-panel" hidden>
+                <p>CHOOSE A DAY TO MODIFY</p>
+                <label class="text-control">
+                  <span>Zone shape</span>
+                  <select id="dayZoneShape">
+                    <option value="rect">Rectangle</option>
+                    <option value="rounded">Rounded rectangle</option>
+                    <option value="ellipse">Ellipse</option>
+                    <option value="diamond">Diamond</option>
+                    <option value="route-hull">Route hull</option>
+                  </select>
+                </label>
+                <label class="range-control">
+                  <span>Vertical size</span>
+                  <input id="dayZoneVerticalSize" type="range" min="0.5" max="2.5" step="0.05" value="1">
+                  <output id="dayZoneVerticalSizeValue" for="dayZoneVerticalSize">1.00</output>
+                </label>
+                <label class="range-control">
+                  <span>Horizontal size</span>
+                  <input id="dayZoneHorizontalSize" type="range" min="0.5" max="2.5" step="0.05" value="1">
+                  <output id="dayZoneHorizontalSizeValue" for="dayZoneHorizontalSize">1.00</output>
+                </label>
+                <hr>
+                <label class="range-control">
+                  <span>Vertical offset</span>
+                  <input id="dayZoneVerticalOffset" type="range" min="-120" max="120" step="2" value="0">
+                  <output id="dayZoneVerticalOffsetValue" for="dayZoneVerticalOffset">0</output>
+                </label>
+                <label class="range-control">
+                  <span>Horizontal offset</span>
+                  <input id="dayZoneHorizontalOffset" type="range" min="-120" max="120" step="2" value="0">
+                  <output id="dayZoneHorizontalOffsetValue" for="dayZoneHorizontalOffset">0</output>
+                </label>
+              </div>
+              <div class="zone-default-actions zone-default-actions-bottom">
+                <p>Defaults placeholder</p>
+                <button id="zoneDefaultsFromTrip" type="button">Use current trip values</button>
+                <button id="zoneDefaultsFromFile" type="button">Use file defaults</button>
+              </div>
+            </section>
+
+            <section class="route-animation-section panel-section" aria-label="Route camera animation controls">
+              <p class="section-label">Route Animation</p>
+              <p class="compact-section-note">Choose how the camera frames each animated route. Whole route is the default, reliable view.</p>
+              <input id="routePlaybackSpeed" type="range" min="0.1" max="5" step="0.05" value="1" hidden>
+              <output id="routePlaybackSpeedValue" for="routePlaybackSpeed">Speed 3 · 1.00x</output>
+              <label class="text-control">
+                <span>Animation camera</span>
+                <select id="routeCameraMode">
+                  <option value="overview">Whole route</option>
+                  <option value="saved">Saved route view</option>
+                  <option value="follow">Pan route corridor</option>
+                  <option value="static">Keep current view</option>
+                </select>
+              </label>
+              <div id="routeFollowCameraControls" class="route-follow-camera-controls" hidden>
+                  <label class="range-control"><span>Preferred pan zoom</span><input id="routeFollowZoom" type="range" min="6" max="15" step="0.25" value="10"><output id="routeFollowZoomValue" for="routeFollowZoom">10.00</output></label>
+                <label class="range-control"><span>Loose-center area</span><input id="routeFollowDeadZone" type="range" min="8" max="36" step="1" value="20"><output id="routeFollowDeadZoneValue" for="routeFollowDeadZone">20%</output></label>
+                <label class="toggle-button"><input id="routeFollowTurnAware" type="checkbox" checked><span>Smooth around dense turns</span></label>
+                  <small class="route-follow-camera-note">Pans a smoothed route corridor instead of chasing the icon. It will zoom out only when the corridor needs more room.</small>
+              </div>
+              <details class="trip-animation-icon-settings">
+                <summary>Trip animation icon</summary>
+                <p>Use a separate icon while the full trip is playing.</p>
+                <div class="trip-animation-icon-preview-wrap">
+                  <div id="tripAnimationIconPreview" class="route-animation-icon-preview" aria-label="Trip animation icon preview"></div>
+                </div>
+                <label class="toggle-button">
+                  <input id="tripAnimationSeparateIcon" type="checkbox">
+                  <span>Use a separate trip animation icon</span>
+                </label>
+                <div id="tripAnimationIconControls" hidden>
+                  <label class="text-control"><span>Trip icon image</span><select id="tripAnimationIconRecent"><option value="">Use route animation icon</option></select></label>
+                  <label class="range-control"><span>Trip icon size</span><input id="tripAnimationIconSize" type="range" min="0" max="100" step="1" value="40"><output id="tripAnimationIconSizeValue">40</output></label>
+                </div>
+              </details>
+            </section>
+
+            <section class="marker-controls-section panel-section" aria-label="Stop marker controls">
+              <p class="section-label">Stop Markers</p>
+              <label class="range-control">
+                <span>Size</span>
+                <input id="markerSize" type="range" min="0" max="100" step="1" value="40">
+                <output id="markerSizeValue" for="markerSize">40</output>
+              </label>
+              <label class="text-control">
+                <span>Marker display</span>
+                <select id="markerImageDisplay">
+                  <option value="before">Show marker before reached</option>
+                  <option value="always">Always show marker</option>
+                  <option value="reached">Show after reached</option>
+                  <option value="never">Never show marker</option>
+                </select>
+              </label>
+              <details class="icon-control-group icon-image-controls control-subsection" open>
+                <summary>Image</summary>
+                <div class="route-animation-icon-picker">
+                  <label class="file-control image-upload-control" aria-hidden="true">
+                    <span>Upload marker image</span>
+                    <input id="markerImageUpload" type="file" accept="image/*">
+                  </label>
+                  <label class="text-control">
+                    <span>Recent marker image</span>
+                    <select id="markerImageRecent">
+                      <option value="">Default marker</option>
+                    </select>
+                  </label>
+                </div>
+                <label class="range-control">
+                  <span>Marker image size</span>
+                  <input id="markerImageSize" type="range" min="0" max="200" step="1" value="47">
+                  <output id="markerImageSizeValue" for="markerImageSize">47</output>
+                </label>
+                <div class="marker-stroke-head">
+                  <span>Image strokes</span>
+                  <button id="addMarkerImageStroke" type="button">Add image stroke</button>
+                </div>
+                <div id="markerImageStrokeList" class="marker-stroke-list"></div>
+              </details>
+              <details class="icon-control-group icon-shape-controls control-subsection" open>
+                <summary>Shape</summary>
+                <div class="compact-shape-size-row">
+                  <label class="text-control compact-shape-select">
+                    <span>Shape</span>
+                    <select id="markerShape">
+                    <option value="circle">Circle</option>
+                    <option value="pin">Pin</option>
+                    <option value="square">Square</option>
+                    <option value="diamond">Diamond</option>
+                    <option value="star">Star</option>
+                    <option value="heart">Heart</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="hexagon">Hexagon</option>
+                    <option value="octagon">Octagon</option>
+                    <option value="cross">Cross</option>
+                    <option value="shield">Shield</option>
+                    <option value="capsule">Capsule</option>
+                    </select>
+                  </label>
+                  <label class="range-control compact-shape-slider">
+                    <span>Shape size</span>
+                    <input id="markerShapeSize" type="range" min="0" max="100" step="1" value="71">
+                    <output id="markerShapeSizeValue" for="markerShapeSize">71</output>
+                  </label>
+                </div>
+                <div class="marker-fill-row">
+                  <input id="markerFillColor" type="color" value="#111827" aria-label="Marker fill color">
+                  <label>
+                    <input id="markerFillEnabled" type="checkbox" checked>
+                    <span>Fill</span>
+                  </label>
+                </div>
+                <div class="marker-stroke-head">
+                  <span>Shape strokes</span>
+                  <button id="addMarkerStroke" type="button">Add stroke</button>
+                </div>
+                <div id="markerStrokeList" class="marker-stroke-list"></div>
+              </details>
+            </section>
+
+            <section class="route-animation-icon-section panel-section" aria-label="Route icon controls">
+              <p class="section-label">Route Icon</p>
+              <label class="toggle-button">
+                <input id="routeAnimationIconEnabled" type="checkbox" checked>
+                <span>Show animation icon</span>
+              </label>
+              <label class="text-control">
+                <span>Hide at town</span>
+                <select id="routeAnimationIconHideAtTown">
+                  <option value="both">Hide marker and landmark</option>
+                  <option value="marker">Hide marker only</option>
+                  <option value="landmark">Hide landmark only</option>
+                  <option value="none">Hide neither</option>
+                </select>
+              </label>
+              <details class="icon-control-group icon-image-controls control-subsection" open>
+                <summary>Image</summary>
+                <div class="route-animation-icon-top">
+                  <div class="route-animation-icon-actions">
+                    <label class="file-control image-upload-control" aria-hidden="true">
+                      <span>Upload icon</span>
+                      <input id="routeAnimationIconUpload" type="file" accept="image/*">
+                    </label>
+                    <label class="text-control">
+                      <span>Recent upload</span>
+                      <select id="routeAnimationIconRecent">
+                        <option value="">Default arrow</option>
+                      </select>
+                    </label>
+                    <button id="exportRouteAnimationIcon" class="route-animation-export-button" type="button">Export icon</button>
+                  </div>
+                  <div class="route-animation-icon-preview-wrap secondary-preview-source" aria-label="Animation icon preview">
+                    <div id="routeAnimationIconPreview" class="route-animation-icon-preview"></div>
+                  </div>
+                </div>
+                <label class="range-control">
+                  <span>Overall size</span>
+                  <input id="routeAnimationIconSize" type="range" min="0" max="100" step="1" value="40">
+                  <output id="routeAnimationIconSizeValue" for="routeAnimationIconSize">40</output>
+                </label>
+                <label class="range-control">
+                  <span>Image size</span>
+                  <input id="routeAnimationIconImageSize" type="range" min="0" max="200" step="1" value="47">
+                  <output id="routeAnimationIconImageSizeValue" for="routeAnimationIconImageSize">47</output>
+                </label>
+                <div class="marker-stroke-head">
+                  <span>PNG image strokes</span>
+                  <button id="addRouteAnimationIconImageStroke" type="button">Add image stroke</button>
+                </div>
+                <div id="routeAnimationIconImageStrokeList" class="marker-stroke-list"></div>
+              </details>
+              <details class="icon-control-group icon-shape-controls control-subsection" open>
+                <summary>Shape</summary>
+                <label class="toggle-button shape-layer-toggle">
+                  <input id="routeAnimationIconBackgroundEnabled" type="checkbox" checked aria-label="Show route animation icon shape layer">
+                  <span>Show shape layer</span>
+                </label>
+                <div class="compact-shape-size-row">
+                  <label class="text-control compact-shape-select">
+                    <span>Shape</span>
+                    <select id="routeAnimationIconBackgroundShape">
+                    <option value="circle">Circle</option>
+                    <option value="pin">Pin</option>
+                    <option value="square">Square</option>
+                    <option value="diamond">Diamond</option>
+                    <option value="star">Star</option>
+                    <option value="heart">Heart</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="hexagon">Hexagon</option>
+                    <option value="octagon">Octagon</option>
+                    <option value="cross">Cross</option>
+                    <option value="shield">Shield</option>
+                    <option value="capsule">Capsule</option>
+                    </select>
+                  </label>
+                  <label class="range-control compact-shape-slider">
+                    <span>Size</span>
+                    <input id="routeAnimationIconShapeSize" type="range" min="0" max="100" step="1" value="71">
+                    <output id="routeAnimationIconShapeSizeValue" for="routeAnimationIconShapeSize">71</output>
+                  </label>
+                </div>
+                <div class="route-animation-icon-colors">
+                  <label>
+                    <span>Fill</span>
+                    <input id="routeAnimationIconBackgroundFill" type="color" value="#d9442e">
+                  </label>
+                  <label>
+                    <span>Fill mode</span>
+                    <select id="routeAnimationIconFillMode">
+                      <option value="shape">Shape fill</option>
+                      <option value="image">Fit to shape</option>
+                      <option value="none">No fill</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="marker-stroke-head">
+                  <span>Shape strokes</span>
+                  <button id="addRouteAnimationIconStroke" type="button">Add stroke</button>
+                </div>
+                <div id="routeAnimationIconStrokeList" class="marker-stroke-list"></div>
+              </details>
+            </section>
+
+            <section class="stickers-section panel-section" aria-label="Map stickers">
+              <p class="section-label">Stickers</p>
+              <div class="sticker-global-row">
+                <label class="text-control"><span>Default display</span><select id="stickerDefaultVisibility">
+                  <option value="always">Always</option>
+                  <option value="never">Never</option>
+                  <option value="reached" selected>When reached</option>
+                  <option value="before">Before reached</option>
+                  <option value="hover">Only when hovered</option>
+                </select></label>
+                <label class="range-control sticker-default-size-control"><span>Default size</span><input id="stickerDefaultSize" type="range" min="20" max="320" step="2" value="64"><output id="stickerDefaultSizeValue">64</output></label>
+                <label class="file-control sticker-upload-control"><span>Upload sticker</span><input id="stickerUpload" type="file" accept="image/*"></label>
+                <label class="text-control"><span>Library view</span><select id="stickerLibraryView"><option value="scroll">Scrollable</option><option value="expand">Expanded</option></select></label>
+              </div>
+              <div class="sticker-create-row">
+                <label class="text-control"><span>Create from text or emoji</span><input id="stickerCustomText" type="text" maxlength="4" placeholder="★ or RV"></label>
+                <label class="compact-color-control"><span>Color</span><input id="stickerCustomColor" type="color" value="#2f6f55"></label>
+                <button id="createTextSticker" type="button">Create</button>
+              </div>
+              <p class="compact-section-note">Drag a sticker onto the map. Right-click a placed sticker to preview its shape and color choices, then choose OK to save or Cancel to revert. Delete removes the selected sticker; Ctrl+C/V copies and pastes; Ctrl+X cuts; Ctrl+D duplicates when the browser allows it. Ctrl+Z undoes and Ctrl+Shift+Z or Ctrl+U redoes.</p>
+              <div id="stickerLibraryTabs" class="sticker-library-tabs" role="tablist" aria-label="Sticker categories">
+                <button type="button" data-sticker-category="all" aria-selected="true">All</button><button type="button" data-sticker-category="nature" aria-selected="false">Nature</button><button type="button" data-sticker-category="weather" aria-selected="false">Weather</button><button type="button" data-sticker-category="animals" aria-selected="false">Animals</button><button type="button" data-sticker-category="activity" aria-selected="false">Actions</button><button type="button" data-sticker-category="places" aria-selected="false">Places</button><button type="button" data-sticker-category="random" aria-selected="false">Random</button><button type="button" data-sticker-category="shapes" aria-selected="false">Shapes</button>
+              </div>
+              <div id="stickerLibrary" class="sticker-library" aria-label="Sticker library"></div>
+              <div id="pinLibraryControls" class="pin-library-controls" hidden>
+                <label class="compact-color-control"><span>Shape color</span><input id="pinLibraryColor" type="color" value="#2f6f55"></label>
+                <div><span class="pin-library-recent-label">Recent shape colors</span><div id="pinLibraryRecentColors" class="pin-library-recent-colors" aria-label="Recently used shape colors"></div></div>
+              </div>
+              <div id="stickerSelectionControls" class="sticker-selection-controls" hidden>
+                <strong id="selectedStickerName">Selected sticker</strong>
+                <label class="text-control"><span>Display override</span><select id="selectedStickerVisibility">
+                  <option value="inherit">Use default</option>
+                  <option value="always">Always</option>
+                  <option value="never">Never</option>
+                  <option value="reached">When reached</option>
+                  <option value="before">Before reached</option>
+                  <option value="hover">Only when hovered</option>
+                </select></label>
+                <label class="range-control"><span>Size</span><input id="selectedStickerSize" type="range" min="20" max="320" step="2" value="64"><output id="selectedStickerSizeValue">64</output></label>
+                <label class="toggle-button"><input id="selectedStickerAllZooms" type="checkbox"><span>Show at all zooms</span></label>
+                <button id="deleteSelectedSticker" type="button">Delete selected sticker</button>
+              </div>
+              <div class="map-annotation-tools" aria-label="Map drawing tools">
+                <strong>Map drawing</strong>
+                <p class="compact-section-note">Draw notes and callouts directly on the map. They are saved with this journey, separate from routes and stickers.</p>
+                <div class="map-annotation-controls">
+                  <label class="text-control"><span>Tool</span><select id="annotationType"><option value="line">Line</option><option value="arrow">Arrow</option><option value="box">Rectangle</option></select></label>
+                  <label class="compact-color-control"><span>Color</span><input id="annotationColor" type="color" value="#2f6f55"></label>
+                  <label class="range-control"><span>Width</span><input id="annotationWeight" type="range" min="1" max="16" step="1" value="4"><output id="annotationWeightValue">4</output></label>
+                  <button id="beginAnnotation" type="button">Draw on map</button>
+                  <button id="finishAnnotation" type="button" disabled>Finish drawing</button>
+                  <button id="clearAnnotations" type="button">Clear drawings</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="sticker-sfx-section panel-section" aria-label="Stickers FX">
+              <p class="section-label">Stickers FX</p>
+              <div class="sticker-sfx-toolbar">
+                <span>Map objects in the current view</span>
+                <label><span>View</span><select id="stickerSfxListMode">
+                  <option value="scroll">Scrollable</option>
+                  <option value="expand">Expanded</option>
+                  <option value="dropdown">Dropdown</option>
+                </select></label>
+              </div>
+              <div id="stickerFxClassTabs" class="sticker-fx-class-tabs" role="tablist" aria-label="Object classes"><button type="button" data-fx-class="all" aria-selected="true">All</button><button type="button" data-fx-class="sticker" aria-selected="false">Stickers</button><button type="button" data-fx-class="pin" aria-selected="false">Pins</button><button type="button" data-fx-class="media" aria-selected="false">Media</button><button type="button" data-fx-class="null" aria-selected="false">Null</button></div>
+              <select id="stickerSfxDropdown" aria-label="Choose a sticker" hidden></select>
+              <div id="stickerSfxGrid" class="sticker-sfx-grid"></div>
+              <div id="stickerSfxEditor" class="sticker-sfx-editor" hidden></div>
+            </section>
+
+            <section class="timeline-section panel-section" aria-label="Route timeline and sticker animation">
+              <p id="routeTimelineTitle" class="section-label">Route timeline</p>
+              <p id="routeTimelineNote" class="compact-section-note">Drag a sticker block to choose where it activates on the whole route. Overlapping stickers automatically use another track.</p>
+              <div class="timeline-transport" aria-label="Timeline playback controls">
+                <button id="timelinePlayBackward" type="button" title="Play backward" aria-label="Play backward">◀</button>
+                <button id="timelineStepBackward" type="button" title="Previous frame" aria-label="Previous frame"><span class="material-symbols-rounded" aria-hidden="true">skip_previous</span></button>
+                <button id="timelineStepForward" type="button" title="Next frame" aria-label="Next frame"><span class="material-symbols-rounded" aria-hidden="true">skip_next</span></button>
+                <button id="timelinePlayForward" type="button" title="Play forward" aria-label="Play forward">▶</button>
+                <button id="timelineLoop" type="button" title="Loop playback" aria-pressed="false">↻ Loop</button>
+                <label><span>Speed</span><select id="timelinePlaybackSpeed" aria-label="Timeline playback speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label>
+              </div>
+              <label class="range-control timeline-height-control"><span>Track height</span><input id="routeTimelineTrackHeight" type="range" min="32" max="116" step="2" value="44"><output id="routeTimelineTrackHeightValue">44px</output></label>
+              <div id="routeTimeline" class="route-timeline" aria-label="Route activation timeline"></div>
+              <label id="stopTimelineEndActionRow" class="text-control" hidden><span>At end of day</span><select id="stopTimelineEndAction"><option value="default">Use default</option><option value="wait">Wait for main button</option><option value="next">Automatically continue</option></select></label>
+              <label id="timelineDefaultEndActionRow" class="text-control" hidden><span>Default day end</span><select id="timelineDefaultEndAction"><option value="wait">Wait for main button</option><option value="next">Automatically continue</option></select></label>
+              <div class="sticker-animation-head"><strong>Sticker animation</strong><select id="stickerAnimationTarget" aria-label="Sticker animation target"></select></div>
+              <div id="stickerAnimationPreview" class="sticker-animation-preview" aria-label="Sticker animation preview"></div>
+              <div class="sticker-animation-controls">
+                <label class="text-control"><span>Preset</span><select id="stickerAnimationPreset"><option value="fade">Fade in</option><option value="bounce">Bounce up</option><option value="drop">Fade &amp; drop</option><option value="pop">Pop</option><option value="custom">Custom</option></select></label>
+                <label class="range-control"><span>Duration</span><input id="stickerAnimationDuration" type="range" min="0.1" max="3" step="0.1" value="0.5"><output id="stickerAnimationDurationValue">0.5s</output></label>
+                <label class="range-control keyframe-control"><span>Opacity</span><input id="stickerAnimationOpacity" type="range" min="0" max="1" step="0.05" value="1"><output id="stickerAnimationOpacityValue">100%</output><button type="button" data-sticker-keyframe="opacity" title="Add opacity keyframe">◆</button></label>
+                <label class="range-control keyframe-control"><span>Scale</span><input id="stickerAnimationScale" type="range" min="0.1" max="2" step="0.05" value="1"><output id="stickerAnimationScaleValue">100%</output><button type="button" data-sticker-keyframe="scale" title="Add scale keyframe">◆</button></label>
+                <label class="range-control keyframe-control"><span>Rotation</span><input id="stickerAnimationRotation" type="range" min="-180" max="180" step="5" value="0"><output id="stickerAnimationRotationValue">0°</output><button type="button" data-sticker-keyframe="rotation" title="Add rotation keyframe">◆</button></label>
+                <label id="stickerAnimationScaleYRow" class="range-control sticker-split-secondary" hidden><span>Scale Y</span><input id="stickerAnimationScaleY" type="range" min="0.1" max="2" step="0.05" value="1"><output id="stickerAnimationScaleYValue">100%</output></label>
+                <label class="range-control"><span id="stickerAnimationPositionXLabel">Position</span><input id="stickerAnimationPositionX" type="range" min="-100" max="100" step="1" value="0"><output id="stickerAnimationPositionXValue">0</output></label>
+                <label class="range-control"><span>Position Y</span><input id="stickerAnimationPositionY" type="range" min="-100" max="100" step="1" value="0"><output id="stickerAnimationPositionYValue">0</output></label>
+                <div class="sticker-transform-values" aria-label="Scale and position values">
+                  <label><span>Scale X</span><input id="stickerAnimationScaleXText" type="number" min="0.1" max="2" step="0.05" value="1"></label>
+                  <label><span>Scale Y</span><input id="stickerAnimationScaleYText" type="number" min="0.1" max="2" step="0.05" value="1"></label>
+                  <label class="uniform-scale-toggle"><span>Uniform scale</span><input id="stickerAnimationUniformScale" type="checkbox" checked></label>
+                  <label><span>Position X</span><input id="stickerAnimationPositionXText" type="number" min="-100" max="100" step="1" value="0"></label>
+                  <label><span>Position Y</span><input id="stickerAnimationPositionYText" type="number" min="-100" max="100" step="1" value="0"></label>
+                </div>
+                <label class="inline-start-toggle"><input id="stickerAnimationSplitScale" type="checkbox"><span>Split scale X / Y</span></label>
+                <label class="inline-start-toggle"><input id="stickerAnimationSplitPosition" type="checkbox"><span>Split position X / Y</span></label>
+                <button id="saveStickerAnimationPreset" type="button">Save preset</button><button id="applyStickerAnimationToMatching" type="button">Apply to matching stickers</button>
+              </div>
+              <label class="range-control"><span>Custom playhead</span><input id="stickerAnimationPlayhead" type="range" min="0" max="1" step="0.01" value="0"><output id="stickerAnimationPlayheadValue">0% · 0.0s</output></label>
+              <div class="timeline-transport sticker-animation-transport" aria-label="Sticker animation preview controls"><button id="stickerAnimationPlayBackward" type="button" title="Preview backward">◀</button><button id="stickerAnimationStepBackward" type="button" title="Previous frame"><span class="material-symbols-rounded">skip_previous</span></button><button id="stickerAnimationStepForward" type="button" title="Next frame"><span class="material-symbols-rounded">skip_next</span></button><button id="stickerAnimationPlayForward" type="button" title="Preview forward">▶</button><button id="stickerAnimationLoop" type="button" aria-pressed="false">↻ Loop</button></div>
+              <div id="stickerKeyframeTracks" class="sticker-keyframe-tracks" aria-label="Sticker transform keyframes"></div>
+              <div class="sticker-animation-loop-settings"><label class="text-control"><span>Keyed loop</span><select id="stickerAnimationLoopMode"><option value="none">Off</option><option value="timeline">Until timeline ends</option><option value="view">Until view changes</option></select></label><label class="range-control"><span>Loop delay</span><input id="stickerAnimationLoopDelay" type="range" min="0" max="5" step="0.1" value="0"><output id="stickerAnimationLoopDelayValue">0.0s</output></label></div>
+              <div class="sticker-path-tools"><button id="drawStickerPath" type="button">Draw map path</button><button id="finishStickerPath" type="button" disabled>Finish path</button><button id="clearStickerPath" type="button">Clear path</button><label><input id="snapStickerPathToRoute" type="checkbox"> Follow nearest route</label></div>
+              <div class="sticker-keyframe-editor" id="stickerKeyframeEditor">
+                <label class="text-control"><span>Keyframe type</span><select id="stickerKeyframeEasing" aria-label="Selected keyframe type"><option value="linear">Linear</option><option value="ease">Ease</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="hold">Hold</option><option value="bounce">Bounce</option></select></label>
+                <label class="range-control"><span>Intensity</span><input id="stickerKeyframeIntensity" type="range" min="0.2" max="2" step="0.1" value="1" aria-label="Selected keyframe intensity"><output id="stickerKeyframeIntensityValue">100%</output></label>
+                <label id="stickerPositionPathModeRow" class="text-control" hidden><span>Path to next</span><select id="stickerPositionPathMode"><option value="straight">Straight</option><option value="in-curve">In curve</option><option value="out-curve">Out curve</option><option value="zig-zag">Zig-zag</option><option value="wavy">Wavy</option></select></label>
+                <label id="stickerPositionPathFrequencyRow" class="range-control" hidden><span>Frequency</span><input id="stickerPositionPathFrequency" type="range" min="1" max="8" step="1" value="2"><output id="stickerPositionPathFrequencyValue">2</output></label>
+              </div>
+              <div class="sticker-keyframe-playhead-zone"><label class="text-control"><span>Animation frame</span><input id="stickerAnimationFrame" type="number" min="0" step="1" value="0" aria-label="Custom animation frame"></label><label class="text-control"><span>Frames</span><input id="stickerAnimationFrameCount" type="number" min="1" max="600" step="1" value="30" aria-label="Animation length in frames"></label><span>30 fps</span><button id="copyStickerKeyframes" type="button" title="Copy selected keyframes (Ctrl+C)">Copy frames</button><button id="pasteStickerKeyframes" type="button" title="Paste at playhead (Ctrl+V)">Paste frames</button></div>
+              <button id="deleteStickerKeyframe" type="button" disabled>Delete selected keyframe</button>
+            </section>
+
+            <section class="road-package-section panel-section" aria-label="Local road files" hidden>
+              <p class="section-label">Local Road Files</p>
+              <div class="road-package-actions">
+                <button id="downloadRoadPackage" type="button">Download road package</button>
+                <button id="chooseRoadFolder" type="button">Choose roads folder</button>
+              </div>
+              <input id="roadFolderInput" type="file" webkitdirectory directory multiple hidden>
+              <p id="roadFolderStatus" class="road-folder-status">No local roads folder selected.</p>
+            </section>
+          </div>
+
+          <div id="panelElements" class="panel-tab-panel" role="tabpanel" aria-labelledby="tabElements" data-panel-tab-panel="elements" hidden>
+            <section class="naming-conventions-section panel-section" aria-label="Naming conventions">
+              <p class="section-label">Naming Conventions</p>
+              <p class="compact-section-note">Choose the words used throughout the travel story. Changes are committed when you leave a field; refresh the user site to see its updated wording.</p>
+              <div id="terminologyControls" class="terminology-control-grid">
+                <label aria-label="Trip"><input data-terminology-key="trip" type="text" value="Trip" title="Trip"></label>
+                <label aria-label="Journey"><input data-terminology-key="journey" type="text" value="Journey" title="Journey"></label>
+                <label aria-label="Day"><input data-terminology-key="day" type="text" value="Day" title="Day"></label>
+                <label aria-label="Stop"><input data-terminology-key="stop" type="text" value="Stop" title="Stop"></label>
+                <label aria-label="Route"><input data-terminology-key="route" type="text" value="Route" title="Route"></label>
+                <label aria-label="Waypoint"><input data-terminology-key="waypoint" type="text" value="Waypoint" title="Waypoint"></label>
+                <label aria-label="Media"><input data-terminology-key="media" type="text" value="Media" title="Media"></label>
+                <label aria-label="Sticker"><input data-terminology-key="sticker" type="text" value="Sticker" title="Sticker"></label>
+              </div>
+            </section>
+            <section class="section-styles-section panel-section" aria-label="Section styles">
+              <p class="section-label">Section styles</p>
+              <label class="text-control"><span>Pinned panel wipe</span>
+                <select id="pinnedSectionEasing">
+                  <option value="curved-valley">Curved valley</option>
+                  <option value="smooth-step">Smooth step</option>
+                  <option value="soft-spring">Soft spring</option>
+                  <option value="cinema">Cinema glide</option>
+                  <option value="snappy" selected>Snappy settle</option>
+                </select>
+              </label>
+              <small id="pinnedSectionEasingHint" class="style-helper">Snappy settle: quick response with a small easing tail.</small>
+              <label class="text-control"><span>Pinned animation speed <output id="pinnedSectionSpeedValue">1×</output></span>
+                <input id="pinnedSectionSpeed" type="range" min="0.25" max="2" step="0.05" value="1">
+              </label>
+              <label class="checkbox-control"><input id="sectionColorWrapTabs" type="checkbox" checked> <span>Wrap across tabs</span></label>
+              <div class="section-color-loop-editor" aria-label="Section color loop editor">
+                <span class="color-row-label">Color options</span>
+                <div id="sectionColorOptions" class="section-color-row" role="list" aria-label="Available colors"></div>
+                <div class="color-loop-heading"><span class="color-row-label">Color loop</span><span class="color-loop-instruction">Left click to add, Right click to remove</span></div>
+                <div id="sectionColorLoop" class="section-color-row section-color-loop-row" role="list" aria-label="Colors used by the section loop"></div>
+                <span class="color-row-label">Pinned section colors</span>
+                <div id="pinnedSectionColorSlots" class="pinned-section-color-slots" aria-label="Pinned section colors">
+                  <button type="button" data-pinned-color-slot="trip">Trip</button>
+                  <button type="button" data-pinned-color-slot="journey">Journey</button>
+                  <button type="button" data-pinned-color-slot="stop-day">Stops</button>
+                  <button type="button" data-pinned-color-slot="route">Route</button>
+                  <button type="button" data-pinned-color-slot="tools">Device</button>
+                </div>
+              </div>
+              <small class="style-helper">Click a color to add it. Right-click to remove it. Drag an available color into the sequence, reorder sequence colors, or drag one back to the options to remove it.</small>
+            </section>
+            <section class="tooltip-theme-section panel-section" aria-label="Tooltips">
+              <p class="section-label">Tooltips</p>
+              <label class="text-control"><span>Display position</span>
+                <select id="helpTooltipPlacement">
+                  <option value="map-closest" selected>Map closest</option>
+                  <option value="cursor">Under cursor</option>
+                  <option value="target">Next to hovered item</option>
+                  <option value="map-bottom-right">Map bottom-right</option>
+                  <option value="map-top-right">Map top-right</option>
+                  <option value="map-middle">Map middle</option>
+                </select>
+              </label>
+              <div class="tooltip-color-row">
+                <label class="text-control"><span>Tooltip color</span><input id="helpTooltipColor" type="color" value="#48c8ff"></label>
+                <label class="text-control"><span>Font color</span><input id="helpTooltipFontColor" type="color" value="#071923"></label>
+                <label class="text-control"><span>Stroke color</span><input id="helpTooltipStrokeColor" type="color" value="#087eae"></label>
+                <label class="checkbox-control"><input id="helpTooltipMatch" type="checkbox"> <span>Match hovered item</span></label>
+              </div>
+              <label class="text-control"><span>Stroke <output id="helpTooltipStrokeWidthValue">2px</output></span><input id="helpTooltipStrokeWidth" type="range" min="0" max="6" step="1" value="2"></label>
+              <label class="text-control"><span>Corner rounding <output id="helpTooltipRadiusValue">9px</output></span><input id="helpTooltipRadius" type="range" min="0" max="18" step="1" value="9"></label>
+              <label class="checkbox-control"><input id="helpTooltipGlow" type="checkbox"> <span>Soft stroke glow</span></label>
+              <small class="style-helper">Map closest places the tooltip on the nearest map edge, aligned with the hovered control.</small>
+            </section>
+            <section class="font-theme-section panel-section" aria-label="Map font styles">
+              <p class="section-label">Fonts</p>
+              <label class="text-control">
+                <span>Modify font</span>
+                <select id="fontStyleTarget">
+                  <option value="ui">UI panels</option>
+                  <option value="smallTowns">Small towns</option>
+                  <option value="cities">Regional labels</option>
+                  <option value="capitols">Capitals</option>
+                  <option value="pois">POIs</option>
+                  <option value="routeStopLabels">Route stop labels</option>
+                </select>
+              </label>
+              <div class="font-preview-row">
+                <span id="fontStylePreview">Albuquerque</span>
+              </div>
+              <div class="font-control-grid">
+                <label class="text-control">
+                  <span>Color</span>
+                  <input id="fontStyleColor" type="color" value="#25313d">
+                </label>
+                <label class="text-control">
+                  <span>Typeface</span>
+                  <select id="fontStyleTypeface"></select>
+                </label>
+                <label class="text-control">
+                  <span>Weight</span>
+                  <select id="fontStyleWeight">
+                    <option value="400">Regular</option>
+                    <option value="500">Medium</option>
+                    <option value="600">Semi-bold</option>
+                    <option value="700">Bold</option>
+                    <option value="800">Extra bold</option>
+                  </select>
+                </label>
+                <label class="toggle-button compact-toggle">
+                  <input id="fontStyleItalic" type="checkbox">
+                  <span>Italic</span>
+                </label>
+                <label class="text-control">
+                  <span>Caps</span>
+                  <select id="fontStyleCase">
+                    <option value="normal">As written</option>
+                    <option value="title">Title case</option>
+                    <option value="upper">All caps</option>
+                    <option value="lower">Lowercase</option>
+                  </select>
+                </label>
+                <label class="toggle-button compact-toggle">
+                  <input id="fontStyleBackground" type="checkbox">
+                  <span>Text background</span>
+                </label>
+                <label class="text-control">
+                  <span>Background</span>
+                  <input id="fontStyleBackgroundColor" type="color" value="#ffffff">
+                </label>
+                <label class="range-control">
+                  <span>Bg opacity</span>
+                  <input id="fontStyleBackgroundOpacity" type="range" min="0" max="1" step="0.02" value="0.86">
+                  <output id="fontStyleBackgroundOpacityValue">0.86</output>
+                </label>
+              </div>
+              <div class="font-slider-grid">
+                <label class="range-control">
+                  <span>Size</span>
+                  <input id="fontStyleSize" type="range" min="8" max="24" step="0.25">
+                  <output id="fontStyleSizeValue">12</output>
+                </label>
+                <label class="range-control">
+                  <span>Thickness</span>
+                  <input id="fontStyleThickness" type="range" min="400" max="800" step="50">
+                  <output id="fontStyleThicknessValue">500</output>
+                </label>
+                <label class="range-control">
+                  <span>Width</span>
+                  <input id="fontStyleStretch" type="range" min="70" max="140" step="1">
+                  <output id="fontStyleStretchValue">100%</output>
+                </label>
+                <label class="range-control">
+                  <span>Height</span>
+                  <input id="fontStyleScaleY" type="range" min="80" max="130" step="1">
+                  <output id="fontStyleScaleYValue">100%</output>
+                </label>
+                <label class="range-control">
+                  <span>Kerning</span>
+                  <input id="fontStyleKerning" type="range" min="-0.08" max="0.16" step="0.01">
+                  <output id="fontStyleKerningValue">0.00em</output>
+                </label>
+                <label class="range-control">
+                  <span>Spacing</span>
+                  <input id="fontStyleSpacing" type="range" min="-0.08" max="0.18" step="0.01">
+                  <output id="fontStyleSpacingValue">0.00em</output>
+                </label>
+              </div>
+            </section>
+
+            <section class="toggle-section panel-section" aria-label="Map element toggles">
+              <p class="section-label">Map Elements</p>
+              <label class="toggle-button texture-scale-toggle">
+                <input id="textureScaleWithMap" type="checkbox">
+                <span id="textureScaleModeLabel">Texture size: Fixed on screen</span>
+              </label>
+              <div class="toggle-actions">
+                <button id="toggleAllOn" type="button">All on</button>
+                <button id="toggleAllOff" type="button">All off</button>
+              </div>
+              <div class="element-group-grid">
+                <fieldset class="element-group" data-element-group="land-sea">
+                  <legend>Land &amp; Sea</legend>
+                  <div class="element-control" data-style-key="land">
+                    <button class="element-select-button" type="button" data-style-select="land"><span>Land</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Land"><input id="toggleLand" type="checkbox" checked><span></span></label>
+                  </div>
+                    <div class="element-control" data-style-key="water">
+                      <button class="element-select-button" type="button" data-style-select="water"><span>Water</span></button>
+                      <label class="element-toggle-zone" title="Show or hide Water"><input id="toggleWater" type="checkbox" checked><span></span></label>
+                    </div>
+                    <div class="element-control" data-style-key="deserts">
+                      <button class="element-select-button" type="button" data-style-select="deserts"><span>Deserts</span></button>
+                      <label class="element-toggle-zone" title="Show or hide Deserts"><input id="toggleDeserts" type="checkbox" checked><span></span></label>
+                    </div>
+                    <div class="element-control" data-style-key="parks">
+                    <button class="element-select-button" type="button" data-style-select="parks"><span>Parks</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Parks"><input id="toggleParks" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="buildings">
+                    <button class="element-select-button" type="button" data-style-select="buildings"><span>Buildings</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Buildings"><input id="toggleBuildings" type="checkbox" checked><span></span></label>
+                  </div>
+                  <input id="toggleRoute" type="checkbox" checked hidden>
+                  <input id="toggleFaintRoute" type="checkbox" checked hidden>
+                  <input id="toggleMarkers" type="checkbox" checked hidden>
+                  <input id="toggleTexture" type="checkbox" checked hidden>
+                </fieldset>
+                <fieldset class="element-group" data-element-group="cities">
+                  <legend>Cities</legend>
+                  <div class="element-control" data-style-key="smallTowns">
+                    <button class="element-select-button" type="button" data-style-select="smallTowns"><span>Small towns</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Small towns"><input id="toggleSmallTowns" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="cities">
+                    <button class="element-select-button" type="button" data-style-select="cities"><span>Cities</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Cities"><input id="toggleCities" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="capitols">
+                    <button class="element-select-button" type="button" data-style-select="capitols"><span>Capitals</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Capitals"><input id="toggleCapitals" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="pois">
+                    <button class="element-select-button" type="button" data-style-select="pois"><span>POIs</span></button>
+                    <label class="element-toggle-zone" title="Show or hide POIs"><input id="togglePois" type="checkbox" checked><span></span></label>
+                  </div>
+                </fieldset>
+                <fieldset class="element-group" data-element-group="streets">
+                  <legend>Streets</legend>
+                  <div class="element-control" data-style-key="highways">
+                    <button class="element-select-button" type="button" data-style-select="highways"><span>Highways</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Highways"><input id="toggleHighways" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="majorRoads">
+                    <button class="element-select-button" type="button" data-style-select="majorRoads"><span>Major roads</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Major roads"><input id="toggleStreet" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="minorRoads">
+                    <button class="element-select-button" type="button" data-style-select="minorRoads"><span>Minor roads</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Minor roads"><input id="toggleFaintStreet" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="railroads">
+                    <button class="element-select-button" type="button" data-style-select="railroads"><span>Railroads</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Railroads"><input id="toggleRailroads" type="checkbox" checked><span></span></label>
+                  </div>
+                </fieldset>
+                <fieldset class="element-group" data-element-group="topography">
+                  <legend>Topography</legend>
+                  <div class="element-control" data-style-key="topography">
+                    <button class="element-select-button" type="button" data-style-select="topography"><span>Topography</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Topography"><input id="toggleTopo" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="faintTopography">
+                    <button class="element-select-button" type="button" data-style-select="faintTopography"><span>Faint topo</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Faint topo"><input id="toggleFaintTopo" type="checkbox" checked><span></span></label>
+                  </div>
+                </fieldset>
+                <fieldset class="element-group" data-element-group="day-zones">
+                  <legend>Day Zones</legend>
+                  <div class="element-control" data-style-key="dayZoneFill">
+                    <button class="element-select-button" type="button" data-style-select="dayZoneFill"><span>Day zone<br>fill</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Day zone fill"><input id="toggleDayZoneFill" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="dayZoneStroke">
+                    <button class="element-select-button" type="button" data-style-select="dayZoneStroke"><span>Day zone<br>stroke</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Day zone stroke"><input id="toggleDayZoneStroke" type="checkbox" checked><span></span></label>
+                  </div>
+                </fieldset>
+                <fieldset class="element-group" data-element-group="borders">
+                  <legend>Borders</legend>
+                  <div class="element-control" data-style-key="countryBorders">
+                    <button class="element-select-button" type="button" data-style-select="countryBorders"><span>Country borders</span></button>
+                    <label class="element-toggle-zone" title="Show or hide Country borders"><input id="toggleCountryBorders" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="stateBorders">
+                    <button class="element-select-button" type="button" data-style-select="stateBorders"><span>State borders</span></button>
+                    <label class="element-toggle-zone" title="Show or hide State borders"><input id="toggleStates" type="checkbox" checked><span></span></label>
+                  </div>
+                  <div class="element-control" data-style-key="countyBorders">
+                    <button class="element-select-button" type="button" data-style-select="countyBorders"><span>County borders</span></button>
+                    <label class="element-toggle-zone" title="Show or hide County borders"><input id="toggleFaintStates" type="checkbox" checked><span></span></label>
+                  </div>
+                </fieldset>
+              </div>
+            </section>
+
+            <section class="route-theme-section panel-section" aria-label="Route map themes">
+              <div class="route-theme-panel-head">
+                <div>
+                  <p class="section-label">Map Themes</p>
+                  <strong>Theme picker</strong>
+                </div>
+                <div class="route-theme-picker-actions">
+                  <button id="saveRouteTheme" type="button">Save as new</button>
+                  <button id="updateCurrentTheme" type="button">Update</button>
+                  <button id="saveCurrentThemeQuick" type="button">Save</button>
+                  <button id="cancelRouteThemePicker" type="button">Cancel</button>
+                  <button id="closeRouteThemePicker" type="button">Done</button>
+                </div>
+              </div>
+              <div id="routeThemeGrid" class="map-style-grid route-theme-grid" aria-label="Route map theme options"></div>
+              <section class="theme-presets-section" aria-labelledby="themePresetsHeading">
+                <div class="theme-presets-head">
+                  <div>
+                    <p class="section-label" id="themePresetsHeading">Theme Presets</p>
+                    <p>Save and apply only the parts of a theme you choose.</p>
+                  </div>
+                  <button id="saveThemePreset" type="button">Create preset</button>
+                </div>
+                <div class="theme-preset-display-controls">
+                  <label><span>Display</span><select id="themePresetView" aria-label="Theme preset display mode"><option value="grid">Grid</option><option value="scroll">Scrollable grid</option><option value="expanded">Expanded grid</option></select></label>
+                  <label class="theme-preset-default-select"><span>New-theme preset</span>
+                    <select id="themePresetDefaultSelect" aria-label="Preset applied to a new blank theme"><option value="">None selected</option></select>
+                  </label>
+                </div>
+                <div id="themePresetGrid" class="theme-preset-grid" aria-label="Saved partial theme presets"></div>
+              </section>
+            </section>
+
+            <section class="visited-states-section panel-section" aria-label="Visited states styles">
+              <p class="section-label">Visited States Styles</p>
+              <label class="toggle-button">
+                <input id="colorVisitedStates" type="checkbox">
+                <span>Color visited states</span>
+              </label>
+              <button class="element-select-button full-width-style-button" type="button" data-style-select="visitedStates">
+                <span>Visited states style</span>
+              </button>
+            </section>
+
+            <section class="sfx-section panel-section" aria-label="Sound effects">
+              <p class="section-label">SFX</p>
+              <div class="sfx-section-toolbar">
+                <p>Assign short sounds to navigation, playback, media, and User-site actions.</p>
+                <label><span>Master volume</span><input id="sfxMasterVolume" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+              </div>
+              <div id="sfxEventList" class="sfx-event-list" aria-live="polite"></div>
+            </section>
+
+            <section id="musicSection" class="music-section panel-section" aria-label="Music tracks">
+              <p class="section-label">Music</p>
+              <p class="compact-section-note">Optional local tracks for each view. Audio stays in this browser and is not included in public exports.</p>
+              <div class="music-scope-selectors" aria-label="Music track location">
+                <label><span>Trips</span><select id="musicTripSelect"></select></label>
+                <label><span>Journeys</span><select id="musicJourneySelect"></select></label>
+                <label><span>Routes</span><select id="musicRouteSelect"></select></label>
+                <label><span>Stops</span><select id="musicStopSelect"></select></label>
+                <label><span>Days</span><select id="musicDaySelect"></select></label>
+              </div>
+              <div id="musicAssignmentEditor" class="music-assignment-editor" aria-live="polite"></div>
+            </section>
+
+            <section class="preset-section panel-section" aria-label="Map presets">
+              <p class="section-label">Presets</p>
+              <div class="preset-controls">
+                <select id="presetSelect" aria-label="Toggle presets">
+                  <option value="">Toggle presets</option>
+                </select>
+                <button id="savePreset" type="button" title="Save current toggles">+</button>
+              </div>
+              <div class="preset-controls">
+                <select id="stylePresetSelect" aria-label="Style presets">
+                  <option value="">Style presets</option>
+                </select>
+                <button id="saveStylePreset" type="button" title="Save current styles">+</button>
+              </div>
+              <div class="preset-actions">
+                <button id="exportStyles" type="button">Export styles</button>
+                <button id="saveStylesToProject" type="button" title="Choose a local destination for assets/files/styles/rv-map-styles.json">Export styles…</button>
+                <label class="import-button">
+                  <span>Import styles</span>
+                  <input id="importStyles" type="file" accept=".json,application/json">
+                </label>
+              </div>
+              <p class="route-service-note">Project target: <code>assets/files/styles/rv-map-styles.json</code></p>
+            </section>
+
+            <section class="panel-global-actions panel-section" aria-label="All UI settings">
+              <button id="editUiTheme" type="button">Theme UI</button>
+              <button id="saveAllSettings" type="button">Export all</button>
+              <button id="exportUiSettings" type="button">Export UI settings</button>
+              <button id="saveUiSettingsToProject" type="button" title="Choose a local destination for assets/files/settings/rv-map-ui-settings.json">Export UI settings…</button>
+              <label class="import-button">
+                <span>Import UI settings</span>
+                <input id="importUiSettings" type="file" accept=".json,application/json">
+              </label>
+              <p class="route-service-note">Project target: <code>assets/files/settings/rv-map-ui-settings.json</code></p>
+            </section>
+
+            <section class="road-download-section panel-section" aria-label="Road package downloads" hidden>
+              <p class="section-label">Road Files</p>
+              <button id="downloadRoadPackageElements" type="button">Download needed road files</button>
+              <p class="route-service-note">Downloads the road manifest and local GeoJSON road files for the selected journey.</p>
+            </section>
+          </div>
+
+          <div id="panelTrips" class="panel-tab-panel trips-panel" role="tabpanel" aria-labelledby="tabTrips" data-panel-tab-panel="trips" hidden>
+            <section class="trip-tier-section panel-section" aria-label="Trips">
+              <p class="section-label">Trips</p>
+              <div class="trip-create-row">
+                <input id="newTopTripName" type="text" maxlength="80" placeholder="New trip name">
+                <button id="addTopTrip" type="button">Add trip</button>
+              </div>
+              <div class="journey-delete-actions">
+                <button id="deleteTopTrip" class="secondary-action danger-action" type="button">Delete current trip</button>
+              </div>
+              <p class="compact-section-note">The pinned Trip selector changes the active US view. Each trip owns its own journeys.</p>
+            </section>
+
+            <section class="trip-manager-section panel-section" aria-label="Journeys">
+              <p class="section-label">Journeys</p>
+              <div class="trip-create-row">
+                <input id="newTripName" type="text" maxlength="80" placeholder="New journey name" data-required-message="Journey name required">
+                <button id="addTrip" type="button">Add journey</button>
+              </div>
+              <div class="trip-data-actions">
+                <button id="exportTrips" type="button">Export journeys</button>
+                <button id="saveJourneysToProject" type="button" title="Choose and overwrite trips/rv-map-journeys.json">Save journeys to project…</button>
+                <label class="import-button">
+                  <span>Import journeys</span>
+                  <input id="importTrips" type="file" accept=".json,application/json">
+                </label>
+                <button id="restoreTripsBackup" type="button">Restore backup</button>
+              </div>
+              <p class="route-service-note">Project target: <code>trips/rv-map-journeys.json</code></p>
+              <div class="journey-delete-actions">
+                <label><span>Delete</span><select id="deleteJourneyMode"><option value="with-stops">Journey and its stops</option><option value="keep-stops">Journey only; keep stops</option></select></label>
+                <button id="deleteTrip" class="secondary-action danger-action" type="button">Delete current journey</button>
+              </div>
+            </section>
+
+            <section class="route-builder-section panel-section" aria-label="Stops">
+              <p class="section-label">Stops</p>
+              <div class="text-control">
+                <div class="field-label-inline">
+                  <label for="newDayLabel">Destination stop</label>
+                  <label class="inline-start-toggle">
+                    <input id="newDaySequence" type="checkbox" checked>
+                    <span>Automatic sequence</span>
+                  </label>
+                </div>
+                <input id="newDayLabel" type="text" maxlength="80" placeholder="Stop name" data-required-message="Stop name required">
+              </div>
+              <label class="toggle-button rest-day-toggle">
+                <input id="newDayRestDay" type="checkbox">
+                <span>Rest day</span>
+              </label>
+              <div class="address-route-grid">
+                <div id="routeStartAddressRow" class="text-control">
+                  <div class="field-label-inline">
+                    <label id="routeStartAddressLabel" for="routeStartAddress">Starting location</label>
+                    <label id="newDayIndependentStartRow" class="inline-start-toggle">
+                      <input id="newDayIndependentStart" type="checkbox" data-keyboard-only-tab>
+                      <span>Start this route somewhere new</span>
+                    </label>
+                  </div>
+                  <input id="routeStartAddress" type="search" autocomplete="street-address" placeholder="Address, city, or place" data-required-message="Starting location required" data-keyboard-only-tab>
+                </div>
+                <label class="text-control">
+                  <span>Destination</span>
+                  <input id="routeEndAddress" type="search" autocomplete="street-address" placeholder="Address, city, or place" data-required-message="Destination required">
+                </label>
+              </div>
+              <button id="createAddressRoute" class="primary-action" type="button">Create route from addresses</button>
+              <div class="route-divider"><span>or</span></div>
+              <label class="file-control route-file-control">
+                <span>Add GPX/KML/JSON route(s)</span>
+                <input id="tripRouteInput" type="file" accept=".gpx,.kml,.json,application/gpx+xml,application/vnd.google-earth.kml+xml,application/json" multiple>
+              </label>
+              <p class="route-service-note">Address routes use OpenStreetMap search and OSRM road routing. They are standard driving routes, so verify RV height, weight, propane, and road restrictions separately.</p>
+              <div class="trip-day-list-toolbar stop-list-toolbar">
+                <strong>Journey stops</strong>
+                <label class="trip-day-list-mode">
+                  <span>View</span>
+                  <select id="tripStopListMode" aria-label="Stop list display">
+                    <option value="scroll">Scrollable</option>
+                    <option value="expand">Expanded</option>
+                    <option value="dropdown">Dropdown</option>
+                  </select>
+                </label>
+              </div>
+              <select id="tripStopDropdown" class="trip-compact-selector" aria-label="Choose a stop" hidden></select>
+              <div id="tripStopList" class="trip-day-list trip-stop-list"></div>
+              <button id="deleteSelectedStop" class="secondary-action danger-action" type="button">Delete selected stop</button>
+            </section>
+
+            <section class="day-manager-section panel-section" aria-label="Routes">
+              <p class="section-label">Routes</p>
+              <div class="trip-day-list-toolbar">
+                <label class="toggle-button">
+                  <input id="showRouteWaypoints" type="checkbox">
+                  <span>Show route waypoints</span>
+                </label>
+                <label class="trip-day-list-mode">
+                  <span>List</span>
+                  <select id="tripDayListMode" aria-label="Route list display">
+                    <option value="scroll">Scrollable</option>
+                    <option value="expand">Expanded</option>
+                    <option value="dropdown">Dropdown</option>
+                  </select>
+                </label>
+              </div>
+              <select id="tripRouteDropdown" class="trip-compact-selector" aria-label="Choose a route" hidden></select>
+              <div id="tripDayList" class="trip-day-list"></div>
+              <label class="text-control">
+                <span>Selected route name</span>
+                <input id="editDayLabel" type="text" maxlength="80">
+              </label>
+              <div class="day-name-pattern-control">
+                <label class="text-control">
+                  <span>Day name forecast</span>
+                  <input id="dayNamePattern" type="text" maxlength="160" value="day {day#}" placeholder="day {day#}" aria-describedby="dayNamePatternTooltip">
+                </label>
+                <div id="dayNamePatternTooltip" class="day-name-pattern-tooltip" role="tooltip" hidden>
+                  <strong>Naming options</strong>
+                  <div class="day-name-token-columns">
+                    <section>
+                      <span class="day-name-token-heading">sequence</span>
+                      <div class="day-name-token-grid">
+                        <code>{day}</code><span><b>three</b></span>
+                        <code>{day#}</code><span><b>3</b></span>
+                        <code>{dayOrdinal}</code><span><b>third</b></span>
+                        <code>{dayOrdinal#}</code><span><b>3rd</b></span>
+                      </div>
+                    </section>
+                    <section>
+                      <span class="day-name-token-heading">date ranges</span>
+                      <div class="day-name-token-grid">
+                        <code>{startDate}</code><span><b>July 15, 2026</b></span>
+                        <code>{endDate}</code><span><b>July 18, 2026</b></span>
+                        <code>{dateRange}</code><span><b>July 15–18, 2026</b></span>
+                        <code>{startDateShort}</code><span><b>Jul 15, 2026</b></span>
+                        <code>{endDateShort}</code><span><b>Jul 18, 2026</b></span>
+                        <code>{dateRangeShort}</code><span><b>Jul 15–18, 2026</b></span>
+                        <code>{startDateISO}</code><span><b>2026-07-15</b></span>
+                        <code>{endDateISO}</code><span><b>2026-07-18</b></span>
+                        <code>{dateRangeISO}</code><span>both ISO dates</span>
+                      </div>
+                    </section>
+                    <section>
+                      <span class="day-name-token-heading">date parts</span>
+                      <div class="day-name-token-grid">
+                        <code>{startDay}</code><span><b>fifteenth</b></span>
+                        <code>{startDay#}</code><span><b>15</b></span>
+                        <code>{endDay}</code><span><b>eighteenth</b></span>
+                        <code>{endDay#}</code><span><b>18</b></span>
+                        <code>{startMonth}</code><span><b>July</b></span>
+                        <code>{endMonth}</code><span><b>July</b></span>
+                        <code>{startMonthShort}</code><span><b>Jul</b></span>
+                        <code>{endMonthShort}</code><span><b>Jul</b></span>
+                        <code>{startMonth#}</code><span><b>7</b></span>
+                        <code>{endMonth#}</code><span><b>7</b></span>
+                        <code>{startYear#}</code><span><b>2026</b></span>
+                        <code>{endYear#}</code><span><b>2026</b></span>
+                        <code>{startWeekday}</code><span><b>Wednesday</b></span>
+                        <code>{endWeekday}</code><span><b>Saturday</b></span>
+                      </div>
+                    </section>
+                    <section>
+                      <span class="day-name-token-heading">journey</span>
+                      <div class="day-name-token-grid">
+                        <code>{trip}</code><span>journey name</span>
+                        <code>{startStop}</code><span>starting stop</span>
+                        <code>{endStop}</code><span>destination stop</span>
+                        <code>{stop}</code><span>selected destination</span>
+                        <code>{stop#}</code><span>stop number — <b>2</b></span>
+                        <code>{nextStop}</code><span>following stop</span>
+                      </div>
+                    </section>
+                  </div>
+                  <small id="dayNamePatternExample">example: day 3 — July fifteenth</small>
+                </div>
+              </div>
+              <div class="day-sequence-edit-grid">
+                <label class="text-control">
+                  <span>Route number</span>
+                  <input id="editDaySequenceNumber" type="text" inputmode="numeric" pattern="[0-9]*|[Aa][Uu][Tt][Oo]" placeholder="Auto">
+                </label>
+                <label class="text-control">
+                  <span>Driving date</span>
+                  <input id="editDaySequenceDate" type="date">
+                </label>
+              </div>
+              <div class="stop-range-editor">
+                <div class="stop-range-fields">
+                  <label class="text-control">
+                    <span>Stop start date</span>
+                    <input id="editStopStartDate" type="text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY">
+                  </label>
+                  <label class="text-control">
+                    <span>Stop end date</span>
+                    <input id="editStopEndDate" type="text" inputmode="numeric" autocomplete="off" placeholder="MM/DD/YYYY">
+                  </label>
+                  <button id="editStopCalendarButton" class="edit-stop-calendar-button" type="button" aria-label="Choose stop date range" aria-expanded="false">
+                    <span class="material-symbols-rounded" aria-hidden="true">calendar_month</span>
+                  </button>
+                </div>
+                <small id="editStopDateMessage" class="stop-date-message" aria-live="polite"></small>
+                <div id="editStopCalendarPopover" class="stop-calendar-popover edit-stop-calendar-popover" hidden>
+                  <div class="stop-calendar-header">
+                    <button id="editStopCalendarPrevious" type="button" aria-label="Previous month">‹</button>
+                    <strong id="editStopCalendarMonth"></strong>
+                    <button id="editStopCalendarNext" type="button" aria-label="Next month">›</button>
+                  </div>
+                  <div class="stop-calendar-weekdays" aria-hidden="true">
+                    <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
+                  </div>
+                  <div id="editStopCalendarGrid" class="stop-calendar-grid" role="grid" aria-label="Choose stop date range"></div>
+                  <small id="editStopCalendarHint">Choose either endpoint, then the other.</small>
+                </div>
+              </div>
+              <label class="text-control">
+                <span>Description</span>
+                <textarea id="editDaySummary" rows="3" maxlength="240"></textarea>
+              </label>
+              <div class="day-actions">
+                <button id="saveDayDetails" type="button">Save route</button>
+                <button id="editDayRoute" type="button">Edit route</button>
+                <button id="deleteDay" class="danger-action" type="button">Delete route</button>
+              </div>
+              <div id="dayRouteEditor" class="day-route-editor" hidden>
+                <p class="route-service-note">Fine-tune this route. Linked routes automatically begin at the previous stop.</p>
+                <label class="toggle-button rest-day-toggle">
+                  <input id="editDayRestDay" type="checkbox">
+                  <span>Rest day</span>
+                </label>
+                <div id="editDayStartAddressRow" class="text-control">
+                  <div class="field-label-inline">
+                    <label id="editDayStartAddressLabel" for="editDayStartAddress">Starting location</label>
+                    <label id="editDayIndependentStartRow" class="inline-start-toggle">
+                      <input id="editDayIndependentStart" type="checkbox" data-keyboard-only-tab>
+                      <span>Start this route somewhere new</span>
+                    </label>
+                  </div>
+                  <input id="editDayStartAddress" type="search" autocomplete="street-address" placeholder="Address, city, or place" data-required-message="Starting location required" data-keyboard-only-tab>
+                </div>
+                <label class="text-control">
+                  <span>Destination</span>
+                  <input id="editDayEndAddress" type="search" autocomplete="street-address" placeholder="Address, city, or place" data-required-message="Destination required">
+                </label>
+                <div class="day-route-edit-actions">
+                  <button id="cancelDayRouteEdit" type="button">Cancel</button>
+                  <button id="applyDayRouteEdit" class="primary-action" type="button">Update route</button>
+                </div>
+              </div>
+              <div id="routeWaypointManager" class="route-waypoint-manager" hidden>
+                <div class="route-waypoint-manager-heading">
+                  <strong>Route waypoints</strong>
+                  <small>Rename, reorder, or remove routing points.</small>
+                </div>
+                <div id="routeWaypointList" class="route-waypoint-list"></div>
+              </div>
+            </section>
+
+            <section class="landmarks-section panel-section" aria-label="Landmarks">
+              <p class="section-label">Landmarks</p>
+              <div class="landmark-global-controls">
+                <label class="toggle-button">
+                  <input id="landmarksEnabled" type="checkbox">
+                  <span>Show landmarks</span>
+                </label>
+                <label class="text-control">
+                  <span>Image display</span>
+                  <select id="landmarkImageDisplay">
+                    <option value="always">Always show image</option>
+                    <option value="reached">Show after reached</option>
+                    <option value="never">Never show image</option>
+                  </select>
+                </label>
+                <label class="range-control landmark-global-size-control">
+                  <span>All landmark sizes</span>
+                  <input id="landmarkGlobalSize" type="range" min="0" max="200" step="1" value="100">
+                  <output id="landmarkGlobalSizeValue" for="landmarkGlobalSize">100%</output>
+                </label>
+              </div>
+              <div id="landmarkGrid" class="landmark-grid" aria-label="Route stop landmarks"></div>
+              <input id="landmarkUploadInput" type="file" accept="image/*" hidden>
+              <div class="landmark-selected-layout">
+                <div>
+                  <label class="text-control">
+                    <span>Edit landmark</span>
+                    <select id="landmarkSettingsScope">
+                      <option value="default">Default landmark</option>
+                    </select>
+                  </label>
+                  <button id="chooseLandmarkImage" type="button">Image&hellip;</button>
+                  <button id="saveLandmarkDefault" type="button">Save current as default</button>
+                  <button id="applyLandmarkDefault" type="button">Apply default&hellip;</button>
+                  <button id="applyLandmarkDefaultSizing" type="button">Apply size/strokes to all</button>
+                  <label class="toggle-button landmark-default-all-toggle">
+                    <input id="useDefaultLandmarkForAll" type="checkbox">
+                    <span>Force the default appearance on every landmark</span>
+                  </label>
+                </div>
+              </div>
+              <div class="landmark-style-controls">
+              <details class="icon-control-group icon-image-controls control-subsection" open>
+                <summary>Image</summary>
+                  <label class="range-control">
+                    <span>Overall size</span>
+                    <input id="landmarkSize" type="range" min="0" max="100" step="1" value="40">
+                    <output id="landmarkSizeValue" for="landmarkSize">40</output>
+                  </label>
+                  <label class="range-control">
+                    <span>Image size</span>
+                    <input id="landmarkImageSize" type="range" min="0" max="200" step="1" value="47">
+                    <output id="landmarkImageSizeValue" for="landmarkImageSize">47</output>
+                  </label>
+                  <div class="marker-stroke-head">
+                    <span>PNG image strokes</span>
+                    <button id="addLandmarkImageStroke" type="button">Add image stroke</button>
+                  </div>
+                  <div id="landmarkImageStrokeList" class="marker-stroke-list"></div>
+              </details>
+              <details class="icon-control-group icon-shape-controls control-subsection" open>
+                <summary>Shape</summary>
+                  <label class="toggle-button shape-layer-toggle">
+                    <input id="landmarkShapeEnabled" type="checkbox" checked aria-label="Show landmark shape layer">
+                    <span>Show shape layer</span>
+                  </label>
+                  <div class="compact-shape-size-row">
+                    <label class="text-control compact-shape-select">
+                      <span>Shape</span>
+                      <select id="landmarkShape">
+                      <option value="circle">Circle</option>
+                      <option value="pin">Pin</option>
+                      <option value="square">Square</option>
+                      <option value="diamond">Diamond</option>
+                      <option value="star">Star</option>
+                      <option value="heart">Heart</option>
+                      <option value="triangle">Triangle</option>
+                      <option value="hexagon">Hexagon</option>
+                      <option value="octagon">Octagon</option>
+                      <option value="cross">Cross</option>
+                      <option value="shield">Shield</option>
+                      <option value="capsule">Capsule</option>
+                      </select>
+                    </label>
+                    <label class="range-control compact-shape-slider">
+                      <span>Size</span>
+                      <input id="landmarkShapeSize" type="range" min="0" max="100" step="1" value="71">
+                      <output id="landmarkShapeSizeValue" for="landmarkShapeSize">71</output>
+                    </label>
+                  </div>
+                  <div class="route-animation-icon-colors">
+                    <label>
+                      <span>Fill</span>
+                      <input id="landmarkFillColor" type="color" value="#d9442e">
+                    </label>
+                    <label>
+                      <span>Fill mode</span>
+                      <select id="landmarkFillMode">
+                        <option value="shape">Shape fill</option>
+                        <option value="image">Fit to shape</option>
+                        <option value="none">No fill</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="marker-stroke-head">
+                    <span>Shape strokes</span>
+                    <button id="addLandmarkStroke" type="button">Add stroke</button>
+                  </div>
+                  <div id="landmarkStrokeList" class="marker-stroke-list"></div>
+                </div>
+                <div class="landmark-scope-controls">
+                  <label class="toggle-button">
+                    <input id="landmarkPerStopShapes" type="checkbox">
+                    <span>Different shape by landmark</span>
+                  </label>
+                  <label class="text-control">
+                    <span>Landmark</span>
+                    <select id="landmarkShapeStop"></select>
+                  </label>
+                  <label class="text-control">
+                    <span>Landmark shape</span>
+                    <select id="landmarkStopShape">
+                      <option value="circle">Circle</option>
+                      <option value="pin">Pin</option>
+                      <option value="square">Square</option>
+                      <option value="diamond">Diamond</option>
+                      <option value="star">Star</option>
+                      <option value="heart">Heart</option>
+                      <option value="triangle">Triangle</option>
+                      <option value="hexagon">Hexagon</option>
+                      <option value="octagon">Octagon</option>
+                      <option value="cross">Cross</option>
+                      <option value="shield">Shield</option>
+                      <option value="capsule">Capsule</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section class="road-download-section panel-section" aria-label="Road package downloads" hidden>
+              <p class="section-label">Road Files</p>
+              <button id="downloadRoadPackageTrips" type="button">Download needed road files</button>
+              <p class="route-service-note">Downloads the road manifest and local GeoJSON road files for the selected journey.</p>
+            </section>
+
+            <p id="tripStatus" class="trip-status" aria-live="polite"></p>
+          </div>
+
+          <div id="panelMedia" class="panel-tab-panel media-style-panel" role="tabpanel" aria-labelledby="tabMedia" data-panel-tab-panel="media" hidden>
+            <section class="panel-section" aria-label="Default media style">
+              <p class="section-label">Default Style</p>
+              <p class="route-service-note">The shared starting point for pictures, videos, audio, and text entries.</p>
+              <button id="mediaShowDefaultPlaceholder" type="button">Show default placeholder</button>
+            </section>
+
+            <section class="panel-section" aria-label="Media type style">
+              <p class="section-label">Media Type Style</p>
+              <div class="media-type-picker" role="toolbar" aria-label="Choose media preview type">
+                <button type="button" data-media-style-type="youtube" aria-label="Preview YouTube"><span aria-hidden="true">▶</span></button>
+                <button type="button" data-media-style-type="video" aria-label="Preview video"><span aria-hidden="true">▻</span></button>
+                <button type="button" data-media-style-type="image" aria-label="Preview picture"><span aria-hidden="true">▧</span></button>
+                <button type="button" data-media-style-type="audio" aria-label="Preview audio"><span aria-hidden="true">♫</span></button>
+                <button type="button" data-media-style-type="text" aria-label="Preview text"><span aria-hidden="true">¶</span></button>
+              </div>
+              <div class="media-style-heading-row">
+                <label class="text-control">
+                  <span>Media type</span>
+                  <select id="mediaStyleType">
+                    <option value="youtube">YouTube</option>
+                    <option value="video">Video</option>
+                    <option value="image">Picture</option>
+                    <option value="audio">Audio</option>
+                    <option value="text">Text entry</option>
+                  </select>
+                </label>
+                <label class="media-use-default-toggle"><input id="mediaUseDefaultStyle" type="checkbox" checked> Use default</label>
+              </div>
+              <div class="media-style-control-grid">
+                <label>Background <input id="mediaStyleBackground" type="color"></label>
+                <label>Border <input id="mediaStyleBorder" type="color"></label>
+                <label>Text <input id="mediaStyleText" type="color"></label>
+                <label>Radius <input id="mediaStyleRadius" type="range" min="0" max="80" step="1"></label>
+                <label>Border width <input id="mediaStyleBorderWidth" type="range" min="0" max="16" step="1"></label>
+                <label>Padding <input id="mediaStylePadding" type="range" min="0" max="48" step="1"></label>
+                <label>Shadow <input id="mediaStyleShadow" type="range" min="0" max="1" step="0.05"></label>
+                <label>Content fit
+                  <select id="mediaStyleFit"><option value="contain">Contain</option><option value="cover">Cover</option><option value="fill">Stretch</option></select>
+                </label>
+              </div>
+              <div class="media-fullscreen-row">
+                <label><input id="mediaFullscreenEnabled" type="checkbox"> Fullscreen option</label>
+                <select id="mediaFullscreenTarget" hidden>
+                  <option value="map">Map viewport</option>
+                  <option value="browser">Browser bounds</option>
+                </select>
+              </div>
+            </section>
+
+            <section class="panel-section" aria-label="Map appearance with media">
+              <p class="section-label">Map With Media</p>
+              <div class="media-style-control-grid">
+                <label>Visibility
+                  <select id="mediaMapVisibility"><option value="visible">Visible</option><option value="dimmed">Dimmed</option><option value="hidden">Obscured</option></select>
+                </label>
+                <label>Blend
+                  <select id="mediaMapBlend"><option value="normal">Normal</option><option value="multiply">Multiply</option><option value="screen">Screen</option><option value="soft-light">Soft light</option></select>
+                </label>
+                <label>Opacity <input id="mediaMapOpacity" type="range" min="0" max="1" step="0.05"></label>
+                <label>Blur <input id="mediaMapBlur" type="range" min="0" max="30" step="1"></label>
+              </div>
+            </section>
+
+            <section class="panel-section" aria-label="Media layout presets">
+              <p class="section-label">Layout Presets</p>
+              <div id="mediaLayoutPresetGrid" class="media-layout-preset-grid"></div>
+              <label class="text-control"><span>Template name</span><input id="mediaLayoutName" type="text" maxlength="80" placeholder="Layout name"></label>
+              <div class="media-layout-edit-grid">
+                <label>Columns <input id="mediaLayoutColumns" type="number" min="1" max="6" value="2"></label>
+                <label>Gap <input id="mediaLayoutGap" type="number" min="0" max="80" value="12"></label>
+                <label class="media-layout-frame-toggle"><input id="mediaLayoutFrame" type="checkbox" checked> Containing frame</label>
+                <label>Frame padding <input id="mediaLayoutFramePadding" type="number" min="0" max="80" value="14"></label>
+                <label>Frame radius <input id="mediaLayoutFrameRadius" type="number" min="0" max="80" value="14"></label>
+              </div>
+              <div class="media-layout-slot-editor">
+                <div class="media-layout-slot-heading"><strong>Content slots</strong><button id="mediaAddLayoutSlot" type="button">Add slot</button></div>
+                <div id="mediaLayoutSlotList" class="media-layout-slot-list"></div>
+              </div>
+              <div class="media-layout-actions">
+                <button id="mediaEditLayout" type="button">Edit layout</button>
+                <button id="mediaUpdateLayout" type="button">Update</button>
+                <button id="mediaDuplicateLayout" type="button">Duplicate</button>
+                <button id="mediaSaveLayout" type="button">Save as new</button>
+                <button id="mediaDeleteLayout" type="button">Delete</button>
+              </div>
+            </section>
+          </div>
+
+          <div id="panelUsers" class="panel-tab-panel users-panel" role="tabpanel" aria-labelledby="tabUsers" data-panel-tab-panel="users" hidden>
+            <section class="panel-section users-shell-section" aria-label="User View Builder">
+              <p class="section-label">User View Builder</p>
+              <p class="users-shell-copy">Arrange the gizmos shown on the user-facing site.</p>
+              <div class="users-layout-drawing-actions" aria-label="Layout drawing controls">
+                <button id="usersExitBuilder" type="button">Return to editor</button>
+                <button id="usersLayoutDrawToggle" type="button" aria-pressed="false">Draw layout</button>
+                <button id="usersLayoutDeleteSelected" type="button" disabled>Delete selected</button>
+              </details>
+              <p id="usersLayoutDrawingStatus" class="users-shell-status" aria-live="polite">Turn on Draw layout, then drag horizontally or vertically for a divider, or diagonally for a section.</p>
+            </section>
+
+            <section class="panel-section users-shell-section welcome-editor-section" aria-label="Site in development page">
+              <p class="section-label">Site in development page</p>
+              <p class="users-shell-copy">This is the separate public page at the base URL. Enter edit mode to work directly on the device-sized page.</p>
+              <p class="users-registry-help">Public status takes effect with the next published settings file: Development and Maintenance use this page; Live opens the public map at <code>/users/</code>.</p>
+              <div class="welcome-editor-toolbar">
+                <label><span>Public status</span><select id="welcomePublicStatus"><option value="development">Development</option><option value="live">Live</option><option value="maintenance">Maintenance</option></select></label>
+                <label><span>Import layout from</span><select id="welcomeImportDevice"><option value="desktop-16-9">Desktop 16:9</option><option value="desktop-4-3">Desktop 4:3</option><option value="tablet-landscape">Tablet landscape</option><option value="tablet-portrait">Tablet portrait</option><option value="phone-landscape">Phone landscape</option><option value="phone-portrait">Phone portrait</option><option value="custom">Custom</option></select></label>
+                <button id="welcomeImportLayout" type="button">Import layout</button>
+                <button id="welcomeDrawSplash" type="button" aria-pressed="false">Draw splashy splash</button>
+              </div>
+              <div class="welcome-editor-toolbar">
+                <label><span>Background color</span><input id="welcomeBackgroundColor" type="color" value="#16333c"></label>
+                <label><span>Texture / pattern</span><select id="welcomeBackgroundPattern"><option value="dots">Dots</option><option value="grid">Grid</option><option value="none">None</option></select></label>
+                <label><span>Material</span><select id="welcomeBackgroundMaterial"><option value="smooth">Smooth</option><option value="leather">Leather</option><option value="paper">Paper</option></select></label>
+                <button id="welcomeBackgroundImage" type="button">Choose background image</button>
+                <button id="welcomeClearBackgroundImage" type="button">Clear background image</button>
+              </div>
+              <input id="welcomeMediaFile" type="file" accept="image/*,video/*" hidden>
+              <input id="welcomeBackgroundFile" type="file" accept="image/*" hidden>
+              <div id="welcomeEditorStage" class="welcome-editor-stage" aria-label="Welcome screen layout preview"></div>
+              <div id="welcomeElementInspector" class="welcome-element-inspector" aria-live="polite"></div>
+              <p class="users-registry-help">Drag an item to reposition it; Shift constrains movement. Shift-resize keeps its proportions; Ctrl-resize keeps its center fixed. Use the handles to resize or rotate. Right-click an image, slideshow, video, or section to swap its media.</p>
+            </section>
+
+            <section class="panel-section users-shell-section loading-screen-section" aria-label="Site loading screen">
+              <p class="section-label">Welcome / site loading screen</p>
+              <p class="users-shell-copy">Shown while the protected user map is preparing. This uses the same device boundary as the Welcome screen so it can be checked against the real public view.</p>
+              <div class="welcome-editor-toolbar">
+                <label><span>Title</span><input id="loadingScreenTitle" type="text" value="RV Route Map"></label>
+                <label><span>Message</span><input id="loadingScreenMessage" type="text" value="Journey around the country with freedom in your hair."></label>
+                <button id="loadingScreenOpenCanvas" type="button">Enter loading screen edit mode</button>
+              </div>
+            </section>
+
+            <section class="panel-section users-shell-section" aria-label="Recorded Assignments">
+              <p class="section-label">Recorded Assignments <span id="usersRegistrySummary" class="users-registry-summary" aria-live="polite">(0)</span></p>
+              <div id="usersRegistryPreview" class="users-registry-preview" aria-live="polite"></div>
+            </section>
+
+            <section class="panel-section users-shell-section users-gizmos-section" aria-label="Gizmos">
+              <p class="section-label">Gizmos</p>
+              <p class="users-registry-help">Drag any unassigned gizmo directly onto the frame, a section, or a subsection.</p>
+              <label class="users-gizmo-category-label">
+                <span>Collection</span>
+                <select id="usersGizmoCategory" aria-label="Gizmo collection"></select>
+              </label>
+              <div class="users-gizmo-curation-toolbar" aria-label="Gizmo curation tools">
+                <label>
+                  <span>Type</span>
+                  <select id="usersGizmoRoleFilter" aria-label="Filter Gizmos by controller type"></select>
+                </label>
+                <button id="usersGizmoSelectMode" type="button" aria-pressed="false">Select mode</button>
+                <button id="usersGizmoSelectRecommended" type="button">Select recommended</button>
+                <button id="usersGizmoClearSelection" type="button">Clear</button>
+                <button id="usersGizmoExportSelection" type="button" disabled>Export selected</button>
+                <output id="usersGizmoSelectionCount" aria-live="polite">0 selected</output>
+              </div>
+              <div id="usersGizmoLibrary" class="users-gizmo-library" aria-live="polite"></div>
+            </section>
+
+            <section class="panel-section users-shell-section" aria-label="Quick-bound Gizmos">
+              <p class="section-label">Quick-bound Gizmos</p>
+              <p class="users-registry-help">Compatibility shortcuts already connected to site navigation. New layouts should normally start with the unassigned Gizmos library above.</p>
+              <div id="usersHigherLevelControls" class="users-compact-control-list" aria-live="polite"></div>
+            </section>
+
+            <section class="panel-section users-shell-section" aria-label="User Panels">
+              <p class="section-label">User Panels</p>
+              <div id="usersPanelManager" class="users-panel-manager" aria-live="polite">
+                <div class="users-panel-manager-row">
+                  <strong>Top panel</strong>
+                  <div class="users-panel-manager-actions">
+                    <button id="usersAddPanelTop" type="button">Add Top panel</button>
+                    <button id="usersRemovePanelTop" type="button">Remove Top panel</button>
+                  </div>
+                </div>
+                <div class="users-panel-manager-row">
+                  <strong>Right panel</strong>
+                  <div class="users-panel-manager-actions">
+                    <button id="usersAddPanelRight" type="button">Add Right panel</button>
+                    <button id="usersRemovePanelRight" type="button">Remove Right panel</button>
+                  </div>
+                </div>
+                <div class="users-panel-manager-row">
+                  <strong>Bottom panel</strong>
+                  <div class="users-panel-manager-actions">
+                    <button id="usersAddPanelBottom" type="button">Add Bottom panel</button>
+                    <button id="usersRemovePanelBottom" type="button">Remove Bottom panel</button>
+                  </div>
+                </div>
+                <div class="users-panel-manager-row">
+                  <strong>Left panel</strong>
+                  <div class="users-panel-manager-actions">
+                    <button id="usersAddPanelLeft" type="button">Add Left panel</button>
+                    <button id="usersRemovePanelLeft" type="button">Remove Left panel</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel-section users-shell-section" aria-label="User Layout Placeholder">
+              <p class="section-label">Draft User Layout</p>
+              <div id="usersLayoutPreview" class="users-layout-preview" aria-live="polite"></div>
+            </section>
+
+            <section class="panel-section users-shell-section users-appearance-host" aria-label="User appearance">
+              <p class="section-label">User Appearance</p>
+              <div id="usersAppearanceSections" class="users-appearance-sections"></div>
+            </section>
+          </div>
+        </div>
+
+        <section class="pinned-journey-section pinned-tools-section panel-footer-theme" aria-label="Tools">
+          <button type="button" class="pinned-footer-tab" data-pinned-footer-toggle aria-pressed="false" aria-label="Show or hide Device controls">D</button>
+          <details class="pinned-subsection pinned-tools-details" data-pinned-tools-details>
+            <summary>
+              <span>Device</span>
+              <label id="usersDevicePreviewToolbar" class="users-device-preview-toolbar" for="usersDevicePreviewSelect">
+                <span>Device</span>
+                <select id="usersDevicePreviewSelect" aria-describedby="usersDevicePreviewStatus">
+                  <option value="desktop-16-9">Desktop 16:9</option>
+                  <option value="desktop-4-3">Desktop 4:3</option>
+                  <option value="tablet-landscape">Tablet landscape</option>
+                  <option value="tablet-portrait">Tablet portrait</option>
+                  <option value="phone-landscape">Phone landscape</option>
+                  <option value="phone-portrait">Phone portrait</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </label>
+              <label class="show-map-bounds-toggle"><span>Show</span><input id="showMapBounds" type="checkbox"></label>
+              <label class="show-map-bounds-toggle"><span>Lock</span><input id="lockUserDevicePreview" type="checkbox"></label>
+              <button id="autofitUserDevicePreview" class="pinned-tools-autofit" type="button">Autofit</button>
+            </summary>
+            <div class="pinned-tools-content">
+              <div id="projectExportStatus" class="project-export-status" aria-live="polite">
+                <span id="projectExportSummary">No unpublished settings changes.</span>
+                <span id="projectSyncStatus">Saved on this device.</span>
+                <button id="exportAllSettings" type="button">Export files</button>
+                <button id="publishSite" type="button">Publish to site</button>
+              </div>
+            </div>
+          </details>
+        </section>
+      </aside>
+    </main>
+
+    <div id="usersPlacementMenu" class="users-placement-menu" role="menu" aria-label="Users placement menu" hidden></div>
+
+    <div id="sfxConsentDialog" class="sfx-consent-dialog" role="dialog" aria-modal="true" aria-labelledby="sfxConsentTitle" hidden>
+      <div class="sfx-consent-card">
+        <strong id="sfxConsentTitle">Allow sound and video?</strong>
+        <p>This trip can play assigned sound effects and media. Browsers require your permission before either can start with sound.</p>
+        <div>
+          <button id="sfxConsentDecline" type="button">Not now</button>
+          <button id="sfxConsentAllow" type="button">Allow</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="usersViewportResizeDialog" class="users-viewport-resize-dialog" role="dialog" aria-modal="true" aria-labelledby="usersViewportResizeTitle" hidden>
+      <div class="users-viewport-resize-card">
+        <strong id="usersViewportResizeTitle">Resize the map viewport?</strong>
+        <p id="usersViewportResizeCopy">This value needs more room in the User UI frame.</p>
+        <div>
+          <button id="usersViewportResizeCancel" type="button">Cancel</button>
+          <button id="usersViewportResizeConfirm" type="button">Resize viewport</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="tripExportDialog" class="trip-export-dialog" role="dialog" aria-modal="true" aria-labelledby="tripExportTitle" hidden>
+      <div class="trip-export-card">
+        <header class="trip-export-head">
+          <strong id="tripExportTitle">Export Journeys</strong>
+        </header>
+        <fieldset class="trip-export-format" aria-label="Export format">
+          <legend>Format</legend>
+          <label>
+            <input type="radio" name="tripExportFormat" value="kml" checked>
+            <span>KML</span>
+          </label>
+          <label>
+            <input type="radio" name="tripExportFormat" value="json">
+            <span>JSON</span>
+          </label>
+        </fieldset>
+        <div id="tripExportList" class="trip-export-list" aria-label="Journeys to export"></div>
+        <footer class="trip-export-actions">
+          <button id="tripExportAll" type="button">Export all</button>
+          <button id="tripExportCancel" type="button">Cancel</button>
+          <button id="tripExportOkay" type="button">Okay</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="routeImportDialog" class="trip-export-dialog" role="dialog" aria-modal="true" aria-labelledby="routeImportTitle" hidden>
+      <div class="trip-export-card route-import-card">
+        <header class="trip-export-head">
+          <strong id="routeImportTitle">Import Routes</strong>
+        </header>
+        <div class="route-import-options">
+          <label class="text-control">
+            <span>Insert</span>
+            <select id="routeImportPosition"></select>
+          </label>
+          <div class="day-sequence-edit-grid">
+            <label class="text-control">
+              <span>Start numbering at</span>
+              <input id="routeImportSequenceNumber" type="text" inputmode="numeric" pattern="[0-9]*|[Aa][Uu][Tt][Oo]" placeholder="Auto">
+            </label>
+            <label class="text-control">
+              <span>Start date</span>
+              <input id="routeImportSequenceDate" type="date">
+            </label>
+          </div>
+          <p id="routeImportSummary" class="route-service-note"></p>
+        </div>
+        <footer class="trip-export-actions">
+          <button id="routeImportCancel" type="button">Cancel</button>
+          <button id="routeImportApply" type="button">Import</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="themePresetDialog" class="trip-export-dialog theme-preset-dialog" role="dialog" aria-modal="true" aria-labelledby="themePresetDialogTitle" hidden>
+      <div class="trip-export-card theme-preset-card">
+        <header class="trip-export-head"><strong id="themePresetDialogTitle">Theme preset</strong></header>
+        <label class="text-control"><span>Preset name</span><input id="themePresetName" type="text" maxlength="80" placeholder="Example: Water texture and color"></label>
+        <p class="theme-preset-intro">Choose the parts to save or apply. The count beside each category is the number of settings it contains.</p>
+        <fieldset id="themePresetCategories" class="theme-preset-categories">
+          <legend>Include</legend>
+        </fieldset>
+        <p id="themePresetSummary" class="route-service-note" aria-live="polite"></p>
+        <footer class="trip-export-actions theme-preset-actions">
+          <button id="themePresetDelete" type="button">Delete</button>
+          <button id="themePresetCancel" type="button">Cancel</button>
+          <button id="themePresetSave" type="button">Save preset</button>
+          <button id="themePresetApply" type="button">Apply selected</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="landmarkDefaultDialog" class="trip-export-dialog" role="dialog" aria-modal="true" aria-labelledby="landmarkDefaultDialogTitle" hidden>
+      <div class="trip-export-card landmark-default-card">
+        <header class="trip-export-head">
+          <strong id="landmarkDefaultDialogTitle">Apply Default Landmark Appearance</strong>
+        </header>
+        <div class="landmark-default-bulk-actions">
+          <button id="landmarkDefaultSelectAll" type="button">All settings</button>
+          <button id="landmarkDefaultSelectNone" type="button">No settings</button>
+        </div>
+        <fieldset class="landmark-default-options">
+          <legend>Apply selected settings</legend>
+          <label><input type="checkbox" data-landmark-default-category="global" checked> Global display settings</label>
+          <label><input type="checkbox" data-landmark-default-category="size" checked> Overall landmark size</label>
+          <label><input type="checkbox" data-landmark-default-category="image"> Image, image name, and image size</label>
+          <label><input type="checkbox" data-landmark-default-category="shape" checked> Shape, fill, and shape size</label>
+          <label><input type="checkbox" data-landmark-default-category="imageStrokes" checked> Image strokes</label>
+          <label><input type="checkbox" data-landmark-default-category="shapeStrokes" checked> Shape strokes</label>
+        </fieldset>
+        <fieldset class="landmark-default-options landmark-default-target-options">
+          <legend>Apply to landmarks</legend>
+          <div class="landmark-default-target-actions">
+            <button id="landmarkDefaultTargetAll" type="button">All landmarks</button>
+            <button id="landmarkDefaultTargetNone" type="button">Clear landmarks</button>
+          </div>
+          <div id="landmarkDefaultTargets" class="landmark-default-targets"></div>
+        </fieldset>
+        <footer class="trip-export-actions">
+          <button id="landmarkDefaultCancel" type="button">Cancel</button>
+          <button id="landmarkDefaultApply" type="button">Apply selected</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="landmarkImageDialog" class="trip-export-dialog landmark-image-dialog" role="dialog" aria-modal="true" aria-labelledby="landmarkImageDialogTitle" hidden>
+      <div class="trip-export-card landmark-image-card">
+        <header class="trip-export-head">
+          <strong id="landmarkImageDialogTitle">Choose Landmark Image</strong>
+          <button id="landmarkImageDialogClose" type="button" aria-label="Close landmark image chooser">Done</button>
+        </header>
+        <div class="landmark-image-source-actions">
+          <button id="landmarkImageUpload" type="button">Upload my image</button>
+          <span>or search reusable images from Wikimedia Commons</span>
+        </div>
+        <form id="landmarkCatalogForm" class="landmark-catalog-search" role="search">
+          <label class="text-control">
+            <span>Landmark or location</span>
+            <input id="landmarkCatalogSearch" type="search" autocomplete="off" placeholder="Example: Gateway Arch St. Louis">
+          </label>
+          <button type="submit">Search online</button>
+        </form>
+        <p id="landmarkCatalogStatus" class="route-service-note" aria-live="polite">Searches only when requested.</p>
+        <div id="landmarkCatalogResults" class="landmark-catalog-results" aria-label="Online landmark image results"></div>
+        <footer class="landmark-catalog-foot">
+          <span>Licenses differ by image. Creator, license, and source are saved with your selection.</span>
+          <a href="https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia" target="_blank" rel="noopener noreferrer">Reuse guidance</a>
+        </footer>
+      </div>
+    </div>
+
+    <div id="saveAllDialog" class="trip-export-dialog" role="dialog" aria-modal="true" aria-labelledby="saveAllDialogTitle" hidden>
+      <div class="trip-export-card save-all-card">
+        <header class="trip-export-head">
+          <strong id="saveAllDialogTitle">Save All Settings</strong>
+        </header>
+        <p class="save-all-note">Download selected project JSON files as an offline backup. The editor already saves your working draft locally; exports do not update the shared site.</p>
+        <div class="landmark-default-bulk-actions">
+          <button id="saveAllSelectAll" type="button">Select all</button>
+          <button id="saveAllSelectNone" type="button">Select none</button>
+        </div>
+        <fieldset class="landmark-default-options save-all-options">
+          <legend>Export</legend>
+          <label><input type="checkbox" data-save-all-category="journeys" checked> Journeys, days, routes, landmarks, dragged positions</label>
+          <label><input type="checkbox" data-save-all-category="styles" checked> Layer styles and textures</label>
+          <label><input type="checkbox" data-save-all-category="ui" checked> UI settings, presets, defaults, route display controls</label>
+          <label><input type="checkbox" data-save-all-category="textures"> Texture manifest</label>
+        </fieldset>
+        <footer class="trip-export-actions">
+          <button id="saveAllCancel" type="button">Cancel</button>
+          <button id="saveAllOkay" type="button">Export selected files</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="publishDialog" class="trip-export-dialog" role="dialog" aria-modal="true" aria-labelledby="publishDialogTitle" hidden>
+      <div class="trip-export-card save-all-card">
+        <header class="trip-export-head"><strong id="publishDialogTitle">Publish to Site</strong></header>
+        <p class="save-all-note">Publish the saved journeys, styles, UI settings, and texture manifest as one protected GitHub commit. Cloudflare Pages then deploys that commit. Credentials remain only in Cloudflare’s encrypted secrets.</p>
+        <p class="route-service-note">The destination repository and branch are fixed in Cloudflare’s protected server settings. This action cannot change them from the browser.</p>
+        <footer class="trip-export-actions">
+          <button id="publishCancel" type="button">Cancel</button>
+          <button id="publishSaveConfiguration" type="button">Publish saved changes</button>
+        </footer>
+      </div>
+    </div>
+
+    <div id="stylePanel" class="style-panel" hidden>
+      <div class="style-panel-head">
+        <strong>Layer style</strong>
+        <button id="closeStylePanel" type="button">Done</button>
+      </div>
+      <label>
+        <span>Layer</span>
+        <select id="styleLayerSelect" aria-label="Layer to customize"></select>
+      </label>
+      <section id="styleSizeSection" class="style-size-section">
+        <label>
+          <span id="styleSizeLabel">Texture Size</span>
+          <input id="styleSize" type="range" step="0.25">
+        </label>
+      </section>
+      <details id="styleTextSection" class="style-twirl" open hidden>
+        <summary>Text</summary>
+        <label>
+          <span>Typeface</span>
+          <select id="styleTypeface"></select>
+        </label>
+        <label>
+          <span>Weight</span>
+          <select id="styleFontWeight">
+            <option value="400">Regular</option>
+            <option value="500">Medium</option>
+            <option value="600">Semi-bold</option>
+            <option value="700">Bold</option>
+          </select>
+        </label>
+      </details>
+      <details id="styleAppearanceSection" class="style-twirl" open>
+        <summary>Appearance</summary>
+        <label>
+          <span>Opacity</span>
+          <input id="styleOpacity" type="range" min="0" max="1" step="0.01">
+        </label>
+        <label id="styleBlendRow">
+          <span>Blend mode</span>
+          <select id="styleBlend"></select>
+        </label>
+      </details>
+      <details class="style-twirl" open>
+        <summary class="color-summary">
+          <span>Color</span>
+          <span id="stylePreview" class="style-preview" aria-label="Selected color preview"></span>
+        </summary>
+        <div class="embedded-color-picker">
+          <span class="color-row-label">Palette</span>
+          <div id="styleSwatches" class="style-swatches" aria-label="Color palette"></div>
+          <div id="styleColorWarning" class="color-legal-warning" role="status" hidden>
+            <span class="color-warning-icon" aria-hidden="true">!</span>
+            <span id="styleColorWarningText"></span>
+          </div>
+          <canvas id="styleColorField" class="style-color-field" width="360" height="180" aria-label="Color picker. Horizontal position changes hue and vertical position changes lightness."></canvas>
+          <div class="rgb-control-grid">
+            <label><span>R</span><input id="styleRed" type="range" min="0" max="255" step="1"></label>
+            <label><span>G</span><input id="styleGreen" type="range" min="0" max="255" step="1"></label>
+            <label><span>B</span><input id="styleBlue" type="range" min="0" max="255" step="1"></label>
+          </div>
+          <span class="color-row-label">Recent</span>
+          <div id="styleRecentSwatches" class="style-swatches" aria-label="Recent colors"></div>
+          <label>
+            <span>Hex</span>
+            <input id="styleHex" type="text" maxlength="7" spellcheck="false">
+          </label>
+          <div class="color-save-hint">
+            <span>Right click to save / unsave</span>
+            <output id="styleSavedColorCount">0 / 36</output>
+          </div>
+          <div id="styleSavedSwatches" class="style-swatches saved-color-swatches" aria-label="Saved colors"></div>
+        </div>
+      </details>
+      <details id="topographyColorSection" class="style-twirl" hidden>
+        <summary>Topography Ramp</summary>
+        <p id="topographyMapLibreNote" class="style-helper" hidden>Contour colors transition from low to high elevation. Detailed contours begin at regional zoom and remain visible while zooming closer.</p>
+        <label>
+          <span>Low elevation</span>
+          <input id="styleTopoLowColor" type="color">
+        </label>
+        <label>
+          <span>High elevation</span>
+          <input id="styleTopoHighColor" type="color">
+        </label>
+      </details>
+      <details id="styleLineSection" class="style-twirl" open hidden>
+        <summary id="styleZoneSectionTitle">Day Zone Settings</summary>
+        <label id="styleDashLockRow" class="checkbox-line">
+          <input id="styleLockDashPattern" type="checkbox">
+          <span>Match dash length and gap</span>
+        </label>
+        <label id="styleDashLengthRow">
+          <span>Dash length</span>
+          <input id="styleDashLength" type="range" min="0" max="40" step="1">
+        </label>
+        <label id="styleDashGapRow">
+          <span>Dash gap</span>
+          <input id="styleDashGap" type="range" min="0" max="40" step="1">
+        </label>
+      </details>
+      <details id="styleTextureSection" class="style-twirl" open>
+        <summary class="texture-summary">
+          <span>Texture</span>
+          <label class="texture-summary-toggle">
+            <input id="styleTextureEnabled" type="checkbox" checked>
+            <span>On</span>
+          </label>
+        </summary>
+        <label>
+          <span>Texture</span>
+          <select id="styleTextureType"></select>
+        </label>
+        <p class="style-helper">Subtle textures usually work best for maps.</p>
+        <p id="styleTextureMapLibreNote" class="style-helper" hidden>Map textures are baked into a small reusable pattern and clipped to this layer. A second texture and its blend settings are included in the same cached pattern.</p>
+        <div id="styleTextureChoices" class="texture-choice-list" aria-label="Texture previews"></div>
+        <div class="texture-library-actions">
+          <button id="openTextureLibrary" type="button">View more</button>
+          <button id="exportTextureManifest" type="button">Export texture list</button>
+          <button id="saveTextureManifestToProject" type="button" title="Choose a local destination for assets/files/textures/rv-map-textures-manifest.json">Export texture list…</button>
+          <button id="exportCombinedTexture" type="button">Export combined PNG</button>
+        </div>
+        <p class="route-service-note">Project target: <code>assets/files/textures/rv-map-textures-manifest.json</code></p>
+        <label>
+          <span>Texture size</span>
+          <input id="styleTextureSize" type="range" min="0.35" max="12" step="0.05">
+        </label>
+        <label>
+          <span>Texture opacity</span>
+          <input id="styleTextureOpacity" type="range" min="0" max="1" step="0.01">
+        </label>
+        <label>
+          <span>Opacity type</span>
+          <select id="styleTextureBlend"></select>
+        </label>
+        <label class="checkbox-line">
+          <input id="styleTextureBlendEnabled" type="checkbox" checked>
+          <span>Blend texture</span>
+        </label>
+        <label>
+          <span>Blend amount</span>
+          <input id="styleTextureBlendAmount" type="range" min="0" max="1" step="0.01">
+        </label>
+        <hr>
+        <label class="checkbox-line">
+          <input id="styleSecondaryTextureEnabled" type="checkbox">
+          <span>Add secondary texture</span>
+        </label>
+      </details>
+      <details id="styleSecondaryTextureSection" class="style-twirl">
+        <summary>Secondary Texture</summary>
+        <div class="texture-compatibility-row">
+          <span>Combined compatibility</span>
+          <strong id="textureCompatibilityScore">--</strong>
+          <button id="updateTextureCompatibility" type="button" hidden>Update</button>
+        </div>
+        <label>
+          <span>Secondary texture</span>
+          <select id="styleSecondaryTextureType"></select>
+        </label>
+        <div id="styleSecondaryTextureChoices" class="texture-choice-list" aria-label="Secondary texture previews"></div>
+        <label>
+          <span>Secondary size</span>
+          <input id="styleSecondaryTextureSize" type="range" min="0.35" max="12" step="0.05">
+        </label>
+        <label>
+          <span>Secondary opacity</span>
+          <input id="styleSecondaryTextureOpacity" type="range" min="0" max="1" step="0.01">
+        </label>
+        <label>
+          <span>Secondary opacity type</span>
+          <select id="styleSecondaryTextureBlend"></select>
+        </label>
+      </details>
+    </div>
+
+    <div id="textureLibraryPanel" class="texture-library-panel" hidden>
+      <div class="texture-library-head">
+        <div>
+          <strong>Texture Library</strong>
+          <span id="textureLibraryCount"></span>
+        </div>
+        <label>
+          <span>Filter</span>
+          <input id="textureLibrarySearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter patterns">
+        </label>
+        <button id="closeTextureLibrary" type="button">Done</button>
+      </div>
+      <div id="textureLibraryGrid" class="texture-library-grid" aria-label="All Transparent Textures patterns"></div>
+    </div>
+
+    <div id="uiThemePanel" class="style-panel theme-panel" hidden>
+      <div class="style-panel-head">
+        <strong>UI Theme</strong>
+        <button id="closeUiThemePanel" type="button">Done</button>
+      </div>
+      <div class="theme-color-row">
+        <label>
+          <span>Panel</span>
+          <input id="uiThemePanelColor" type="color">
+        </label>
+        <label>
+          <span>Surface</span>
+          <input id="uiThemeSurfaceColor" type="color">
+        </label>
+      </div>
+      <label>
+        <span>Highlight</span>
+        <input id="uiThemeHighlightColor" type="color">
+      </label>
+      <label>
+        <span>Font</span>
+        <select id="uiThemeFont">
+          <option value="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, sans-serif">Inter</option>
+          <option value="Georgia, &quot;Times New Roman&quot;, serif">Serif</option>
+          <option value="Trebuchet MS, Verdana, sans-serif">Trebuchet</option>
+          <option value="ui-monospace, SFMono-Regular, Consolas, &quot;Liberation Mono&quot;, monospace">Mono</option>
+        </select>
+      </label>
+      <label>
+        <span>Texture</span>
+        <select id="uiThemeTexture">
+          <option value="none">None</option>
+          <option value="paper">Paper</option>
+          <option value="linen">Linen</option>
+          <option value="grid">Grid</option>
+        </select>
+      </label>
+      <label>
+        <span>Texture opacity</span>
+        <input id="uiThemeTextureOpacity" type="range" min="0" max="1" step="0.01">
+      </label>
+      <label>
+        <span>Blend</span>
+        <select id="uiThemeTextureBlend">
+          <option value="normal">Normal</option>
+          <option value="multiply">Multiply</option>
+          <option value="screen">Screen</option>
+          <option value="overlay">Overlay</option>
+        </select>
+      </label>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@5.5.0/dist/maplibre-gl.js"></script>
+    <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+    <script src="assets/files/styles/transparent-textures-catalog.js"></script>
+    <script src="accessibility.js"></script>
+    <script src="scripts/config/runtime-config.js"></script>
+    <script src="scripts/config/runtime-environment.js"></script>
+<script src="scripts/config/app-config.js?v=2f134-workflow-media-inheritance"></script>
+    <script src="scripts/config/editor-defaults.js?v=2f116-shape-foundations"></script>
+    <script src="scripts/config/control-catalog.js"></script>
+    <script src="scripts/config/map-style-catalog.js"></script>
+    <script src="scripts/config/maplibre-style-catalog.js"></script>
+    <script src="scripts/config/texture-style-defaults.js"></script>
+    <script src="scripts/core-utils.js"></script>
+    <script src="scripts/playback/sticker-animation-utils.js?v=2f01"></script>
+    <script src="scripts/config/theme-normalization.js"></script>
+    <script src="scripts/config/theme-catalog.js"></script>
+    <script src="scripts/browser-utils.js?v=2e68-project-save"></script>
+    <script src="scripts/state/storage.js"></script>
+    <script src="scripts/state/project-sync.js"></script>
+    <script src="scripts/state/app-state.js"></script>
+    <script src="scripts/state/import-export.js"></script>
+<script src="scripts/sfx/sfx-manager.js?v=2f136-media-frame-editing"></script>
+<script src="scripts/music/music-manager.js?v=2e69-music"></script>
+    <script src="scripts/journeys/journey-model.js?v=2f134-workflow-media-inheritance"></script>
+    <script src="scripts/journeys/journey-dates.js"></script>
+    <script src="scripts/journeys/journey-files.js?v=2f57-trip-groups"></script>
+    <script src="scripts/journeys/journey-repository.js?v=2f57-trip-groups"></script>
+    <script src="scripts/journeys/journey-editor.js?v=2f105-remove-legacy-media-ui"></script>
+    <script src="scripts/media/media-model.js?v=2f137-sticky-notes"></script>
+    <script src="scripts/media/media-renderer.js?v=2f146-note-viewport"></script>
+    <script src="scripts/media/media-editor.js?v=2f146-note-viewport"></script>
+    <script src="scripts/map/texture-renderer.js"></script>
+    <script src="scripts/map/topography-renderer.js?v=2e48-maplibre-validation"></script>
+    <script src="scripts/map/road-renderer.js?v=2e48-maplibre-validation"></script>
+    <script src="scripts/map/maplibre-renderer.js?v=2e93-load-ready"></script>
+    <script src="scripts/map/leaflet-renderer.js?v=2e91-journey-labels"></script>
+    <script src="scripts/map/map-controller.js"></script>
+    <script src="scripts/map/sticker-path-controller.js?v=2f01"></script>
+    <script src="scripts/playback/route-playback.js?v=2e86-camera-transaction"></script>
+    <script src="scripts/playback/camera-controller.js?v=2f05-viewport-fit"></script>
+    <script src="scripts/playback/overview-controller.js?v=2e83-camera-resolver"></script>
+    <script src="scripts/users/users-device-preview.js?v=2f66-ui-only-safety"></script>
+    <script src="scripts/users/users-dom.js?v=2f01"></script>
+    <script src="scripts/users/users-renderer.js?v=2f66-authored-gizmos"></script>
+    <script src="scripts/users/users-model.js?v=2e62-device-layout-export"></script>
+    <script src="scripts/users/users-geometry.js"></script>
+    <script src="scripts/users/users-interactions.js?v=2f128-consent-media-layouts"></script>
+    <script src="scripts/users/users-inspector.js?v=2e61-sfx"></script>
+    <script src="scripts/welcome/welcome-admin.js?v=2f145-media-tab-ownership"></script>
+    <script src="scripts/themes/theme-editor.js?v=2f67-stable-theme-picker"></script>
+    <script src="scripts/app.js?v=2f134-workflow-media-inheritance"></script>
+<script src="scripts/admin/popup-controller.js?v=2f66-outside-popup-dismiss"></script>
+  <script src="scripts/admin/admin-shell.js?v=2f145-media-tab-ownership"></script>
+    <script src="scripts/admin/setting-registry.js"></script>
+    <script src="scripts/playback/timeline-context.js?v=2f01"></script>
+    <script src="scripts/playback/timeline-scrub-controller.js?v=2f01"></script>
+    <script src="scripts/playback/timeline-controls-ui.js?v=2f01"></script>
+    <script src="scripts/playback/timeline-progress-controller.js?v=2f100-sticker-media-events"></script>
+    <script src="scripts/playback/timeline-playhead-controller.js?v=2f01"></script>
+    <script src="scripts/playback/timeline-transport-controller.js?v=2f01"></script>
+    <script src="scripts/playback/stop-timeline-completion.js?v=2f01"></script>
+    <script src="map.js?v=2f144-function-shortcuts"></script>
+    <script src="scripts/media/map-media-objects.js?v=2f146-note-viewport"></script>
+    <script src="scripts/app-bootstrap.js?v=2f02-section-colors"></script>
+    <script src="scripts/pwa.js"></script>
+
+  </body>
+</html>

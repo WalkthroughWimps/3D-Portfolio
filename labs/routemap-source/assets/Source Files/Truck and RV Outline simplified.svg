@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="55 92 625 292"
+     role="img"
+     aria-labelledby="title desc">
+  <title id="title">Truck towing a travel trailer</title>
+  <desc id="desc">Simplified side outline intended for small illuminated controls.</desc>
+
+  <!--
+    This icon deliberately keeps one contour wherever the source artwork used
+    nearby parallel outlines. Small trim, seams, handles, lights, undercarriage
+    details, and duplicated wheel contours were removed for icon-size clarity.
+    Set the CSS `color` property on the inline SVG to theme the entire drawing.
+  -->
+  <g fill="none"
+     stroke="currentColor"
+     stroke-width="2.35"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     vector-effect="non-scaling-stroke">
+
+    <!-- Truck: one exterior contour with open wheel wells. -->
+    <path d="M78 343
+             C74 326 73 306 76 288
+             C78 274 87 263 101 257
+             L151 241
+             L179 214
+             C194 199 213 194 241 192
+             L344 192
+             C360 193 370 202 376 218
+             L387 250
+             C392 265 393 282 390 297
+             L405 294
+             C409 281 416 274 425 274
+             C438 274 445 287 444 307
+             L442 319
+             L289 351
+             C287 326 278 310 266 309
+             C251 308 240 326 239 351
+             C187 354 136 352 90 347
+             C84 346 80 345 78 343 Z"/>
+
+    <!-- One cab glass contour; the source contained several close variants. -->
+    <path d="M157 239
+             L184 213
+             C197 202 214 198 239 197
+             L292 198
+             L278 239
+             C277 243 273 245 268 245
+             L207 241
+             C190 239 174 239 157 239 Z"/>
+
+    <!-- One hood/belt line, retained because it separates the truck volumes. -->
+    <path d="M294 198
+             C313 196 336 197 353 203
+             C363 207 369 220 374 240
+             L342 243
+             L331 205"/>
+
+    <!-- Truck wheels: single contours only. -->
+    <ellipse cx="266" cy="339" rx="13" ry="31"/>
+    <ellipse cx="425" cy="306" rx="10" ry="24"/>
+
+    <!-- Coupler: a single line instead of the original stacked contours. -->
+    <path d="M442 304 L480 303"/>
+
+    <!-- Travel trailer: one exterior shell contour. -->
+    <path d="M480 302
+             L474 269
+             L468 232
+             C466 207 469 176 477 148
+             C483 127 494 113 508 109
+             C516 107 525 109 536 112
+             L657 153
+             L658 252
+             L632 264
+             C630 278 627 289 622 294
+             C617 289 614 279 614 266
+             C611 280 608 291 604 297
+             L559 306
+             L524 310
+             L498 315
+             L491 278
+             L484 245"/>
+
+    <!-- One window and one door are enough to read as a travel trailer. -->
+    <path d="M563 158 L620 168 L620 205 L563 203 Z"/>
+    <path d="M531 153 L556 157 L556 263 L531 265 Z"/>
+
+    <!-- Twin trailer wheels, each represented once. -->
+    <ellipse cx="605" cy="276" rx="7" ry="18"/>
+    <ellipse cx="621" cy="273" rx="7" ry="18"/>
+  </g>
+</svg>

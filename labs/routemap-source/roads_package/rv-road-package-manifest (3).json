@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "packageType": "rv-map-road-package",
+  "tripName": "Laverne to Colorado Springs Loop",
+  "expectedFiles": [
+    {
+      "name": "us-major-roads.pmtiles",
+      "purpose": "Whole-US interstates, US highways, and major roads for low-zoom context."
+    },
+    {
+      "name": "trip-corridor-roads.pmtiles",
+      "purpose": "Detailed route-corridor roads for the active trip."
+    },
+    {
+      "name": "trip-corridor-roads.geojson",
+      "purpose": "Browser-downloadable detailed route-corridor roads for the active/default trip."
+    },
+    {
+      "name": "theme-settings-roads.geojson",
+      "purpose": "Browser-downloadable roads for the Elements preview route."
+    }
+  ],
+  "folderUse": "For this project, put the PMTiles or GeoJSON road files in roads package/ next to this manifest.",
+  "browserNote": "Browsers cannot force a download location. The app auto-detects project-local PMTiles and GeoJSON files when served from the project folder.",
+  "generatedAt": "2026-06-23T23:34:44.284Z"
+}
