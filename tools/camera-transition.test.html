@@ -1,0 +1,55 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Camera transition regression tests</title>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"}}
+</script>
+<pre id="results">Running…</pre>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createCameraTransition } from '../_0-start/camera-transition.js';
+const results = document.getElementById('results');
+const assert = (value, message) => { if (!value) throw new Error(message); };
+try {
+    const camera = new THREE.PerspectiveCamera();
+    const controls = new OrbitControls(camera, document.createElement('canvas'));
+    controls.minDistance = 5;
+    controls.maxDistance = 12;
+    camera.position.set(1, 6, 3);
+    camera.rotation.set(-0.7, 0.2, 0.1);
+    const startPos = camera.position.clone(), startQuat = camera.quaternion.clone();
+    const positions = [[0,4,1], [0,4,1], [-1,5,6], [-6,7,18]];
+    const rotations = positions.map(() => [0,0,0,1]);
+    const target = new THREE.Vector3(0, 1, 0);
+    const transition = createCameraTransition(camera, controls, positions, rotations, target, 5000, 100);
+    transition.sample(100);
+    assert(camera.position.distanceTo(startPos) < 1e-10, 'Start position jumped');
+    assert(camera.quaternion.angleTo(startQuat) < 1e-7, 'Start rotation jumped');
+    for (let t = 100; t < 2600; t += 1000 / 30) transition.sample(t);
+    transition.sample(2600);
+    const midpoint = camera.position.clone();
+    for (let t = 100; t < 2600; t += 1000 / 144) transition.sample(t);
+    transition.sample(2600);
+    assert(camera.position.distanceTo(midpoint) < 1e-10, 'Frame rate changed the path');
+    transition.sample(2050);
+    const beforeMiddle = camera.position.clone();
+    transition.sample(2150);
+    const afterMiddle = camera.position.clone();
+    assert(camera.position.distanceTo(beforeMiddle) > 0.001, 'Camera stopped through the middle');
+    transition.sample(5099);
+    const nearEnd = camera.position.clone();
+    assert(transition.sample(5100) === 1, 'Wrong completion time');
+    assert(camera.position.distanceTo(nearEnd) < 0.001, 'Endpoint did not ease to a stop');
+    const finalPos = camera.position.clone(), finalQuat = camera.quaternion.clone();
+    controls.target.copy(transition.target);
+    controls.update();
+    assert(camera.position.distanceTo(finalPos) < 1e-8, 'OrbitControls moved the endpoint');
+    assert(camera.quaternion.angleTo(finalQuat) < 1e-7, 'OrbitControls rotated the endpoint');
+    controls.dispose();
+    results.textContent = 'PASS: initial pose, frame-rate independence, continuous middle motion, timed completion, smooth stop, orbit handoff';
+} catch (error) {
+    results.textContent = `FAIL: ${error.message}`;
+    throw error;
+}
+</script>

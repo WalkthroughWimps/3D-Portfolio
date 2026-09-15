@@ -27,8 +27,11 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
-import { createVideoControlsUI, syncAudioToVideo } from '../_7-shared-scripts/shared-video-controls.js';
+import { createVideoControlsUI, syncAudioToVideo, seekMediaWithFreeze, getStoredPreservePitch, setStoredPreservePitch, setPreservePitchFlag, playbackRates as SHARED_PLAYBACK_RATES, showVideoKeyboardShortcuts } from '../_7-shared-scripts/shared-video-controls.js';
 import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+import { MEDIA_CATALOG } from '../_7-shared-scripts/media-catalog.js';
+import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
@@ -47,7 +50,11 @@ if (isLocalDev() || new URLSearchParams(window.location.search || '').has('asset
   corsProbe('Videos/music-page/sunil-video.jpg');
   corsProbe('Renders/tablet_animation_1.opus');
 }
-window.addEventListener('DOMContentLoaded', ()=>{
+window.addEventListener('DOMContentLoaded', async ()=>{
+  await ensureAudioConsentPrompt({
+    title: 'Allow sound?',
+    message: 'This page can play sound for music playback and video previews. Allow audio playback?'
+  });
   instrumentPickerEl = document.getElementById('instrumentPicker');
   if(instrumentPickerEl){
     instrumentPickerEl.classList.add('instrument-picker--backboard');
@@ -169,14 +176,14 @@ const demoAngleWhite = THREE.MathUtils.degToRad(4);
 const demoAngleBlack = THREE.MathUtils.degToRad(5);
 // Orbit controls
 const controls = new OrbitControls(cam, renderer.domElement);
-// Rotate on RMB so LMB can interact with keys/screen without accidental camera motion.
-controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.enablePan = false;
+applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
 controls.minDistance = 0.5;
 controls.maxDistance = 20; // allow further zooming out
 controls.target.set(0,0.4,0);
+let musicDefaultOrbitState = null;
+bindSharedMouseControls();
 // MIDI structures
 let midiEvents = []; // {timeMs, type:'on'|'off', note, velocity}
 let ticksPerQuarter = 480; // default, will read header
@@ -406,6 +413,7 @@ let animationMixer = null;
 let tabletStandMesh = null; // auto-rotated display stand
 let tabletStandTargetAngle = 0; // computed each frame
 let tabletStandCurrentAngle = 0; // smoothed applied angle
+const TABLET_STAND_VIDEO_ANGLE = Math.PI / 2;
 const TABLET_ROTATION_LERP_SPEED = 8.0; // larger = snappier, smaller = looser
 // Backboard screen canvas (note display)
 let backboardMesh = null;
@@ -418,7 +426,7 @@ let topPadCtx = null;
 let topPadTexture = null;
 let topPadHoverCell = null;
 let topPadHoverUi = null;
-let topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, instrumentModeToggle: null, syncSlider: null };
+let topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, instrumentModeToggle: null, syncSlider: null, sunilCircle: null };
 const topPadIconSources = [
   assetUrl('../Videos/music-page/baby-just-shut-up-a-lullaby.png'),
   assetUrl('../Videos/music-page/those-raisins-are-mine.png'),
@@ -435,10 +443,10 @@ const topPadIconImages = topPadIconSources.map((src) => {
   return img;
 });
 const topPadVideo = {
-  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async'; img.loading = 'eager'; img.src = assetUrl('../Videos/music-page/sunil-video.jpg'); img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
-  lqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl('../Videos/music-page/sunil-video_lq.webm'); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
-  hqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl('../Videos/music-page/sunil-video_hq.webm'); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
-  audio: (() => { const a = document.createElement('audio'); a.crossOrigin = 'anonymous'; a.src = assetUrl('../Videos/music-page/sunil-video.opus'); a.preload = 'auto'; return a; })(),
+  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async'; img.loading = 'eager'; img.src = assetUrl(MEDIA_CATALOG.music.topPad.thumbnail); img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
+  lqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl(MEDIA_CATALOG.music.topPad.preview); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
+  hqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl(MEDIA_CATALOG.music.topPad.video); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
+  audio: (() => { const a = document.createElement('audio'); a.crossOrigin = 'anonymous'; a.src = assetUrl(MEDIA_CATALOG.music.topPad.audio); a.preload = 'auto'; return a; })(),
   mode: 'idle',
   previewTimer: null,
   playing: false,
@@ -452,8 +460,10 @@ const topPadVideo = {
   videoRect: null,
   controlsRect: null,
   hoverThumb: false,
+  focused: false,
   zoom: null,
-  cameraRestore: null
+  cameraRestore: null,
+  orbitLimitsRestore: null
 };
 const trackVideo = {
   active: false,
@@ -468,10 +478,13 @@ const trackVideoElements = new Map();
 const TOPPAD_PREVIEW_MS = 2400;
 const TOPPAD_PREVIEW_SEEK_PAD = 0.6;
 const TOPPAD_ZOOM_MS = 700;
+const TOPPAD_FOCUS_COOLDOWN_MS = 1000;
+let lastTopPadFocusToggleMs = 0;
 const AUDIO_VOLUME_KEY = 'site.audio.volume';
 const AUDIO_MUTED_KEY = 'site.audio.muted';
 const SYNC_OFFSET_MIN = -3000;
 const SYNC_OFFSET_MAX = 3000;
+const MUSIC_SYNC_SLIDER_RANGE = 500;
 const SYNC_OFFSET_STEP = 10;
 const SYNC_OFFSET_DEADZONE = 25;
 let topPadSyncDragging = false;
@@ -519,7 +532,7 @@ function loadInstrumentMixFromStorage(){
 
 function getStoredAudioSettings(){
   const raw = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1');
-  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true';
+  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !isAudioAllowed();
   return { volume: clamp01(raw), muted };
 }
 
@@ -555,6 +568,28 @@ function applyStoredAudioSettings(media){
   const { volume, muted } = getStoredAudioSettings();
   try{ media.volume = muted ? 0 : volume; }catch(e){}
   try{ media.muted = !!muted; }catch(e){}
+  setPreservePitchFlag(media, getStoredPreservePitch());
+}
+
+function applyStoredPitchModeToMusicVideoSurfaces(){
+  const preserve = getStoredPreservePitch();
+  try{ setPreservePitchFlag(topPadVideo.hqVideo, preserve); }catch(e){}
+  try{ setPreservePitchFlag(topPadVideo.audio, preserve); }catch(e){}
+  try{ setPreservePitchFlag(trackVideo.hqVideo, preserve); }catch(e){}
+}
+
+function toggleStoredPitchMode(){
+  const next = setStoredPreservePitch(!getStoredPreservePitch());
+  applyStoredPitchModeToMusicVideoSurfaces();
+  renderTopPadGrid();
+  return next;
+}
+
+function cycleSharedPlaybackRate(){
+  const rates = Array.isArray(SHARED_PLAYBACK_RATES) && SHARED_PLAYBACK_RATES.length ? SHARED_PLAYBACK_RATES : TOPPAD_SPEED_OPTIONS;
+  const idx = Math.max(0, rates.indexOf(currentPlaybackRate));
+  const next = (idx + 1) % rates.length;
+  setPlaybackRate(rates[next] || currentPlaybackRate);
 }
 
 function getSiteVolume01(){
@@ -970,7 +1005,7 @@ function normalizeSyncOffset(ms){
 function setTopPadSyncOffsetFromPx(px, rect){
   if(!rect || !rect.w) return;
   const ratio = Math.max(0, Math.min(1, (px - rect.x) / rect.w));
-  const raw = SYNC_OFFSET_MIN + ratio * (SYNC_OFFSET_MAX - SYNC_OFFSET_MIN);
+  const raw = -MUSIC_SYNC_SLIDER_RANGE + ratio * (MUSIC_SYNC_SLIDER_RANGE * 2);
   const next = normalizeSyncOffset(raw);
   setSyncOffsetMs(next);
   renderTopPadGrid();
@@ -1011,15 +1046,43 @@ function startTopPadZoom(to){
   const now = performance.now();
   const fromPos = cam.position.clone();
   const fromTarget = controls.target.clone();
+  const fromUp = cam.up.clone();
   topPadVideo.zoom = {
     startMs: now,
     durationMs: TOPPAD_ZOOM_MS,
     fromPos,
     fromTarget,
+    fromUp,
     toPos: to.position.clone(),
     toTarget: to.target.clone(),
+    toUp: to.up ? to.up.clone() : fromUp.clone(),
     onComplete: to.onComplete || null
   };
+}
+
+function relaxTopPadVideoZoomLimits(){
+  if(!controls) return;
+  if(!topPadVideo.orbitLimitsRestore){
+    topPadVideo.orbitLimitsRestore = {
+      minDistance: controls.minDistance,
+      maxDistance: controls.maxDistance
+    };
+  }
+  controls.minDistance = 0.001;
+  controls.maxDistance = Infinity;
+}
+
+function restoreTopPadVideoZoomLimits(){
+  if(!controls || !topPadVideo.orbitLimitsRestore) return;
+  controls.minDistance = topPadVideo.orbitLimitsRestore.minDistance;
+  controls.maxDistance = topPadVideo.orbitLimitsRestore.maxDistance;
+  topPadVideo.orbitLimitsRestore = null;
+}
+
+function setTabletStandVideoFocusAngle(){
+  // The GLB's tablet stand is part of the lower piano assembly. Rotating it
+  // for video focus bends the lower display out of shape, so focus is camera
+  // only; the physical instrument is never mutated here.
 }
 
 function updateTopPadZoom(){
@@ -1028,6 +1091,7 @@ function updateTopPadZoom(){
   const t = Math.max(0, Math.min(1, (performance.now() - z.startMs) / Math.max(1, z.durationMs)));
   cam.position.lerpVectors(z.fromPos, z.toPos, t);
   controls.target.lerpVectors(z.fromTarget, z.toTarget, t);
+  cam.up.lerpVectors(z.fromUp, z.toUp, t).normalize();
   controls.update();
   if(t >= 1){
     const cb = z.onComplete;
@@ -1038,47 +1102,128 @@ function updateTopPadZoom(){
 
 function computeTopPadZoomTarget(){
   if(!topPadMesh) return null;
-  const box = new THREE.Box3().setFromObject(topPadMesh);
-  const size = box.getSize(new THREE.Vector3());
-  const center = box.getCenter(new THREE.Vector3());
+  setTabletStandVideoFocusAngle();
+  topPadMesh.updateMatrixWorld(true);
+  if(topPadMesh.geometry && !topPadMesh.geometry.boundingBox) topPadMesh.geometry.computeBoundingBox();
+  const localBox = topPadMesh.geometry && topPadMesh.geometry.boundingBox
+    ? topPadMesh.geometry.boundingBox
+    : null;
+  const worldBox = new THREE.Box3().setFromObject(topPadMesh);
+  const center = localBox
+    ? localBox.getCenter(new THREE.Vector3()).applyMatrix4(topPadMesh.matrixWorld)
+    : worldBox.getCenter(new THREE.Vector3());
+  const localSize = localBox
+    ? localBox.getSize(new THREE.Vector3())
+    : worldBox.getSize(new THREE.Vector3());
+  const worldPos = new THREE.Vector3();
+  const worldQuat = new THREE.Quaternion();
+  const worldScale = new THREE.Vector3(1, 1, 1);
+  topPadMesh.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+  const axes = [
+    { axis: new THREE.Vector3(1, 0, 0).applyQuaternion(worldQuat).normalize(), length: Math.abs(localSize.x * worldScale.x) },
+    { axis: new THREE.Vector3(0, 1, 0).applyQuaternion(worldQuat).normalize(), length: Math.abs(localSize.y * worldScale.y) },
+    { axis: new THREE.Vector3(0, 0, 1).applyQuaternion(worldQuat).normalize(), length: Math.abs(localSize.z * worldScale.z) }
+  ].sort((a, b) => a.length - b.length);
+  const normal = axes[0].axis.clone();
+  const toCurrentCamera = cam.position.clone().sub(center).normalize();
+  if(normal.dot(toCurrentCamera) < 0) normal.multiplyScalar(-1);
+  const up = axes.slice(1).sort((a, b) => Math.abs(b.axis.dot(new THREE.Vector3(0, 1, 0))) - Math.abs(a.axis.dot(new THREE.Vector3(0, 1, 0))))[0].axis.clone();
+  if(up.dot(cam.up) < 0) up.multiplyScalar(-1);
+  let minU = Infinity, maxU = -Infinity;
+  if(localBox){
+    const min = localBox.min;
+    const max = localBox.max;
+    const corners = [
+      new THREE.Vector3(min.x, min.y, min.z), new THREE.Vector3(max.x, min.y, min.z),
+      new THREE.Vector3(min.x, max.y, min.z), new THREE.Vector3(max.x, max.y, min.z),
+      new THREE.Vector3(min.x, min.y, max.z), new THREE.Vector3(max.x, min.y, max.z),
+      new THREE.Vector3(min.x, max.y, max.z), new THREE.Vector3(max.x, max.y, max.z)
+    ];
+    corners.forEach(corner => {
+      corner.applyMatrix4(topPadMesh.matrixWorld).sub(center);
+      const u = corner.dot(up);
+      minU = Math.min(minU, u); maxU = Math.max(maxU, u);
+    });
+  }
+  const surfaceH = Math.max(Number.isFinite(maxU - minU) ? maxU - minU : axes[1].length, 0.001);
   const fov = THREE.MathUtils.degToRad(cam.fov);
-  const aspect = cam.aspect || 1;
-  const fitHeightDist = (size.y * 0.5) / Math.tan(fov * 0.5);
-  const fitWidthDist = (size.x * 0.5) / Math.tan(fov * 0.5) / Math.max(0.001, aspect);
-  const dist = Math.max(fitHeightDist, fitWidthDist) * 1.35;
-  const dir = cam.position.clone().sub(controls.target).normalize();
-  const pos = center.clone().add(dir.multiplyScalar(dist));
-  return { position: pos, target: center };
+  const fitHeightDist = (surfaceH * 0.5) / Math.tan(fov * 0.5);
+  // Leave a small breathing margin around the physical screen. The previous
+  // multiplier cropped the frame, which made the focused video look as if it
+  // were spilling under the lower controls.
+  const dist = fitHeightDist * 1.10;
+  const pos = center.clone().add(normal.multiplyScalar(dist));
+  return { position: pos, target: center, up };
+}
+
+function captureMusicDefaultOrbitState(){
+  musicDefaultOrbitState = {
+    position: cam.position.clone(),
+    target: controls.target.clone()
+  };
+}
+
+function bindSharedMouseControls(){
+  try{ renderer?.domElement?.__musicSharedMouse?.dispose?.(); }catch(e){}
+  renderer.domElement.__musicSharedMouse = installStandardGlbMouseControls({
+    controls,
+    domElement: renderer.domElement,
+    canInteract: () => !!(controls && controls.enabled && !topPadVideo.focused && topPadVideo.mode !== 'zooming')
+  });
 }
 
 function startTopPadVideoPlayback(){
   stopTopPadPreview();
-  if(topPadVideo.mode === 'playing') return;
+  if(topPadVideo.mode === 'playing' || topPadVideo.mode === 'zooming') return;
   const target = computeTopPadZoomTarget();
   if(!target) return;
+  relaxTopPadVideoZoomLimits();
   topPadVideo.cameraRestore = {
     pos: cam.position.clone(),
     target: controls.target.clone(),
+    up: cam.up.clone(),
     enabled: controls.enabled
   };
+  topPadVideo.mode = 'zooming';
+  topPadVideo.focused = true;
+  try{ topPadVideo.audio.pause(); }catch(e){}
+  try{ topPadVideo.hqVideo.pause(); }catch(e){}
+  try{ topPadVideo.audio.currentTime = 0; }catch(e){}
+  try{ topPadVideo.hqVideo.currentTime = 0; }catch(e){}
+  try{ topPadVideo.hqVideo.load(); }catch(e){}
+  try{
+    topPadVideo.hqVideo.addEventListener('loadeddata', () => { renderTopPadGrid(); }, { once: true });
+    topPadVideo.hqVideo.addEventListener('seeked', () => { renderTopPadGrid(); }, { once: true });
+  }catch(e){}
+  renderTopPadGrid();
   startTopPadZoom({
     position: target.position,
     target: target.target,
+    up: target.up,
     onComplete: () => {
       topPadVideo.mode = 'playing';
+      try{ renderer?.domElement?.__musicSharedMouse?.cancelFocusAnimation?.(); }catch(e){}
+      controls.enabled = false;
+      controls.enableRotate = false;
+      controls.enablePan = false;
       topPadVideo.syncState = { driftEma: 0, lastAdjustTs: 0, lastHardTs: 0, rateAdjusted: false };
       applyStoredAudioSettings(topPadVideo.audio);
-      try{
-        topPadVideo.hqVideo.currentTime = 0;
-      }catch(e){}
-      topPadVideo.hqVideo.onended = () => { stopTopPadVideoPlayback(); };
-      const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
-      const syncSec = syncMs / 1000;
-      const targetTime = Math.max(0, (topPadVideo.hqVideo.currentTime || 0) - syncSec);
-      try{ topPadVideo.audio.currentTime = targetTime; }catch(e){}
-      try{ topPadVideo.audio.play().catch(() => {}); }catch(e){}
-      try{ topPadVideo.hqVideo.play().catch(() => {}); }catch(e){}
-      renderTopPadGrid();
+      applyStoredPitchModeToMusicVideoSurfaces();
+      const startAtFirstFrame = () => {
+        if(topPadVideo.mode !== 'playing') return;
+        try{ topPadVideo.hqVideo.currentTime = 0; }catch(e){}
+        topPadVideo.hqVideo.onended = () => { stopTopPadVideoPlayback(); };
+        const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
+        const targetTime = Math.max(0, -syncMs / 1000);
+        try{ topPadVideo.audio.currentTime = targetTime; }catch(e){}
+        // Playback begins only after the camera has arrived and the HQ frame is
+        // decoded; otherwise the performance is already underway when shown.
+        try{ topPadVideo.hqVideo.play().catch(() => {}); }catch(e){}
+        try{ topPadVideo.audio.play().catch(() => {}); }catch(e){}
+        renderTopPadGrid();
+      };
+      if(topPadVideo.hqVideo.readyState >= 2) startAtFirstFrame();
+      else topPadVideo.hqVideo.addEventListener('canplay', startAtFirstFrame, { once: true });
     }
   });
 }
@@ -1088,13 +1233,17 @@ function stopTopPadVideoPlayback(){
   try{ topPadVideo.hqVideo.pause(); }catch(e){}
   try{ topPadVideo.audio.pause(); }catch(e){}
   topPadVideo.mode = 'idle';
+  topPadVideo.focused = false;
   if(topPadVideo.cameraRestore){
     const restore = topPadVideo.cameraRestore;
     startTopPadZoom({
       position: restore.pos,
       target: restore.target,
+      up: restore.up || new THREE.Vector3(0, 1, 0),
       onComplete: () => {
-        controls.enabled = restore.enabled;
+        restoreTopPadVideoZoomLimits();
+        applyStandardGlbMouseControlMode(controls, { enabled: restore.enabled, allowRotate: restore.enabled, allowZoom: restore.enabled });
+        captureMusicDefaultOrbitState();
       }
     });
   }
@@ -1108,6 +1257,7 @@ let topPadSurfaceAspect = 1;
 let topPadUvRemap = { repeatU: 1, repeatV: 1, offsetU: 0, offsetV: 0, swap: false, mirrorU: false, mirrorV: false };
 let topPadUvDebugLogged = false;
 let topPadLastDrawMs = 0;
+let lastMusicVideoControlsActivityTs = performance.now();
 const TOPPAD_MAX_FPS = 24;
 // Backboard redraw throttle / dirty flag to avoid per-frame canvas uploads
 let backboardDirty = true;
@@ -1135,6 +1285,39 @@ let instrumentPickerEl = null;
 let lastInstrumentPickerRect = { x: 0, y: 0, w: 0, h: 0 };
 let screenPlane = null;
 let screenPlaneNormal = new THREE.Vector3(0,0,1);
+
+function toggleTopPadVideoFocus(){
+  const now = performance.now();
+  if(topPadVideo.mode !== 'playing' || topPadVideo.zoom || (now - lastTopPadFocusToggleMs) < TOPPAD_FOCUS_COOLDOWN_MS) return;
+  lastTopPadFocusToggleMs = now;
+  if(topPadVideo.focused){
+    const restore = topPadVideo.cameraRestore;
+    if(!restore) return;
+    topPadVideo.focused = false;
+    startTopPadZoom({
+      position: restore.pos,
+      target: restore.target,
+      up: restore.up || new THREE.Vector3(0, 1, 0),
+      onComplete: () => {
+        restoreTopPadVideoZoomLimits();
+        applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
+      }
+    });
+  } else {
+    const target = computeTopPadZoomTarget();
+    if(!target) return;
+    relaxTopPadVideoZoomLimits();
+    topPadVideo.focused = true;
+    startTopPadZoom({
+      position: target.position,
+      target: target.target,
+      up: target.up,
+      onComplete: () => applyStandardGlbMouseControlMode(controls, { enabled: false, allowRotate: false, allowZoom: false })
+    });
+  }
+  renderTopPadGrid();
+}
+
 let uvDebugMode = false; // draw UV test card
 const DEBUG_INSTRUMENTS = (typeof window !== 'undefined' && typeof window.DEBUG_INSTRUMENTS !== 'undefined')
   ? !!window.DEBUG_INSTRUMENTS
@@ -4155,6 +4338,17 @@ function getFrontFacingSurfaceHit(target, clientX, clientY){
   return hit;
 }
 
+function raycastModelHit(clientX, clientY){
+  if(!root || !canvas) return null;
+  const rect = canvas.getBoundingClientRect();
+  const nx = ((clientX - rect.left)/rect.width)*2 - 1;
+  const ny = -((clientY - rect.top)/rect.height)*2 + 1;
+  pointer.set(nx, ny);
+  raycaster.setFromCamera(pointer, cam);
+  const hits = raycaster.intersectObject(root, true);
+  return hits.length ? hits[0] : null;
+}
+
 function raycastBackboardForUv(clientX, clientY){
   const target = backboardMesh || screenPlane;
   const hit = getFrontFacingSurfaceHit(target, clientX, clientY);
@@ -4205,6 +4399,8 @@ function updateTopPadHover(clientX, clientY){
   if(!topPadMesh || !topPadCanvas) return;
   const uv = raycastTopPadForUv(clientX, clientY);
   if(!uv){
+    try{ topPadVideo.ui?.clearHoverPreview?.(); }catch(e){}
+    try{ trackVideo.ui?.clearHoverPreview?.(); }catch(e){}
     if(topPadHoverCell){
       topPadHoverCell = null;
       renderTopPadGrid();
@@ -4231,6 +4427,26 @@ function updateTopPadHover(clientX, clientY){
   const clampedU = Math.max(0, Math.min(1, u));
   const clampedV = Math.max(0, Math.min(1, v));
   const pt = { px: clampedU * topPadCanvas.width, py: clampedV * topPadCanvas.height };
+  if(topPadVideo.mode === 'playing' && topPadVideo.controlsRect && topPadVideo.ui){
+    const cr = topPadVideo.controlsRect;
+    topPadVideo.ui.setViewportRectProvider(() => ({
+      left: 0,
+      top: 0,
+      width: Math.max(1, Math.round(cr.w)),
+      height: Math.max(1, Math.round(cr.h))
+    }));
+    topPadVideo.ui.handlePointerMove?.({ canvasX: pt.px - cr.x, canvasY: pt.py - cr.y, type: 'pointermove' }, { canvasWidth: cr.w, canvasHeight: cr.h });
+  }
+  if(trackVideo.active && trackVideo.ui && topPadVideo.controlsRect){
+    const cr = topPadVideo.controlsRect;
+    trackVideo.ui.setViewportRectProvider(() => ({
+      left: 0,
+      top: 0,
+      width: Math.max(1, Math.round(cr.w)),
+      height: Math.max(1, Math.round(cr.h))
+    }));
+    trackVideo.ui.handlePointerMove?.({ canvasX: pt.px - cr.x, canvasY: pt.py - cr.y, type: 'pointermove' }, { canvasWidth: cr.w, canvasHeight: cr.h });
+  }
   if(showTopPadGrid){
     const col = Math.floor(clampedU * TOPPAD_GRID_COLS);
     const row = Math.floor(clampedV * TOPPAD_GRID_ROWS);
@@ -4264,6 +4480,12 @@ function updateTopPadHover(clientX, clientY){
     if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
       nextUi = { type: 'instrument-mode' };
     }
+  }
+  if(!nextUi && topPadUiRects && topPadUiRects.sunilCircle){
+    const c = topPadUiRects.sunilCircle;
+    const dx = pt.px - c.x;
+    const dy = pt.py - c.y;
+    if((dx * dx + dy * dy) <= (c.r * c.r)) nextUi = { type: 'sunil-video' };
   }
   if(!nextUi && topPadUiRects && topPadUiRects.trackCircles && topPadUiRects.trackCircles.length){
     for(let i=0;i<topPadUiRects.trackCircles.length;i++){
@@ -4300,29 +4522,26 @@ function updateTopPadHover(clientX, clientY){
       nextUi = { type: 'sync-slider' };
     }
   }
-  if(!nextUi && topPadVideo.mode !== 'playing' && topPadVideo.thumbRect){
-    const r = topPadVideo.thumbRect;
-    if(pt.px >= r.x && pt.px <= r.x + r.w && pt.py >= r.y && pt.py <= r.y + r.h){
-      nextUi = { type: 'thumb' };
-    }
-  }
   if((!topPadHoverUi && nextUi) || (topPadHoverUi && (!nextUi || topPadHoverUi.type !== nextUi.type || topPadHoverUi.index !== nextUi.index))){
     topPadHoverUi = nextUi;
     renderTopPadGrid();
   }
-  const overThumb = nextUi && nextUi.type === 'thumb';
-  if(overThumb && !topPadVideo.hoverThumb){
-    topPadVideo.hoverThumb = true;
-    startTopPadPreview();
-  } else if(!overThumb && topPadVideo.hoverThumb){
+  if(topPadVideo.hoverThumb){
     topPadVideo.hoverThumb = false;
     stopTopPadPreview();
   }
   if(canvas){
-    const overControlsRect = topPadVideo.controlsRect
-      && pt.px >= topPadVideo.controlsRect.x && pt.px <= topPadVideo.controlsRect.x + topPadVideo.controlsRect.w
-      && pt.py >= topPadVideo.controlsRect.y && pt.py <= topPadVideo.controlsRect.y + topPadVideo.controlsRect.h;
-    canvas.style.cursor = (nextUi || overControlsRect) ? 'pointer' : '';
+    let playerControlHit = false;
+    const activeUi = topPadVideo.mode === 'playing' ? topPadVideo.ui : (trackVideo.active ? trackVideo.ui : null);
+    const cr = topPadVideo.controlsRect;
+    if(activeUi && cr && pt.px >= cr.x && pt.px <= cr.x + cr.w && pt.py >= cr.y && pt.py <= cr.y + cr.h){
+      const hit = activeUi.inspectPointerEvent?.({ canvasX: pt.px - cr.x, canvasY: pt.py - cr.y }, { canvasWidth: cr.w, canvasHeight: cr.h });
+      playerControlHit = !!hit?.handled;
+    }
+    // The video image itself is not a button. Restrict the hand cursor to a
+    // real player control or a top-pad control so it cannot flicker hand/arrow
+    // while the camera is being focused.
+    canvas.style.cursor = (nextUi || playerControlHit) ? 'pointer' : '';
   }
 }
 
@@ -4558,8 +4777,14 @@ function renderTopPadGrid(){
   ctx.fillRect(0,0,W,H);
   const cellW = W / TOPPAD_GRID_COLS;
   const cellH = H / TOPPAD_GRID_ROWS;
-  const leftW = cellW * 3.5;
-  const midW = cellW * 5;
+  // Original divider geometry: 3.5 / 5 / 3.5 columns. Keep the player
+  // bounded by its yellow dividers, then fit its 16:9 picture inside that
+  // center aperture rather than moving the dividers to fit the source.
+  const leftCols = 3.5;
+  const midCols = 5;
+  const rightCols = TOPPAD_GRID_COLS - leftCols - midCols;
+  const leftW = cellW * leftCols;
+  const midW = cellW * midCols;
   const rightX = leftW + midW;
   ctx.fillStyle = 'rgba(20, 20, 20, 0.45)';
   ctx.fillRect(0, 0, leftW, H);
@@ -4594,9 +4819,9 @@ function renderTopPadGrid(){
   ctx.lineTo(rightX, H);
   ctx.stroke();
   const midRect = {
-    x: cellW * 3.5,
+    x: leftW,
     y: 0,
-    w: cellW * 5,
+    w: midW,
     h: cellH * 8
   };
   topPadVideo.midRect = midRect;
@@ -4615,16 +4840,16 @@ function renderTopPadGrid(){
   const uiWidth = leftW - uiPadX * 2;
   const titleY = Math.round(cellH * 0.75);
   ctx.fillStyle = textLight;
-  ctx.font = `700 ${Math.max(14, Math.round(cellH * 0.7))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.font = `800 ${Math.max(16, Math.round(cellH * 0.88))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('Play Tracks', leftW / 2, titleY);
 
   const circleMargin = Math.round(cellW * 0.14);
-  const circleR = Math.min((leftW - circleMargin * 2) * 0.42, cellH * 1.6);
+  const circleR = Math.min((leftW - circleMargin * 2) * 0.35, cellH * 0.98);
   const circleGap = Math.max(10, Math.round((leftW - circleMargin * 2 - circleR * 2) / 2));
-  const circleYTop = Math.round(cellH * 3.1);
-  const circleYRow = Math.round(cellH * 6.0);
+  const circleYTop = Math.round(cellH * 2.15);
+  const circleYRow = Math.round(cellH * 4.25);
   const circleLeftX = circleMargin + circleR;
   const circleRightX = leftW - circleMargin - circleR;
   const circleTopX = leftW / 2;
@@ -4633,7 +4858,7 @@ function renderTopPadGrid(){
     { x: circleLeftX, y: circleYRow, r: circleR },
     { x: circleRightX, y: circleYRow, r: circleR }
   ];
-  topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, speedCircle: null, trackCircles: circleRects, gridToggle: null, instrumentModeToggle: null, syncSlider: null };
+  topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, speedCircle: null, trackCircles: circleRects, gridToggle: null, instrumentModeToggle: null, syncSlider: null, sunilCircle: null };
   circleRects.forEach((c, idx) => {
     ctx.save();
     ctx.beginPath();
@@ -4664,8 +4889,8 @@ function renderTopPadGrid(){
     ctx.restore();
   });
 
-  const playRowY = Math.round(H - cellH * 3.2);
-  const iconR = Math.round(cellH * 0.9);
+  const playRowY = Math.round(H - cellH * 3.05);
+  const iconR = Math.round(cellH * 0.7);
   const iconGap = Math.max(10, Math.round(cellW * 0.18));
   const playCenterX = uiPadX + uiWidth * 0.55;
   const playCenterY = playRowY + iconR;
@@ -4751,23 +4976,23 @@ function renderTopPadGrid(){
   topPadUiRects.speedButtons = [];
 
   const syncValue = normalizeSyncOffset(getSyncOffsetMs());
-  const syncLabelY = playCenterY + iconR + Math.round(cellH * 0.25);
-  const sliderH = Math.max(8, Math.round(cellH * 0.22));
+  const syncLabelY = playCenterY + iconR + Math.round(cellH * 0.42);
+  const sliderH = Math.max(12, Math.round(cellH * 0.36));
   const sliderW = Math.max(120, Math.round(uiWidth * 0.92));
   const sliderX = uiPadX + (uiWidth - sliderW) / 2;
-  let sliderY = syncLabelY + Math.round(cellH * 0.35);
-  sliderY = Math.min(sliderY, H - sliderH - Math.round(cellH * 0.4));
+  let sliderY = syncLabelY + Math.round(cellH * 0.46);
+  sliderY = Math.min(sliderY, H - sliderH - Math.round(cellH * 0.22));
   const sliderRect = { x: sliderX, y: sliderY, w: sliderW, h: sliderH };
   topPadUiRects.syncSlider = sliderRect;
   const sliderHover = topPadHoverUi && topPadHoverUi.type === 'sync-slider';
-  const sliderRatio = (syncValue - SYNC_OFFSET_MIN) / (SYNC_OFFSET_MAX - SYNC_OFFSET_MIN);
+  const sliderRatio = (syncValue + MUSIC_SYNC_SLIDER_RANGE) / (MUSIC_SYNC_SLIDER_RANGE * 2);
   const knobX = sliderRect.x + sliderRect.w * Math.max(0, Math.min(1, sliderRatio));
   ctx.save();
   ctx.fillStyle = textLight;
-  ctx.font = `600 ${Math.max(11, Math.round(cellH * 0.34))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.font = `800 ${Math.max(16, Math.round(cellH * 0.54))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`Audio Sync Offset: ${syncValue} ms`, leftW / 2, syncLabelY);
+  ctx.fillText(`AUDIO SYNC: ${syncValue} ms`, leftW / 2, syncLabelY);
   ctx.restore();
   ctx.save();
   ctx.fillStyle = sliderHover ? 'rgba(120, 220, 170, 0.35)' : 'rgba(255,255,255,0.18)';
@@ -4789,7 +5014,7 @@ function renderTopPadGrid(){
   const namePadX = Math.round(cellW * 0.08);
   const nameW = leftW - namePadX * 2;
   const nameH = Math.round(cellH * 0.9);
-  const nameY = Math.round((circleYRow + circleR) + cellH * 0.5);
+  const nameY = Math.round((circleYRow + circleR) + cellH * 0.55);
   const nameX = namePadX;
   ctx.save();
   const radius = Math.min(12, nameH * 0.4);
@@ -4810,17 +5035,57 @@ function renderTopPadGrid(){
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = '#ffffff';
-  ctx.font = `700 ${Math.max(12, Math.round(nameH * 0.5))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.font = `800 ${Math.max(14, Math.round(nameH * 0.58))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.fillText(trackLabel, nameX + nameW / 2, nameY + nameH / 2);
   ctx.restore();
 
   const rightPadX = Math.round(cellW * 0.2);
   const rightPadY = Math.round(cellH * 0.7);
   const rightW = W - rightX;
-  const gridBtnW = Math.round(rightW * 0.5);
-  const gridBtnH = Math.round(cellH * 1.2);
+  const rightCenterX = rightX + rightW / 2;
+
+  // The standalone Sunil performance deliberately lives in its own right-hand
+  // control panel. This keeps the center aperture reserved for the selected
+  // song video and makes the choice of video unambiguous.
+  ctx.save();
+  ctx.fillStyle = textLight;
+  ctx.font = `800 ${Math.max(16, Math.round(cellH * 0.88))}px "Source Sans 3", system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Play Video', rightCenterX, titleY);
+  const sunilR = Math.min((rightW - rightPadX * 2) * 0.34, cellH * 1.22);
+  const sunilY = Math.round(cellH * 3.05);
+  const sunilHover = topPadHoverUi && topPadHoverUi.type === 'sunil-video';
+  ctx.beginPath();
+  ctx.arc(rightCenterX, sunilY, sunilR, 0, Math.PI * 2);
+  ctx.fillStyle = '#62b9d7';
+  ctx.fill();
+  ctx.save();
+  ctx.clip();
+  const sunilThumb = topPadVideo.thumbImg;
+  const thumbW = sunilThumb && (sunilThumb.naturalWidth || sunilThumb.width);
+  const thumbH = sunilThumb && (sunilThumb.naturalHeight || sunilThumb.height);
+  if(thumbW && thumbH){
+    const scale = Math.max((sunilR * 2) / thumbW, (sunilR * 2) / thumbH);
+    const drawW = thumbW * scale;
+    const drawH = thumbH * scale;
+    safeDrawImage(ctx, sunilThumb, rightCenterX - drawW / 2, sunilY - drawH / 2, drawW, drawH);
+  }
+  ctx.restore();
+  ctx.beginPath();
+  ctx.arc(rightCenterX, sunilY, sunilR, 0, Math.PI * 2);
+  ctx.strokeStyle = sunilHover ? greenTertiary : greenSecondary;
+  ctx.lineWidth = Math.max(2, Math.round(sunilR * (sunilHover ? 0.15 : 0.1)));
+  ctx.stroke();
+  ctx.restore();
+  topPadUiRects.sunilCircle = { x: rightCenterX, y: sunilY, r: sunilR };
+
+  const gridBtnW = Math.max(1, Math.round(rightW - rightPadX * 2));
+  const gridBtnH = Math.round(cellH * 0.95);
   const gridBtnX = rightX + rightPadX;
-  const gridBtnY = rightPadY;
+  // Keep this secondary action close to the instrument setting, rather than
+  // competing with the Play Video heading and thumbnail.
+  const gridBtnY = Math.round(cellH * 7.0);
   ctx.fillStyle = showTopPadGrid ? greenSecondary : 'rgba(68, 7, 7, 0.85)';
   ctx.fillRect(gridBtnX, gridBtnY, gridBtnW, gridBtnH);
   ctx.strokeStyle = greenPrimary;
@@ -4833,9 +5098,9 @@ function renderTopPadGrid(){
   
  
 
-  const toggleStartCol = 8.8;
-  const toggleEndCol = 11.7;
-  const toggleRowStart = 8.5;
+  const toggleStartCol = rightX / cellW + 0.18;
+  const toggleEndCol = TOPPAD_GRID_COLS - 0.18;
+  const toggleRowStart = 8.25;
   const toggleX = toggleStartCol * cellW;
   const toggleY = toggleRowStart * cellH;
   const toggleW = (toggleEndCol - toggleStartCol) * cellW;
@@ -4872,9 +5137,9 @@ function renderTopPadGrid(){
     h: cellH * 4
   };
   const thumbBounds = {
-    x: cellW * 4,
+    x: midRect.x,
     y: cellH * 0.5,
-    w: (cellW * 8.5) - (cellW * 4),
+    w: midRect.w,
     h: (cellH * 7.5) - (cellH * 0.5)
   };
   const fitRectToAspect = (rect, aspect) => {
@@ -4942,12 +5207,13 @@ function renderTopPadGrid(){
     const midDivision = { x: leftW, y: 0, w: midW, h: H };
     const insetX = Math.max(2, Math.round(cellW * 0.06));
     const insetY = Math.max(2, Math.round(cellH * 0.08));
-    const viewRect = {
+    const frameRect = {
       x: midDivision.x + insetX,
       y: midDivision.y + insetY,
       w: Math.max(0, midDivision.w - insetX * 2),
       h: Math.max(0, midDivision.h - insetY * 2)
     };
+    const viewRect = fitRectToAspect(frameRect, 16 / 9);
     if(!videoEl.seeking){
       ctx.save();
       ctx.beginPath();
@@ -4970,14 +5236,29 @@ function renderTopPadGrid(){
       trackVideo.uiCanvas.height = Math.max(1, Math.round(uiH));
       const settings = getStoredAudioSettings();
       const s = {
+        title: (TRACKS[currentTrackKey] && TRACKS[currentTrackKey].label) ? TRACKS[currentTrackKey].label : 'Track Video',
         playing: !!(audioPlaying || playingMIDI),
         muted: !!settings.muted,
         volume: Number.isFinite(settings.volume) ? settings.volume : 1,
         currentTime: getPlaybackPositionSec(),
         duration: getTrackDurationSec(),
         playbackRate: currentPlaybackRate,
+        previewVideo: trackVideo.lqVideo,
         canPlay: true,
-        canSeek: true
+        canSeek: true,
+        preservePitch: getStoredPreservePitch(),
+        syncMs: Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0,
+        controls: {
+          exit: true,
+          play: true,
+          mute: true,
+          volume: true,
+          seek: true,
+          speed: true,
+          pitch: true,
+          sync: false,
+          tablet: false
+        }
       };
       trackVideo.ui.setState(s);
       trackVideo.ui.draw(trackVideo.uiCtx, { alpha: 1 });
@@ -4997,18 +5278,20 @@ function renderTopPadGrid(){
   }
 
   if(topPadVideo.mode !== 'idle' && !trackVideo.active){
-    const videoEl = topPadVideo.mode === 'playing' ? topPadVideo.hqVideo : topPadVideo.lqVideo;
+    const showingFocusedVideo = topPadVideo.mode === 'playing' || topPadVideo.mode === 'zooming';
+    const videoEl = showingFocusedVideo ? topPadVideo.hqVideo : topPadVideo.lqVideo;
     if(videoEl && videoEl.readyState >= 2){
-      if(topPadVideo.mode === 'playing'){
+      if(showingFocusedVideo){
         const midDivision = { x: leftW, y: 0, w: midW, h: H };
         const insetX = Math.max(2, Math.round(cellW * 0.06));
         const insetY = Math.max(2, Math.round(cellH * 0.08));
-        const viewRect = {
+        const frameRect = {
           x: midDivision.x + insetX,
           y: midDivision.y + insetY,
           w: Math.max(0, midDivision.w - insetX * 2),
           h: Math.max(0, midDivision.h - insetY * 2)
         };
+        const viewRect = fitRectToAspect(frameRect, 16 / 9);
         ctx.save();
         ctx.beginPath();
         ctx.rect(viewRect.x, viewRect.y, viewRect.w, viewRect.h);
@@ -5039,11 +5322,21 @@ function renderTopPadGrid(){
               }
             } else if(action.type === 'seekToRatio'){
               const dur = topPadVideo.hqVideo.duration || 0;
-              if(dur > 0) topPadVideo.hqVideo.currentTime = dur * action.ratio;
+              if(dur > 0) seekMediaWithFreeze(topPadVideo.hqVideo, dur * action.ratio, { audio: topPadVideo.audio, syncMs: getSyncOffsetMs() });
             } else if(action.type === 'toggleMute'){
               topPadVideo.audio.muted = !topPadVideo.audio.muted;
+            } else if(action.type === 'setVolume'){
+              const volume = Math.max(0, Math.min(1, Number.isFinite(action.volume) ? action.volume : 0));
+              topPadVideo.audio.muted = volume <= 0.001;
+              topPadVideo.audio.volume = volume;
+            } else if(action.type === 'cyclePlaybackRate'){
+              cycleSharedPlaybackRate();
+            } else if(action.type === 'togglePitch'){
+              toggleStoredPitchMode();
             } else if(action.type === 'exit'){
               stopTopPadVideoPlayback();
+            } else if(action.type === 'toggleFullscreen'){
+              toggleTopPadVideoFocus();
             }
           };
           topPadVideo.ui.setViewportRectProvider(() => ({
@@ -5062,23 +5355,42 @@ function renderTopPadGrid(){
       topPadVideo.uiCanvas.width = Math.max(1, Math.round(uiW));
       topPadVideo.uiCanvas.height = Math.max(1, Math.round(uiH));
       const s = {
+          title: 'Music Videos',
           playing: !topPadVideo.hqVideo.paused,
           muted: !!topPadVideo.audio.muted,
           volume: Number.isFinite(topPadVideo.audio.volume) ? topPadVideo.audio.volume : 1,
           currentTime: topPadVideo.hqVideo.currentTime || 0,
           duration: topPadVideo.hqVideo.duration || 0,
           playbackRate: topPadVideo.hqVideo.playbackRate || 1,
+          previewVideo: topPadVideo.lqVideo,
           canPlay: true,
-          canSeek: true
+          canSeek: true,
+          preservePitch: getStoredPreservePitch(),
+          syncMs: Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0,
+          fullscreen: !!topPadVideo.focused,
+          controls: {
+            exit: true,
+            play: true,
+            mute: true,
+            volume: true,
+            seek: true,
+            speed: true,
+            pitch: true,
+            sync: false,
+            tablet: false,
+            fullscreen: true
+          }
         };
         topPadVideo.ui.setState(s);
-        topPadVideo.ui.draw(topPadVideo.uiCtx, { alpha: 1 });
+        const controlsVisible = (performance.now() - lastMusicVideoControlsActivityTs) < 2000;
+        topPadVideo.ui.draw(topPadVideo.uiCtx, { alpha: controlsVisible ? 1 : 0 });
+        if(canvas) canvas.style.cursor = controlsVisible ? '' : 'none';
         const drawRect = topPadVideo.controlsRect || { x: midRect.x, y: midRect.y, w: midRect.w, h: midRect.h };
         ctx.drawImage(topPadVideo.uiCanvas, drawRect.x, drawRect.y, drawRect.w, drawRect.h);
       }
     }
   }
-  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing' && !trackVideo.active){
+  if(topPadVideo.infoRect && topPadVideo.mode !== 'playing' && topPadVideo.mode !== 'zooming' && !trackVideo.active){
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     drawRoundedRect(infoBoxRect, Math.min(14, infoBoxRect.h * 0.18));
     ctx.fill();
@@ -5965,6 +6277,7 @@ function fit(box){
   cam.position.copy(camPos);
   cam.lookAt(center);
   controls.target.copy(center);
+  captureMusicDefaultOrbitState();
 }
 function collectKeys(node){
   const found=[];
@@ -6299,12 +6612,7 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
               if(!m) return;
               m.transparent = true;
               m.opacity = 0;
-
-              // Critical: don’t let the invisible surface occlude the overlay
               m.depthWrite = false;
-
-              // Optional: if clipping persists at extreme angles
-              // m.depthTest = false;
 
               m.needsUpdate = true;
             });
@@ -6970,6 +7278,19 @@ function ensureTrackVideoUi(){
       togglePlayPause();
     } else if(action.type === 'seekToRatio'){
       seekTrackToRatio(action.ratio);
+    } else if(action.type === 'setVolume'){
+      const settings = getStoredAudioSettings();
+      const volume = Math.max(0, Math.min(1, Number.isFinite(action.volume) ? action.volume : 0));
+      setStoredAudioSettings(volume, volume <= 0.001 ? true : false);
+      if(settings.muted && volume > 0.001){
+        applyInstrumentMix();
+      } else {
+        applyInstrumentMix();
+      }
+    } else if(action.type === 'cyclePlaybackRate'){
+      cycleSharedPlaybackRate();
+    } else if(action.type === 'togglePitch'){
+      toggleStoredPitchMode();
     } else if(action.type === 'toggleMute'){
       const settings = getStoredAudioSettings();
       const nextMuted = !settings.muted;
@@ -6992,6 +7313,16 @@ function startTrackVideoPlayback(key){
   trackVideo.lqVideo = videos.lq;
   trackVideo.hqVideo = videos.hq;
   ensureTrackVideoUi();
+  // A selected track owns the center screen, even before its audio starts.
+  // Showing its decoded first frame prevents a stale Sunil frame from ever
+  // being mistaken for the selected song's video.
+  try{
+    videos.hq.pause();
+    videos.hq.currentTime = 0;
+    videos.hq.addEventListener('loadeddata', () => renderTopPadGrid(), { once: true });
+    videos.hq.addEventListener('seeked', () => renderTopPadGrid(), { once: true });
+    videos.hq.load();
+  }catch(e){}
   syncTrackVideoToPlayback(!playbackPaused && (audioPlaying || playingMIDI));
   renderTopPadGrid();
 }
@@ -8685,6 +9016,7 @@ function renderBackboardOverlay(dt){
 // Update camera-dependent transforms (runs every frame)
 function updateViewDrivenTransforms(dt){
   if(!tabletStandMesh || !root) return;
+  if(topPadVideo && topPadVideo.focused) return;
   // ensure dt is defined (fallback to small step)
   const dtSafe = (typeof dt === 'number' && isFinite(dt) && dt > 0)
     ? Math.min(dt, 0.1)
@@ -9063,6 +9395,9 @@ function selectTrack(key){
   if(!TRACKS[key]){ console.warn('Unknown track', key); return; }
   currentTrackKey = key;
   console.log('[selectTrack]', key, TRACKS[key]);
+  // A track selection is authoritative: it replaces the standalone Sunil
+  // performance before any first frame can be displayed.
+  if(topPadVideo.mode !== 'idle') stopTopPadVideoPlayback();
   // Stop current playback and reset state
   disposeAudioSource('selectTrack cleanup');
   audioPlaying=false; playingMIDI=false;
@@ -9079,6 +9414,7 @@ function selectTrack(key){
   const t = TRACKS[key];
   loadTrackAudio(t.audioCandidates || [t.audio]);
   loadMIDI(t.midi);
+  startTrackVideoPlayback(key);
   updateTrackButtons();
 }
 function updateTrackButtons(){
@@ -10179,7 +10515,7 @@ function findKeyFromObject(obj){
 }
 let suppressRotate = false;
 function onPointerDown(e){
-  if(e.button === 2) return;
+  if(e.button === 1 || e.button === 2) return;
   // Top pad UI hit test (track icons + play + speed buttons)
   try{
     if(topPadMesh && topPadCanvas && topPadUiRects){
@@ -10206,6 +10542,28 @@ function onPointerDown(e){
           if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
             toggleInstrumentMode();
             renderTopPadGrid();
+            handled = true;
+          }
+        }
+        if(!handled && topPadUiRects.sunilCircle){
+          const c = topPadUiRects.sunilCircle;
+          const dx = px - c.x;
+          const dy = py - c.y;
+          if((dx * dx + dy * dy) <= (c.r * c.r)){
+            // This dedicated thumbnail is the sole Sunil launcher. Clear a
+            // selected track first, including the case where it is still
+            // loading and therefore cannot use the usual stop routine.
+            if(audioCtx && audioReady && midiLoaded){
+              stopPlayback();
+            } else {
+              disposeAudioSource('Sunil video selection');
+              audioPlaying = false;
+              playingMIDI = false;
+              playbackPaused = false;
+              savedAudioPosSec = 0;
+              stopTrackVideoPlayback();
+            }
+            startTopPadVideoPlayback();
             handled = true;
           }
         }
@@ -10255,13 +10613,6 @@ function onPointerDown(e){
             handled = true;
           }
         }
-        if(!handled && topPadVideo.mode !== 'playing' && topPadVideo.thumbRect && !trackVideo.active && !audioPlaying && !playingMIDI && !playbackPaused && savedAudioPosSec === 0){
-          const r = topPadVideo.thumbRect;
-          if(px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h){
-            startTopPadVideoPlayback();
-            handled = true;
-          }
-        }
         if(!handled && topPadUiRects.speedButtons && topPadUiRects.speedButtons.length){
           const speeds = [0.75, 0.85, 1, 1.2, 1.6, 2];
           for(let i=0;i<topPadUiRects.speedButtons.length;i++){
@@ -10277,17 +10628,17 @@ function onPointerDown(e){
         if(!handled && topPadVideo.mode === 'playing' && topPadVideo.controlsRect && topPadVideo.ui){
           const cr = topPadVideo.controlsRect;
           if(px >= cr.x && px <= cr.x + cr.w && py >= cr.y && py <= cr.y + cr.h){
-            const lx = px - cr.x;
-            const ly = py - cr.y;
             topPadVideo.ui.setViewportRectProvider(() => ({
               left: 0,
               top: 0,
               width: Math.max(1, Math.round(cr.w)),
               height: Math.max(1, Math.round(cr.h))
             }));
-            const ev = { clientX: lx, clientY: ly };
+            const ev = { canvasX: px - cr.x, canvasY: py - cr.y };
+            const hit = topPadVideo.ui.inspectPointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             handled = !!topPadVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
-            if(!handled){
+            if(!handled && !hit.hit){
+              topPadVideo.ui.notifyTransportToggle?.(topPadVideo.hqVideo.paused ? 'play' : 'pause');
               topPadVideo.ui.onAction?.({ type: 'togglePlay' });
               handled = true;
             }
@@ -10296,17 +10647,17 @@ function onPointerDown(e){
         if(!handled && trackVideo.active && trackVideo.ui && topPadVideo.controlsRect){
           const cr = topPadVideo.controlsRect;
           if(px >= cr.x && px <= cr.x + cr.w && py >= cr.y && py <= cr.y + cr.h){
-            const lx = px - cr.x;
-            const ly = py - cr.y;
             trackVideo.ui.setViewportRectProvider(() => ({
               left: 0,
               top: 0,
               width: Math.max(1, Math.round(cr.w)),
               height: Math.max(1, Math.round(cr.h))
             }));
-            const ev = { clientX: lx, clientY: ly };
+            const ev = { canvasX: px - cr.x, canvasY: py - cr.y };
+            const hit = trackVideo.ui.inspectPointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             handled = !!trackVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
-            if(!handled){
+            if(!handled && !hit.hit){
+              trackVideo.ui.notifyTransportToggle?.(trackVideo.hqVideo.paused ? 'play' : 'pause');
               trackVideo.ui.onAction?.({ type: 'togglePlay' });
               handled = true;
             }
@@ -10321,8 +10672,6 @@ function onPointerDown(e){
       }
     }
   }catch(err){ /* ignore top pad UI hit errors */ }
-  // Ignore right-clicks
-  if(e.button === 2) return;
   // Check backboard instrument UI first
   const uiUv = raycastBackboardForUv(e.clientX, e.clientY);
   const uiHit = uiUv ? hitTestPanelUI(uiUv) : null;
@@ -10469,6 +10818,9 @@ function onPointerDown(e){
 }
 
 function onPointerUp(){
+  try{ topPadVideo.ui?.endPointerInteraction?.(); trackVideo.ui?.endPointerInteraction?.(); }catch(e){}
+  const e = arguments[0];
+  if(e && (e.button === 1 || e.button === 2)) return;
   // Release pointer capture if we had one
   const pid = pointerDownInfo && pointerDownInfo.pointerId;
   onGlobalPointerUp();
@@ -10500,10 +10852,16 @@ window.addEventListener('pointerup', onPointerUp);
 canvas.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointercancel', onPointerUp);
 window.addEventListener('pointermove', onGlobalPointerMove);
-canvas.addEventListener('pointermove', (e)=>updateInstrumentHover(e.clientX, e.clientY));
+canvas.addEventListener('pointermove', (e)=>{
+  if(topPadVideo.mode === 'playing' || trackVideo.active){
+    lastMusicVideoControlsActivityTs = performance.now();
+    canvas.style.cursor = '';
+  }
+  updateInstrumentHover(e.clientX, e.clientY);
+});
 canvas.addEventListener('pointermove', (e)=>updateTopPadHover(e.clientX, e.clientY));
 // Keep pointer-down glissando active even if cursor leaves the canvas
-canvas.addEventListener('pointerleave', ()=>{ if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
+canvas.addEventListener('pointerleave', ()=>{ try{ topPadVideo.ui?.clearHoverPreview?.(); }catch(e){} try{ trackVideo.ui?.clearHoverPreview?.(); }catch(e){} if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
@@ -10519,8 +10877,14 @@ function handleTopPadVideoKeys(ev){
   const video = topPadActive ? topPadVideo.hqVideo : trackVideo.hqVideo;
   const audio = topPadActive ? topPadVideo.audio : null;
   if(!video) return;
+  if(shift && key === '?'){ prevent(); showVideoKeyboardShortcuts(); return; }
+  if(key === 'f') { prevent(); if(topPadActive) toggleTopPadVideoFocus(); return; }
+  if(key === 'home') { prevent(); video.currentTime = 0; return; }
+  if(key === 'end') { prevent(); video.currentTime = video.duration || 0; return; }
   if(key === ' ' || key === 'k'){
     prevent();
+    if(topPadActive) topPadVideo.ui?.notifyTransportToggle?.(video.paused ? 'play' : 'pause');
+    if(trackActive) trackVideo.ui?.notifyTransportToggle?.(video.paused ? 'play' : 'pause');
     if(trackActive){
       togglePlayPause();
     } else if(video.paused){
@@ -11063,6 +11427,9 @@ function sustainPedalUp(){
 }
 
 function handleKeyDown(ev){
+  // Video owns the keyboard while it is focused. In particular, frame-step
+  // punctuation and YouTube-style shortcuts must never sound piano notes.
+  if(topPadVideo.mode !== 'idle' || trackVideo.active) return;
   // Allow modifier shortcuts to pass through
   if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
   const code = ev.code;

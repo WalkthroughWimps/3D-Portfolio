@@ -3,10 +3,11 @@
  * Reusable video player with controls for tablet/canvas-based playback
  * Usage: import VideoPlayer from './video-player-controls.js'; then VideoPlayer.create(canvas, options)
  */
-import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+import * as THREE from 'three';
 import * as SharedVC from './shared-video-controls.js';
 import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from '../_2-videos/videos-tablet.js';
 import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
+import { isAudioAllowed } from './audio-consent.js';
 
 // Player state management
 class PlayerState {
@@ -54,10 +55,10 @@ function getCssVar(name, fallback) {
 }
 
 function getControlsTheme() {
-  const bg = getCssVar('--controls-bg', '#0b0f1a');
-  const fg = getCssVar('--controls-fg', '#f4b34a');
+  const bg = getCssVar('--controls-bg', getCssVar('--primary-color', '#0b0f1a'));
+  const fg = getCssVar('--controls-fg', getCssVar('--hl-tertiary-color', '#f4b34a'));
   const alphaRaw = getCssVar('--controls-bg-alpha', '0.9');
-  const bgAlpha = Number.isFinite(parseFloat(alphaRaw)) ? parseFloat(alphaRaw) : 0.9;
+  const bgAlpha = Number.isFinite(parseFloat(alphaRaw)) ? parseFloat(alphaRaw) : 1;
   return { bg, fg, bgAlpha };
 }
 
@@ -179,7 +180,7 @@ function getStoredSyncMsLocal() {
 }
 
 function getStoredAudioSettingsGlobal() {
-  const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+  const allowed = isAudioAllowed();
   const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
   const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
   return { allowed, muted, volume };
@@ -240,6 +241,10 @@ function drawCenterPlayOverlay(ctx, rect, color, alpha = 1) {
   ctx.restore();
 }
 
+function drawTransportFlashOverlay(ctx, rect, kind, color, alpha = 1, scale = 1) {
+  SharedVC.drawTransportFlashOverlay(ctx, rect, kind, color, alpha, scale);
+}
+
 function getVolumeIconName(volume, muted) {
   const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
   if (muted || level <= 0.0001) return 'volume_off';
@@ -265,9 +270,11 @@ function formatTime(t) {
       this.playbackRates = SharedVC.playbackRates || [0.5, 0.75, 1, 1.25, 1.5, 2];
       this.uiState = {
         playbackRateIndex: (this.playbackRates.indexOf(1) >= 0) ? this.playbackRates.indexOf(1) : 0,
-        preservePitch: true,
+        preservePitch: SharedVC.getStoredPreservePitch ? SharedVC.getStoredPreservePitch() : true,
         lastVolume: 0.6
       };
+      this.transportFlash = null;
+      this.lastPlayingState = null;
       this._seekToken = 0;
       this.dragState = null;
       
@@ -276,7 +283,7 @@ function formatTime(t) {
         allowSound: options.allowSound !== false,
         zoomDuration: options.zoomDuration || 300,
         controlsFadeDuration: options.controlsFadeDuration || 200,
-        controlsHideDelay: options.controlsHideDelay || 3000,
+        controlsHideDelay: options.controlsHideDelay || 2000,
         onBackClick: options.onBackClick || null,
         onVideoEnd: options.onVideoEnd || null,
         onPitchToggle: options.onPitchToggle || null,
@@ -635,6 +642,7 @@ function formatTime(t) {
       const pr2 = ui.bottom.pitch;
       if (pt.x >= pr2.x && pt.x <= pr2.x + pr2.w && pt.y >= pr2.y && pt.y <= pr2.y + pr2.h) {
         this.uiState.preservePitch = !this.uiState.preservePitch;
+        if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(this.uiState.preservePitch);
         SharedVC.setPreservePitchFlag(video, this.uiState.preservePitch);
         if (this.config.onPitchToggle) {
           this.config.onPitchToggle(this.uiState.preservePitch, video);
@@ -1046,9 +1054,24 @@ function formatTime(t) {
         ctx.fill();
         ctx.restore();
 
-        if (video.paused || video.ended) {
-          const rect = { x: ui.top.x, y: ui.top.y, w: ui.top.w, h: (ui.bottom.y + ui.bottom.h) - ui.top.y };
-          drawCenterPlayOverlay(ctx, rect, theme.fg, finalAlpha);
+        const playingNow = !(video.paused || video.ended);
+        if (this.lastPlayingState !== null && this.lastPlayingState !== playingNow) {
+          this.transportFlash = {
+            kind: playingNow ? 'play' : 'pause',
+            startedAt: performance.now(),
+            durationMs: 500
+          };
+        }
+        this.lastPlayingState = playingNow;
+        if (this.transportFlash) {
+          const elapsed = performance.now() - this.transportFlash.startedAt;
+          const t = Math.max(0, Math.min(1, elapsed / Math.max(1, this.transportFlash.durationMs || 500)));
+          if (t >= 1) {
+            this.transportFlash = null;
+          } else {
+            const rect = { x: ui.top.x, y: ui.top.y, w: ui.top.w, h: (ui.bottom.y + ui.bottom.h) - ui.top.y };
+            drawTransportFlashOverlay(ctx, rect, this.transportFlash.kind, theme.fg, finalAlpha * (1 - t), 1 + (t * 0.32));
+          }
         }
 
       // Time text
@@ -1475,18 +1498,20 @@ function formatTime(t) {
         } catch (e) { /* ignore */ }
         return '#0b032d';
       })();
-      const iconColor = '#ffa94d';
+      const iconColor = secondaryColor;
       const iconFont = '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
 
       const playbackRates = SharedVC.playbackRates;
       const uiState = {
         playbackRateIndex: playbackRates.indexOf(1) >= 0 ? playbackRates.indexOf(1) : 0,
-        preservePitch: true, // time-stretch default
+        preservePitch: SharedVC.getStoredPreservePitch ? SharedVC.getStoredPreservePitch() : true,
         tabletView: false,
         fullscreen: false,
         volumeHover: false,
         hoveredControl: null,
-        lastVolume: 0.6
+        lastVolume: 0.6,
+        transportFlash: null,
+        lastPlayingState: null
       };
 
       const camPose = { saved: null, tabletActive: false };
@@ -1568,6 +1593,7 @@ function formatTime(t) {
       let dragState = null;
       let pendingSingleClick = null;
       let pendingClickPos = null;
+      let suppressSharedClickUntil = 0;
 
       function clearPendingSingleClick() {
         if (pendingSingleClick) {
@@ -2501,7 +2527,7 @@ function formatTime(t) {
           }
         } catch (e) { /* ignore */ }
         try {
-          if (!uiState.fullscreen && playingFull) {
+          if (!uiState.fullscreen && playingFull && !(sharedControls && sharedControls.ui && sharedControls.adapter)) {
             ensureTabletPanels();
             if (topPanelMesh || bottomPanelMesh) {
               const hit = hitFromEventMulti(ev);
@@ -2555,6 +2581,12 @@ function formatTime(t) {
           }
         } catch (e) { /* ignore */ }
         return pt;
+      }
+
+      function getSharedControlPointerEvent(ev) {
+        const pt = pointFromEvent(ev);
+        if (!pt || pt.target === 'top' || pt.target === 'bottom') return null;
+        return { canvasX: pt.x, canvasY: pt.y, type: ev?.type || '' };
       }
 
       function cellIndexFromPoint(pt) {
@@ -3241,10 +3273,16 @@ function formatTime(t) {
           bottomPanelCtx.fill();
           bottomPanelCtx.restore();
 
-          if (video && (video.paused || video.ended)) {
-            const activeRects = getActiveRects();
-            const overlayRect = lastFullRect || activeRects?.videoRect || activeRects?.surfaceRect || contentSurfaceRect;
-            drawCenterPlayOverlay(ctrlCtx, overlayRect, iconColor, a);
+          if (uiState.transportFlash) {
+            const elapsed = performance.now() - uiState.transportFlash.startedAt;
+            const t = Math.max(0, Math.min(1, elapsed / Math.max(1, uiState.transportFlash.durationMs || 500)));
+            if (t >= 1) {
+              uiState.transportFlash = null;
+            } else {
+              const activeRects = getActiveRects();
+              const overlayRect = lastFullRect || activeRects?.videoRect || activeRects?.surfaceRect || contentSurfaceRect;
+              drawTransportFlashOverlay(ctrlCtx, overlayRect, uiState.transportFlash.kind, iconColor, a * (1 - t), 1 + (t * 0.32));
+            }
           }
           // Time display
           bottomPanelCtx.save();
@@ -3389,9 +3427,15 @@ function formatTime(t) {
         ctrlCtx.fillText(timeStr, ui.timeRect.x + ui.timeRect.w / 2, ui.timeRect.y + ui.timeRect.h / 2 + 1);
         ctrlCtx.restore();
 
-        if (video.paused || video.ended) {
-          const overlayRect = ui.videoRect || ui.surfaceRect;
-          drawCenterPlayOverlay(ctrlCtx, overlayRect, iconColor, alpha);
+        if (uiState.transportFlash) {
+          const elapsed = performance.now() - uiState.transportFlash.startedAt;
+          const t = Math.max(0, Math.min(1, elapsed / Math.max(1, uiState.transportFlash.durationMs || 500)));
+          if (t >= 1) {
+            uiState.transportFlash = null;
+          } else {
+            const overlayRect = ui.videoRect || ui.surfaceRect;
+            drawTransportFlashOverlay(ctrlCtx, overlayRect, uiState.transportFlash.kind, iconColor, alpha * (1 - t), 1 + (t * 0.32));
+          }
         }
 
         // Right cluster: speed, pitch/time toggle, tablet view, fullscreen
@@ -3431,6 +3475,17 @@ function formatTime(t) {
       function renderFull(now) {
         if (fullIndex < 0 || !animation.to) return;
         const video = fullVideos[fullIndex];
+        if (video) {
+          const playingNow = !(video.paused || video.ended);
+          if (uiState.lastPlayingState !== null && uiState.lastPlayingState !== playingNow) {
+            uiState.transportFlash = {
+              kind: playingNow ? 'play' : 'pause',
+              startedAt: performance.now(),
+            durationMs: 500
+            };
+          }
+          uiState.lastPlayingState = playingNow;
+        }
         let rect = animation.to;
         if (animation.phase === 'in' || animation.phase === 'out') {
           const t = Math.min(1, (now - animation.start) / opts.zoomDuration);
@@ -3621,7 +3676,7 @@ function formatTime(t) {
             return;
           }
           if (within(botUI.speedRect)) { uiState.playbackRateIndex = (uiState.playbackRateIndex + 1) % playbackRates.length; applySettingsToAllVideos(); return; }
-          if (within(botUI.pitchRect)) { uiState.preservePitch = !uiState.preservePitch; applySettingsToAllVideos(); return; }
+          if (within(botUI.pitchRect)) { uiState.preservePitch = !uiState.preservePitch; if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(uiState.preservePitch); applySettingsToAllVideos(); return; }
           if (within(botUI.tabletRect)) { if (!uiState.fullscreen) setTabletView(!uiState.tabletView); return; }
           // Fullscreen toggle intentionally disabled (commented out).
           // if (within(botUI.fullscreenRect)) { toggleFullscreenMode(); return; }
@@ -3663,7 +3718,7 @@ function formatTime(t) {
           handled.any = true; return;
         }
         if (within(ui.speedRect)) { uiState.playbackRateIndex = (uiState.playbackRateIndex + 1) % playbackRates.length; applySettingsToAllVideos(); handled.any = true; return; }
-        if (within(ui.pitchRect)) { uiState.preservePitch = !uiState.preservePitch; applySettingsToAllVideos(); handled.any = true; return; }
+        if (within(ui.pitchRect)) { uiState.preservePitch = !uiState.preservePitch; if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(uiState.preservePitch); applySettingsToAllVideos(); handled.any = true; return; }
         if (within(ui.tabletRect)) { if (!uiState.fullscreen) setTabletView(!uiState.tabletView); handled.any = true; return; }
         // Fullscreen toggle intentionally disabled (commented out).
         // if (within(ui.fullscreenRect)) { toggleFullscreenMode(); handled.any = true; return; }
@@ -3677,12 +3732,7 @@ function formatTime(t) {
 
       function handlePointerMove(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
-        if (sharedControls && sharedControls.ui && sharedControls.adapter) {
-          try {
-            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
-            if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
-          } catch (e) { /* ignore */ }
-        }
+        if (dragState && ev && ev.buttons === 0) dragState = null;
         const pt = pointFromEvent(ev);
         lastMouseMoveTs = performance.now();
         // If a pending single-click is scheduled, cancel it when the pointer
@@ -3699,6 +3749,20 @@ function formatTime(t) {
         } catch (e) { /* ignore */ }
         const frames = getActiveRects();
         if (chromeTarget === 0) { chromeTarget = 1; chromeAnimStart = lastMouseMoveTs; }
+        if (sharedControls && sharedControls.ui && playingFull) {
+          try {
+            const sharedEv = getSharedControlPointerEvent(ev);
+            if (sharedEv && sharedControls.ui.handlePointerMove) {
+              const handled = sharedControls.ui.handlePointerMove(sharedEv, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+              if (handled) {
+                ev.stopImmediatePropagation?.();
+                ev.stopPropagation?.();
+                ev.preventDefault?.();
+                return;
+              }
+            }
+          } catch (e) { /* ignore */ }
+        }
           if (playingFull) {
             if (!uiState.fullscreen && pt && pt.target === 'bottom') {
             const botUI = buildBottomPanelLayout();
@@ -3809,6 +3873,9 @@ function formatTime(t) {
       }
 
       function handlePointerLeave() {
+        if (sharedControls && sharedControls.ui && sharedControls.ui.clearHoverPreview) {
+          try { sharedControls.ui.clearHoverPreview(); } catch (e) { /* ignore */ }
+        }
         if (!playingFull) setHover(-1);
         uiState.volumeHover = false;
         uiState.hoveredControl = null;
@@ -3817,9 +3884,16 @@ function formatTime(t) {
 
       function handleClick(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
+        if (suppressSharedClickUntil && performance.now() < suppressSharedClickUntil) {
+          ev.stopImmediatePropagation?.();
+          ev.stopPropagation?.();
+          ev.preventDefault?.();
+          return;
+        }
         if (sharedControls && sharedControls.ui && sharedControls.adapter) {
           try {
-            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+            const sharedEv = getSharedControlPointerEvent(ev);
+            const handled = !!sharedEv && sharedControls.ui.handlePointerEvent(sharedEv, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
             if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
           } catch (e) { /* ignore */ }
         }
@@ -3881,8 +3955,15 @@ function formatTime(t) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
         if (sharedControls && sharedControls.ui && sharedControls.adapter) {
           try {
-            const handled = sharedControls.ui.handlePointerEvent(ev, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
-            if (handled) { ev.stopImmediatePropagation?.(); ev.stopPropagation?.(); ev.preventDefault?.(); return; }
+            const sharedEv = getSharedControlPointerEvent(ev);
+            const handled = !!sharedEv && sharedControls.ui.handlePointerEvent(sharedEv, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
+            if (handled) {
+              suppressSharedClickUntil = performance.now() + 500;
+              ev.stopImmediatePropagation?.();
+              ev.stopPropagation?.();
+              ev.preventDefault?.();
+              return;
+            }
           } catch (e) { /* ignore */ }
         }
         const pt = pointFromEvent(ev);
@@ -4019,17 +4100,21 @@ function formatTime(t) {
           applyAudioSettings(getFullAudio(fullIndex));
         };
 
+        if (shift && key === '?') { prevent(); SharedVC.showVideoKeyboardShortcuts?.(); return; }
+
         // Toggle play/pause
         if (key === ' ' || key === 'k') { prevent(); video.paused ? startFullPlayback(fullIndex) : pauseFullPlayback(fullIndex); return; }
         // Mute
         if (key === 'm') { prevent(); toggleStoredMute(); return; }
-        // Fullscreen - keyboard shortcut disabled (commented out)
-        // if (key === 'f') { prevent(); toggleFullscreenMode(); return; }
+        // Fullscreen
+        if (key === 'f') { prevent(); toggleFullscreenMode(); return; }
         // Seek
         if (key === 'j') { prevent(); seekBy(-10); return; }
         if (key === 'l') { prevent(); seekBy(10); return; }
         if (key === 'arrowleft') { prevent(); seekBy(-5); return; }
         if (key === 'arrowright') { prevent(); seekBy(5); return; }
+        if (key === 'home') { prevent(); seekBy(-Infinity); return; }
+        if (key === 'end') { prevent(); seekBy(Infinity); return; }
         // Volume
         if (key === 'arrowup') { prevent(); setVolume(0.05); return; }
         if (key === 'arrowdown') { prevent(); setVolume(-0.05); return; }
@@ -4131,17 +4216,148 @@ function formatTime(t) {
         return !!pt;
       }
 
+      function getActiveEntryTitle() {
+        const video = getActiveVideo();
+        if (video && video.dataset && video.dataset.title) return String(video.dataset.title);
+        if (fullIndex >= 0 && fullIndex < entries.length && entries[fullIndex] && entries[fullIndex].title) {
+          return String(entries[fullIndex].title);
+        }
+        return String(opts.title || '');
+      }
+
+      function ensureDefaultSharedControls() {
+        if (sharedControls || opts.sharedControls === false || !SharedVC.createVideoControlsUI) return;
+        const ui = SharedVC.createVideoControlsUI();
+        const adapter = {
+          getViewportRect,
+          getState() {
+            const video = getActiveVideo();
+            const audio = getActiveAudio();
+            const settings = getAudioSettings();
+            const duration = video && Number.isFinite(video.duration) ? video.duration : 0;
+            const currentTime = video && Number.isFinite(video.currentTime) ? video.currentTime : 0;
+            const playbackRate = video && Number.isFinite(video.playbackRate) ? video.playbackRate : 1;
+            return {
+              title: getActiveEntryTitle(),
+              playing: !!video && !video.paused && !video.ended,
+              muted: settings ? !!settings.muted : (audio ? !!audio.muted : !!(video && video.muted)),
+              volume: settings ? settings.volume : (audio ? (audio.volume || 0) : (video ? (video.volume || 0) : 0)),
+              currentTime,
+              duration,
+              playbackRate,
+              previewVideo: previewVideos[fullIndex] || null,
+              canPlay: !!video,
+              canSeek: !!video && duration > 0,
+              preservePitch: !!uiState.preservePitch,
+              syncMs: getStoredSyncMs(),
+              tabletView: !!uiState.tabletView,
+              controls: {
+                exit: true,
+                play: true,
+                mute: true,
+                volume: true,
+                seek: !!video && duration > 0,
+                speed: true,
+                pitch: true,
+                sync: true,
+                tablet: true
+              }
+            };
+          },
+          dispatch(action) {
+            if (!action || !action.type) return;
+            const video = getActiveVideo();
+            const audio = getActiveAudio();
+            switch (action.type) {
+              case 'togglePlay':
+                if (!video || fullIndex < 0) return;
+                if (video.paused) startFullPlayback(fullIndex);
+                else pauseFullPlayback(fullIndex);
+                return;
+              case 'seekToRatio': {
+                if (!video || !Number.isFinite(video.duration) || video.duration <= 0) return;
+                const ratio = Math.max(0, Math.min(1, Number(action.ratio) || 0));
+                SharedVC.seekMediaWithFreeze(video, video.duration * ratio, { audio, syncMs: getStoredSyncMs() });
+                return;
+              }
+              case 'toggleMute':
+                toggleStoredMute();
+                return;
+              case 'setVolume':
+                setVolumeRatio(action.volume);
+                return;
+              case 'cyclePlaybackRate': {
+                uiState.playbackRateIndex = (uiState.playbackRateIndex + 1) % playbackRates.length;
+                applySettingsToAllVideos();
+                return;
+              }
+              case 'togglePitch':
+                uiState.preservePitch = !uiState.preservePitch;
+                if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(uiState.preservePitch);
+                applySettingsToAllVideos();
+                return;
+              case 'setSyncMs':
+                if (Number.isFinite(Number(action.value))) setStoredSyncMs(Number(action.value));
+                return;
+              case 'toggleTablet':
+                setTabletView(!uiState.tabletView);
+                return;
+              case 'exit':
+                exitPlayback();
+                return;
+              default:
+                return;
+            }
+          }
+        };
+        setSharedControls(ui, adapter);
+      }
+
+      ensureDefaultSharedControls();
+
       const api = {
         canvas: gridCanvas,
         texture,
         setPlaybackRate,
-        setPreservePitch(v) { return !!v; },
+        setPreservePitch(v) {
+          uiState.preservePitch = !!v;
+          if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(uiState.preservePitch);
+          applySettingsToAllVideos();
+          return uiState.preservePitch;
+        },
+        getPreservePitch() {
+          return !!uiState.preservePitch;
+        },
+        togglePitch() {
+          uiState.preservePitch = !uiState.preservePitch;
+          if (SharedVC.setStoredPreservePitch) SharedVC.setStoredPreservePitch(uiState.preservePitch);
+          applySettingsToAllVideos();
+          return uiState.preservePitch;
+        },
+        getSyncMs() {
+          return getStoredSyncMs();
+        },
+        setSyncMs(value) {
+          setStoredSyncMs(value);
+          return getStoredSyncMs();
+        },
+        isTabletView() {
+          return !!uiState.tabletView;
+        },
+        toggleTabletView() {
+          setTabletView(!uiState.tabletView);
+          return !!uiState.tabletView;
+        },
+        getTitle: getActiveEntryTitle,
         reset() { description = 'Hover a thumbnail to preview a random snippet.'; },
         applyToMesh,
         applyToMeshById,
         isScreenPointInteractive,
         isPlayingFull() { return !!playingFull; },
         getActiveVideo,
+        getActivePreviewVideo() {
+          return previewVideos[fullIndex] || null;
+        },
         getActiveAudio,
         getViewportRect,
         getAudioSettings,

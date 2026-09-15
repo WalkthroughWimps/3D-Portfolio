@@ -1,10 +1,19 @@
+import { localPreferences } from '../_7-shared-scripts/local-preferences.js';
+import { createCameraTransition } from './camera-transition.js';
 import { assetUrl, isLocalDev } from "../_7-shared-scripts/assets-config.js";
 import { loadDebugIfEnabled, DEBUG_VISIBILITY_EVENT } from "../debug/debug-loader.js";
 import { getSceneLightingValue, setSceneLightingValue, getLightScaleForValue, MAX_LIGHT_RATIO } from "../_7-shared-scripts/scene-lighting-sync.js";
+import { setAudioConsentAllowed } from "../_7-shared-scripts/audio-consent.js";
+import { applyStartPageMouseControlMode } from "../_7-shared-scripts/shared-glb-mouse-controls.js";
+import { createVideoControlsUI, getStoredPreservePitch, setStoredPreservePitch, setPreservePitchFlag, playbackRates as SHARED_PLAYBACK_RATES } from "../_7-shared-scripts/shared-video-controls.js";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 const isLocalHost = isLocalDev();
+const localReviewParams = new URLSearchParams(window.location.search);
+const isLocalReview = isLocalHost && localReviewParams.get('review') === '1';
+const localReviewStartMode = localReviewParams.get('mode') === 'audio' ? 'audio' : 'visuals';
+document.documentElement.classList.toggle('is-local-review', isLocalReview);
 const SETTINGS_CONTROLLER_GLB = assetUrl("glb/settings-controller.glb");
 const WELCOME_JINGLE_SRC = assetUrl("music/welcome-jingle.wav");
 let settingsControllerReadyResolve = () => {};
@@ -22,12 +31,10 @@ const settingsControllerBridge = {
     canvas: null,
     knobVolNode: null,
     knobSyncNode: null,
-    knobContrastNode: null,
-    knobContrastNodes: [],
     knobDefaults: null,
     knobConstraints: null,
     knobHitboxes: null,
-    knobAxisValues: { vol: 0, sync: 0, contrast: 0.5 },
+    knobAxisValues: { vol: 0, sync: 0 },
     updateKnobTransformsFromState: null
 };
 function signalSettingsControllerReady() {
@@ -41,14 +48,14 @@ if (typeof window !== "undefined") {
 if (isLocalHost) {
     window.setAssetsBase = (urlOrBlank) => {
         if (!urlOrBlank) {
-            localStorage.removeItem("ASSETS_BASE");
+            localPreferences.removeItem("ASSETS_BASE");
         } else {
-            localStorage.setItem("ASSETS_BASE", String(urlOrBlank));
+            localPreferences.setItem("ASSETS_BASE", String(urlOrBlank));
         }
         location.reload();
     };
     window.clearAssetsBase = () => {
-        localStorage.removeItem("ASSETS_BASE");
+        localPreferences.removeItem("ASSETS_BASE");
         location.reload();
     };
 }
@@ -59,6 +66,7 @@ function initStartPageUILayoutTabs() {
     if (!rightColumn) return;
     rightColumn.classList.add("ui-right--debug-host");
     let debugPanelsShown = true;
+    let leftPanelShown = false;
 
     const tabs = Array.from(rightColumn.querySelectorAll(".ui-tab[data-panel]"));
     const panels = Array.from(rightColumn.querySelectorAll(".ui-panel[id]"));
@@ -200,11 +208,11 @@ function initStartPageUILayoutTabs() {
                 debugDockToggle = document.createElement("button");
                 debugDockToggle.type = "button";
                 debugDockToggle.className = "ui-debug-panels-toggle ui-debug-panels-toggle--right";
-                debugDockToggle.textContent = "HIDE PANEL";
+                debugDockToggle.textContent = "HIDE DEBUG";
                 debugDockToggle.setAttribute("aria-label", "Hide debug control panel");
                 debugPanelEl.appendChild(debugDockToggle);
                 debugDockToggle.addEventListener("click", () => {
-                    window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show: false } }));
+                    window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show: !debugPanelsShown } }));
                 });
             }
         }
@@ -215,11 +223,12 @@ function initStartPageUILayoutTabs() {
                 leftPanelHideToggle = document.createElement("button");
                 leftPanelHideToggle.type = "button";
                 leftPanelHideToggle.className = "ui-debug-panels-toggle ui-debug-panels-toggle--left";
-                leftPanelHideToggle.textContent = "HIDE PANEL";
+                leftPanelHideToggle.textContent = "HIDE DEBUG";
                 leftPanelHideToggle.setAttribute("aria-label", "Hide debug info panel");
                 leftInfoPanel.appendChild(leftPanelHideToggle);
                 leftPanelHideToggle.addEventListener("click", () => {
-                    window.dispatchEvent(new CustomEvent(DEBUG_VISIBILITY_EVENT, { detail: { show: false } }));
+                    leftPanelShown = !leftPanelShown;
+                    syncLeftPanel();
                 });
             }
         }
@@ -232,16 +241,32 @@ function initStartPageUILayoutTabs() {
         if (debugDockToggle) debugDockToggle.dataset.theme = nextTheme;
         if (leftPanelHideToggle) leftPanelHideToggle.dataset.theme = nextTheme;
     };
+    const syncLeftPanel = () => {
+        const panel = document.querySelector('.cam-anim-debug-panel');
+        if (!panel) return;
+        panel.classList.toggle('cam-anim-debug-panel--hidden-left', !leftPanelShown);
+        panel.querySelector('.cam-anim-debug-content')?.setAttribute('aria-hidden', String(!leftPanelShown));
+        if (leftPanelHideToggle) {
+            const label = leftPanelShown ? 'HIDE DEBUG' : 'SHOW DEBUG';
+            if (leftPanelHideToggle.textContent !== label) leftPanelHideToggle.textContent = label;
+            leftPanelHideToggle.setAttribute('aria-label', leftPanelShown ? 'Hide debug info panel' : 'Show debug info panel');
+            leftPanelHideToggle.setAttribute('aria-expanded', String(leftPanelShown));
+            leftPanelHideToggle.setAttribute('aria-controls', 'camAnimDebugContent');
+        }
+    };
     const setDebugPanelsShown = (show) => {
         debugPanelsShown = !!show;
         const debugPanelEl = document.getElementById("debug-panel");
-        const leftInfoPanel = document.querySelector(".cam-anim-debug-panel");
         if (debugPanelEl) {
             debugPanelEl.classList.toggle("debug-panel--dock-hidden-right", !debugPanelsShown);
         }
-        if (leftInfoPanel) {
-            leftInfoPanel.classList.toggle("cam-anim-debug-panel--hidden-left", !debugPanelsShown);
+        if(debugDockToggle){
+            debugDockToggle.textContent = debugPanelsShown ? 'HIDE DEBUG' : 'SHOW DEBUG';
+            debugDockToggle.setAttribute('aria-label', debugPanelsShown ? 'Hide debug control panel' : 'Show debug control panel');
+            debugDockToggle.setAttribute('aria-expanded', String(debugPanelsShown));
         }
+        if (!debugPanelsShown) leftPanelShown = false;
+        syncLeftPanel();
         applyDebugDockToggleTheme();
     };
     ensureHideButtons();
@@ -269,7 +294,8 @@ function initStartPageUILayoutTabs() {
         setDebugPanelsShown(!!event.detail.show);
     });
 
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((records) => {
+        if (records.every((record) => record.target.closest?.('.cam-anim-debug-content'))) return;
         dockDebugPanel();
         moveToLeftOverlay(".cam-anim-debug-panel");
         connectDebugPanelThemeObserver();
@@ -280,34 +306,68 @@ function initStartPageUILayoutTabs() {
     observer.observe(document.body, { childList: true, subtree: true });
 }
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initStartPageUILayoutTabs, { once: true });
-} else {
-    initStartPageUILayoutTabs();
+if (isLocalReview) {
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initStartPageUILayoutTabs, { once: true });
+    } else {
+        initStartPageUILayoutTabs();
+    }
 }
 // Bind controls to SiteA11y and implement jump UI with visualizer
 (function(){
     // Helper storage keys
-    const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
     const AUDIO_VOLUME_KEY = 'site.audio.volume';
     const AUDIO_SYNC_KEY = 'site.audio.sync';
     const AUDIO_MUTED_KEY = 'site.audio.muted';
+    const ANIMATION_ALLOWED_KEY = 'site.start.animation.allowed';
     const CONTRAST_VALUE_KEY = 'site.contrast.value';
     const BRIGHTNESS_VALUE_KEY = 'site.start.brightness';
+    const BACKGROUND_CONTRAST_KEY = 'site.start.background.contrast';
+    const UNDERLIGHT_TUNING_KEY = 'site.start.look.underlight';
+    const SPEAKER_PURPLE_TUNING_KEY = 'site.start.look.speaker-purple';
+    const SCENE_LIGHTING_VALUE_KEY = 'site.scene.lighting';
+    const DEFAULT_SLIDER_VALUE = 0.5;
+    const DEFAULT_LOOK_TUNING = Object.freeze({
+        underlight: 0.65,
+        speakerPurple: 0.65
+    });
     const lightingState = {
         lux: Number.NaN,
         emi: Number.NaN,
         overlay: Number.NaN
     };
     const clamp01Value = (value) => {
+        if(value === null || value === undefined || value === '') return null;
         const parsed = Number(value);
         if(!Number.isFinite(parsed)) return null;
         return Math.max(0, Math.min(1, parsed));
     };
+    const clampLookTuning = (value) => {
+        if(value === null || value === undefined || value === '') return null;
+        const parsed = Number(value);
+        if(!Number.isFinite(parsed)) return null;
+        return Math.max(0, Math.min(3, parsed));
+    };
+    const readLookTuning = (key, fallback) => {
+        try{
+            const stored = clampLookTuning(localPreferences.getItem(key));
+            if(stored !== null) return stored;
+        }catch(e){}
+        return fallback;
+    };
+    const lookTuning = {
+        underlight: readLookTuning(UNDERLIGHT_TUNING_KEY, DEFAULT_LOOK_TUNING.underlight),
+        speakerPurple: readLookTuning(SPEAKER_PURPLE_TUNING_KEY, DEFAULT_LOOK_TUNING.speakerPurple)
+    };
     const getLuxValue = () => {
         if(Number.isFinite(lightingState.lux)) return lightingState.lux;
-        const fallback = clamp01Value(getSceneLightingValue());
-        lightingState.lux = fallback ?? 1;
+        let stored = null;
+        try{ stored = clamp01Value(localPreferences.getItem(SCENE_LIGHTING_VALUE_KEY)); }catch(e){}
+        if(stored === null){
+            stored = DEFAULT_SLIDER_VALUE;
+            setSceneLightingValue(stored);
+        }
+        lightingState.lux = stored;
         return lightingState.lux;
     };
     const setLuxValue = (value) => {
@@ -320,16 +380,16 @@ if (document.readyState === "loading") {
     const getEmiValue = () => {
         if(Number.isFinite(lightingState.emi)) return lightingState.emi;
         try{
-            const parsed = clamp01Value(localStorage.getItem(CONTRAST_VALUE_KEY));
+            const parsed = clamp01Value(localPreferences.getItem(CONTRAST_VALUE_KEY));
             if(parsed === null){
-                try{ localStorage.setItem(CONTRAST_VALUE_KEY, '0.5'); }catch(e){}
-                lightingState.emi = 0.5;
+                try{ localPreferences.setItem(CONTRAST_VALUE_KEY, String(DEFAULT_SLIDER_VALUE)); }catch(e){}
+                lightingState.emi = DEFAULT_SLIDER_VALUE;
                 return lightingState.emi;
             }
             lightingState.emi = parsed;
             return lightingState.emi;
         }catch(e){
-            lightingState.emi = 0.5;
+            lightingState.emi = DEFAULT_SLIDER_VALUE;
             return lightingState.emi;
         }
     };
@@ -337,21 +397,31 @@ if (document.readyState === "loading") {
         const next = clamp01Value(value);
         if(next === null) return getEmiValue();
         lightingState.emi = next;
-        try{ localStorage.setItem(CONTRAST_VALUE_KEY, String(next)); }catch(e){}
+        try{ localPreferences.setItem(CONTRAST_VALUE_KEY, String(next)); }catch(e){}
         return next;
     };
 
     // File paths (relative to site root)
     const MEDIA = {
         counts: {
-            video: assetUrl('Videos/start-page/counting-hq.webm'),
-            audio: assetUrl('Videos/start-page/counting.opus')
+            label: 'Numbers 1-2-3',
+            video: assetUrl('Videos/start-page/counting-lq.webm'),
+            audio: assetUrl('Videos/start-page/counting.opus'),
+            thumbnail: assetUrl('_0-start/counting-thumb.jpg')
         },
         alphabet: {
-            video: assetUrl('Videos/start-page/alphabet-hq.webm'),
-            audio: assetUrl('Videos/start-page/alphabet.opus')
+            label: 'Alphabet A-B-C',
+            video: assetUrl('Videos/start-page/alphabet-lq.webm'),
+            audio: assetUrl('Videos/start-page/alphabet.opus'),
+            thumbnail: assetUrl('_0-start/alphabet-thumb.jpg')
         }
     };
+    const SYNC_VOICE_URL = assetUrl('_0-start/audio/sync-voice.wav');
+    const SYNC_TICKS_URL = assetUrl('_0-start/audio/sync-ticks.wav');
+    const SYNC_BEAT_MS = 800;
+    const SYNC_REACTION_ALLOWANCE_MS = 180;
+    const SYNC_WORDS = ['GO', '3', '2', '1', 'GO'];
+    const SYNC_CUE_OFFSETS_MS = [3200, 4000, 4800, 5600, 6400];
 
     // Elements
     const saveBtn = document.getElementById('save_a11y');
@@ -361,7 +431,12 @@ if (document.readyState === "loading") {
     const permDeny = document.getElementById('permDeny');
     const jumpContainer = document.getElementById('jumpContainer');
     const jumpVideo = document.getElementById('jumpVideo');
+    const videoWrapper = document.getElementById('videoWrapper');
     const jumpAudio = document.getElementById('jumpAudio');
+    const syncVoiceAudio = new Audio(SYNC_VOICE_URL);
+    const syncTicksAudio = new Audio(SYNC_TICKS_URL);
+    syncVoiceAudio.preload = 'auto';
+    syncTicksAudio.preload = 'auto';
     const syncSlider = document.getElementById('syncSlider');
     const syncLeft = document.getElementById('syncLeft');
     const syncRight = document.getElementById('syncRight');
@@ -373,6 +448,7 @@ if (document.readyState === "loading") {
     const tabNumbers = document.getElementById('tab-numbers');
     const tabAlphabet = document.getElementById('tab-alphabet');
     const nextBtn = document.getElementById('nextBtn');
+    const returnGalleryBtn = document.getElementById('returnGalleryBtn');
     const a11ySection = document.getElementById('a11ySection');
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsModal = document.getElementById('settingsModal');
@@ -381,6 +457,30 @@ if (document.readyState === "loading") {
     const bgOverlay = document.querySelector('.bg-overlay');
     const settingsControllerCanvas = document.getElementById('settingsControllerCanvas');
     const settingsControllerStatus = document.getElementById('settingsControllerStatus');
+    const backgroundLookPanel = document.getElementById('backgroundLookPanel');
+    const backgroundLookToggle = document.getElementById('backgroundLookToggle');
+    const backgroundLookControls = document.getElementById('backgroundLookControls');
+    const backgroundToneSlider = document.getElementById('backgroundToneSlider');
+    const backgroundToneValue = document.getElementById('backgroundToneValue');
+    const backgroundContrastSlider = document.getElementById('backgroundContrastSlider');
+    const backgroundContrastValue = document.getElementById('backgroundContrastValue');
+    const undersideLightSlider = document.getElementById('undersideLightSlider');
+    const undersideLightValue = document.getElementById('undersideLightValue');
+    const speakerPurpleSlider = document.getElementById('speakerPurpleSlider');
+    const speakerPurpleValue = document.getElementById('speakerPurpleValue');
+    const backgroundToneReset = document.getElementById('backgroundToneReset');
+    const accessibleAudioMode = document.getElementById('accessibleAudioMode');
+    const accessibleVisualsMode = document.getElementById('accessibleVisualsMode');
+    const accessibleVolume = document.getElementById('accessibleVolume');
+    const accessibleSync = document.getElementById('accessibleSync');
+    const accessibleBrightness = document.getElementById('accessibleBrightness');
+    const accessibleContrast = document.getElementById('accessibleContrast');
+    const accessibleCounts = document.getElementById('accessibleCounts');
+    const accessibleAlphabet = document.getElementById('accessibleAlphabet');
+    const accessiblePlayPause = document.getElementById('accessiblePlayPause');
+    const accessibleGallery = document.getElementById('accessibleGallery');
+    const accessibleConfirmYes = document.getElementById('accessibleConfirmYes');
+    const accessibleConfirmNo = document.getElementById('accessibleConfirmNo');
     const settingsControllerGridCols = null;
     const settingsControllerGridRows = null;
     const settingsControllerInfo = null;
@@ -394,24 +494,89 @@ if (document.readyState === "loading") {
     const emissiveAdjustPanel = document.getElementById('emissiveAdjustPanel');
     const emissiveSelectAll = document.getElementById('emissiveSelectAll');
     const emissiveSelectNone = document.getElementById('emissiveSelectNone');
-    let activeSettingsView = 'accessibility';
+    // The visible pressed button is authoritative.  Legacy DOM names still use
+    // "accessibility", but the controller mode is explicitly audio/visuals.
+    let activeSettingsView = 'visuals';
+    const controllerFlow = {
+        stage: 'motion',
+        soundAllowed: null,
+        animationAllowed: null,
+        selectedMedia: 'counts',
+        returnStage: 'gallery',
+        resolvePrompt: null,
+        hoverHint: '',
+        syncExercise: {
+            active: false,
+            startedAt: 0,
+            taps: [],
+            litCount: 0,
+            litLines: new Set(),
+            result: ''
+        },
+        hitRegions: [],
+        thumbnails: new Map()
+    };
+    settingsControllerBridge.controllerFlow = controllerFlow;
+    function syncAccessibleControllerUI(){
+        accessibleAudioMode?.setAttribute('aria-pressed', String(activeSettingsView === 'audio'));
+        accessibleVisualsMode?.setAttribute('aria-pressed', String(activeSettingsView === 'visuals'));
+        if(accessibleVolume) accessibleVolume.value = String(Math.round(storedVolume * 100));
+        if(accessibleSync) accessibleSync.value = String(storedSync);
+        if(accessibleBrightness) accessibleBrightness.value = String(Math.round(getLuxValue() * 100));
+        if(accessibleContrast) accessibleContrast.value = String(Math.round(getEmiValue() * 100));
+        const syncRunning = controllerFlow.stage === 'sync-running';
+        const syncActive = syncRunning && controllerFlow.syncExercise.active;
+        if(accessibleCounts){
+            accessibleCounts.hidden = syncActive;
+            accessibleCounts.textContent = syncRunning ? 'Try audio sync exercise again' : 'Start audio sync exercise';
+        }
+        if(accessibleAlphabet) accessibleAlphabet.hidden = true;
+        if(accessiblePlayPause){
+            accessiblePlayPause.hidden = !syncActive;
+            accessiblePlayPause.textContent = `Tap ${SYNC_WORDS[Math.min(controllerFlow.syncExercise.taps.length, SYNC_WORDS.length - 1)]} sync cue`;
+        }
+        if(accessibleGallery) accessibleGallery.hidden = !syncRunning;
+        if(accessibleConfirmYes) accessibleConfirmYes.hidden = controllerFlow.stage !== 'confirm';
+        if(accessibleConfirmNo) accessibleConfirmNo.hidden = controllerFlow.stage !== 'confirm';
+    }
+
+    function showSaveConfirmation(){
+        if(controllerFlow.stage !== 'confirm'){
+            controllerFlow.returnStage = controllerFlow.stage === 'playing' ? 'playing' : 'gallery';
+        }
+        try{ jumpVideo.pause(); }catch(e){}
+        try{ jumpAudio.pause(); }catch(e){}
+        controllerFlow.stage = 'confirm';
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+    }
+
+    function resolveSaveConfirmation(accepted){
+        if(accepted){
+            window.location.href = '_1-about/about.html';
+            return;
+        }
+        controllerFlow.stage = controllerFlow.returnStage || 'gallery';
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+    }
     const getBackgroundBrightness = () => {
         if(Number.isFinite(lightingState.overlay)){
             return Math.max(0, Math.min(1, lightingState.overlay));
         }
         try{
-            const raw = localStorage.getItem(BRIGHTNESS_VALUE_KEY);
+            const raw = localPreferences.getItem(BRIGHTNESS_VALUE_KEY);
             const parsed = clamp01Value(raw);
             if(parsed === null){
-                try{ localStorage.setItem(BRIGHTNESS_VALUE_KEY, '0'); }catch(e){}
-                lightingState.overlay = 0;
-                return 0;
+                try{ localPreferences.setItem(BRIGHTNESS_VALUE_KEY, String(DEFAULT_SLIDER_VALUE)); }catch(e){}
+                lightingState.overlay = DEFAULT_SLIDER_VALUE;
+                return DEFAULT_SLIDER_VALUE;
             }
             lightingState.overlay = parsed;
             return lightingState.overlay;
         }catch(e){
-            lightingState.overlay = 0;
-            return 0;
+            lightingState.overlay = DEFAULT_SLIDER_VALUE;
+            return DEFAULT_SLIDER_VALUE;
         }
     };
 
@@ -419,7 +584,26 @@ if (document.readyState === "loading") {
             const next = clamp01Value(value);
             if(next === null) return getBackgroundBrightness();
             lightingState.overlay = next;
-            try{ localStorage.setItem(BRIGHTNESS_VALUE_KEY, String(next)); }catch(e){}
+            try{ localPreferences.setItem(BRIGHTNESS_VALUE_KEY, String(next)); }catch(e){}
+            return next;
+        };
+
+        const getBackgroundContrast = () => {
+            try{
+                const parsed = clamp01Value(localPreferences.getItem(BACKGROUND_CONTRAST_KEY));
+                if(parsed !== null) return parsed;
+                localPreferences.setItem(BACKGROUND_CONTRAST_KEY, String(DEFAULT_SLIDER_VALUE));
+            }catch(e){}
+            return DEFAULT_SLIDER_VALUE;
+        };
+
+        const setBackgroundContrast = (value) => {
+            const next = clamp01Value(value);
+            if(next === null) return getBackgroundContrast();
+            try{ localPreferences.setItem(BACKGROUND_CONTRAST_KEY, String(next)); }catch(e){}
+            const contrastFactor = 0.45 + (1.9 * next);
+            document.documentElement.style.setProperty('--start-overlay-contrast', contrastFactor.toFixed(3));
+            if(bgOverlay) bgOverlay.style.setProperty('--start-overlay-contrast', contrastFactor.toFixed(3));
             return next;
         };
 
@@ -500,8 +684,83 @@ if (document.readyState === "loading") {
 
     function syncOverlayInputs(){
         const value = Math.max(0, Math.min(1, getBackgroundBrightness()));
+        const contrast = Math.max(0, Math.min(1, getBackgroundContrast()));
         if(overlayBlendSlider) overlayBlendSlider.value = value.toFixed(2);
         if(overlayBlendInput) overlayBlendInput.value = value.toFixed(2);
+        if(backgroundToneSlider) backgroundToneSlider.value = String(Math.round(value * 100));
+        if(backgroundToneValue) backgroundToneValue.textContent = `${Math.round(value * 100)}%`;
+        if(backgroundContrastSlider) backgroundContrastSlider.value = String(Math.round(contrast * 100));
+        if(backgroundContrastValue) backgroundContrastValue.textContent = `${Math.round(contrast * 100)}%`;
+        const tuningControls = [
+            [undersideLightSlider, undersideLightValue, lookTuning.underlight],
+            [speakerPurpleSlider, speakerPurpleValue, lookTuning.speakerPurple]
+        ];
+        tuningControls.forEach(([slider, output, value]) => {
+            const percent = Math.round(value * 100);
+            if(slider) slider.value = String(percent);
+            if(output) output.textContent = `${percent}%`;
+        });
+    }
+
+    function setLookTuning(name, value, storageKey){
+        const next = clampLookTuning(value);
+        if(next === null) return;
+        lookTuning[name] = next;
+        try{ localPreferences.setItem(storageKey, String(next)); }catch(e){}
+        settingsControllerBridge.applyReviewLook?.();
+        syncOverlayInputs();
+    }
+
+    function bindBackgroundLookControls(){
+        if(backgroundLookToggle && backgroundLookPanel){
+            backgroundLookToggle.addEventListener('click', () => {
+                const hidden = backgroundLookPanel.classList.toggle('is-hidden');
+                backgroundLookToggle.textContent = hidden ? 'SHOW SETTINGS' : 'HIDE SETTINGS';
+                backgroundLookToggle.setAttribute('aria-expanded', String(!hidden));
+                if(backgroundLookControls){
+                    backgroundLookControls.setAttribute('aria-hidden', String(hidden));
+                    backgroundLookControls.inert = hidden;
+                }
+            });
+        }
+        if(backgroundToneSlider){
+            backgroundToneSlider.addEventListener('input', () => {
+                applyOverlayFromSource(Number(backgroundToneSlider.value) / 100, 'background-panel');
+            });
+        }
+        if(backgroundContrastSlider){
+            backgroundContrastSlider.addEventListener('input', () => {
+                setBackgroundContrast(Number(backgroundContrastSlider.value) / 100);
+                syncOverlayInputs();
+            });
+        }
+        if(undersideLightSlider){
+            undersideLightSlider.addEventListener('input', () => {
+                setLookTuning('underlight', Number(undersideLightSlider.value) / 100, UNDERLIGHT_TUNING_KEY);
+            });
+        }
+        if(speakerPurpleSlider){
+            speakerPurpleSlider.addEventListener('input', () => {
+                setLookTuning('speakerPurple', Number(speakerPurpleSlider.value) / 100, SPEAKER_PURPLE_TUNING_KEY);
+            });
+        }
+        if(backgroundToneReset){
+            backgroundToneReset.addEventListener('click', () => {
+                applyOverlayFromSource(0.5, 'background-reset');
+                setBackgroundContrast(0.5);
+                lookTuning.underlight = DEFAULT_LOOK_TUNING.underlight;
+                lookTuning.speakerPurple = DEFAULT_LOOK_TUNING.speakerPurple;
+                try{
+                    localPreferences.setItem(UNDERLIGHT_TUNING_KEY, String(lookTuning.underlight));
+                    localPreferences.setItem(SPEAKER_PURPLE_TUNING_KEY, String(lookTuning.speakerPurple));
+                }catch(e){}
+                settingsControllerBridge.applyReviewLook?.();
+                syncOverlayInputs();
+            });
+        }
+        if(backgroundLookPanel) backgroundLookPanel.hidden = !isLocalReview;
+        setBackgroundContrast(getBackgroundContrast());
+        syncOverlayInputs();
     }
 
     function ensureLightingDebugLine(){
@@ -544,9 +803,9 @@ if (document.readyState === "loading") {
 
     function updateContrastKnobTrackerLine(){
         if(!contrastKnobTrackerEl) return;
-        const node = settingsControllerBridge.knobContrastNode;
+        const node = settingsControllerBridge.knobSyncNode;
         const constraints = settingsControllerBridge.knobConstraints;
-        const constraint = constraints?.contrastAll?.get(node?.uuid) || constraints?.contrast || null;
+        const constraint = constraints?.sync || null;
         const canvas = settingsControllerCanvas;
         const camera = settingsControllerBridge.camera;
         if(!node || !constraint || !node.parent){
@@ -600,53 +859,12 @@ if (document.readyState === "loading") {
     }
     
 
-    // Cache of "screen semantic" left/right mapping per knob so we can stay consistent
-    // across transient states where camera / parent / rect isn't ready yet.
-    const knobScreenSemanticCache = {
-        contrast: null, // { leftValue, rightValue, axis }
-        contrastAll: new Map() // uuid -> { leftValue, rightValue, axis }
-    };
-
-    function getSemanticConstraintLR(node, constraint, canvasRect, camera, cacheKey){
-        const info = getConstraintScreenData(node, constraint, canvasRect, camera);
-        if(info){
-            const payload = { leftValue: info.leftValue, rightValue: info.rightValue, axis: constraint.axis };
-            if(cacheKey === 'contrast'){
-                knobScreenSemanticCache.contrast = payload;
-            }else if(cacheKey && node?.uuid){
-                knobScreenSemanticCache.contrastAll.set(node.uuid, payload);
-            }
-            return { ...info, axis: constraint.axis };
-        }
-        // Fallback to last known mapping
-        if(cacheKey === 'contrast' && knobScreenSemanticCache.contrast){
-            const c = knobScreenSemanticCache.contrast;
-            return { leftValue: c.leftValue, rightValue: c.rightValue, axis: c.axis };
-        }
-        if(cacheKey && node?.uuid){
-            const c = knobScreenSemanticCache.contrastAll.get(node.uuid);
-            if(c) return { leftValue: c.leftValue, rightValue: c.rightValue, axis: c.axis };
-        }
-        return null;
-    }
-
     function getKnobSideInfo(type){
         const canvas = settingsControllerCanvas;
         const camera = settingsControllerBridge.camera;
         const constraints = settingsControllerBridge.knobConstraints;
-        let node = type === 'sync'
-            ? settingsControllerBridge.knobSyncNode
-            : (type === 'contrast' ? settingsControllerBridge.knobContrastNode : settingsControllerBridge.knobVolNode);
-        let constraint = constraints?.[type];
-        if(type === 'contrast' && (!node || !constraint)){
-            const nodes = settingsControllerBridge.knobContrastNodes || [];
-            const all = constraints?.contrastAll;
-            const first = nodes.find((n) => all?.get(n.uuid));
-            if(first){
-                node = first;
-                constraint = all.get(first.uuid);
-            }
-        }
+        const node = type === 'vol' ? settingsControllerBridge.knobVolNode : settingsControllerBridge.knobSyncNode;
+        const constraint = type === 'vol' ? constraints?.vol : constraints?.sync;
         if(!canvas || !camera || !node || !node.parent || !constraint) return null;
         const info = getConstraintScreenData(node, constraint, canvas.getBoundingClientRect(), camera);
         if(!info) return null;
@@ -669,42 +887,16 @@ if (document.readyState === "loading") {
         if(!lightingDebugLineEl) return;
         const lux = Math.max(0, Math.min(1, getLuxValue()));
         const emi = Math.max(0, Math.min(1, getEmiValue()));
-        const contrastNodeName = settingsControllerBridge.knobContrastNode?.name || '(none)';
+        const contrastNodeName = settingsControllerBridge.knobSyncNode?.name || '(none)';
         lightingDebugLineEl.textContent =
             `DBG src:${lightingDebugState.source} knob:${lightingDebugState.knob} Lux:${lux.toFixed(2)} Emi:${emi.toFixed(2)} CNode:${contrastNodeName}`;
         updateContrastKnobTrackerLine();
         updateKnobSidesLine();
     }
 
-    function syncEmiToEmissiveSliderRanges(value){
-        const v = Math.max(0, Math.min(1, Number(value)));
-        if(!Number.isFinite(v)) return;
-        const emissiveState = settingsControllerBridge.emissiveControlState;
-        const saveScales = settingsControllerBridge.saveEmissiveScales;
-        if(!emissiveState || typeof saveScales !== 'function') return;
-        const sliderList = document.getElementById('emissiveSliderList');
-        if(!sliderList) return;
-        let changed = false;
-        sliderList.querySelectorAll('input[type="range"][data-path]').forEach((slider) => {
-            const min = Number.isFinite(parseFloat(slider.min)) ? parseFloat(slider.min) : 0;
-            const max = Number.isFinite(parseFloat(slider.max)) ? parseFloat(slider.max) : 1;
-            const next = min + ((max - min) * v);
-            slider.value = String(next);
-            const path = slider.dataset.path;
-            if(path){
-                emissiveState.scales.set(path, next);
-                changed = true;
-            }
-            const row = slider.closest('.emissive-slider-item');
-            const valueEl = row ? row.querySelector('.emissive-slider-value') : null;
-            if(valueEl) valueEl.textContent = next.toFixed(2);
-        });
-        if(changed) saveScales();
-    }
-
     function applyLuxFromSource(value, source){
         const next = setLuxValue(value);
-        applyLuxControls();
+        settingsControllerBridge.applyLuxControls?.();
         syncLuxInputs();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState();
@@ -715,22 +907,22 @@ if (document.readyState === "loading") {
 
     function applyEmiFromSource(value, source){
         const next = setEmiValue(value);
-        syncEmiToEmissiveSliderRanges(next);
-        applyEmissionControls();
+        settingsControllerBridge.applyEmissionControls?.();
         syncEmiInputs();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState();
         }
-        applyContrastLockPose();
         updateLightingDebugLine(source || 'emi', 'contrast');
+        syncAccessibleControllerUI();
         return next;
     }
 
     function applyOverlayFromSource(value, source){
         const next = setBackgroundBrightness(value);
-        applyBackgroundBrightness(next);
+        settingsControllerBridge.applyBackgroundBrightness?.(next);
         syncOverlayInputs();
         updateLightingDebugLine(source || 'overlay', '-');
+        syncAccessibleControllerUI();
         return next;
     }
 
@@ -741,8 +933,9 @@ if (document.readyState === "loading") {
     }
 
     window.toggleOverlayBlendForDebugShortcut = toggleOverlayBlendForDebugShortcut;
+    bindBackgroundLookControls();
 
-    function bindAnimTuningControls(){
+    function bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation }){
         ensureLightingDebugLine();
         if(uiAnimSpeedSlider && uiAnimSpeedValue){
             uiAnimSpeedSlider.value = String(uiAnimTuning.speed.toFixed(2));
@@ -880,23 +1073,20 @@ if (document.readyState === "loading") {
         renderer.setScissorTest(true);
 
         const scene = new THREE.Scene();
-        const axesScene = new THREE.Scene();
-        const axesCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 10);
-        axesCamera.position.set(0.8, 0.8, 2.2);
-        axesCamera.lookAt(0, 0, 0);
-        const axesRoot = new THREE.Group();
-        axesRoot.add(new THREE.AxesHelper(0.6));
-        axesScene.add(axesRoot);
 
         const fallbackCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
         fallbackCamera.position.set(0, 1.6, 4);
         let activeCamera = fallbackCamera;
 
         const ambient = new THREE.HemisphereLight(0xffffff, 0x0f1115, 0.6);
+        // This ground-only hemisphere is a separate underside fill: brightness
+        // scales it with the scene, while its black sky leaves the top key intact.
+        const undersideLight = new THREE.HemisphereLight(0x000000, 0x75469a, 0.22);
+        undersideLight.userData.lookRole = 'underside';
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(2, 4, 3);
-        scene.add(ambient, dirLight);
-        const lightingRig = [ambient, dirLight];
+        scene.add(ambient, undersideLight, dirLight);
+        const lightingRig = [ambient, undersideLight, dirLight];
         let lightingTargets = null;
         const emissiveControlState = {
             exclusions: new Set(),
@@ -953,13 +1143,22 @@ if (document.readyState === "loading") {
         let emissiveStrengthBindings = [];
         let loggedEmissiveTracks = false;
         let manualEmissiveTargets = [];
-        let manualEmissiveDirection = 1;
         let loggedManualEmissives = false;
         const EMISSIVE_ANIM_NAME_MARKERS = ['emission', 'emissive', 'glow'];
-        let syncPercentLabel = null;
-        const syncPercentLabelTargets = [];
-        let syncPercentLabelCtx = null;
-        let syncPercentLabelTexture = null;
+        const readoutLabels = new Map();
+        const readoutEditor = document.createElement('div');
+        readoutEditor.className = 'controller-readout-editor';
+        readoutEditor.setAttribute('role', 'group');
+        const readoutEditorInput = document.createElement('input');
+        readoutEditorInput.type = 'text';
+        readoutEditorInput.inputMode = 'numeric';
+        readoutEditorInput.autocomplete = 'off';
+        readoutEditorInput.spellcheck = false;
+        const readoutEditorUnit = document.createElement('span');
+        readoutEditorUnit.className = 'controller-readout-editor-unit';
+        readoutEditor.append(readoutEditorInput, readoutEditorUnit);
+        settingsControllerScene.appendChild(readoutEditor);
+        let readoutEditState = null;
 
         const CONTRAST_EXCLUDED_NAMES = new Set([
             'btn-accessibility',
@@ -1000,28 +1199,6 @@ if (document.readyState === "loading") {
                 .toLowerCase()
                 .split('/')
                 .some((segment) => isButtonTextName(segment));
-        };
-
-        let contrastLockPose = null;
-        const storeContrastLockPose = () => {
-            const node = settingsControllerBridge.knobContrastNode;
-            if(!node) return;
-            node.updateMatrixWorld(true);
-            const quat = new THREE.Quaternion();
-            const scale = new THREE.Vector3();
-            const pos = new THREE.Vector3();
-            node.matrixWorld.decompose(pos, quat, scale);
-            contrastLockPose = { quat };
-        };
-
-        const applyContrastLockPose = () => {
-            if(!contrastLockPose) return;
-            const node = settingsControllerBridge.knobContrastNode;
-            if(!node || !node.parent) return;
-            node.parent.updateMatrixWorld(true);
-            const parentQuat = node.parent.getWorldQuaternion(new THREE.Quaternion());
-            const localQuat = parentQuat.invert().multiply(contrastLockPose.quat.clone());
-            node.quaternion.copy(localQuat);
         };
 
         const captureLightingTargets = (model) => {
@@ -1103,63 +1280,223 @@ if (document.readyState === "loading") {
             return { emissiveTargets, lights: [...lightingRig] };
         };
 
-        function updateSyncPercentLabel(){
-            if(!syncPercentLabel || !syncPercentLabelCtx || !syncPercentLabelTexture) return;
-            const knobPos = Number.isFinite(settingsControllerBridge.knobAxisValues?.contrast)
-                ? settingsControllerBridge.knobAxisValues.contrast
-                : getContrastValue();
-            const contrastValue = Math.round(Math.max(0, Math.min(1, knobPos)) * 100);
-            const ctx = syncPercentLabelCtx;
+        function getReadoutParts(type){
+            if(activeSettingsView === 'audio'){
+                if(type === 'vol') return { number: String(Math.round(storedVolume * 100)), unit: '%' };
+                return { number: `${storedSync > 0 ? '+' : ''}${storedSync}`, unit: 'ms' };
+            }
+            if(type === 'vol') return { number: String(Math.round(getLuxValue() * 100)), unit: '%' };
+            return { number: String(Math.round(getContrastValue() * 100)), unit: '%' };
+        }
+
+        function updateControllerReadouts(){
+            readoutLabels.forEach((entry, type) => {
+            const { ctx, texture, targets } = entry;
             const w = ctx.canvas.width;
             const h = ctx.canvas.height;
             ctx.clearRect(0, 0, w, h);
-            ctx.fillStyle = 'rgba(0, 0, 0, 0)';
+            ctx.fillStyle = '#05090d';
             ctx.fillRect(0, 0, w, h);
-            ctx.fillStyle = '#ff2a2a';
-            ctx.font = '64px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`${contrastValue}`, w / 2, h / 2);
-            syncPercentLabelTargets.forEach((mesh) => {
+            ctx.fillStyle = '#ff3450';
+            const { number, unit } = getReadoutParts(type);
+            const numericFontSize = unit === 'ms' ? 124 : 142;
+            const unitFontSize = unit === 'ms' ? numericFontSize * 0.5 : numericFontSize;
+            ctx.font = `${numericFontSize}px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif`;
+            const sign = /^[+-]/.test(number) ? number[0] : '';
+            const digits = sign ? number.slice(1) : number;
+            const signWidth = sign ? ctx.measureText(sign).width * 0.82 : 0;
+            const digitsWidth = ctx.measureText(digits).width;
+            const numberWidth = signWidth + digitsWidth;
+            ctx.font = `${unitFontSize}px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif`;
+            const unitWidth = ctx.measureText(unit).width;
+            const gap = unit === 'ms' ? 0 : 4;
+            const totalWidth = numberWidth + gap + unitWidth;
+            const scale = Math.min(1, (w * 0.88) / Math.max(1, totalWidth));
+            const startX = (w - totalWidth * scale) / 2;
+            ctx.save();
+            ctx.translate(startX, 0);
+            ctx.scale(scale, scale);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+            const baselineY = (h / scale + numericFontSize * 0.72) / 2;
+            ctx.font = `${numericFontSize}px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif`;
+            if(sign){
+                ctx.save();
+                ctx.scale(0.82, 1);
+                ctx.fillText(sign, 0, baselineY);
+                ctx.restore();
+            }
+            ctx.fillText(digits, signWidth, baselineY);
+            ctx.font = `${unitFontSize}px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif`;
+            ctx.fillText(unit, numberWidth + gap, baselineY);
+            ctx.restore();
+            targets.forEach((mesh) => {
                 if(!mesh || !mesh.isMesh || !mesh.material) return;
-                if(mesh.material.map !== syncPercentLabelTexture){
-                    mesh.material.map = syncPercentLabelTexture;
+                if(mesh.material.map !== texture){
+                    mesh.material.map = texture;
                     mesh.material.transparent = true;
                     mesh.material.depthWrite = false;
                     mesh.material.needsUpdate = true;
                 }
             });
-            syncPercentLabelTexture.needsUpdate = true;
+            texture.needsUpdate = true;
+            });
         }
-        settingsControllerBridge.updateSyncPercentLabel = updateSyncPercentLabel;
+        settingsControllerBridge.updateSyncPercentLabel = updateControllerReadouts;
 
-        const bindSyncPercentLabelMesh = (mesh) => {
-            if(!mesh || !mesh.isMesh || !syncPercentLabelTexture) return;
-            if(!mesh.material || Array.isArray(mesh.material)){
-                mesh.material = new THREE.MeshBasicMaterial({
-                    map: syncPercentLabelTexture,
-                    transparent: true,
-                    depthWrite: false
-                });
+        function applyReadoutNumber(type, rawValue){
+            if(!/^[+-]?\d+$/.test(String(rawValue).trim())) return false;
+            const parsed = Number.parseInt(String(rawValue).trim(), 10);
+            if(!Number.isFinite(parsed)) return false;
+            if(type === 'vol'){
+                const percent = Math.max(0, Math.min(100, parsed));
+                if(activeSettingsView === 'audio'){
+                    setVolumeFromPercent(percent);
+                }else{
+                    applyLuxFromSource(percent / 100, 'readout-edit');
+                }
+            }else if(activeSettingsView === 'audio'){
+                applySyncValue(Math.max(-3000, Math.min(3000, parsed)));
             }else{
-                mesh.material.map = syncPercentLabelTexture;
-                mesh.material.transparent = true;
-                mesh.material.depthWrite = false;
-                mesh.material.needsUpdate = true;
+                applyEmiFromSource(Math.max(0, Math.min(100, parsed)) / 100, 'readout-edit');
             }
-            if(!syncPercentLabelTargets.includes(mesh)){
-                syncPercentLabelTargets.push(mesh);
+            settingsControllerBridge.updateKnobTransformsFromState?.();
+            updateControllerReadouts();
+            syncAccessibleControllerUI();
+            return true;
+        }
+
+        function getProjectedReadoutRect(target){
+            if(!target || !activeCamera) return null;
+            const box = new THREE.Box3().setFromObject(target);
+            if(box.isEmpty()) return null;
+            const corners = [];
+            for(const x of [box.min.x, box.max.x]){
+                for(const y of [box.min.y, box.max.y]){
+                    for(const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
+                }
             }
-            if(!syncPercentLabel){
-                syncPercentLabel = mesh;
+            const canvasRect = settingsControllerCanvas.getBoundingClientRect();
+            const hostRect = settingsControllerScene.getBoundingClientRect();
+            const projected = corners.map((corner) => {
+                const ndc = corner.project(activeCamera);
+                return {
+                    x: canvasRect.left - hostRect.left + ((ndc.x + 1) * 0.5 * canvasRect.width),
+                    y: canvasRect.top - hostRect.top + ((1 - ndc.y) * 0.5 * canvasRect.height)
+                };
+            });
+            const xs = projected.map((point) => point.x);
+            const ys = projected.map((point) => point.y);
+            return {
+                left: Math.min(...xs),
+                top: Math.min(...ys),
+                width: Math.max(...xs) - Math.min(...xs),
+                height: Math.max(...ys) - Math.min(...ys)
+            };
+        }
+
+        function updateReadoutEditorPosition(){
+            if(!readoutEditState) return;
+            const rect = getProjectedReadoutRect(readoutEditState.target);
+            if(!rect) return;
+            readoutEditor.style.left = `${rect.left}px`;
+            readoutEditor.style.top = `${rect.top}px`;
+            readoutEditor.style.width = `${Math.max(72, rect.width)}px`;
+            readoutEditor.style.height = `${Math.max(30, rect.height)}px`;
+            readoutEditor.style.fontSize = `${Math.max(12, Math.min(34, rect.height * 0.48))}px`;
+        }
+
+        function closeReadoutEditor({ commit = false } = {}){
+            if(!readoutEditState) return;
+            if(commit) applyReadoutNumber(readoutEditState.type, readoutEditorInput.value);
+            readoutEditState = null;
+            readoutEditor.classList.remove('is-open');
+        }
+
+        function openReadoutEditor(type, target){
+            closeReadoutEditor({ commit: true });
+            const parts = getReadoutParts(type);
+            readoutEditState = { type, target };
+            readoutEditorInput.value = parts.number;
+            readoutEditorInput.setAttribute('aria-label', `${activeSettingsView === 'audio' ? (type === 'vol' ? 'Volume' : 'Audio sync') : (type === 'vol' ? 'Brightness' : 'Contrast')} numeric value`);
+            readoutEditorUnit.textContent = parts.unit;
+            readoutEditor.dataset.unit = parts.unit;
+            readoutEditor.classList.add('is-open');
+            updateReadoutEditorPosition();
+            readoutEditorInput.focus({ preventScroll: true });
+            readoutEditorInput.select();
+        }
+
+        function getReadoutHit(object){
+            if(!object) return null;
+            for(const [type, entry] of readoutLabels){
+                for(const target of entry.targets){
+                    let current = object;
+                    while(current){
+                        if(current === target) return { type, target };
+                        current = current.parent;
+                    }
+                }
             }
+            return null;
+        }
+
+        readoutEditor.addEventListener('pointerdown', (event) => event.stopPropagation());
+        readoutEditorInput.addEventListener('input', () => {
+            if(readoutEditState) applyReadoutNumber(readoutEditState.type, readoutEditorInput.value);
+        });
+        readoutEditorInput.addEventListener('keydown', (event) => {
+            if(event.key === 'Enter'){
+                event.preventDefault();
+                closeReadoutEditor({ commit: true });
+            }else if(event.key === 'Escape'){
+                event.preventDefault();
+                closeReadoutEditor();
+            }
+        });
+        readoutEditorInput.addEventListener('blur', () => closeReadoutEditor({ commit: true }));
+
+        const bindReadoutMesh = (mesh, entry) => {
+            if(!mesh || !mesh.isMesh || !entry?.texture) return;
+            if(mesh.geometry?.attributes?.uv && !mesh.userData.readoutUvNormalized){
+                const geometry = mesh.geometry.clone();
+                const uv = geometry.attributes.uv;
+                let minU = Infinity, minV = Infinity, maxU = -Infinity, maxV = -Infinity;
+                for(let i = 0; i < uv.count; i++){
+                    minU = Math.min(minU, uv.getX(i));
+                    minV = Math.min(minV, uv.getY(i));
+                    maxU = Math.max(maxU, uv.getX(i));
+                    maxV = Math.max(maxV, uv.getY(i));
+                }
+                const rangeU = Math.max(1e-6, maxU - minU);
+                const rangeV = Math.max(1e-6, maxV - minV);
+                for(let i = 0; i < uv.count; i++){
+                    uv.setXY(i, (uv.getX(i) - minU) / rangeU, (uv.getY(i) - minV) / rangeV);
+                }
+                uv.needsUpdate = true;
+                mesh.geometry = geometry;
+                mesh.userData.readoutUvNormalized = true;
+            }
+            const cloned = new THREE.MeshBasicMaterial({
+                map: entry.texture,
+                transparent: true,
+                depthWrite: false,
+                toneMapped: false
+            });
+            if(!mesh.material || Array.isArray(mesh.material)){
+                mesh.material = cloned;
+            }else{
+                mesh.material = cloned;
+            }
+            if(!entry.targets.includes(mesh)) entry.targets.push(mesh);
         };
 
-        const initSyncPercentLabel = (node) => {
+        const initReadoutLabel = (node, type) => {
             if(!node) return;
-            if(!syncPercentLabelTexture || !syncPercentLabelCtx){
+            let entry = readoutLabels.get(type);
+            if(!entry){
                 const canvas = document.createElement('canvas');
-                canvas.width = 512;
+                canvas.width = 768;
                 canvas.height = 256;
                 const ctx = canvas.getContext('2d');
                 if(!ctx) return;
@@ -1171,12 +1508,12 @@ if (document.readyState === "loading") {
                     texture.encoding = THREE.sRGBEncoding;
                 }
                 texture.needsUpdate = true;
-                syncPercentLabelCtx = ctx;
-                syncPercentLabelTexture = texture;
+                entry = { ctx, texture, targets: [] };
+                readoutLabels.set(type, entry);
             }
             if(node.isMesh){
-                bindSyncPercentLabelMesh(node);
-                updateSyncPercentLabel();
+                bindReadoutMesh(node, entry);
+                updateControllerReadouts();
                 return;
             }
             const preferredMeshes = [];
@@ -1191,8 +1528,8 @@ if (document.readyState === "loading") {
                 }
             });
             const targets = preferredMeshes.length ? preferredMeshes : fallbackMeshes.slice(0, 1);
-            targets.forEach((mesh) => bindSyncPercentLabelMesh(mesh));
-            updateSyncPercentLabel();
+            targets.forEach((mesh) => bindReadoutMesh(mesh, entry));
+            updateControllerReadouts();
         };
 
         const getContrastValue = () => {
@@ -1217,25 +1554,6 @@ if (document.readyState === "loading") {
 
         const mapContrastKnobToValue = (t) => t;
         const mapContrastValueToKnob = (value) => value;
-        const forceLuxAndContrastRight = () => {
-            applyLuxFromSource(1, 'force-init');
-            const tRight = 1;
-            const emiAtRight = mapContrastKnobToValue(tRight);
-            applyEmiFromSource(emiAtRight, 'force-init');
-            const allContrast = settingsControllerBridge.knobContrastNodes || [];
-            const allConstraints = settingsControllerBridge.knobConstraints?.contrastAll;
-            const camera = settingsControllerBridge.camera || activeCamera;
-            const canvasRect = settingsControllerCanvas?.getBoundingClientRect();
-            allContrast.forEach((node) => {
-                const c = allConstraints?.get(node.uuid);
-                if(!node || !c) return;
-                const info = getSemanticConstraintLR(node, c, canvasRect, camera, 'contrastAll');
-                if(info){
-                    node.position[c.axis] = info.rightValue;
-                }
-            });
-            settingsControllerBridge.knobAxisValues.contrast = 1;
-        };
 
         
 
@@ -1257,7 +1575,7 @@ if (document.readyState === "loading") {
 
         const loadEmissiveExclusions = () => {
             try{
-                const raw = localStorage.getItem(EMISSIVE_EXCLUSIONS_KEY);
+                const raw = localPreferences.getItem(EMISSIVE_EXCLUSIONS_KEY);
                 const parsed = raw ? JSON.parse(raw) : [];
                 if(Array.isArray(parsed)){
                     emissiveControlState.exclusions = new Set(parsed.map(String));
@@ -1269,7 +1587,7 @@ if (document.readyState === "loading") {
 
         const loadEmissiveScales = () => {
             try{
-                const raw = localStorage.getItem(EMISSIVE_SCALES_KEY);
+                const raw = localPreferences.getItem(EMISSIVE_SCALES_KEY);
                 const parsed = raw ? JSON.parse(raw) : null;
                 const next = new Map();
                 if(parsed && typeof parsed === 'object'){
@@ -1288,7 +1606,7 @@ if (document.readyState === "loading") {
 
         const saveEmissiveExclusions = () => {
             const payload = JSON.stringify([...emissiveControlState.exclusions]);
-            localStorage.setItem(EMISSIVE_EXCLUSIONS_KEY, payload);
+            localPreferences.setItem(EMISSIVE_EXCLUSIONS_KEY, payload);
         };
 
         const saveEmissiveScales = () => {
@@ -1296,7 +1614,7 @@ if (document.readyState === "loading") {
             emissiveControlState.scales.forEach((value, key) => {
                 payload[key] = value;
             });
-            localStorage.setItem(EMISSIVE_SCALES_KEY, JSON.stringify(payload));
+            localPreferences.setItem(EMISSIVE_SCALES_KEY, JSON.stringify(payload));
         };
         settingsControllerBridge.saveEmissiveScales = saveEmissiveScales;
 
@@ -1472,75 +1790,81 @@ if (document.readyState === "loading") {
             }
         };
 
-        const applyLuxValue = (value) => {
+        const getControllerLightScale = (value) => {
+            const brightness = Math.max(0, Math.min(1, Number(value)));
+            const sceneLightValue = 0.005 + 0.995 * brightness;
+            return getLightScaleForValue(sceneLightValue)
+                * (1 + 2.15 * Math.pow(brightness, 1.35));
+        };
+
+        const applySceneAppearance = () => {
             if(!lightingTargets) return;
-            const v = Math.max(0, Math.min(1, Number(value)));
-            if(!Number.isFinite(v)) return;
-            const lightScale = getLightScaleForValue(v);
+            const brightness = Math.max(0, Math.min(1, getLuxValue()));
+            const contrast = Math.max(0, Math.min(1, getContrastValue()));
+            // Brightness owns scene illumination. Contrast owns intentional
+            // highlighted materials; neither control writes the other output.
+            const contrastEase = contrast * contrast * (3 - 2 * contrast);
+            const lightScale = getControllerLightScale(brightness);
             lightingTargets.lights.forEach((light) => {
                 const maxIntensity = Number.isFinite(light?.userData?.maxIntensity)
                     ? light.userData.maxIntensity
                     : light.intensity / MAX_LIGHT_RATIO;
-                light.intensity = maxIntensity * lightScale;
+                let lookScale = 1;
+                if(light.userData?.lookRole === 'underside'){
+                    lookScale = 0.25 + (1.75 * lookTuning.underlight);
+                }
+                light.intensity = maxIntensity * lightScale * lookScale;
             });
+            lightingTargets.emissiveTargets.forEach((target) => {
+                const { material: mat, node, controlNode } = target;
+                if(!mat || !node || !controlNode || mat.userData?.controllerOwned) return;
+                const path = getEmissiveNodePath(controlNode, settingsControllerBridge.model || controlNode);
+                const meshPath = getEmissiveNodePath(node, settingsControllerBridge.model || node);
+                if(isControlScreenPath(path) || isControlScreenPath(meshPath) || isControlScreenPath(node.name)) return;
+                const name = `${node.name || ''} ${controlNode.name || ''} ${mat.name || ''}`.toLowerCase();
+                // Structural metal stays structural even when its mesh name (for
+                // example vol-meter.001) happens to contain a highlight keyword.
+                const structuralMetal = /black matte metal/.test((mat.name || '').toLowerCase());
+                const speakerAccent = /speaker/.test(name);
+                const intentional = !structuralMetal && !speakerAccent && /txt|label|arrow|meter|glow|highlight/.test(name);
+                const base = Number.isFinite(mat.userData?.maxEmissiveIntensity)
+                    ? mat.userData.maxEmissiveIntensity
+                    : 1;
+                const userScale = emissiveControlState.scales.get(path);
+                const scale = Number.isFinite(userScale) ? userScale : 1;
+                const effectiveScale = intentional ? Math.max(0.65, scale) : scale;
+                const lowContrastHighlight = 0.08;
+                const highContrastHighlight = 2.4;
+                const lowContrastSpeaker = 0.16;
+                const highContrastSpeaker = 0.4 + (0.9 * lookTuning.speakerPurple);
+                const factor = intentional
+                    ? lowContrastHighlight + (highContrastHighlight - lowContrastHighlight) * contrastEase
+                    : speakerAccent
+                        ? lowContrastSpeaker + (highContrastSpeaker - lowContrastSpeaker) * contrastEase
+                        : 0.025;
+                mat.emissiveIntensity = base * factor * effectiveScale;
+                mat.needsUpdate = true;
+            });
+            applyModeButtonAppearance();
         };
+        settingsControllerBridge.applyReviewLook = applySceneAppearance;
 
-        const applyEmissiveValue = (value) => {
+        const applyLuxValue = (value) => {
             if(!lightingTargets) return;
             const v = Math.max(0, Math.min(1, Number(value)));
             if(!Number.isFinite(v)) return;
-            lightingTargets.emissiveTargets.forEach((target) => {
-                const mat = target.material;
-                const node = target.node;
-                const controlNode = target.controlNode;
-                if(!mat || !node || !controlNode) return;
-                if(EMISSIVE_ANIM_MATERIALS.has((mat.name || '').toLowerCase())
-                    || animatedEmissiveMaterials.has((mat.name || '').toLowerCase())){
-                    return;
-                }
-                const path = getEmissiveNodePath(controlNode, settingsControllerBridge.model || controlNode);
-                const meshPath = getEmissiveNodePath(node, settingsControllerBridge.model || node);
-                const nodeNameLower = (node.name || '').toLowerCase();
-                const controlNameLower = (controlNode.name || '').toLowerCase();
-                const isEmissiveAnimated = emissiveAnimatedNodes.has(nodeNameLower)
-                    || emissiveAnimatedNodes.has(controlNameLower)
-                    || EMISSIVE_ANIM_NAME_MARKERS.some((marker) => nodeNameLower.includes(marker))
-                    || EMISSIVE_ANIM_NAME_MARKERS.some((marker) => controlNameLower.includes(marker));
-                if(isEmissiveAnimated){
-                    return;
-                }
-                if(emissiveControlState.exclusions.has(path)){
-                    mat.emissiveIntensity = 0;
-                    mat.needsUpdate = true;
-                    return;
-                }
-                const scale = emissiveControlState.scales.get(path);
-                const maxEmissive = Number.isFinite(mat?.userData?.maxEmissiveIntensity)
-                    ? mat.userData.maxEmissiveIntensity
-                    : ((Number.isFinite(mat.emissiveIntensity) && mat.emissiveIntensity > 0) ? mat.emissiveIntensity : 1);
-                if(isControlScreenPath(path)
-                    || isControlScreenPath(meshPath)
-                    || isControlScreenPath(node?.name)
-                    || isSpeakerPlatePath(path)
-                    || isSpeakerPlatePath(meshPath)
-                    || isSpeakerPlatePath(node?.name)){
-                    return;
-                }
-                const contrastLocked = mat?.userData?.contrastLocked === true || isButtonTextPath(path) || isButtonTextPath(meshPath);
-                let contrastApplied = 1;
-                if(!contrastLocked){
-                    contrastApplied = 1;
-                }
-                const scaleApplied = Number.isFinite(scale) ? scale : 1;
-                mat.emissiveIntensity = maxEmissive * v * contrastApplied * scaleApplied;
-                mat.needsUpdate = true;
-            });
-            updateSyncPercentLabel();
+            applySceneAppearance();
+        };
+
+        const applyEmissiveValue = (value) => {
+            const v = Math.max(0, Math.min(1, Number(value)));
+            if(!Number.isFinite(v)) return;
+            applySceneAppearance();
+            updateControllerReadouts();
         };
 
         const applySceneLightingValue = (value) => {
-            applyLuxValue(value);
-            applyEmissiveValue(value);
+            applySceneAppearance();
         };
 
         function applyLuxControls(){
@@ -1550,7 +1874,7 @@ if (document.readyState === "loading") {
 
         function applyEmissionControls(){
             if(!settingsControllerBridge.emissionControlEnabled) return;
-            applyEmissiveValue(getEmiValue());
+            applySceneAppearance();
         }
 
         function syncLuxControlsToToggle(enabled){
@@ -1581,6 +1905,7 @@ if (document.readyState === "loading") {
 
         settingsControllerBridge.applyLuxControls = applyLuxControls;
         settingsControllerBridge.applyEmissionControls = applyEmissionControls;
+        settingsControllerBridge.applyBackgroundBrightness = applyBackgroundBrightness;
         settingsControllerBridge.syncLuxControlsToToggle = syncLuxControlsToToggle;
         settingsControllerBridge.syncEmissionControlsToToggle = syncEmissionControlsToToggle;
         settingsControllerBridge.syncLuxValueToKnob = syncLuxValueToKnob;
@@ -1594,13 +1919,10 @@ if (document.readyState === "loading") {
             if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
                 settingsControllerBridge.updateKnobTransformsFromState();
             }
-            if(!knobDragState || knobDragState.type !== 'contrast'){
-                applyContrastLockPose();
-            }
             updateLightingDebugLine('sceneLightingChanged', knobDragState?.type || '-');
         });
 
-        const FORCE_CAMERA_UNLOCKED = true;
+        const FORCE_CAMERA_UNLOCKED = false;
         let controls = null;
         const applyControlsConfig = (controlsInstance) => {
             if(!controlsInstance) return;
@@ -1645,16 +1967,7 @@ if (document.readyState === "loading") {
                 return;
             }
             console.log('[settings controls]', isEnabled ? 'enabled' : 'disabled');
-            controls.enabled = !!isEnabled;
-            controls.enableRotate = !!isEnabled;
-            controls.enableZoom = !!isEnabled;
-            controls.enablePan = false;
-            controls.mouseButtons = {
-                LEFT: THREE.MOUSE.PAN,
-                MIDDLE: THREE.MOUSE.PAN,
-                RIGHT: THREE.MOUSE.ROTATE
-            };
-            controls.update();
+            applyStartPageMouseControlMode(controls, { enabled: !!isEnabled, allowRotate: !!isEnabled, allowZoom: !!isEnabled });
         }
 
         function setPreIntroZoomEnabled(isEnabled){
@@ -1672,16 +1985,7 @@ if (document.readyState === "loading") {
                 controls.update();
                 return;
             }
-            controls.enabled = !!isEnabled;
-            controls.enableZoom = !!isEnabled;
-            controls.enableRotate = false;
-            controls.enablePan = false;
-            controls.mouseButtons = {
-                LEFT: THREE.MOUSE.PAN,
-                MIDDLE: THREE.MOUSE.PAN,
-                RIGHT: THREE.MOUSE.ROTATE
-            };
-            controls.update();
+            applyStartPageMouseControlMode(controls, { enabled: !!isEnabled, allowRotate: false, allowZoom: !!isEnabled });
         }
 
         if(FORCE_CAMERA_UNLOCKED){
@@ -1695,9 +1999,14 @@ if (document.readyState === "loading") {
         if(!camAnimDebugEl){
             camAnimDebugEl = document.createElement('div');
             camAnimDebugEl.id = 'camAnimDebug';
-            camAnimDebugEl.className = 'cam-anim-debug-panel';
+            camAnimDebugEl.className = 'cam-anim-debug-panel cam-anim-debug-panel--hidden-left';
             document.body.appendChild(camAnimDebugEl);
         }
+        const camAnimDebugContent = document.createElement('div');
+        camAnimDebugContent.id = 'camAnimDebugContent';
+        camAnimDebugContent.className = 'cam-anim-debug-content';
+        camAnimDebugContent.setAttribute('aria-hidden', 'true');
+        camAnimDebugEl.appendChild(camAnimDebugContent);
         const camAnimLog = [];
         const MAX_CAM_LOG = 16;
         const uiFrameLog = [];
@@ -1715,6 +2024,7 @@ if (document.readyState === "loading") {
         let usesGltfCamera = false;
         let clip = null;
         let uiAction = null;
+        let catAction = null;
         let emissiveAction = null;
         let emissionActions = [];
         let cameraAction = null;
@@ -1726,9 +2036,9 @@ if (document.readyState === "loading") {
         const CAMERA_END_FRAME = 30;
         const UI_START_FRAME = 1;
         const UI_END_FRAME = 30;
-        const ACCESSIBILITY_FRAME = UI_START_FRAME;
-        const AUDIO_FRAME = 45;
-        const RETURN_FRAME = UI_END_FRAME;
+        // Authored endpoints: start = VISUALS, end = AUDIO.
+        const VISUALS_FRAME = UI_START_FRAME;
+        const AUDIO_FRAME = UI_END_FRAME;
         const FRAME_EPSILON = 0.1;
         let introActive = true;
         let screenCanvas = null;
@@ -1741,12 +2051,275 @@ if (document.readyState === "loading") {
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
-        const interactiveNames = new Set(['btn-accessibility', 'btn-vol-sync', 'btn-save']);
+        const interactiveNames = new Set(['btn-accessibility', 'btn-vol-sync', 'btn-save', 'btn-reset']);
         const glbBounds = new THREE.Box3();
         const glbCenter = new THREE.Vector3();
         const KNOB_VOL_RANGE = 0.56;
         const KNOB_SYNC_RANGE = 0.56;
-        const KNOB_CONTRAST_RANGE = 0.56;
+        const controllerButtonNodes = new Map();
+        const controllerModeLabelNodes = new Map();
+        let audioVisualizationPanel = null;
+        let audioVisualizationRotation = null;
+        let audioMeterState = null;
+        const COLOR_BLACK = new THREE.Color(0x000000);
+        const COLOR_BLUE = new THREE.Color(0x238cff);
+        const COLOR_GREEN = new THREE.Color(0x0a7f34);
+        const COLOR_RED = new THREE.Color(0xd5222c);
+        const COLOR_TRANSITION_DARK = new THREE.Color(0x260817);
+        const momentaryButtonPulses = new Map();
+
+        function createMeterFeatherTexture(){
+            const featherCanvas = document.createElement('canvas');
+            featherCanvas.width = 64;
+            featherCanvas.height = 256;
+            const featherCtx = featherCanvas.getContext('2d');
+            const image = featherCtx.createImageData(featherCanvas.width, featherCanvas.height);
+            const smoothstep = (value) => {
+                const x = Math.max(0, Math.min(1, value));
+                return x * x * (3 - 2 * x);
+            };
+            for(let y = 0; y < featherCanvas.height; y++){
+                for(let x = 0; x < featherCanvas.width; x++){
+                    const edgeX = Math.min(x, featherCanvas.width - 1 - x) / (featherCanvas.width * 0.22);
+                    const edgeY = Math.min(y, featherCanvas.height - 1 - y) / (featherCanvas.height * 0.055);
+                    const alpha = Math.round(255 * smoothstep(Math.min(edgeX, edgeY)));
+                    const offset = (y * featherCanvas.width + x) * 4;
+                    image.data[offset] = alpha;
+                    image.data[offset + 1] = alpha;
+                    image.data[offset + 2] = alpha;
+                    image.data[offset + 3] = 255;
+                }
+            }
+            featherCtx.putImageData(image, 0, 0);
+            const texture = new THREE.CanvasTexture(featherCanvas);
+            texture.needsUpdate = true;
+            return texture;
+        }
+
+        function prepareAudioMeter(node){
+            if(!node?.isMesh || !node.geometry || !node.parent) return;
+            node.geometry.computeBoundingBox();
+            const bounds = node.geometry.boundingBox;
+            if(!bounds || bounds.isEmpty()) return;
+            const featherTexture = createMeterFeatherTexture();
+            const materials = (Array.isArray(node.material) ? node.material : [node.material]).map((source) => {
+                const material = source.clone();
+                material.userData = { ...(source.userData || {}), controllerOwned: true, contrastLocked: true };
+                material.map = null;
+                material.alphaMap = featherTexture;
+                material.transparent = true;
+                material.opacity = 0.88;
+                material.depthWrite = false;
+                material.color?.set(0x123b29);
+                material.emissive?.set(0x082317);
+                if('emissiveIntensity' in material) material.emissiveIntensity = 0.42;
+                material.needsUpdate = true;
+                return material;
+            });
+            node.material = Array.isArray(node.material) ? materials : materials[0];
+            const basePosition = node.position.clone();
+            const baseScale = node.scale.clone();
+            const length = Math.max(0.0001, bounds.max.z - bounds.min.z);
+            const width = Math.max(0.0001, bounds.max.x - bounds.min.x);
+            const peakMaterial = new THREE.MeshBasicMaterial({
+                color: 0x28a85b,
+                toneMapped: false,
+                depthTest: true,
+                depthWrite: false
+            });
+            peakMaterial.userData = { controllerOwned: true, contrastLocked: true };
+            const peakLine = new THREE.Mesh(
+                new THREE.BoxGeometry(width * baseScale.x, 0.008, Math.max(0.012, length * baseScale.z * 0.014)),
+                peakMaterial
+            );
+            peakLine.name = 'runtime-volume-peak-line';
+            peakLine.position.set(
+                basePosition.x + ((bounds.min.x + bounds.max.x) * 0.5 * baseScale.x),
+                basePosition.y - 0.006,
+                basePosition.z
+            );
+            peakLine.visible = false;
+            node.parent.add(peakLine);
+            audioMeterState = { node, materials, peakLine, bounds: bounds.clone(), basePosition, baseScale, length };
+            settingsControllerBridge.updateAudioMeter?.({ level: 0, peak: 0, clipped: false, peakClipped: false });
+        }
+
+        settingsControllerBridge.updateAudioMeter = ({ level = 0, peak = 0, clipped = false, peakClipped = false } = {}) => {
+            if(!audioMeterState) return;
+            const { node, materials, peakLine, bounds, basePosition, baseScale, length } = audioMeterState;
+            const fill = Math.max(0, Math.min(1, level));
+            const peakFill = Math.max(0, Math.min(1, peak));
+            const visibleFill = Math.max(0.001, fill);
+            node.scale.set(baseScale.x, baseScale.y, baseScale.z * visibleFill);
+            node.position.copy(basePosition);
+            // The authored meter's positive-Z end is the physical bottom.
+            // Keep that end fixed so the signal rises upward from the base.
+            node.position.z = basePosition.z + (bounds.max.z * baseScale.z * (1 - visibleFill));
+            node.visible = fill > 0.001;
+            const fillColor = clipped ? 0xc91f2d : 0x123b29;
+            const fillEmissive = clipped ? 0x7d0711 : 0x082317;
+            materials.forEach((material) => {
+                material.color?.set(fillColor);
+                material.emissive?.set(fillEmissive);
+                if('emissiveIntensity' in material) material.emissiveIntensity = clipped ? 0.8 : 0.42;
+            });
+            peakLine.visible = peakFill > 0.001;
+            peakLine.position.z = basePosition.z
+                + ((bounds.max.z - length * peakFill) * baseScale.z);
+            peakLine.material.color.set(peakClipped ? 0xff293f : 0x28a85b);
+        };
+
+        function setOwnedNodeAppearance(node, color, emissive, intensity){
+            if(!node) return;
+            node.traverse((mesh) => {
+                if(!mesh?.isMesh || !mesh.material) return;
+                const source = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+                const owned = source.map((material) => {
+                    if(!material.userData?.controllerOwned){
+                        const clone = material.clone();
+                        clone.userData = { ...(material.userData || {}), controllerOwned: true, contrastLocked: true };
+                        return clone;
+                    }
+                    return material;
+                });
+                mesh.material = Array.isArray(mesh.material) ? owned : owned[0];
+                owned.forEach((material) => {
+                    if(material.color) material.color.copy(color);
+                    if(material.emissive) material.emissive.copy(emissive);
+                    if('emissiveIntensity' in material) material.emissiveIntensity = intensity;
+                    material.needsUpdate = true;
+                });
+            });
+        }
+
+        function getButtonBodyColor(pressedAmount){
+            const progress = Math.max(0, Math.min(1, pressedAmount));
+            const t = Math.pow(progress, 1.35);
+            const inverse = 1 - t;
+            return new THREE.Color(
+                (inverse * inverse * COLOR_RED.r) + (2 * inverse * t * COLOR_TRANSITION_DARK.r) + (t * t * COLOR_BLUE.r),
+                (inverse * inverse * COLOR_RED.g) + (2 * inverse * t * COLOR_TRANSITION_DARK.g) + (t * t * COLOR_BLUE.g),
+                (inverse * inverse * COLOR_RED.b) + (2 * inverse * t * COLOR_TRANSITION_DARK.b) + (t * t * COLOR_BLUE.b)
+            );
+        }
+
+        function applyButtonState(body, text, pressedAmount, glowScale){
+            const pressed = Math.max(0, Math.min(1, pressedAmount));
+            const bodyColor = getButtonBodyColor(pressed);
+            const textColor = COLOR_BLUE.clone().lerp(COLOR_GREEN, pressed);
+            const glowProgress = Math.pow(pressed, 2.2);
+            const bodyIntensity = (0.2 + (2.2 - 0.2) * glowProgress) * glowScale;
+            const textIntensity = (1.35 + (0.15 - 1.35) * pressed) * glowScale;
+            setOwnedNodeAppearance(body, bodyColor, bodyColor, bodyIntensity);
+            setOwnedNodeAppearance(text, textColor, textColor, textIntensity);
+        }
+
+        function matchAudioPanelBackToController(panelNode, controllerNode){
+            if(!panelNode?.isMesh || !controllerNode?.isMesh || !panelNode.material || !controllerNode.material) return;
+            const controllerMaterials = Array.isArray(controllerNode.material)
+                ? controllerNode.material
+                : [controllerNode.material];
+            const controllerMetal = controllerMaterials.find((material) =>
+                /black matte metal/i.test(material?.name || '')
+            );
+            if(!controllerMetal) return;
+
+            // The controller material samples TEXCOORD_1, while the authored
+            // panel back only has TEXCOORD_0. Preserve its good unwrap but make
+            // it available on the channel used by the shared metal material.
+            const geometry = panelNode.geometry;
+            if(geometry?.attributes?.uv && !geometry.attributes.uv1){
+                panelNode.geometry = geometry.clone();
+                panelNode.geometry.setAttribute('uv1', geometry.attributes.uv.clone());
+            }
+
+            const panelMaterials = Array.isArray(panelNode.material)
+                ? [...panelNode.material]
+                : [panelNode.material];
+            let replaced = false;
+            panelMaterials.forEach((material, index) => {
+                if(!/black matte metal/i.test(material?.name || '')) return;
+                panelMaterials[index] = controllerMetal;
+                replaced = true;
+            });
+            if(replaced){
+                panelNode.material = Array.isArray(panelNode.material)
+                    ? panelMaterials
+                    : panelMaterials[0];
+            }
+        }
+
+        function getMomentaryPressAmount(kind, now){
+            const pulse = momentaryButtonPulses.get(kind);
+            if(!pulse) return 0;
+            const elapsed = now - pulse.startedAt;
+            const downDuration = 70;
+            const upDuration = 110;
+            if(elapsed >= downDuration + upDuration){
+                momentaryButtonPulses.delete(kind);
+                return 0;
+            }
+            const raw = elapsed <= downDuration
+                ? elapsed / downDuration
+                : 1 - ((elapsed - downDuration) / upDuration);
+            return raw * raw * (3 - 2 * raw);
+        }
+
+        function applyMomentaryButtonState(kind, glowScale, now){
+            const body = controllerButtonNodes.get(`${kind}Body`);
+            const text = controllerButtonNodes.get(`${kind}Text`);
+            if(!body) return;
+            if(!body.userData.restPosition) body.userData.restPosition = body.position.clone();
+            const amount = getMomentaryPressAmount(kind, now);
+            body.position.copy(body.userData.restPosition);
+            body.position.y -= 0.025 * amount;
+            applyButtonState(body, text, amount, glowScale);
+        }
+
+        function applyModeButtonAppearance(){
+            const contrast = Math.max(0, Math.min(1, getContrastValue()));
+            const contrastEase = contrast * contrast * (3 - 2 * contrast);
+            const glowScale = 0.15 + (0.95 - 0.15) * contrastEase;
+            const pressedY = -0.08364;
+            const releasedY = -0.03530;
+            const audioBody = controllerButtonNodes.get('audioBody');
+            const visualsBody = controllerButtonNodes.get('visualsBody');
+            const modeProgress = controllerFlow.animationAllowed === false
+                ? (activeSettingsView === 'audio' ? 1 : 0)
+                : (uiAction && clip
+                    ? Math.max(0, Math.min(1, uiAction.time / Math.max(0.0001, clip.duration)))
+                    : (activeSettingsView === 'audio' ? 1 : 0));
+            const buttonProgress = modeProgress * modeProgress * (3 - 2 * modeProgress);
+            if(audioVisualizationPanel){
+                if(audioVisualizationRotation && clip){
+                    const rotation = audioVisualizationRotation.evaluate(modeProgress * clip.duration);
+                    audioVisualizationPanel.quaternion.fromArray(rotation);
+                }
+                audioVisualizationPanel.visible = true;
+            }
+            if(audioBody) audioBody.position.y = releasedY + ((pressedY - releasedY) * buttonProgress);
+            if(visualsBody) visualsBody.position.y = pressedY + ((releasedY - pressedY) * buttonProgress);
+            applyButtonState(audioBody, controllerButtonNodes.get('audioText'), buttonProgress, glowScale);
+            applyButtonState(visualsBody, controllerButtonNodes.get('visualsText'), 1 - buttonProgress, glowScale);
+            const now = performance.now();
+            applyMomentaryButtonState('save', glowScale, now);
+            applyMomentaryButtonState('reset', glowScale, now);
+
+            const audioLabelIntensity = (0.03 + 1.32 * modeProgress) * glowScale;
+            const visualsLabelIntensity = (0.03 + 1.32 * (1 - modeProgress)) * glowScale;
+            setOwnedNodeAppearance(controllerModeLabelNodes.get('audioSync'), COLOR_BLACK, COLOR_BLUE, audioLabelIntensity);
+            setOwnedNodeAppearance(controllerModeLabelNodes.get('volume'), COLOR_BLACK, COLOR_BLUE, audioLabelIntensity);
+            setOwnedNodeAppearance(controllerModeLabelNodes.get('contrast'), COLOR_BLACK, COLOR_BLUE, visualsLabelIntensity);
+            setOwnedNodeAppearance(controllerModeLabelNodes.get('brightness'), COLOR_BLACK, COLOR_BLUE, visualsLabelIntensity);
+        }
+
+        function pulseMomentaryButton(kind){
+            const node = controllerButtonNodes.get(`${kind}Body`);
+            if(!node) return;
+            if(!node.userData.restPosition) node.userData.restPosition = node.position.clone();
+            momentaryButtonPulses.set(kind, { startedAt: performance.now() });
+            applyModeButtonAppearance();
+        }
         const CAMERA_ANIM_FRAMES = 120;
         // Multiplier for manual camera tween length. 1 = original speed.
         const CAMERA_ANIM_SPEED_MULTIPLIER = 5;
@@ -1755,7 +2328,7 @@ if (document.readyState === "loading") {
         const FORCE_MANUAL_CAMERA = true;
         const USE_CUSTOM_CAMERA_ANIM = false;
         const animTuning = {
-            customDurationMs: 5000,
+            customDurationMs: 6000,
             focusDurationMs: 520,
             focusShiftStart: 0.75,
             easePower: 3
@@ -1795,6 +2368,7 @@ if (document.readyState === "loading") {
         let lastMiddleClickTime = 0;
         let pendingMiddleSingleClick = null;
         let knobDragState = null;
+        let arrowPointerState = null;
         const CAMERA_ANIM_POS = [
             [-0.005232, 4.233088, 1.427375],
             [-0.005232, 4.233088, 1.427375],
@@ -1877,7 +2451,13 @@ if (document.readyState === "loading") {
         function setFrame(frame){
             if(!uiAction || !uiMixer) return;
             uiAction.paused = true;
-            uiAction.time = frameToTime(frame);
+            const requestedTime = frameToTime(frame);
+            // Sampling exactly at a LoopOnce clip's duration can wrap transform
+            // tracks back to their first key. Stay infinitesimally inside the
+            // authored endpoint so no-animation mode receives the Audio pose.
+            uiAction.time = clip && requestedTime >= clip.duration
+                ? Math.max(0, clip.duration - 1e-4)
+                : requestedTime;
             uiMixer.setTime(uiAction.time);
             if(emissiveAction){
                 emissiveAction.paused = true;
@@ -2139,15 +2719,19 @@ if (document.readyState === "loading") {
                 activeCamera.quaternion.copy(camQuat);
                 activeCamera.rotation.setFromQuaternion(camQuat, 'XYZ');
             }
-            const currentTarget = controls?.target ? controls.target.clone() : camPos.clone().add(camDir.multiplyScalar(2.5));
-            const targetDistance = camPos.distanceTo(currentTarget);
+            const model = settingsControllerBridge.model;
+            const target = model
+                ? new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
+                : controls.target.clone();
             cameraTween = {
                 frame: 0,
-                targetDistance: Number.isFinite(targetDistance) && targetDistance > 0.001 ? targetDistance : 2.5
+                transition: createCameraTransition(activeCamera, controls, CAMERA_ANIM_POS, CAMERA_ANIM_ROT,
+                    target, animTuning.customDurationMs, performance.now())
             };
             lastCameraFrame = 0;
             logCamEvent(`manual tween start camPos=${camPos.x.toFixed(3)},${camPos.y.toFixed(3)},${camPos.z.toFixed(3)}`);
-            setUserCameraControlsEnabled(false);
+            // The debug unlock override must not let OrbitControls fight this tween.
+            controls.enabled = false;
         }
 
         function getManualCameraTotalFrames(){
@@ -2157,81 +2741,28 @@ if (document.readyState === "loading") {
         function stepManualCameraTween(){
             if(!cameraTween || !activeCamera) return false;
             const total = getManualCameraTotalFrames();
-            const sampleMax = CAMERA_ANIM_POS.length - 1;
-            const t = Math.min(1, Math.max(0, cameraTween.frame / (total - 1)));
-            const sampleIndex = t * sampleMax;
-            const idx0 = Math.floor(sampleIndex);
-            const idx1 = Math.min(sampleMax, idx0 + 1);
-            const s = sampleIndex - idx0;
-            const pos0 = CAMERA_ANIM_POS[idx0];
-            const pos1 = CAMERA_ANIM_POS[idx1];
-            const rot0 = CAMERA_ANIM_ROT[idx0];
-            const rot1 = CAMERA_ANIM_ROT[idx1];
-            if(pos0 && pos1){
-                activeCamera.position.set(
-                    pos0[0] + (pos1[0] - pos0[0]) * s,
-                    pos0[1] + (pos1[1] - pos0[1]) * s,
-                    pos0[2] + (pos1[2] - pos0[2]) * s
-                );
-            }
-            if(rot0 && rot1){
-                const q0 = new THREE.Quaternion(rot0[0], rot0[1], rot0[2], rot0[3]);
-                const q1 = new THREE.Quaternion(rot1[0], rot1[1], rot1[2], rot1[3]);
-                const animQuat = q0.slerp(q1, s);
-                let finalQuat = animQuat;
-                if(settingsControllerBridge.model){
-                    const blendWindow = 0.12;
-                    const blendStart = 1 - blendWindow;
-                    const blendRaw = (t - blendStart) / blendWindow;
-                    const blend = Math.min(1, Math.max(0, blendRaw));
-                    if(blend > 0){
-                        const box = new THREE.Box3().setFromObject(settingsControllerBridge.model);
-                        const center = box.getCenter(new THREE.Vector3());
-                        const lookQuat = computeLookAtQuaternion(activeCamera.position, center, activeCamera.up);
-                        const eased = 1 - Math.pow(1 - blend, 3);
-                        finalQuat = animQuat.slerp(lookQuat, eased);
-                    }
-                }
-                activeCamera.quaternion.copy(finalQuat);
-            }
-            activeCamera.updateMatrixWorld(true);
-            cameraTween.frame += 1;
-            if(cameraTween.frame >= total){
+            const progress = cameraTween.transition.sample(performance.now());
+            cameraTween.frame = progress * (total - 1);
+            if(progress >= 1){
                 logCamEvent('stepManualCameraTween() complete');
-                activeCamera.updateMatrixWorld(true);
-                const model = settingsControllerBridge.model;
-                const box = new THREE.Box3().setFromObject(model);
-                const glbCenter = box.getCenter(new THREE.Vector3());
-                const endPos = activeCamera.position.clone();
-                const endQuat = activeCamera.quaternion.clone();
-                activeCamera.position.copy(endPos);
-                activeCamera.quaternion.copy(endQuat);
-                activeCamera.updateMatrixWorld(true);
+                const finalPos = activeCamera.position.clone();
+                const finalQuat = activeCamera.quaternion.clone();
+                const target = cameraTween.transition.target;
                 cameraTween = null;
                 lastCameraFrame = total - 1;
                 shouldTrackControls = true;
                 usesGltfCamera = false;
+                createOrbitControls(activeCamera);
+                controls.target.copy(target);
+                activeCamera.position.copy(finalPos);
+                activeCamera.quaternion.copy(finalQuat);
+                controls.update();
+                settingsControllerBridge.controls = controls;
+                lastControlsEnabled = controls.enabled;
                 if(pendingAudioAllowed !== null){
                     applyAudioPermission(pendingAudioAllowed);
                     pendingAudioAllowed = null;
                 }
-                cameraTween = null;
-                const finalPos = activeCamera.position.clone();
-                const finalQuat = activeCamera.quaternion.clone();
-                const center = model
-                    ? new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
-                    : new THREE.Vector3(0, 0, 0);
-                createOrbitControls(activeCamera);
-                controls.enabled = false;
-                controls.enableRotate = true;
-                controls.enableZoom = true;
-                controls.target.copy(center);
-                activeCamera.position.copy(finalPos);
-                activeCamera.quaternion.copy(finalQuat);
-                activeCamera.updateMatrixWorld(true);
-                controls.update();
-                controls.enabled = true;
-                lastControlsEnabled = controls.enabled;
             }
             return true;
         }
@@ -2314,7 +2845,6 @@ if (document.readyState === "loading") {
                 return;
             }
             const dir = desiredTime < uiAction.time ? -1 : 1;
-            manualEmissiveDirection = dir;
             uiAction.timeScale = dir * (uiAnimTuning.speed || 1);
             if(triggerEmissive){
                 playEmissionActions(dir);
@@ -2339,63 +2869,77 @@ if (document.readyState === "loading") {
             return Math.abs((uiAction.time || 0) - frameToTime(UI_END_FRAME)) <= FRAME_EPSILON;
         }
 
-        function setAccessibilityView(options = {}){
+        function selectMode(mode, options = {}){
             const { triggerEmissive = true } = options;
-            activeSettingsView = 'accessibility';
-            if(isAtUiStart()) return false;
-            let started = false;
-            if(isAtUiEnd()){
-                startAnimationToFrame(UI_START_FRAME, null, { triggerEmissive });
-                started = true;
+            closeReadoutEditor({ commit: true });
+            const nextMode = mode === 'audio' ? 'audio' : 'visuals';
+            activeSettingsView = nextMode;
+            controllerFlow.hoverHint = '';
+            const targetFrame = nextMode === 'audio' ? AUDIO_FRAME : VISUALS_FRAME;
+            const started = !isAtFrame(targetFrame);
+            // Always retarget from the current pose; this also handles rapid
+            // changes while the previous direction is still playing.
+            if(controllerFlow.animationAllowed === false){
+                setFrame(targetFrame);
+            }else{
+                startAnimationToFrame(targetFrame, null, { triggerEmissive });
             }
             if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
                 settingsControllerBridge.updateKnobTransformsFromState();
             }
-            updateSyncPercentLabel();
+            updateControllerReadouts();
+            applyModeButtonAppearance();
+            syncAccessibleControllerUI();
+            if(!introActive && !cameraTween && !focusAnim && !customCameraAnim){
+                setUserCameraControlsEnabled(true);
+            }
             return started;
         }
 
-        function reverseVolSyncAnimation(){
-            if(!uiAction || !clip) return;
-            if(isAtUiEnd()){
-                startAnimationToFrame(UI_START_FRAME, null);
-                return;
-            }
-            if(isAtUiStart()) return;
-            startAnimationToFrame(UI_START_FRAME, null);
+        function setAccessibilityView(options = {}){
+            return selectMode('visuals', options);
         }
 
         function setAudioView(options = {}){
-            const { triggerEmissive = true } = options;
-            activeSettingsView = 'audio';
-            if(isAtUiEnd()) return false;
-            let started = false;
-            if(isAtUiStart()){
-                startAnimationToFrame(UI_END_FRAME, null, { triggerEmissive });
-                started = true;
-            }
-            if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
-                settingsControllerBridge.updateKnobTransformsFromState();
-            }
-            updateSyncPercentLabel();
-            return started;
+            return selectMode('audio', options);
         }
 
-        function toggleVolSyncAnimation(){
-            if(!uiAction || !clip) return;
-            if(isAtUiStart()){
-                startAnimationToFrame(UI_END_FRAME, null);
-                return;
-            }
-            if(isAtUiEnd()){
-                startAnimationToFrame(UI_START_FRAME, null);
-                return;
-            }
-            startAnimationToFrame(UI_END_FRAME, null);
-        }
-
+        settingsControllerBridge.selectMode = selectMode;
         settingsControllerBridge.setAccessibilityView = setAccessibilityView;
         settingsControllerBridge.setAudioView = setAudioView;
+        settingsControllerBridge.finishOnboarding = (allowAnimation) => {
+            introActive = false;
+            setPreIntroZoomEnabled(false);
+            controllerFlow.stage = 'gallery';
+            settingsControllerBridge.renderScreen?.();
+            if(catAction){
+                if(allowAnimation){
+                    catAction.enabled = true;
+                    catAction.paused = false;
+                    catAction.setLoop(THREE.LoopRepeat, Infinity);
+                    catAction.play();
+                }else{
+                    catAction.paused = true;
+                    catAction.time = 0;
+                }
+            }
+            startManualCameraTween();
+            if(!allowAnimation && cameraTween){
+                cameraTween.transition.sample(performance.now() + animTuning.customDurationMs + 1);
+                const finalPos = activeCamera.position.clone();
+                const finalQuat = activeCamera.quaternion.clone();
+                const target = cameraTween.transition.target.clone();
+                cameraTween = null;
+                shouldTrackControls = true;
+                usesGltfCamera = false;
+                createOrbitControls(activeCamera);
+                controls.target.copy(target);
+                activeCamera.position.copy(finalPos);
+                activeCamera.quaternion.copy(finalQuat);
+                controls.update();
+                settingsControllerBridge.controls = controls;
+            }
+        };
 
         setUserCameraControlsEnabled(false);
 
@@ -2457,10 +3001,12 @@ if (document.readyState === "loading") {
             const rangeU = maxU - minU;
             const rangeV = maxV - minV;
             if(rangeU <= 0 || rangeV <= 0) return;
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.RepeatWrapping;
-            texture.repeat.set(1 / rangeU, 1 / rangeV);
-            texture.offset.set(-minU / rangeU, -minV / rangeV);
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
+            // The asset's screen U direction is reversed. Apply the same
+            // normalized transform to rendering and raycast hit testing.
+            texture.repeat.set(-1 / rangeU, 1 / rangeV);
+            texture.offset.set(1 + (minU / rangeU), -minV / rangeV);
             texture.needsUpdate = true;
         }
 
@@ -2559,130 +3105,177 @@ if (document.readyState === "loading") {
             if(!ctx) return null;
             screenCanvas = canvas;
             screenCtx = ctx;
-
-            // Dark green test (to verify material tinting).
-            ctx.fillStyle = '#021b02';
-            ctx.fillRect(0, 0, size, height);
-
-            ctx.strokeStyle = 'rgba(140, 216, 255, 0.65)';
-            ctx.lineWidth = 1;
-            const cols = 20;
-            const rows = 12;
-            const cellWidth = size / cols;
-            const cellHeight = height / rows;
-            const cornerX = cellWidth / 16;
-            const cornerY = cellHeight / 16;
-            for(let r = 0; r < rows; r++){
-                const y0 = r * cellHeight;
-                const y1 = y0 + cellHeight;
-                for(let c = 0; c < cols; c++){
-                    const x0 = c * cellWidth;
-                    const x1 = x0 + cellWidth;
-                    ctx.beginPath();
-                    // Top-left corner
-                    ctx.moveTo(x0, y0 + cornerY);
-                    ctx.lineTo(x0, y0);
-                    ctx.lineTo(x0 + cornerX, y0);
-                    // Top-right corner
-                    ctx.moveTo(x1 - cornerX, y0);
-                    ctx.lineTo(x1, y0);
-                    ctx.lineTo(x1, y0 + cornerY);
-                    // Bottom-left corner
-                    ctx.moveTo(x0, y1 - cornerY);
-                    ctx.lineTo(x0, y1);
-                    ctx.lineTo(x0 + cornerX, y1);
-                    // Bottom-right corner
-                    ctx.moveTo(x1 - cornerX, y1);
-                    ctx.lineTo(x1, y1);
-                    ctx.lineTo(x1, y1 - cornerY);
-                    ctx.stroke();
-                }
-            }
-
-            ctx.fillStyle = 'rgba(216, 196, 255, 0.28)';
-            ctx.font = '14px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'top';
-            for(let r = 0; r < rows; r++){
-                for(let c = 0; c < cols; c++){
-                    const label = `${String.fromCharCode(65 + c)}${r + 1}`;
-                    const x = ((c / cols) * size) + 8;
-                    const y = ((r / rows) * height) + 6;
-                    ctx.fillText(label, x, y);
-                }
-            }
-
-            const infoWidth = size * 0.86;
-            const infoHeight = height * 0.74;
-            const infoX = (size - infoWidth) * 0.5;
-            const infoY = height * 0.12;
-            // Keep info background transparent so grid labels remain visible.
-            ctx.fillStyle = '#e5cafc';
-            ctx.font = '34px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText('Hello, person', size * 0.5, infoY + infoHeight * 0.18);
-
-            ctx.fillStyle = '#e5cafc';
-            ctx.font = '26px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.fillText('Allow audio for this site?', size * 0.5, infoY + infoHeight * 0.34);
-
-            const allowX = allowAudioRect.x * size;
-            const allowY = allowAudioRect.y * height;
-            const allowW = allowAudioRect.w * size;
-            const allowH = allowAudioRect.h * height;
-            const muteX = muteAudioRect.x * size;
-            const muteY = muteAudioRect.y * height;
-            const muteW = muteAudioRect.w * size;
-            const muteH = muteAudioRect.h * height;
-            const shadowOffset = 3;
-            ctx.fillStyle = 'rgba(170, 170, 180, 0.58)';
-            ctx.fillRect(allowX + shadowOffset, allowY + shadowOffset, allowW, allowH);
-            ctx.fillStyle = '#8cd8ff';
-            ctx.fillRect(allowX, allowY, allowW, allowH);
-            ctx.fillStyle = '#0b1440';
-            ctx.font = '24px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.fillText('OK', allowX + allowW / 2, allowY + allowH / 2);
-            ctx.fillStyle = 'rgba(170, 170, 180, 0.58)';
-            ctx.fillRect(muteX + shadowOffset, muteY + shadowOffset, muteW, muteH);
-            ctx.fillStyle = '#f5b7d9';
-            ctx.fillRect(muteX, muteY, muteW, muteH);
-            ctx.fillStyle = '#3c1f54';
-            ctx.font = '18px "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif';
-            ctx.fillText('LEAVE SITE', muteX + muteW / 2, muteY + muteH / 2 - 14);
-            ctx.fillText('MUTED', muteX + muteW / 2, muteY + muteH / 2 + 14);
-
             const texture = new THREE.CanvasTexture(canvas);
             texture.flipY = false;
+            texture.wrapS = THREE.ClampToEdgeWrapping;
+            texture.wrapT = THREE.ClampToEdgeWrapping;
             if('colorSpace' in texture){
                 texture.colorSpace = THREE.SRGBColorSpace;
             }else{
                 texture.encoding = THREE.sRGBEncoding;
             }
-            texture.needsUpdate = true;
+            settingsControllerBridge.screenUvBounds = uvBounds;
+            const tracePolygon = (points) => {
+                ctx.beginPath();
+                points.forEach(([x, y], index) => {
+                    const px = x * size;
+                    const py = y * height;
+                    if(index === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+                });
+                ctx.closePath();
+            };
+            const drawCover = (source, points) => {
+                if(!source) return false;
+                const sw = source.videoWidth || source.width || 0;
+                const sh = source.videoHeight || source.height || 0;
+                if(!sw || !sh) return false;
+                const xs = points.map((p) => p[0] * size);
+                const ys = points.map((p) => p[1] * height);
+                const x = Math.min(...xs), y = Math.min(...ys);
+                const w = Math.max(...xs) - x, h = Math.max(...ys) - y;
+                const scale = Math.max(w / sw, h / sh);
+                const dw = sw * scale, dh = sh * scale;
+                ctx.save();
+                tracePolygon(points);
+                ctx.clip();
+                ctx.drawImage(source, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+                ctx.restore();
+                return true;
+            };
+            const leftPoly = [[0.04,0.06],[0.48,0.06],[0.48,0.42],[0.51,0.42],[0.51,0.94],[0.04,0.94]];
+            const rightPoly = [[0.52,0.06],[0.96,0.06],[0.96,0.94],[0.49,0.94],[0.49,0.58],[0.52,0.58]];
+            const renderScreen = () => {
+                const syncStage = controllerFlow.stage === 'gallery' || controllerFlow.stage === 'sync-running';
+                ctx.fillStyle = syncStage ? '#512761' : '#071018';
+                ctx.fillRect(0, 0, size, height);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                controllerFlow.hitRegions = [];
+                if(controllerFlow.stage === 'sound' || controllerFlow.stage === 'motion'){
+                    const soundStep = controllerFlow.stage === 'sound';
+                    ctx.fillStyle = '#e5cafc';
+                    ctx.font = '32px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText(soundStep ? 'ALLOW SOUND?' : 'ALLOW ANIMATION?', size * 0.5, height * 0.32);
+                    const yes = { x: 0.22, y: 0.60, w: 0.24, h: 0.20 };
+                    const no = { x: 0.54, y: 0.60, w: 0.24, h: 0.20 };
+                    [[yes, '#8cd8ff', 'YES', true], [no, '#f5b7d9', 'NO', false]].forEach(([rect, fill, label, value]) => {
+                        ctx.fillStyle = fill;
+                        ctx.fillRect(rect.x * size, rect.y * height, rect.w * size, rect.h * height);
+                        ctx.fillStyle = '#11172a';
+                        ctx.font = '22px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText(label, (rect.x + rect.w / 2) * size, (rect.y + rect.h / 2) * height);
+                        controllerFlow.hitRegions.push({ kind: 'permission', value, polygon: [[rect.x,rect.y],[rect.x+rect.w,rect.y],[rect.x+rect.w,rect.y+rect.h],[rect.x,rect.y+rect.h]] });
+                    });
+                }else if(controllerFlow.stage === 'confirm'){
+                    ctx.fillStyle = '#e5cafc';
+                    ctx.font = '30px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText('DO THESE SETTINGS', size * 0.5, height * 0.30);
+                    ctx.fillText('FEEL RIGHT?', size * 0.5, height * 0.43);
+                    const yep = { x: 0.20, y: 0.64, w: 0.25, h: 0.20 };
+                    const unsure = { x: 0.55, y: 0.64, w: 0.25, h: 0.20 };
+                    [[yep, '#8cd8ff', 'YEP', true], [unsure, '#f5b7d9', 'UM...', false]].forEach(([rect, fill, label, value]) => {
+                        ctx.fillStyle = fill;
+                        ctx.fillRect(rect.x * size, rect.y * height, rect.w * size, rect.h * height);
+                        ctx.fillStyle = '#11172a';
+                        ctx.font = '21px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText(label, (rect.x + rect.w / 2) * size, (rect.y + rect.h / 2) * height);
+                        controllerFlow.hitRegions.push({ kind: 'save-confirm', value, polygon: [[rect.x,rect.y],[rect.x+rect.w,rect.y],[rect.x+rect.w,rect.y+rect.h],[rect.x,rect.y+rect.h]] });
+                    });
+                }else if(controllerFlow.stage === 'gallery'){
+                    ctx.fillStyle = '#0b2a58';
+                    ctx.font = '18px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText('PRESS THE BUTTON IN TIME TO SYNC AUDIO.', size * 0.5, height * 0.20);
+                    ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.29);
+                    const button = { x: 0.30, y: 0.48, w: 0.40, h: 0.30 };
+                    ctx.fillStyle = '#a94710';
+                    ctx.beginPath();
+                    ctx.roundRect(button.x * size, button.y * height, button.w * size, button.h * height, 24);
+                    ctx.fill();
+                    ctx.fillStyle = '#f3a449';
+                    ctx.font = '64px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText('SYNC', size * 0.5, height * 0.63);
+                    controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[button.x,button.y],[button.x+button.w,button.y],[button.x+button.w,button.y+button.h],[button.x,button.y+button.h]] });
+                }else if(controllerFlow.stage === 'sync-running'){
+                    const exercise = controllerFlow.syncExercise;
+                    ctx.fillStyle = '#8cd8ff';
+                    ctx.fillRect(size * 0.035, height * 0.08, size * 0.93, height * 0.25);
+                    ctx.fillStyle = '#0b2a58';
+                    ctx.font = '17px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText('PRESS THE BUTTON IN TIME TO SYNC AUDIO.', size * 0.5, height * 0.16);
+                    ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.25);
+                    const centers = [0.10, 0.285, 0.47, 0.655, 0.875];
+                    const lineY = height * 0.61;
+                    for(let index = 0; index < SYNC_WORDS.length - 1; index++){
+                        const lineStart = (centers[index] + (index === 0 ? 0.065 : 0.045)) * size;
+                        const lineEnd = (centers[index + 1] - (index === 3 ? 0.095 : 0.045)) * size;
+                        ctx.strokeStyle = exercise.litLines.has(index) ? '#8cd8ff' : '#a94710';
+                        ctx.lineWidth = exercise.litLines.has(index) ? 12 : 8;
+                        ctx.beginPath();
+                        ctx.moveTo(lineStart, lineY);
+                        ctx.lineTo(lineEnd, lineY);
+                        ctx.stroke();
+                    }
+                    SYNC_WORDS.forEach((word, index) => {
+                        ctx.fillStyle = index < exercise.litCount ? '#8cd8ff' : '#d56519';
+                        ctx.font = '54px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText(word, centers[index] * size, lineY);
+                    });
+                    if(exercise.result){
+                        ctx.fillStyle = '#0b2a58';
+                        ctx.font = '18px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText(exercise.result, size * 0.5, height * 0.82);
+                        const again = { x: 0.37, y: 0.87, w: 0.26, h: 0.09 };
+                        ctx.fillStyle = '#a94710';
+                        ctx.fillRect(again.x * size, again.y * height, again.w * size, again.h * height);
+                        ctx.fillStyle = '#8cd8ff';
+                        ctx.font = '16px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText('TRY AGAIN', size * 0.5, height * 0.915);
+                        controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[again.x,again.y],[again.x+again.w,again.y],[again.x+again.w,again.y+again.h],[again.x,again.y+again.h]] });
+                    }else{
+                        ctx.fillStyle = '#f3a449';
+                        ctx.font = '16px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText('TAP EACH WORD WHEN YOU HEAR IT', size * 0.5, height * 0.83);
+                        controllerFlow.hitRegions.push({ kind: 'sync-tap', value: true, polygon: [[0,0.34],[1,0.34],[1,1],[0,1]] });
+                    }
+                }
+                if(controllerFlow.hoverHint){
+                    ctx.fillStyle = 'rgba(3, 8, 14, .88)';
+                    ctx.fillRect(0, height * 0.90, size, height * 0.10);
+                    ctx.fillStyle = '#8cd8ff';
+                    ctx.font = '14px "Press Start 2P", "Segoe UI", sans-serif';
+                    ctx.fillText(controllerFlow.hoverHint, size * 0.5, height * 0.95);
+                }
+                texture.needsUpdate = true;
+            };
+            settingsControllerBridge.renderScreen = renderScreen;
+            renderScreen();
             return texture;
         }
 
         function animate(){
+            updateReadoutEditorPosition();
+            if(controllerFlow.stage === 'playing' && jumpVideo.readyState >= 2){
+                settingsControllerBridge.renderScreen?.();
+            }
             if(updateCustomCameraAnimation()){
-                renderSceneWithAxes();
+                renderScene();
                 requestAnimationFrame(animate);
                 return;
             }
             if(updateFocusAnimation()){
-                renderSceneWithAxes();
+                renderScene();
                 requestAnimationFrame(animate);
                 return;
             }
-            if(controls && controls.enabled){
+            if(controls && controls.enabled && !cameraTween){
                 controls.update();
             }
             const delta = clock.getDelta();
-            if(uiMixer && uiAction){
-                if(!uiAction.paused){
+            if(uiMixer){
+                if((uiAction && !uiAction.paused) || (catAction && !catAction.paused)){
                     uiMixer.update(delta);
                 }
-                if(targetTime !== null && !uiAction.paused){
+                if(uiAction && targetTime !== null && !uiAction.paused){
                     const reached = uiAction.timeScale >= 0
                         ? uiAction.time >= targetTime
                         : uiAction.time <= targetTime;
@@ -2700,6 +3293,9 @@ if (document.readyState === "loading") {
                         if(animationJumpBackFrame !== null){
                             setFrame(animationJumpBackFrame);
                             animationJumpBackFrame = null;
+                        }
+                        if(!introActive && !cameraTween && !focusAnim && !customCameraAnim){
+                            setUserCameraControlsEnabled(true);
                         }
                     }
                 }
@@ -2724,23 +3320,7 @@ if (document.readyState === "loading") {
                     cameraMixer.update(delta);
                 }
             }
-            if(manualEmissiveTargets.length && uiAction && clip){
-                const startT = frameToTime(UI_START_FRAME);
-                const endT = frameToTime(UI_END_FRAME);
-                const span = Math.max(1e-6, endT - startT);
-                const raw = (uiAction.time - startT) / span;
-                const progress = Math.max(0, Math.min(1, raw));
-                const forward = manualEmissiveDirection >= 0;
-                const t = forward ? progress : (1 - progress);
-                manualEmissiveTargets.forEach((entry) => {
-                    const base = entry.base;
-                    const value = entry.mode === 'on'
-                        ? base * (1 - t)
-                        : base * t;
-                    entry.material.emissiveIntensity = value;
-                    entry.material.needsUpdate = true;
-                });
-            }
+            applyModeButtonAppearance();
             if(emissiveStrengthBindings.length){
                 const t = uiAction?.time ?? 0;
                 emissiveStrengthBindings.forEach((binding) => {
@@ -2802,7 +3382,7 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(camAnimLog.length){
                     debugText += `\n\nEVENT LOG\n${camAnimLog.join('\n')}`;
                 }
-                camAnimDebugEl.textContent = debugText;
+                if(camAnimDebugContent.textContent !== debugText) camAnimDebugContent.textContent = debugText;
             }
             if(debugFrameValue || debugFramePercent){
                 const total = getManualCameraTotalFrames();
@@ -2857,29 +3437,20 @@ enabled: ${!!cameraAction?.enabled}`;
                 ensureLightingDebugLine();
                 updateContrastKnobTrackerLine();
             }
-            renderSceneWithAxes();
+            renderScene();
             requestAnimationFrame(animate);
         }
 
-        function renderSceneWithAxes(){
+        function renderScene(){
             if(lastWidth < 2 || lastHeight < 2) return;
             renderer.setViewport(0, 0, lastWidth, lastHeight);
             renderer.setScissor(0, 0, lastWidth, lastHeight);
             renderer.render(scene, activeCamera);
-            if(settingsControllerBridge.model){
-                settingsControllerBridge.model.getWorldQuaternion(axesRoot.quaternion);
-            }
-            const axisSize = Math.max(70, Math.round(Math.min(lastWidth, lastHeight) * 0.18));
-            const axisPadding = Math.round(Math.max(10, axisSize * 0.15));
-            const axisX = axisPadding;
-            const axisY = Math.max(axisPadding, lastHeight - axisSize - axisPadding);
-            renderer.setViewport(axisX, axisY, axisSize, axisSize);
-            renderer.setScissor(axisX, axisY, axisSize, axisSize);
-            renderer.clearDepth();
-            renderer.render(axesScene, axesCamera);
         }
 
         resizeScene();
+        settingsControllerBridge.resetCustomCameraAnimation = resetCustomCameraAnimation;
+        bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation });
         const resizeObserver = new ResizeObserver(resizeScene);
         resizeObserver.observe(settingsControllerScene);
         window.addEventListener('resize', resizeScene);
@@ -2887,11 +3458,35 @@ enabled: ${!!cameraAction?.enabled}`;
         animate();
 
         const loader = new GLTFLoader();
+        let controllerModelLoaded = false;
         loader.load(SETTINGS_CONTROLLER_GLB, (gltf)=>{
+            controllerModelLoaded = true;
             const model = gltf.scene;
             if(!model) return;
             scene.add(model);
             model.updateMatrixWorld(true);
+            const nodeByName = (name) => model.getObjectByName(name) || null;
+            // The audited visible layout is authoritative: the left
+            // btn-accessibility mesh reads AUDIO; the right btn-vol-sync reads
+            // VISUALS.  Bind those roles explicitly instead of trusting names.
+            controllerButtonNodes.set('audioBody', nodeByName('btn-accessibility'));
+            controllerButtonNodes.set('audioText', nodeByName('txt-acc'));
+            controllerButtonNodes.set('visualsBody', nodeByName('btn-vol-sync'));
+            controllerButtonNodes.set('visualsText', nodeByName('txt-vol'));
+            controllerButtonNodes.set('saveBody', nodeByName('btn-save'));
+            controllerButtonNodes.set('saveText', nodeByName('txt-save'));
+            controllerButtonNodes.set('resetBody', nodeByName('btn-reset'));
+            controllerButtonNodes.set('resetText', nodeByName('txt-reset'));
+            audioVisualizationPanel = nodeByName('vol-meter-flip');
+            matchAudioPanelBackToController(
+                nodeByName('vol-meter.001'),
+                nodeByName('control-panel')
+            );
+            prepareAudioMeter(nodeByName('vol-meter'));
+            controllerModeLabelNodes.set('audioSync', nodeByName('txt-audiosync'));
+            controllerModeLabelNodes.set('volume', nodeByName('txt-volume'));
+            controllerModeLabelNodes.set('contrast', nodeByName('txt-contrast'));
+            controllerModeLabelNodes.set('brightness', nodeByName('txt-brightness'));
             loadEmissiveExclusions();
             loadEmissiveScales();
 
@@ -2986,74 +3581,23 @@ enabled: ${!!cameraAction?.enabled}`;
             applyLuxControls();
             applyEmissionControls();
             applyBackgroundBrightness(getBackgroundBrightness());
+            // Button appearance is node-owned and deterministic; do not infer
+            // color changes from shared material names or playback direction.
             manualEmissiveTargets = [];
-            const normalizeBaseName = (label) => {
-                if(!label) return '';
-                return String(label)
-                    .toLowerCase()
-                    .replace(/([._-])\d+$/,'')
-                    .trim();
-            };
-            const classifyEmissiveMode = (label) => {
-                if(!label) return null;
-                const n = String(label).toLowerCase();
-                const isGlow = n.includes('glow');
-                const isTxt = n.includes('txt');
-                const isBtn = n.includes('btn');
-                const isOn = n.includes('-on') || n.endsWith('on') || n.includes('_on');
-                const isOff = n.includes('-off') || n.endsWith('off') || n.includes('_off');
-                if((isGlow || isTxt || isBtn) && isOn) return 'on';
-                if((isGlow || isTxt || isBtn) && isOff) return 'off';
-                return null;
-            };
-            if(lightingTargets?.emissiveTargets){
-                lightingTargets.emissiveTargets.forEach((target) => {
-                    const mat = target.material;
-                    const node = target.node;
-                    const controlNode = target.controlNode;
-                    if(!mat) return;
-                    const matName = mat.name || '';
-                    const mode = classifyEmissiveMode(matName)
-                        || classifyEmissiveMode(node?.name)
-                        || classifyEmissiveMode(controlNode?.name);
-                    if(mode){
-                        const baseName = normalizeBaseName(matName || node?.name || controlNode?.name || '');
-                        const base = Number.isFinite(mat?.userData?.maxEmissiveIntensity)
-                            ? mat.userData.maxEmissiveIntensity
-                            : ((Number.isFinite(mat.emissiveIntensity) && mat.emissiveIntensity > 0) ? mat.emissiveIntensity : 1);
-                        manualEmissiveTargets.push({
-                            material: mat,
-                            mode,
-                            base,
-                            baseName
-                        });
-                    }
-                });
-            }
-            if(!loggedManualEmissives){
-                console.group('[Manual Emissive Targets]');
-                console.log(manualEmissiveTargets.map((entry) => ({
-                    material: entry.material?.name || '(unnamed)',
-                    mode: entry.mode,
-                    base: entry.base
-                })));
-                console.groupEnd();
-                loggedManualEmissives = true;
-            }
             if(lightingTargets?.emissiveTargets && emissiveList){
                 buildEmissiveList(model, lightingTargets.emissiveTargets);
-                syncEmiToEmissiveSliderRanges(getContrastValue());
                 applyEmissionControls();
                 if(emissiveListPanel) emissiveListPanel.hidden = false;
             }
             let percentSyncNode = null;
+            let percentVolNode = null;
             model.traverse((child) => {
-                if(percentSyncNode || !child || !child.isObject3D) return;
+                if(!child || !child.isObject3D) return;
                 const name = (child.name || '').toLowerCase();
-                if(name === 'txt-percent-sync' || name.includes('txt-percent-sync')){
-                    // Bind only to the text target, never to the parent/frame.
+                if(!percentSyncNode && (name === 'txt-percent-sync' || name.includes('txt-percent-sync'))){
                     if(child.isMesh){
-                        percentSyncNode = child;
+                        percentSyncNode = child.parent?.isMesh ? child.parent : child;
+                        if(percentSyncNode !== child) child.visible = false;
                     }else{
                         let meshDesc = null;
                         child.traverse((desc) => {
@@ -3063,10 +3607,21 @@ enabled: ${!!cameraAction?.enabled}`;
                         percentSyncNode = meshDesc || child;
                     }
                 }
+                if(!percentVolNode && (name === 'txt-percent-vol' || name.includes('txt-percent-vol'))){
+                    if(child.isMesh){
+                        percentVolNode = child.parent?.isMesh ? child.parent : child;
+                        if(percentVolNode !== child) child.visible = false;
+                    }else{
+                        let meshDesc = null;
+                        child.traverse((desc) => { if(!meshDesc && desc?.isMesh) meshDesc = desc; });
+                        percentVolNode = meshDesc || child;
+                    }
+                }
             });
-            if(percentSyncNode){
-                initSyncPercentLabel(percentSyncNode);
-            }
+            // Keep each value on the plate nearest its physical slider. The
+            // exported names match those plate positions.
+            if(percentSyncNode) initReadoutLabel(percentSyncNode, 'sync');
+            if(percentVolNode) initReadoutLabel(percentVolNode, 'vol');
 
             const findCameraNode = () => {
                 if(gltf.cameras && gltf.cameras.length){
@@ -3127,6 +3682,14 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(!clips || !clips.length) return null;
                 const uiClips = [];
                 const emissiveTracks = [];
+                const isModeTrack = (trackName) => {
+                    const nodeName = String(trackName || '').split('.')[0].trim().toLowerCase();
+                    return nodeName === 'info-panel'
+                        || nodeName === 'vol-meter-flip'
+                        || nodeName === 'btn-accessibility'
+                        || nodeName === 'btn-vol-sync'
+                        || /^txt-(audiosync|audio-sync|volume|contrast|brightness)/.test(nodeName);
+                };
                 clips.forEach((clipItem) => {
                     if(!clipItem || !clipItem.tracks?.length) return;
                     clipItem.tracks.forEach((track) => {
@@ -3135,16 +3698,7 @@ enabled: ${!!cameraAction?.enabled}`;
                             emissiveTracks.push(track);
                         }
                     });
-                    if(!cameraNode){
-                        uiClips.push(clipItem);
-                        return;
-                    }
-                    const uiTracks = clipItem.tracks.filter((track) => {
-                        const name = typeof track.name === 'string' ? track.name : '';
-                        const nodeName = name.split('.')[0].trim().toLowerCase();
-                        const isContrastKnobTrack = nodeName.includes('knob') && nodeName.includes('contrast');
-                        return !name.startsWith(`${cameraNode.name}.`) && !isContrastKnobTrack;
-                    });
+                    const uiTracks = clipItem.tracks.filter((track) => isModeTrack(track.name));
                     if(!uiTracks.length) return;
                     const uiDuration = Number.isFinite(clipItem.duration) && clipItem.duration > 0 ? clipItem.duration : -1;
                     uiClips.push(new THREE.AnimationClip(`${clipItem.name || 'ui'}-ui`, uiDuration, uiTracks));
@@ -3186,11 +3740,16 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             if(uiClip){
                 clip = uiClip;
+                const audioPanelTrack = uiClip.tracks.find((track) => {
+                    const name = String(track?.name || '').toLowerCase();
+                    return name.startsWith('vol-meter-flip.') && name.endsWith('.quaternion');
+                });
+                audioVisualizationRotation = audioPanelTrack?.createInterpolant?.() || null;
                 uiAction = uiMixer.clipAction(uiClip);
                 uiAction.clampWhenFinished = true;
                 uiAction.setLoop(THREE.LoopOnce, 1);
                 uiAction.play();
-                setFrame(ACCESSIBILITY_FRAME);
+                setFrame(VISUALS_FRAME);
                 const emissiveTracks = uiClip.userData?.emissiveTracks || [];
                 if(emissiveTracks.length){
                     const emissiveClip = new THREE.AnimationClip('emissive-only', -1, emissiveTracks);
@@ -3267,12 +3826,6 @@ enabled: ${!!cameraAction?.enabled}`;
 
             let knobVolNode = null;
             let knobSyncNode = null;
-            let knobContrastNode = null;
-            const knobContrastNodes = [];
-            const pushUniqueNode = (list, node) => {
-                if(!node) return;
-                if(!list.includes(node)) list.push(node);
-            };
             model.traverse((child) => {
                 if(!child || !child.isObject3D) return;
                 const name = (child.name || '').toLowerCase();
@@ -3282,15 +3835,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(!knobSyncNode && (name.includes('knob-sync') || name.includes('knob_sync') || name.includes('knobsync'))){
                     knobSyncNode = child;
                 }
-                if(name.includes('knob-contrast') || name.includes('knob_contrast') || name.includes('knobcontrast')){
-                    if(!knobContrastNode){
-                        knobContrastNode = child;
-                    }
-                    pushUniqueNode(knobContrastNodes, child);
-                }
             });
-            const gasketByType = { vol: null, sync: null, contrast: null };
-            const detectorByType = { vol: null, sync: null, contrast: null };
+            const gasketByType = { vol: null, sync: null };
+            const detectorByType = { vol: null, sync: null };
             const findGasketForType = (type) => {
                 if(gasketByType[type]) return gasketByType[type];
                 let found = null;
@@ -3302,9 +3849,6 @@ enabled: ${!!cameraAction?.enabled}`;
                         found = child;
                     }
                     if(type === 'sync' && (name.includes('-sync') || name.includes('_sync') || name.includes('sync'))){
-                        found = child;
-                    }
-                    if(type === 'contrast' && (name.includes('-contrast') || name.includes('_contrast') || name.includes('contrast'))){
                         found = child;
                     }
                 });
@@ -3324,48 +3868,15 @@ enabled: ${!!cameraAction?.enabled}`;
                     if(type === 'sync' && (name.includes('-sync') || name.includes('_sync') || name.includes('sync'))){
                         found = child;
                     }
-                    if(type === 'contrast' && (name.includes('-contrast') || name.includes('_contrast') || name.includes('contrast'))){
-                        found = child;
-                    }
                 });
                 detectorByType[type] = found;
                 return found;
             };
-            const findClosestKnobToType = (type) => {
-                const gasket = findGasketForType(type) || findDetectorForType(type);
-                if(!gasket) return null;
-                const target = new THREE.Box3().setFromObject(gasket).getCenter(new THREE.Vector3());
-                let best = null;
-                let bestDistSq = Infinity;
-                model.traverse((child) => {
-                    if(!child || !child.isObject3D) return;
-                    const name = (child.name || '').toLowerCase();
-                    if(!name.includes('knob')) return;
-                    if(name.includes('gasket') || name.includes('detector') || name.includes('hitbox')) return;
-                    const center = new THREE.Box3().setFromObject(child).getCenter(new THREE.Vector3());
-                    const distSq = center.distanceToSquared(target);
-                    if(!Number.isFinite(distSq)) return;
-                    if(distSq < bestDistSq){
-                        bestDistSq = distSq;
-                        best = child;
-                    }
-                });
-                return best;
-            };
-            // Some GLB revisions use generic knob names, so include the physically nearest knob.
-            const inferredContrastKnob = findClosestKnobToType('contrast');
-            if(inferredContrastKnob){
-                pushUniqueNode(knobContrastNodes, inferredContrastKnob);
-                if(!knobContrastNode) knobContrastNode = inferredContrastKnob;
-            }
             settingsControllerBridge.knobVolNode = knobVolNode;
             settingsControllerBridge.knobSyncNode = knobSyncNode;
-            settingsControllerBridge.knobContrastNode = knobContrastNode;
-            settingsControllerBridge.knobContrastNodes = knobContrastNodes;
             settingsControllerBridge.knobDefaults = {
                 vol: knobVolNode ? knobVolNode.position.clone() : null,
-                sync: knobSyncNode ? knobSyncNode.position.clone() : null,
-                contrast: knobContrastNode ? knobContrastNode.position.clone() : null
+                sync: knobSyncNode ? knobSyncNode.position.clone() : null
             };
             const cornersFromBox = (box) => {
                 const { min, max } = box;
@@ -3380,36 +3891,37 @@ enabled: ${!!cameraAction?.enabled}`;
                     new THREE.Vector3(max.x, max.y, max.z)
                 ];
             };
-            const getAxisFromGasket = (gasketNode, knobNode) => {
-                if(!gasketNode || !knobNode || !knobNode.parent) return null;
-                const gasketBox = new THREE.Box3().setFromObject(gasketNode);
-                const localCorners = cornersFromBox(gasketBox).map((corner) => knobNode.parent.worldToLocal(corner.clone()));
-                const ranges = {
-                    x: Math.max(...localCorners.map((p) => p.x)) - Math.min(...localCorners.map((p) => p.x)),
-                    y: Math.max(...localCorners.map((p) => p.y)) - Math.min(...localCorners.map((p) => p.y)),
-                    z: Math.max(...localCorners.map((p) => p.z)) - Math.min(...localCorners.map((p) => p.z))
-                };
-                const axis = Object.entries(ranges).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
-                return axis;
+            const getAxisBoundsInParent = (object, parent, axis) => {
+                if(!object || !parent) return null;
+                object.updateMatrixWorld(true);
+                parent.updateMatrixWorld(true);
+                const values = [];
+                object.traverse((mesh) => {
+                    if(!mesh?.isMesh || !mesh.geometry) return;
+                    mesh.geometry.computeBoundingBox();
+                    const box = mesh.geometry.boundingBox;
+                    if(!box) return;
+                    cornersFromBox(box).forEach((corner) => {
+                        const world = corner.applyMatrix4(mesh.matrixWorld);
+                        values.push(parent.worldToLocal(world)[axis]);
+                    });
+                });
+                if(!values.length) return null;
+                return { min: Math.min(...values), max: Math.max(...values) };
             };
             const buildConstraint = (type, knobNode, fallbackRange) => {
                 if(!knobNode || !knobNode.parent) return null;
-                let axis = type === 'vol' ? 'x' : 'z';
-                if(type === 'contrast'){
-                    axis = getAxisFromGasket(findGasketForType('contrast'), knobNode) || 'x';
-                }
-                const gasket = findGasketForType(type);
-                if(!gasket){
+                const axis = type === 'vol' ? 'x' : 'z';
+                const rail = findDetectorForType(type) || findGasketForType(type);
+                const railBounds = getAxisBoundsInParent(rail, knobNode.parent, axis);
+                const knobBounds = getAxisBoundsInParent(knobNode, knobNode.parent, axis);
+                if(!railBounds){
                     const base = knobNode.position[axis];
                     return { axis, min: base - fallbackRange * 0.5, max: base + fallbackRange * 0.5 };
                 }
-                const gasketBox = new THREE.Box3().setFromObject(gasket);
-                const localVals = cornersFromBox(gasketBox).map((corner) => {
-                    const local = knobNode.parent.worldToLocal(corner.clone());
-                    return local[axis];
-                });
-                let min = Math.min(...localVals);
-                let max = Math.max(...localVals);
+                const radiusInset = knobBounds ? Math.max(0, (knobBounds.max - knobBounds.min) * 0.5) : 0;
+                let min = railBounds.min + radiusInset;
+                let max = railBounds.max - radiusInset;
                 if(!Number.isFinite(min) || !Number.isFinite(max) || Math.abs(max - min) < 1e-4){
                     const base = knobNode.position[axis];
                     min = base - fallbackRange * 0.5;
@@ -3417,16 +3929,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 }
                 return { axis, min, max };
             };
-            const contrastConstraints = new Map();
-            knobContrastNodes.forEach((node) => {
-                const constraint = buildConstraint('contrast', node, KNOB_CONTRAST_RANGE);
-                if(constraint) contrastConstraints.set(node.uuid, constraint);
-            });
             settingsControllerBridge.knobConstraints = {
                 vol: buildConstraint('vol', knobVolNode, KNOB_VOL_RANGE),
-                sync: buildConstraint('sync', knobSyncNode, KNOB_SYNC_RANGE),
-                contrast: buildConstraint('contrast', knobContrastNode, KNOB_CONTRAST_RANGE),
-                contrastAll: contrastConstraints
+                sync: buildConstraint('sync', knobSyncNode, KNOB_SYNC_RANGE)
             };
             const addGasketHitbox = (type, gasketNode) => {
                 if(!gasketNode || !gasketNode.parent) return null;
@@ -3434,17 +3939,11 @@ enabled: ${!!cameraAction?.enabled}`;
                 const centerWorld = box.getCenter(new THREE.Vector3());
                 const size = box.getSize(new THREE.Vector3());
                 const modelCenter = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
-                let offset = new THREE.Vector3(0, 0, 0);
-                if(type === 'contrast'){
-                    const outward = centerWorld.clone().sub(modelCenter).normalize();
-                    offset = Number.isFinite(outward.lengthSq()) && outward.lengthSq() > 0
-                        ? outward.multiplyScalar(0.05)
-                        : new THREE.Vector3(0, 0.05, 0);
-                }
+                const offset = new THREE.Vector3(0, 0, 0);
                 const hitSize = new THREE.Vector3(
-                    Math.max(0.06, size.x * 1.45),
-                    Math.max(0.06, size.y * 1.8),
-                    Math.max(0.06, size.z * 1.45)
+                    Math.max(0.06, size.x * 1.12),
+                    Math.max(0.06, size.y * 1.25),
+                    Math.max(0.06, size.z * 1.12)
                 );
                 const hitbox = new THREE.Mesh(
                     new THREE.BoxGeometry(hitSize.x, hitSize.y, hitSize.z),
@@ -3459,8 +3958,7 @@ enabled: ${!!cameraAction?.enabled}`;
             };
             settingsControllerBridge.knobHitboxes = {
                 vol: addGasketHitbox('vol', findDetectorForType('vol') || findGasketForType('vol')),
-                sync: addGasketHitbox('sync', findDetectorForType('sync') || findGasketForType('sync')),
-                contrast: addGasketHitbox('contrast', findDetectorForType('contrast') || findGasketForType('contrast'))
+                sync: addGasketHitbox('sync', findDetectorForType('sync') || findGasketForType('sync'))
             };
             updateKnobTransformsFromState();
 
@@ -3474,27 +3972,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(primaryScreen){
                     fitTextureToUV(primaryScreen, screenTexture);
                 }
-                // Force horizontal flip only (UVs already rotated in the asset).
-                flipTextureX(screenTexture);
                 screenTextureTargets.forEach((child) => {
-                    const material = child.material;
-                    if(Array.isArray(material)){
-                        material.forEach((mat) => {
-                            if(mat && 'map' in mat){
-                                mat.map = screenTexture;
-                                if('color' in mat && mat.color){
-                                    mat.color.set(0xffffff);
-                                }
-                                mat.needsUpdate = true;
-                            }
-                        });
-                    }else if(material && 'map' in material){
-                        material.map = screenTexture;
-                        if('color' in material && material.color){
-                            material.color.set(0xffffff);
-                        }
-                        material.needsUpdate = true;
-                    }
+                    const owned = new THREE.MeshBasicMaterial({ map: screenTexture, toneMapped: false, side: THREE.DoubleSide });
+                    child.material = owned;
                     applied = true;
                 });
             if(!applied){
@@ -3505,18 +3985,13 @@ enabled: ${!!cameraAction?.enabled}`;
         function findKnobType(node){
             let current = node;
             while(current){
-                if(current.userData && (current.userData.knobType === 'vol' || current.userData.knobType === 'sync' || current.userData.knobType === 'contrast')){
+                if(current.userData && (current.userData.knobType === 'vol' || current.userData.knobType === 'sync')){
                     return current.userData.knobType;
                 }
-                if(current === settingsControllerBridge.knobContrastNode) return 'contrast';
                 if(current === settingsControllerBridge.knobSyncNode) return 'sync';
                 if(current === settingsControllerBridge.knobVolNode) return 'vol';
-                if((settingsControllerBridge.knobContrastNodes || []).includes(current)) return 'contrast';
                 const name = (current.name || '').toLowerCase();
                 const isKnobOrGasket = name.includes('knob') || name.includes('gasket') || name.includes('detector');
-                if(isKnobOrGasket && (name.includes('-contrast') || name.includes('_contrast') || name.includes('knobcontrast') || name.includes('contrast'))){
-                    return 'contrast';
-                }
                 if(isKnobOrGasket && (name.includes('-sync') || name.includes('_sync') || name.includes('knobsync') || name.includes('sync'))){
                     return 'sync';
                 }
@@ -3579,63 +4054,179 @@ enabled: ${!!cameraAction?.enabled}`;
             };
             addCandidate('vol', settingsControllerBridge.knobVolNode, constraints.vol);
             addCandidate('sync', settingsControllerBridge.knobSyncNode, constraints.sync);
-            if(settingsControllerBridge.knobContrastNodes?.length && constraints.contrastAll){
-                settingsControllerBridge.knobContrastNodes.forEach((node) => {
-                    const c = constraints.contrastAll.get(node.uuid);
-                    addCandidate('contrast', node, c);
-                });
-            }else{
-                addCandidate('contrast', settingsControllerBridge.knobContrastNode, constraints.contrast);
-            }
             if(!candidates.length) return fallbackType;
             candidates.sort((a, b) => a.d - b.d);
             const best = candidates[0];
-            return best.d <= 90 ? best.type : fallbackType;
+            const hitRadius = Math.max(18, Math.min(42, Math.min(rect.width, rect.height) * 0.055));
+            return best.d <= hitRadius ? best.type : fallbackType;
+        }
+
+        function getArrowActionFromHits(hits){
+            const mappings = [
+                { pattern: /arrow-vol-up(?:-plus)?/, type: 'vol', direction: 1 },
+                { pattern: /arrow-vol-down(?:-minus)?/, type: 'vol', direction: -1 },
+                { pattern: /arrow-sync-right(?:-plus)?/, type: 'sync', direction: 1 },
+                { pattern: /arrow-sync-left(?:-minus)?/, type: 'sync', direction: -1 }
+            ];
+            for(const hit of hits){
+                let current = hit.object;
+                while(current){
+                    const name = String(current.name || '').toLowerCase();
+                    const mapping = mappings.find((item) => item.pattern.test(name));
+                    if(mapping) return mapping;
+                    current = current.parent;
+                }
+            }
+            return null;
+        }
+
+        function getPointerHits(clientX, clientY){
+            const rect = settingsControllerCanvas.getBoundingClientRect();
+            if(!rect.width || !rect.height || !activeCamera) return [];
+            pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, activeCamera);
+            return raycaster.intersectObjects(model.children, true);
+        }
+
+        function setControllerHoverHint(message = ''){
+            if(controllerFlow.hoverHint === message) return;
+            controllerFlow.hoverHint = message;
+            settingsControllerBridge.renderScreen?.();
+        }
+
+        function updateControllerHoverHint(event){
+            if(introActive || activeSettingsView !== 'visuals'){
+                setControllerHoverHint('');
+                return;
+            }
+            const hits = getPointerHits(event.clientX, event.clientY);
+            const firstHit = hits[0]?.object || null;
+            const knobType = resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit);
+            setControllerHoverHint(knobType === 'sync'
+                ? 'MOVE THE KNOB SLOWLY TO FINE-TUNE CONTRAST'
+                : '');
+        }
+
+        function isSameArrow(first, second){
+            return !!first && !!second
+                && first.type === second.type
+                && first.direction === second.direction;
+        }
+
+        function rotateCameraFromPointerDelta(deltaX, deltaY){
+            if(!controls || !activeCamera) return;
+            const height = Math.max(1, settingsControllerCanvas.clientHeight);
+            const offset = activeCamera.position.clone().sub(controls.target);
+            const spherical = new THREE.Spherical().setFromVector3(offset);
+            const speed = Number.isFinite(controls.rotateSpeed) ? controls.rotateSpeed : 1;
+            spherical.theta -= (2 * Math.PI * deltaX / height) * speed;
+            spherical.phi -= (2 * Math.PI * deltaY / height) * speed;
+            spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, spherical.phi));
+            offset.setFromSpherical(spherical);
+            activeCamera.position.copy(controls.target).add(offset);
+            activeCamera.lookAt(controls.target);
+            activeCamera.updateMatrixWorld(true);
+            controls.update();
+        }
+
+        function applyArrowStep(action, pointerButton = 0){
+            if(!action) return;
+            const isRightClick = pointerButton === 2;
+            if(action.type === 'vol'){
+                const amount = isRightClick ? 5 : 1;
+                if(activeSettingsView === 'audio'){
+                    setVolumeFromPercent(Math.round(storedVolume * 100) + action.direction * amount);
+                }else{
+                    const next = Math.max(0, Math.min(1, getLuxValue() + action.direction * amount * 0.01));
+                    applyLuxFromSource(next, 'arrow-step');
+                }
+            }else if(activeSettingsView === 'audio'){
+                const amount = isRightClick ? 10 : 5;
+                applySyncValue(Math.max(-3000, Math.min(3000, storedSync + action.direction * amount)));
+            }else{
+                const amount = isRightClick ? 5 : 1;
+                const next = Math.max(0, Math.min(1, getContrastValue() + action.direction * amount * 0.01));
+                applyEmiFromSource(next, 'arrow-step');
+            }
+            updateKnobTransformsFromState();
+            updateControllerReadouts();
+            syncAccessibleControllerUI();
+        }
+
+        function applyKeyboardStep(type, direction, shifted = false){
+            const isContrast = type === 'sync' && activeSettingsView === 'visuals';
+            const amount = isContrast
+                ? (shifted ? 10 : 5)
+                : (shifted ? 5 : 1);
+            if(type === 'vol'){
+                if(activeSettingsView === 'audio'){
+                    setVolumeFromPercent(Math.round(storedVolume * 100) + direction * amount);
+                }else{
+                    applyLuxFromSource(
+                        Math.max(0, Math.min(1, getLuxValue() + direction * amount * 0.01)),
+                        'keyboard-step'
+                    );
+                }
+            }else if(activeSettingsView === 'audio'){
+                applySyncValue(Math.max(-3000, Math.min(3000, storedSync + direction * amount)));
+            }else{
+                applyEmiFromSource(
+                    Math.max(0, Math.min(1, getContrastValue() + direction * amount * 0.01)),
+                    'keyboard-step'
+                );
+            }
+            updateKnobTransformsFromState();
+            updateControllerReadouts();
+            syncAccessibleControllerUI();
+        }
+
+        function getActiveKnobT(type){
+            if(type === 'vol'){
+                return activeSettingsView === 'audio'
+                    ? Math.max(0, Math.min(1, storedVolume))
+                    : Math.max(0, Math.min(1, getLuxValue()));
+            }
+            return activeSettingsView === 'audio'
+                ? Math.max(0, Math.min(1, (storedSync + 3000) / 6000))
+                : Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
         }
 
         function applyKnobStateFromT(type, t){
             const clamped = Math.max(0, Math.min(1, t));
             if(type === 'vol'){
-                if(activeSettingsView === 'accessibility'){
-                    settingsControllerBridge.knobAxisValues.vol = clamped;
-                    applyOverlayFromSource(1 - clamped, 'knob-drag');
+                settingsControllerBridge.knobAxisValues.vol = clamped;
+                if(activeSettingsView === 'visuals'){
+                    applyLuxFromSource(clamped, 'knob-drag');
                     updateKnobTransformsFromState();
                     updateLightingDebugLine('knob-drag', 'vol');
+                    updateControllerReadouts();
+                    syncAccessibleControllerUI();
                     return;
                 }
-                settingsControllerBridge.knobAxisValues.vol = clamped;
                 setVolumeFromPercent(Math.round(clamped * 100));
                 updateKnobTransformsFromState();
                 updateLightingDebugLine('knob-drag', 'vol');
+                syncAccessibleControllerUI();
                 return;
             }
             if(type === 'sync'){
-                if(activeSettingsView === 'accessibility'){
-                    settingsControllerBridge.knobAxisValues.sync = clamped;
-                    if(settingsControllerBridge.luxControlEnabled){
-                        applyLuxFromSource(clamped, 'knob-drag');
-                    }
+                settingsControllerBridge.knobAxisValues.sync = clamped;
+                if(activeSettingsView === 'visuals'){
+                    applyEmiFromSource(mapContrastKnobToValue(clamped), 'knob-drag');
                     updateKnobTransformsFromState();
                     updateLightingDebugLine('knob-drag', 'sync');
+                    updateControllerReadouts();
+                    syncAccessibleControllerUI();
                     return;
                 }
-                settingsControllerBridge.knobAxisValues.sync = clamped;
                 const nextSync = Math.round(-3000 + (clamped * 6000));
                 applySyncValue(nextSync);
                 if(syncSlider) syncSlider.value = String(storedSync);
                 if(modalSync) modalSync.value = String(storedSync);
                 updateKnobTransformsFromState();
                 updateLightingDebugLine('knob-drag', 'sync');
-                return;
-            }
-            if(type === 'contrast'){
-                settingsControllerBridge.knobAxisValues.contrast = clamped;
-                if(settingsControllerBridge.emissionControlEnabled){
-                    applyEmiFromSource(mapContrastKnobToValue(clamped), 'knob-drag');
-                }
-                updateKnobTransformsFromState();
-                storeContrastLockPose();
-                updateLightingDebugLine('knob-drag', 'contrast');
+                syncAccessibleControllerUI();
                 return;
             }
         }
@@ -3643,85 +4234,35 @@ enabled: ${!!cameraAction?.enabled}`;
         function updateKnobTransformsFromState(){
             const volNode = settingsControllerBridge.knobVolNode;
             const syncNode = settingsControllerBridge.knobSyncNode;
-            const contrastNode = settingsControllerBridge.knobContrastNode;
-            const contrastNodes = settingsControllerBridge.knobContrastNodes || [];
             const defaults = settingsControllerBridge.knobDefaults;
             const constraints = settingsControllerBridge.knobConstraints;
             if(!defaults) return;
             if(volNode && defaults.vol && constraints?.vol){
-                const volNorm = Math.max(0, Math.min(1, storedVolume));
+                const volNorm = activeSettingsView === 'audio'
+                    ? Math.max(0, Math.min(1, storedVolume))
+                    : Math.max(0, Math.min(1, getLuxValue()));
                 const volRange = constraints.vol.max - constraints.vol.min;
-                volNode.position.x = constraints.vol.min + (volNorm * volRange);
+                // Higher local x is the physical bottom/low endpoint.
+                volNode.position[constraints.vol.axis] = constraints.vol.max - (volNorm * volRange);
                 settingsControllerBridge.knobAxisValues.vol = volNorm;
             }
             if(syncNode && defaults.sync && constraints?.sync){
-                const syncNorm = activeSettingsView === 'accessibility'
-                    ? (settingsControllerBridge.luxControlEnabled
-                        ? Math.max(0, Math.min(1, getLuxValue()))
-                        : (Number.isFinite(settingsControllerBridge.knobAxisValues?.sync)
-                            ? settingsControllerBridge.knobAxisValues.sync
-                            : 0.5))
-                    : Math.max(0, Math.min(1, (storedSync + 3000) / 6000));
+                const syncNorm = activeSettingsView === 'audio'
+                    ? Math.max(0, Math.min(1, (storedSync + 3000) / 6000))
+                    : Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
                 const syncRange = constraints.sync.max - constraints.sync.min;
-                syncNode.position.z = constraints.sync.min + (syncNorm * syncRange);
+                // Higher local z is the physical left/low endpoint.
+                syncNode.position[constraints.sync.axis] = constraints.sync.max - (syncNorm * syncRange);
                 settingsControllerBridge.knobAxisValues.sync = syncNorm;
             }
-            if(volNode && defaults.vol && constraints?.vol && activeSettingsView === 'accessibility'){
-                const volNorm = 1 - getBackgroundBrightness();
-                const volRange = constraints.vol.max - constraints.vol.min;
-                volNode.position.x = constraints.vol.min + (volNorm * volRange);
-                settingsControllerBridge.knobAxisValues.vol = volNorm;
-            }
-            if(contrastNode && defaults.contrast && constraints?.contrast){
-                const contrastNorm = Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
-                const info = getSemanticConstraintLR(
-                    contrastNode,
-                    constraints.contrast,
-                    settingsControllerCanvas?.getBoundingClientRect(),
-                    settingsControllerBridge.camera || activeCamera,
-                    'contrast'
-                );
-                if(info){
-                    const contrastRange = info.rightValue - info.leftValue;
-                    contrastNode.position[constraints.contrast.axis] = info.leftValue + (contrastNorm * contrastRange);
-                }else{
-                    const contrastRange = constraints.contrast.max - constraints.contrast.min;
-                    contrastNode.position[constraints.contrast.axis] = constraints.contrast.min + (contrastNorm * contrastRange);
-                }
-                settingsControllerBridge.knobAxisValues.contrast = contrastNorm;
-            }
-            if(contrastNodes.length && constraints?.contrastAll){
-                const contrastNorm = Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
-                contrastNodes.forEach((node) => {
-                    const constraint = constraints.contrastAll.get(node.uuid);
-                    if(!constraint) return;
-                    const info = getSemanticConstraintLR(
-                        node,
-                        constraint,
-                        settingsControllerCanvas?.getBoundingClientRect(),
-                        settingsControllerBridge.camera || activeCamera,
-                        'contrastAll'
-                    );
-                    if(info){
-                        const contrastRange = info.rightValue - info.leftValue;
-                        node.position[constraint.axis] = info.leftValue + (contrastNorm * contrastRange);
-                    }else{
-                        const contrastRange = constraint.max - constraint.min;
-                        node.position[constraint.axis] = constraint.min + (contrastNorm * contrastRange);
-                    }
-                });
-                settingsControllerBridge.knobAxisValues.contrast = contrastNorm;
-            }
+            updateControllerReadouts();
         }
 
         function handlePointerDown(event){
-            if(event.button !== 0 && event.button !== 1) return;
+            if(event.button !== 0 && event.button !== 1 && event.button !== 2) return;
             const rect = settingsControllerCanvas.getBoundingClientRect();
             if(rect.width === 0 || rect.height === 0) return;
-            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(pointer, activeCamera);
-            const hits = raycaster.intersectObjects(model.children, true);
+            const hits = getPointerHits(event.clientX, event.clientY);
             const ignoredHitNames = new Set([
                 'txt-glow-on',
                 'txt-glow-off',
@@ -3748,65 +4289,90 @@ enabled: ${!!cameraAction?.enabled}`;
                 return;
             }
             if(!firstHit) return;
-            if(introActive){
-                if(event.button !== 0) return;
-                const hit = firstHit;
-                const findOkNode = (node) => {
-                    let current = node;
-                    while(current){
-                        const name = (current.name || '').toLowerCase();
-                        if(name.includes('ok')) return true;
-                        current = current.parent;
+            const belongsToScreen = (object) => {
+                let current = object;
+                while(current){
+                    const name = (current.name || '').toLowerCase();
+                    if(name === 'control-screen' || name === 'control_screen') return true;
+                    current = current.parent;
+                }
+                return false;
+            };
+            const pointInPolygon = (point, polygon) => {
+                let inside = false;
+                for(let i = 0, j = polygon.length - 1; i < polygon.length; j = i++){
+                    const [xi, yi] = polygon[i], [xj, yj] = polygon[j];
+                    if(((yi > point.y) !== (yj > point.y))
+                        && point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-9) + xi){
+                        inside = !inside;
                     }
-                    return false;
-                };
-                let allowHit = false;
-                let muteHit = false;
-                if(hit.uv && screenTexture && screenTexture.repeat){
-                    let u = hit.uv.x * screenTexture.repeat.x + screenTexture.offset.x;
-                    let v = hit.uv.y * screenTexture.repeat.y + screenTexture.offset.y;
-                    u = ((u % 1) + 1) % 1;
-                    v = ((v % 1) + 1) % 1;
-                    const withinAllow = u >= allowAudioRect.x && u <= allowAudioRect.x + allowAudioRect.w
-                        && v >= allowAudioRect.y && v <= allowAudioRect.y + allowAudioRect.h;
-                    const withinMute = u >= muteAudioRect.x && u <= muteAudioRect.x + muteAudioRect.w
-                        && v >= muteAudioRect.y && v <= muteAudioRect.y + muteAudioRect.h;
-                    allowHit = withinAllow || findOkNode(hit.object);
-                    muteHit = withinMute;
-                    if((allowHit || muteHit) && cameraAction && !FORCE_MANUAL_CAMERA){
-                        introActive = false;
-                        setPreIntroZoomEnabled(false);
-                        pendingAudioAllowed = allowHit;
-                        if(allowHit){
-                            playWelcomeJingle(true);
-                        }
-                        if(USE_CUSTOM_CAMERA_ANIM){
-                            startCustomCameraAnimation(model);
-                        }else{
-                            setUserCameraControlsEnabled(false);
-                            cameraAction.enabled = true;
-                            cameraAction.reset();
-                            cameraAction.paused = false;
-                            cameraTargetTime = getCameraHoldTime(cameraAction.getClip());
-                            cameraAction.play();
-                        }
+                }
+                return inside;
+            };
+            if(event.button === 0 && firstHit.uv && belongsToScreen(firstHit.object)){
+                const bounds = settingsControllerBridge.screenUvBounds;
+                if(bounds){
+                    const u = 1 - ((firstHit.uv.x - bounds.min.x) / Math.max(1e-9, bounds.max.x - bounds.min.x));
+                    const v = (firstHit.uv.y - bounds.min.y) / Math.max(1e-9, bounds.max.y - bounds.min.y);
+                    const region = controllerFlow.hitRegions.find((item) => pointInPolygon({ x: u, y: v }, item.polygon));
+                    if(region?.kind === 'permission'){
+                        controllerFlow.resolvePrompt?.(region.value);
+                    }else if(region?.kind === 'save-confirm'){
+                        resolveSaveConfirmation(region.value);
+                    }else if(region?.kind === 'sync-start'){
+                        startSyncExercise();
+                    }else if(region?.kind === 'sync-tap'){
+                        registerSyncExerciseTap();
+                    }
+                    if(region){
+                        event.preventDefault();
+                        event.stopPropagation();
                         return;
                     }
                 }
-                if(introActive && (allowHit || muteHit)){
-                    introActive = false;
-                    setPreIntroZoomEnabled(false);
-                    pendingAudioAllowed = allowHit;
-                    if(allowHit){
-                        playWelcomeJingle(true);
-                    }
-                    if(USE_CUSTOM_CAMERA_ANIM){
-                        startCustomCameraAnimation(model);
-                    }else{
-                        startManualCameraTween();
-                    }
-                }
+            }
+            const readoutHit = event.button === 0 ? getReadoutHit(firstHit.object) : null;
+            if(readoutHit){
+                openReadoutEditor(readoutHit.type, readoutHit.target);
+                event.preventDefault();
+                event.stopPropagation();
                 return;
+            }
+            if(introActive) return;
+            const arrowAction = getArrowActionFromHits(hits);
+            if((event.button === 0 || event.button === 2) && arrowAction){
+                arrowPointerState = {
+                    pointerId: event.pointerId,
+                    button: event.button,
+                    action: arrowAction,
+                    downAt: performance.now(),
+                    x: event.clientX,
+                    y: event.clientY,
+                    lastX: event.clientX,
+                    lastY: event.clientY,
+                    moved: 0,
+                    orbiting: false
+                };
+                if(controls) controls.enabled = false;
+                try{ settingsControllerCanvas.setPointerCapture(event.pointerId); }catch(e){}
+                // Keep OrbitControls out until a right drag has actually left
+                // the arrow. This prevents short clicks from nudging the camera.
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            // A right-button drag away from an arrow remains owned by OrbitControls.
+            if(event.button === 2) return;
+            const catClip = allClips.find((clipItem) => clipItem.tracks?.some((track) => {
+                const nodeName = String(track.name || '').split('.')[0].toLowerCase();
+                return nodeName.includes('manekinekoh');
+            }));
+            if(catClip){
+                catAction = uiMixer.clipAction(catClip);
+                catAction.enabled = true;
+                catAction.paused = true;
+                catAction.time = 0;
+                catAction.play();
             }
             if(event.button === 0 && controls){
                 const knobType = resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit.object);
@@ -3816,24 +4382,8 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(knobType && settingsControllerBridge.knobDefaults){
                     let knobNode = knobType === 'vol'
                         ? settingsControllerBridge.knobVolNode
-                        : knobType === 'sync'
-                            ? settingsControllerBridge.knobSyncNode
-                            : settingsControllerBridge.knobContrastNode;
-                    if(knobType === 'contrast'){
-                        let current = firstHit.object;
-                        const allContrast = settingsControllerBridge.knobContrastNodes || [];
-                        while(current){
-                            if(allContrast.includes(current)){
-                                knobNode = current;
-                                break;
-                            }
-                            current = current.parent;
-                        }
-                    }
-                    const constraint = knobType === 'contrast'
-                        ? (settingsControllerBridge.knobConstraints?.contrastAll?.get(knobNode?.uuid)
-                            || settingsControllerBridge.knobConstraints?.contrast)
-                        : settingsControllerBridge.knobConstraints?.[knobType];
+                        : settingsControllerBridge.knobSyncNode;
+                    const constraint = settingsControllerBridge.knobConstraints?.[knobType];
                     if(!knobNode || !knobNode.parent || !constraint) return;
                     const canvasRect = settingsControllerCanvas.getBoundingClientRect();
                     const makeScreenPoint = (axisValue) => {
@@ -3846,17 +4396,10 @@ enabled: ${!!cameraAction?.enabled}`;
                             ((1 - ndc.y) * 0.5) * canvasRect.height
                         );
                     };
-                    const screenInfo = knobType === 'contrast'
-                        ? getSemanticConstraintLR(
-                            knobNode,
-                            constraint,
-                            canvasRect,
-                            settingsControllerBridge.camera || activeCamera,
-                            'contrastAll'
-                        )
-                        : null;
-                    const pMin = screenInfo ? makeScreenPoint(screenInfo.leftValue) : makeScreenPoint(constraint.min);
-                    const pMax = screenInfo ? makeScreenPoint(screenInfo.rightValue) : makeScreenPoint(constraint.max);
+                    // Semantic zero is always left/bottom (the larger local
+                    // coordinate in this asset); one is right/top.
+                    const pMin = makeScreenPoint(constraint.max);
+                    const pMax = makeScreenPoint(constraint.min);
                     const axisVec = pMax.clone().sub(pMin);
                     const pointerInvert = false;
                     knobDragState = {
@@ -3868,9 +4411,27 @@ enabled: ${!!cameraAction?.enabled}`;
                         startY: event.clientY,
                         isDragging: false,
                         pointerInvert,
-                        lastRawT: getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY)
+                        lastRawT: getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY),
+                        lastX: event.clientX,
+                        lastY: event.clientY,
+                        lastMoveAt: performance.now(),
+                        slowMs: 0,
+                        precision: null,
+                        pointerLocked: false,
+                        relativeValue: getActiveKnobT(knobType),
+                        dragDistance: 0
                     };
                     controls.enabled = false;
+                    try{ settingsControllerCanvas.setPointerCapture(event.pointerId); }catch(e){}
+                    // Request relative mouse input while the initiating gesture
+                    // still has browser activation. This gives knob drags
+                    // effectively unlimited travel at the screen edges.
+                    try{
+                        const lockRequest = settingsControllerCanvas.requestPointerLock?.();
+                        lockRequest?.catch?.(() => {});
+                    }catch(e){}
+                    event.preventDefault();
+                    event.stopPropagation();
                     return;
                 }
             }
@@ -3880,28 +4441,134 @@ enabled: ${!!cameraAction?.enabled}`;
                 }
                 if(!target) return;
                 if(target.name === 'btn-accessibility'){
-                    reverseVolSyncAnimation();
-                }else if(target.name === 'btn-vol-sync' || target.name === 'btn-save'){
-                    toggleVolSyncAnimation();
+                    selectMode('audio');
+                }else if(target.name === 'btn-vol-sync'){
+                    selectMode('visuals');
+                }else if(target.name === 'btn-save'){
+                    pulseMomentaryButton('save');
+                    // Keep the 3D Save control in sync with the accessible form button.
+                    saveBtn?.click();
+                }else if(target.name === 'btn-reset'){
+                    pulseMomentaryButton('reset');
+                    resetBtn?.click();
                 }
         }
 
         function handlePointerMove(event){
-            if(!knobDragState) return;
+            if(arrowPointerState && event.pointerId === arrowPointerState.pointerId){
+                arrowPointerState.moved = Math.max(
+                    arrowPointerState.moved,
+                    Math.hypot(event.clientX - arrowPointerState.x, event.clientY - arrowPointerState.y)
+                );
+                if(arrowPointerState.button === 2){
+                    const currentArrow = getArrowActionFromHits(getPointerHits(event.clientX, event.clientY));
+                    if(!arrowPointerState.orbiting && !isSameArrow(currentArrow, arrowPointerState.action)){
+                        arrowPointerState.orbiting = true;
+                        arrowPointerState.lastX = event.clientX;
+                        arrowPointerState.lastY = event.clientY;
+                    }else if(arrowPointerState.orbiting){
+                        rotateCameraFromPointerDelta(
+                            event.clientX - arrowPointerState.lastX,
+                            event.clientY - arrowPointerState.lastY
+                        );
+                        arrowPointerState.lastX = event.clientX;
+                        arrowPointerState.lastY = event.clientY;
+                    }
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+            if(!knobDragState){
+                updateControllerHoverHint(event);
+                return;
+            }
             const dx = event.clientX - knobDragState.startX;
             const dy = event.clientY - knobDragState.startY;
-            const moved = Math.hypot(dx, dy);
+            const locked = document.pointerLockElement === settingsControllerCanvas;
+            const initialMoveX = locked ? event.movementX : event.clientX - knobDragState.lastX;
+            const initialMoveY = locked ? event.movementY : event.clientY - knobDragState.lastY;
+            knobDragState.dragDistance += Math.hypot(initialMoveX, initialMoveY);
+            const moved = locked ? knobDragState.dragDistance : Math.hypot(dx, dy);
             if(!knobDragState.isDragging){
                 if(moved < 10) return;
                 knobDragState.isDragging = true;
             }
             const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
-            const t = knobDragState.pointerInvert ? (1 - rawT) : rawT;
+            const semanticRawT = knobDragState.pointerInvert ? (1 - rawT) : rawT;
+            const now = performance.now();
+            knobDragState.pointerLocked = locked;
+            const moveX = locked ? event.movementX : event.clientX - knobDragState.lastX;
+            const moveY = locked ? event.movementY : event.clientY - knobDragState.lastY;
+            const stepDistance = Math.hypot(moveX, moveY);
+            const elapsed = Math.max(1, now - knobDragState.lastMoveAt);
+            let relativePixels = (moveX * knobDragState.axisDir.x) + (moveY * knobDragState.axisDir.y);
+            if(knobDragState.pointerInvert) relativePixels *= -1;
+            const trackPixels = Math.max(40, knobDragState.pMin.distanceTo(knobDragState.pMax));
+            const normalT = locked
+                ? Math.max(0, Math.min(1, knobDragState.relativeValue + (relativePixels / trackPixels)))
+                : semanticRawT;
+            const semanticMovement = Math.abs(normalT - knobDragState.relativeValue);
+            const insideTrack = normalT > 0.0001 && normalT < 0.9999;
+            const slowDeliberateMovement = stepDistance > 0
+                && stepDistance <= 4
+                && (stepDistance / elapsed) <= 0.12
+                && semanticMovement > 1e-6
+                && insideTrack;
+            knobDragState.slowMs = slowDeliberateMovement
+                ? knobDragState.slowMs + Math.min(elapsed, 40)
+                : 0;
+            if(!knobDragState.precision && knobDragState.slowMs >= 220){
+                knobDragState.precision = {
+                    value: normalT,
+                    justStarted: true
+                };
+                settingsControllerScene.classList.add('is-precision-adjusting');
+            }
+            let t = normalT;
+            if(knobDragState.precision){
+                if(!knobDragState.precision.justStarted){
+                    const relativeSpeed = Math.abs(relativePixels) / elapsed;
+                    // Fine motion is one millisecond per pixel for AUDIO SYNC,
+                    // or one tenth of a percent per pixel for other controls.
+                    // Faster movement accelerates smoothly so a deliberate
+                    // fling can still cross the complete slider range.
+                    const baseSensitivity = knobDragState.type === 'sync' && activeSettingsView === 'audio'
+                        ? (1 / 6000)
+                        : 0.001;
+                    const acceleration = relativeSpeed <= 0.20
+                        ? 1
+                        : Math.min(10, 1 + ((relativeSpeed - 0.20) * 7.5));
+                    knobDragState.precision.value = Math.max(0, Math.min(1,
+                        knobDragState.precision.value + (relativePixels * baseSensitivity * acceleration)
+                    ));
+                }
+                knobDragState.precision.justStarted = false;
+                t = knobDragState.precision.value;
+            }
+            knobDragState.relativeValue = t;
             knobDragState.lastRawT = rawT;
+            knobDragState.lastSemanticT = t;
+            knobDragState.lastX = event.clientX;
+            knobDragState.lastY = event.clientY;
+            knobDragState.lastMoveAt = now;
             applyKnobStateFromT(knobDragState.type, t);
         }
 
         function handlePointerUp(event){
+            if(arrowPointerState && event.pointerId === arrowPointerState.pointerId && event.button === arrowPointerState.button){
+                const elapsed = performance.now() - arrowPointerState.downAt;
+                const shouldStep = !arrowPointerState.orbiting
+                    && elapsed <= 320
+                    && arrowPointerState.moved <= 7;
+                if(shouldStep) applyArrowStep(arrowPointerState.action, arrowPointerState.button);
+                arrowPointerState = null;
+                try{ settingsControllerCanvas.releasePointerCapture(event.pointerId); }catch(e){}
+                if(controls) setUserCameraControlsEnabled(true);
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
             if(event.button === 0 && knobDragState){
                 if(!knobDragState.isDragging){
                     const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
@@ -3909,8 +4576,11 @@ enabled: ${!!cameraAction?.enabled}`;
                     applyKnobStateFromT(knobDragState.type, t);
                 }
                 knobDragState = null;
+                settingsControllerScene.classList.remove('is-precision-adjusting');
+                if(document.pointerLockElement === settingsControllerCanvas) document.exitPointerLock?.();
+                try{ settingsControllerCanvas.releasePointerCapture(event.pointerId); }catch(e){}
                 if(controls){
-                    controls.enabled = true;
+                    setUserCameraControlsEnabled(true);
                 }
             }
             if(event.button !== 1) return;
@@ -3955,27 +4625,44 @@ enabled: ${!!cameraAction?.enabled}`;
             middlePointerState = null;
         }
 
+        function handlePointerCancel(event){
+            if(arrowPointerState?.pointerId === event.pointerId){
+                arrowPointerState = null;
+                if(controls) setUserCameraControlsEnabled(true);
+            }
+            if(knobDragState){
+                knobDragState = null;
+                settingsControllerScene.classList.remove('is-precision-adjusting');
+                if(document.pointerLockElement === settingsControllerCanvas) document.exitPointerLock?.();
+                if(controls) setUserCameraControlsEnabled(true);
+            }
+            if(controls) controls.enablePan = false;
+            middlePointerState = null;
+        }
+
             settingsControllerCanvas.addEventListener('pointerdown', handlePointerDown, { capture: true });
             settingsControllerCanvas.addEventListener('pointerup', handlePointerUp);
-            settingsControllerCanvas.addEventListener('pointercancel', handlePointerUp);
+            settingsControllerCanvas.addEventListener('pointercancel', handlePointerCancel);
             settingsControllerCanvas.addEventListener('pointermove', handlePointerMove);
+            settingsControllerCanvas.addEventListener('pointerleave', () => setControllerHoverHint(''));
             settingsControllerCanvas.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
             });
             document.addEventListener('keydown', (event)=>{
-                if(event.repeat) return;
                 if(event.target && /input|textarea|select/i.test(event.target.tagName)) return;
                 const key = event.key.toLowerCase();
                 if(key === 'a'){
-                    const started = setAccessibilityView({ triggerEmissive: false });
-                    if(started){
-                        playEmissionActions(-1);
-                    }
+                    if(event.repeat) return;
+                    selectMode('audio');
                 }else if(key === 'v'){
-                    const started = setAudioView({ triggerEmissive: false });
-                    if(started){
-                        playEmissionActions(1);
-                    }
+                    if(event.repeat) return;
+                    selectMode('visuals');
+                }else if(key === 'arrowleft' || key === 'arrowright'){
+                    event.preventDefault();
+                    applyKeyboardStep('sync', key === 'arrowright' ? 1 : -1, event.shiftKey);
+                }else if(key === 'arrowup' || key === 'arrowdown'){
+                    event.preventDefault();
+                    applyKeyboardStep('vol', key === 'arrowup' ? 1 : -1, event.shiftKey);
                 }
             });
 
@@ -3988,18 +4675,20 @@ enabled: ${!!cameraAction?.enabled}`;
             settingsControllerBridge.controls = controls;
             settingsControllerBridge.canvas = settingsControllerCanvas;
             settingsControllerBridge.updateKnobTransformsFromState = updateKnobTransformsFromState;
-            if(!contrastLockPose){
-                storeContrastLockPose();
-            }
-            forceLuxAndContrastRight();
+            applyModeButtonAppearance();
             updateKnobSidesLine();
             signalSettingsControllerReady();
         }, undefined, (error)=>{
-            console.warn("Settings controller GLB load failed", error);
+            console.warn(controllerModelLoaded
+                ? "Settings controller initialization failed"
+                : "Settings controller GLB load failed", error);
             if(settingsControllerStatus){
-                settingsControllerStatus.textContent = "Unable to load controller preview.";
+                settingsControllerStatus.textContent = controllerModelLoaded
+                    ? "Unable to initialize controller preview. Reload the page to try again."
+                    : "Unable to load controller preview. Check your connection and reload the page.";
             }
             settingsControllerScene.classList.remove('controller-loading');
+            settingsControllerScene.classList.remove('controller-ready');
             signalSettingsControllerReady();
         });
     }
@@ -4022,51 +4711,158 @@ enabled: ${!!cameraAction?.enabled}`;
     // WebAudio nodes
     let audioCtx = null;
     let mediaSource = null; // from jumpAudio
+    let syncVoiceSource = null;
+    let syncTicksSource = null;
+    let syncVoiceGain = null;
+    let syncTicksGain = null;
     let analyser = null;
     let delayNode = null;
     let destinationGain = null;
-    let suppressVolumeEvent = false;
     let vizPeakDb = -Infinity;
-    let vizPeakColor = '#2aa198';
+    let vizPeakColor = '#28a85b';
+    let vizPeakClipped = false;
+    let syncExerciseTimers = [];
 
     // State
     let currentVideoKey = 'counts';
-    let storedVolume = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '0.25');
-    let storedMuted = (localStorage.getItem(AUDIO_MUTED_KEY) === 'true');
+    let storedVolume = parseFloat(localPreferences.getItem(AUDIO_VOLUME_KEY) || '0.25');
+    let storedMuted = (localPreferences.getItem(AUDIO_MUTED_KEY) === 'true');
     let welcomeJingle = null;
-    // default sync to 270 ms if nothing stored
-    let storedSync = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '270', 10);
+    let storedSync = parseInt(localPreferences.getItem(AUDIO_SYNC_KEY) || '0', 10);
     let isOrchestrating = false;
+    let jumpPlaybackRateIndex = SHARED_PLAYBACK_RATES.indexOf(1);
+    if(jumpPlaybackRateIndex < 0) jumpPlaybackRateIndex = 0;
+    let jumpPreservePitch = getStoredPreservePitch();
 
     // Initialize UI values
     syncSlider.value = storedSync;
     if(modalSync) modalSync.value = storedSync;
     syncDisplay.textContent = `Sync: ${storedSync} ms`;
 
-    function showPermissionIfNeeded(){
-        const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY);
-        if(allowed === null){
-            permModal.classList.add('hidden');
-            permModal.style.display = 'none';
-        }
+    function askControllerPermission(stage, title, message){
+        controllerFlow.stage = stage;
+        settingsControllerBridge.renderScreen?.();
+        const titleEl = document.getElementById('permTitle');
+        const messageEl = permModal?.querySelector('p');
+        if(titleEl) titleEl.textContent = title;
+        if(messageEl) messageEl.textContent = message;
+        if(permAllow) permAllow.textContent = 'Yes';
+        if(permDeny) permDeny.textContent = 'No';
+        permModal.classList.remove('hidden');
+        permModal.style.display = '';
+        return new Promise((resolve) => {
+            let settled = false;
+            const finish = (value) => {
+                if(settled) return;
+                settled = true;
+                permAllow.removeEventListener('click', allow);
+                permDeny.removeEventListener('click', deny);
+                controllerFlow.resolvePrompt = null;
+                permModal.classList.add('hidden');
+                permModal.style.display = 'none';
+                resolve(!!value);
+            };
+            const allow = () => finish(true);
+            const deny = () => finish(false);
+            controllerFlow.resolvePrompt = finish;
+            permAllow.addEventListener('click', allow);
+            permDeny.addEventListener('click', deny);
+            window.setTimeout(() => permAllow.focus(), 0);
+        });
     }
 
-    function applyAudioPermission(allowed){
-        localStorage.setItem(AUDIO_ALLOWED_KEY, allowed ? 'true' : 'false');
+    let onboardingPromise = null;
+
+    function waitForLocalReviewGesture(){
+        return new Promise((resolve) => {
+            const finish = () => {
+                document.removeEventListener('pointerdown', onPointerDown, true);
+                document.removeEventListener('keydown', onKeyDown, true);
+                controllerFlow.soundAllowed = true;
+                applyAudioPermission(true, { persist: false });
+                playWelcomeJingle(true);
+                resolve();
+            };
+            const onPointerDown = () => finish();
+            const onKeyDown = (event) => {
+                if(event.key === 'Enter' || event.key === ' ') finish();
+            };
+            document.addEventListener('pointerdown', onPointerDown, { once: true, capture: true });
+            document.addEventListener('keydown', onKeyDown, { capture: true });
+        });
+    }
+
+    function showPermissionIfNeeded(){
+        if(onboardingPromise) return onboardingPromise;
+        onboardingPromise = (async () => {
+            if(isLocalReview){
+                controllerFlow.animationAllowed = true;
+                controllerFlow.soundAllowed = null;
+                controllerFlow.stage = 'gallery';
+                permModal.classList.add('hidden');
+                permModal.style.display = 'none';
+                settingsControllerBridge.renderScreen?.();
+
+                // The first real interaction provides the browser gesture needed
+                // to resume Web Audio. Review choices remain session-only, and
+                // the opening camera sequence is skipped without disabling the
+                // controller's later mode/button animations.
+                await waitForLocalReviewGesture();
+                await settingsControllerBridge.ready;
+                settingsControllerBridge.finishOnboarding?.(false);
+                settingsControllerBridge.selectMode?.(localReviewStartMode, { triggerEmissive: false });
+                settingsControllerBridge.renderScreen?.();
+                return { soundAllowed: true, animationAllowed: true, review: true };
+            }
+
+            // Both choices are per-visit gates and are mirrored on the GLB
+            // screen. Ask about motion first, but do not start it until sound has
+            // also been explicitly accepted or rejected.
+            const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+            const animationAllowed = await askControllerPermission(
+                'motion',
+                'Allow animation?',
+                reduced
+                    ? 'Your device prefers reduced motion. Allow the optional controller and camera animation anyway?'
+                    : 'Allow the optional controller and camera introduction animation?'
+            );
+            localPreferences.setItem(ANIMATION_ALLOWED_KEY, String(animationAllowed));
+            controllerFlow.animationAllowed = animationAllowed;
+
+            const soundAllowed = await askControllerPermission(
+                'sound',
+                'Allow sound?',
+                'Allow sound for the paired sample-video audio? No media will start automatically.'
+            );
+            controllerFlow.soundAllowed = soundAllowed;
+            applyAudioPermission(soundAllowed);
+            await settingsControllerBridge.ready;
+            controllerFlow.stage = 'gallery';
+            if(soundAllowed) playWelcomeJingle(true);
+            settingsControllerBridge.finishOnboarding?.(animationAllowed);
+            settingsControllerBridge.renderScreen?.();
+            return { soundAllowed, animationAllowed };
+        })();
+        return onboardingPromise;
+    }
+
+    function applyAudioPermission(allowed, options = {}){
+        const persist = options.persist !== false;
+        if(persist) setAudioConsentAllowed(allowed);
         if(allowed){
-            localStorage.setItem(AUDIO_MUTED_KEY, 'false');
+            if(persist) localPreferences.setItem(AUDIO_MUTED_KEY, 'false');
             storedMuted = false;
             if(!Number.isFinite(storedVolume)){
                 storedVolume = 0.25;
             }
-            localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+            if(persist) localPreferences.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
             ensureAudioRouting();
             applyVolumeAndMuted();
             if(audioCtx){
                 audioCtx.resume().catch(()=>{});
             }
         }else{
-            localStorage.setItem(AUDIO_MUTED_KEY, 'true');
+            if(persist) localPreferences.setItem(AUDIO_MUTED_KEY, 'true');
             storedMuted = true;
             applyVolumeAndMuted();
         }
@@ -4074,26 +4870,33 @@ enabled: ${!!cameraAction?.enabled}`;
         permModal.style.display = 'none';
     }
 
-    permAllow.addEventListener('click', async ()=>{
-        applyAudioPermission(true);
-    });
-    permDeny.addEventListener('click', ()=>{
-        applyAudioPermission(false);
-    });
-
     // Create audio context and routing to apply delay to audio and visualizer
     function ensureAudioRouting(){
         if(audioCtx) return;
+        if(!controllerFlow.soundAllowed) return;
         try{
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             mediaSource = audioCtx.createMediaElementSource(jumpAudio);
             analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 256;
+            analyser.fftSize = 1024;
             delayNode = audioCtx.createDelay(3.0); // max 3s
             destinationGain = audioCtx.createGain();
+            syncVoiceSource = audioCtx.createMediaElementSource(syncVoiceAudio);
+            syncTicksSource = audioCtx.createMediaElementSource(syncTicksAudio);
+            syncVoiceGain = audioCtx.createGain();
+            syncTicksGain = audioCtx.createGain();
+            syncVoiceGain.gain.value = 1;
+            syncTicksGain.gain.value = 0.48;
             // route: mediaSource -> delayNode -> destinationGain -> analyser -> audioCtx.destination
             mediaSource.connect(delayNode);
             delayNode.connect(destinationGain);
+            // Calibration assets remain separate so voice/tick balance can be
+            // tuned independently. They bypass the user's current sync delay:
+            // the exercise measures a fresh system latency estimate.
+            syncVoiceSource.connect(syncVoiceGain);
+            syncTicksSource.connect(syncTicksGain);
+            syncVoiceGain.connect(destinationGain);
+            syncTicksGain.connect(destinationGain);
             destinationGain.connect(analyser);
             analyser.connect(audioCtx.destination);
             applySyncValue(storedSync);
@@ -4103,6 +4906,10 @@ enabled: ${!!cameraAction?.enabled}`;
             // WebAudio not supported or blocked
             audioCtx = null;
             mediaSource = null;
+            syncVoiceSource = null;
+            syncTicksSource = null;
+            syncVoiceGain = null;
+            syncTicksGain = null;
             analyser = null;
             delayNode = null;
             destinationGain = null;
@@ -4116,7 +4923,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
     function applySyncValue(ms){
         storedSync = parseInt(ms, 10) || 0;
-        localStorage.setItem(AUDIO_SYNC_KEY, String(storedSync));
+        localPreferences.setItem(AUDIO_SYNC_KEY, String(storedSync));
         syncDisplay.textContent = `Sync: ${storedSync} ms`;
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState();
@@ -4131,28 +4938,38 @@ enabled: ${!!cameraAction?.enabled}`;
         const audioDelaySec = Math.max(0, storedSync/1000);
         delayNode.delayTime.value = audioDelaySec;
         if(isPlaying) syncWhilePlaying();
+        syncAccessibleControllerUI();
     }
 
     function applyVolumeAndMuted(){
+        const permissionMuted = !controllerFlow.soundAllowed;
+        const effectivelyMuted = permissionMuted || storedMuted;
         // When WebAudio available use gain node and keep native element muted to avoid double audio.
         if(destinationGain){
-            destinationGain.gain.value = storedMuted ? 0 : storedVolume;
+            destinationGain.gain.value = effectivelyMuted ? 0 : storedVolume;
             try{ jumpAudio.muted = false; }catch(e){}
-            try{
-                suppressVolumeEvent = true;
-                jumpVideo.muted = true;
-            }catch(e){} finally { suppressVolumeEvent = false; }
+            try{ syncVoiceAudio.muted = false; syncTicksAudio.muted = false; }catch(e){}
+            try{ jumpVideo.muted = true; }catch(e){}
         }else{
-            try{ jumpAudio.muted = false; jumpVideo.muted = storedMuted; jumpVideo.volume = storedVolume; }catch(e){}
+            try{
+                jumpVideo.muted = true;
+                jumpAudio.muted = effectivelyMuted;
+                jumpAudio.volume = storedVolume;
+            }catch(e){}
         }
-        // persist
-        localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
-        localStorage.setItem(AUDIO_MUTED_KEY, storedMuted ? 'true':'false');
+        if(permissionMuted){
+            try{ jumpAudio.pause(); }catch(e){}
+            try{ syncVoiceAudio.pause(); syncTicksAudio.pause(); }catch(e){}
+        }
+        if(!isLocalReview){
+            localPreferences.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
+            localPreferences.setItem(AUDIO_MUTED_KEY, storedMuted ? 'true':'false');
+        }
         updateVolumeUI();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState();
         }
-        resetPeakHold();
+        syncAccessibleControllerUI();
     }
 
     function updateVolumeUI(){
@@ -4162,6 +4979,133 @@ enabled: ${!!cameraAction?.enabled}`;
         if(volumeDisplay){
             volumeDisplay.textContent = `Volume: ${Math.round(storedVolume * 100)}%`;
         }
+    }
+
+    function applyJumpPlaybackSettings(){
+        const rate = SHARED_PLAYBACK_RATES[Math.max(0, Math.min(SHARED_PLAYBACK_RATES.length - 1, jumpPlaybackRateIndex))] || 1;
+        try{ jumpVideo.playbackRate = rate; }catch(e){}
+        try{ jumpAudio.playbackRate = rate; }catch(e){}
+        setPreservePitchFlag(jumpVideo, jumpPreservePitch);
+        setPreservePitchFlag(jumpAudio, jumpPreservePitch);
+    }
+
+    function setupJumpSharedControls(){
+        if(!videoWrapper || !jumpVideo) return null;
+        try{ jumpVideo.controls = false; jumpVideo.removeAttribute('controls'); }catch(e){}
+        const controlsCanvas = document.createElement('canvas');
+        controlsCanvas.className = 'jump-video-controls';
+        controlsCanvas.setAttribute('aria-hidden', 'true');
+        videoWrapper.appendChild(controlsCanvas);
+        const controlsCtx = controlsCanvas.getContext('2d');
+        const ui = createVideoControlsUI();
+        ui.setViewportRectProvider(() => {
+            const rect = videoWrapper.getBoundingClientRect();
+            return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        });
+        const resizeControlsCanvas = () => {
+            const rect = videoWrapper.getBoundingClientRect();
+            const dpr = Math.min(window.devicePixelRatio || 1, 2);
+            const w = Math.max(1, Math.round(rect.width * dpr));
+            const h = Math.max(1, Math.round(rect.height * dpr));
+            if(controlsCanvas.width !== w || controlsCanvas.height !== h){
+                controlsCanvas.width = w;
+                controlsCanvas.height = h;
+            }
+            controlsCanvas.style.width = `${Math.max(1, Math.round(rect.width))}px`;
+            controlsCanvas.style.height = `${Math.max(1, Math.round(rect.height))}px`;
+        };
+        const getTitle = () => {
+            const media = MEDIA[currentVideoKey];
+            return media?.label || (currentVideoKey === 'alphabet' ? 'Alphabet A-B-C' : 'Numbers 1-2-3');
+        };
+        const setJumpVolume = (volume) => {
+            storedVolume = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
+            storedMuted = storedVolume <= 0.001;
+            resumeAudioContext();
+            applyVolumeAndMuted();
+        };
+        const toggleJumpMute = () => {
+            storedMuted = !storedMuted;
+            if(!storedMuted && storedVolume <= 0.001) storedVolume = 0.25;
+            resumeAudioContext();
+            applyVolumeAndMuted();
+        };
+        ui.onAction = (action) => {
+            if(!action || !action.type) return;
+            if(action.type === 'togglePlay'){
+                if(jumpVideo.paused) jumpVideo.play().catch(()=>{});
+                else jumpVideo.pause();
+            }else if(action.type === 'seekToRatio'){
+                const duration = Number.isFinite(jumpVideo.duration) ? jumpVideo.duration : 0;
+                if(duration > 0){
+                    try{ jumpVideo.currentTime = duration * Math.max(0, Math.min(1, action.ratio || 0)); }catch(e){}
+                }
+            }else if(action.type === 'toggleMute'){
+                toggleJumpMute();
+            }else if(action.type === 'setVolume'){
+                setJumpVolume(action.volume);
+            }else if(action.type === 'cyclePlaybackRate'){
+                jumpPlaybackRateIndex = (jumpPlaybackRateIndex + 1) % SHARED_PLAYBACK_RATES.length;
+                applyJumpPlaybackSettings();
+            }else if(action.type === 'togglePitch'){
+                jumpPreservePitch = setStoredPreservePitch(!jumpPreservePitch);
+                applyJumpPlaybackSettings();
+            }else if(action.type === 'setSyncMs'){
+                applySyncValue(action.value);
+                if(syncSlider) syncSlider.value = String(storedSync);
+                if(modalSync) modalSync.value = String(storedSync);
+            }
+        };
+        controlsCanvas.addEventListener('pointerdown', (event) => {
+            if(event.button !== 0) return;
+            resizeControlsCanvas();
+            const handled = ui.handlePointerEvent(event, {
+                canvasWidth: controlsCanvas.width,
+                canvasHeight: controlsCanvas.height
+            });
+            if(!handled){
+                if(jumpVideo.paused) jumpVideo.play().catch(()=>{});
+                else jumpVideo.pause();
+            }
+            event.preventDefault();
+            event.stopPropagation();
+        });
+        controlsCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
+        const draw = () => {
+            resizeControlsCanvas();
+            const rate = SHARED_PLAYBACK_RATES[Math.max(0, Math.min(SHARED_PLAYBACK_RATES.length - 1, jumpPlaybackRateIndex))] || 1;
+            ui.setState({
+                title: getTitle(),
+                playing: !jumpVideo.paused && !jumpVideo.ended,
+                muted: storedMuted,
+                volume: storedMuted ? 0 : storedVolume,
+                currentTime: Number.isFinite(jumpVideo.currentTime) ? jumpVideo.currentTime : 0,
+                duration: Number.isFinite(jumpVideo.duration) ? jumpVideo.duration : 0,
+                playbackRate: rate,
+                canPlay: !!(jumpVideo.currentSrc || jumpVideo.querySelector('source')),
+                canSeek: Number.isFinite(jumpVideo.duration) && jumpVideo.duration > 0,
+                preservePitch: jumpPreservePitch,
+                syncMs: Number.isFinite(storedSync) ? storedSync : 0,
+                controls: {
+                    exit: false,
+                    play: true,
+                    mute: true,
+                    volume: true,
+                    seek: Number.isFinite(jumpVideo.duration) && jumpVideo.duration > 0,
+                    speed: true,
+                    pitch: true,
+                    sync: true,
+                    tablet: false
+                }
+            });
+            controlsCtx.clearRect(0, 0, controlsCanvas.width, controlsCanvas.height);
+            ui.draw(controlsCtx, { alpha: 1 });
+            requestAnimationFrame(draw);
+        };
+        applyJumpPlaybackSettings();
+        requestAnimationFrame(draw);
+        window.addEventListener('resize', resizeControlsCanvas);
+        return ui;
     }
 
     function playWelcomeJingle(forceUnmute = false){
@@ -4187,12 +5131,125 @@ enabled: ${!!cameraAction?.enabled}`;
 
     function resetPeakHold(){
         vizPeakDb = -Infinity;
-        vizPeakColor = '#2aa198';
+        vizPeakColor = '#28a85b';
+        vizPeakClipped = false;
+        settingsControllerBridge.updateAudioMeter?.({ level: 0, peak: 0, clipped: false, peakClipped: false });
+    }
+
+    function clearSyncExerciseTimers(){
+        syncExerciseTimers.forEach((timerId) => window.clearTimeout(timerId));
+        syncExerciseTimers = [];
+    }
+
+    function stopSyncExerciseAudio(){
+        try{ syncVoiceAudio.pause(); syncVoiceAudio.currentTime = 0; }catch(e){}
+        try{ syncTicksAudio.pause(); syncTicksAudio.currentTime = 0; }catch(e){}
+    }
+
+    function resetSyncExercise(){
+        clearSyncExerciseTimers();
+        stopSyncExerciseAudio();
+        const exercise = controllerFlow.syncExercise;
+        exercise.active = false;
+        exercise.startedAt = 0;
+        exercise.taps = [];
+        exercise.litCount = 0;
+        exercise.litLines = new Set();
+        exercise.result = '';
+        exercise.runId = (exercise.runId || 0) + 1;
+        controllerFlow.stage = 'gallery';
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+    }
+
+    function startSyncExercise(){
+        if(!controllerFlow.soundAllowed){
+            controllerFlow.syncExercise.result = 'SOUND MUST BE ENABLED TO SYNC';
+            controllerFlow.stage = 'sync-running';
+            settingsControllerBridge.renderScreen?.();
+            syncAccessibleControllerUI();
+            return;
+        }
+        clearSyncExerciseTimers();
+        stopSyncExerciseAudio();
+        ensureAudioRouting();
+        resumeAudioContext();
+        resetPeakHold();
+        settingsControllerBridge.selectMode?.('audio');
+        const exercise = controllerFlow.syncExercise;
+        exercise.active = true;
+        exercise.startedAt = performance.now();
+        exercise.taps = [];
+        exercise.litCount = 0;
+        exercise.litLines = new Set();
+        exercise.result = '';
+        exercise.runId = (exercise.runId || 0) + 1;
+        const runId = exercise.runId;
+        controllerFlow.stage = 'sync-running';
+        const markPlaybackOrigin = () => {
+            if(exercise.runId !== runId) return;
+            exercise.startedAt = performance.now() - ((syncVoiceAudio.currentTime || 0) * 1000);
+        };
+        syncVoiceAudio.addEventListener('playing', markPlaybackOrigin, { once: true });
+        try{ syncVoiceAudio.currentTime = 0; syncTicksAudio.currentTime = 0; }catch(e){}
+        Promise.all([syncVoiceAudio.play(), syncTicksAudio.play()]).catch(() => {
+            if(exercise.runId !== runId) return;
+            exercise.active = false;
+            exercise.result = 'AUDIO COULD NOT START - TRY AGAIN';
+            settingsControllerBridge.renderScreen?.();
+            syncAccessibleControllerUI();
+        });
+        const endTimerId = window.setTimeout(() => {
+            if(exercise.runId !== runId || !exercise.active) return;
+            exercise.active = false;
+            exercise.result = 'MISSED A CUE - TRY AGAIN';
+            settingsControllerBridge.renderScreen?.();
+            syncAccessibleControllerUI();
+        }, 7600);
+        syncExerciseTimers.push(endTimerId);
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+    }
+
+    function registerSyncExerciseTap(){
+        const exercise = controllerFlow.syncExercise;
+        const index = exercise.taps.length;
+        if(!exercise.active || index >= SYNC_WORDS.length) return;
+        const observedOffset = performance.now()
+            - exercise.startedAt
+            - SYNC_CUE_OFFSETS_MS[index]
+            - SYNC_REACTION_ALLOWANCE_MS;
+        exercise.taps.push(observedOffset);
+        exercise.litCount = index + 1;
+        const runId = exercise.runId;
+        if(index < SYNC_WORDS.length - 1){
+            const timerId = window.setTimeout(() => {
+                if(exercise.runId !== runId) return;
+                exercise.litLines.add(index);
+                settingsControllerBridge.renderScreen?.();
+            }, SYNC_BEAT_MS);
+            syncExerciseTimers.push(timerId);
+        }
+        if(exercise.taps.length === SYNC_WORDS.length){
+            exercise.active = false;
+            const sorted = [...exercise.taps].sort((a, b) => a - b);
+            const medianOffset = sorted[Math.floor(sorted.length / 2)];
+            const calibratedSync = Math.max(-3000, Math.min(3000, Math.round(-medianOffset)));
+            applySyncValue(calibratedSync);
+            exercise.result = Math.abs(calibratedSync) < 5
+                ? 'SYNCED NEAR 0 MS'
+                : `ESTIMATED ${calibratedSync > 0 ? '+' : ''}${calibratedSync} MS OFFSET`;
+        }
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
     }
 
     function loadVideo(key){
         currentVideoKey = key;
+        controllerFlow.selectedMedia = key;
         const media = MEDIA[key];
+        if(!media) return;
+        resetPeakHold();
         // Pause both
         jumpVideo.pause();
         jumpAudio.pause();
@@ -4207,90 +5264,113 @@ enabled: ${!!cameraAction?.enabled}`;
         jumpVideo.load();
         jumpAudio.load();
 
-        // Recreate audio routing to new element
-        if(audioCtx){
-            try{ mediaSource.disconnect(); }catch(e){}
-            try{ analyser.disconnect(); }catch(e){}
-            try{ delayNode.disconnect(); }catch(e){}
-            try{ destinationGain.disconnect(); }catch(e){}
-            try{ mediaSource = audioCtx.createMediaElementSource(jumpAudio); mediaSource.connect(delayNode); }catch(e){}
-            try{ delayNode.connect(destinationGain); destinationGain.connect(analyser); analyser.connect(audioCtx.destination); }catch(e){}
-        }
+        // The MediaElementSource is created once for jumpAudio and remains
+        // connected while its source URL changes.
         // apply persisted settings
         applyVolumeAndMuted();
         applySyncValue(storedSync);
+        applyJumpPlaybackSettings();
+        if(tabNumbers && tabAlphabet){
+            const counts = key === 'counts';
+            tabNumbers.classList.toggle('active', counts);
+            tabAlphabet.classList.toggle('active', !counts);
+            tabNumbers.setAttribute('aria-selected', String(counts));
+            tabAlphabet.setAttribute('aria-selected', String(!counts));
+        }
     }
 
-    function preloadMedia(){
-        Object.values(MEDIA).forEach((media)=>{
-            const preloadVideo = document.createElement('video');
-            preloadVideo.preload = 'auto';
-            preloadVideo.src = media.video;
-            preloadVideo.load();
+    jumpVideo.addEventListener('loadeddata', () => settingsControllerBridge.renderScreen?.());
+    jumpVideo.addEventListener('error', () => {
+        setTabInfo('This sample could not be loaded. Choose the other clip or retry.');
+        settingsControllerStatus && (settingsControllerStatus.textContent = 'Sample video unavailable; choose another clip.');
+    });
+    jumpAudio.addEventListener('error', () => {
+        if(controllerFlow.soundAllowed) setTabInfo('Video is available, but its paired audio could not be loaded.');
+    });
 
-            const preloadAudio = document.createElement('audio');
-            preloadAudio.preload = 'auto';
-            preloadAudio.src = media.audio;
-            preloadAudio.load();
+    function preloadMedia(){
+        Object.entries(MEDIA).forEach(([key, media])=>{
+            const image = new Image();
+            image.onload = () => {
+                controllerFlow.thumbnails.set(key, image);
+                settingsControllerBridge.renderScreen?.();
+            };
+            image.onerror = () => setTabInfo(`Thumbnail unavailable for ${media.label}.`);
+            image.src = media.thumbnail;
         });
     }
 
     // Orchestrate playback so sync offset works both positive and negative
     let isPlaying = false;
-    // Whether orchestration (separate audio element + WebAudio) is available and should be used.
-    let orchestrationSupported = true;
+    let audioStartTimer = null;
+    function seekAudioForVideoTime(videoTime){
+        const base = Math.max(0, Number(videoTime) || 0);
+        const target = storedSync < 0 ? base + Math.abs(storedSync) / 1000 : base;
+        try{
+            const duration = Number.isFinite(jumpAudio.duration) ? jumpAudio.duration : 0;
+            jumpAudio.currentTime = duration ? Math.min(target, Math.max(0, duration - 0.01)) : target;
+        }catch(e){}
+    }
     function startAudioForVideoPlayback(){
+        if(!controllerFlow.soundAllowed){
+            try{ jumpAudio.pause(); }catch(e){}
+            return;
+        }
         ensureAudioRouting();
         resumeAudioContext();
         const sync = storedSync;
         const ct = jumpVideo.currentTime || 0;
         if(sync >= 0){
-            if(jumpAudio.readyState >= 1){
-                try{ jumpAudio.currentTime = ct; }catch(e){}
-            }
+            if(jumpAudio.readyState >= 1) seekAudioForVideoTime(ct);
             if(delayNode) delayNode.delayTime.value = sync / 1000;
         }else{
             if(delayNode) delayNode.delayTime.value = 0;
             const audioOffset = Math.abs(sync) / 1000;
             if(jumpAudio.readyState >= 1){
-                try{ jumpAudio.currentTime = ct + audioOffset; }catch(e){}
+                seekAudioForVideoTime(ct);
             }
         }
-        jumpAudio.play().catch(()=>{
-            // Allow video-only playback if audio is blocked.
-            orchestrationSupported = false;
-        });
+        if(audioStartTimer) clearTimeout(audioStartTimer);
+        const nativeDelay = !delayNode && sync > 0 ? sync : 0;
+        audioStartTimer = window.setTimeout(() => jumpAudio.play().catch(() => {
+            setTabInfo('Video is playing without sound. Interact with the page and try again.');
+        }), nativeDelay);
     }
 
     // When user presses the visible video's play control, intercept and orchestrate (if supported)
     jumpVideo.addEventListener('play', (e)=>{
-        if(!orchestrationSupported){
-            // allow native playback
-            isPlaying = true;
-            return;
-        }
         startAudioForVideoPlayback();
         isPlaying = true;
+        syncAccessibleControllerUI();
     });
     jumpVideo.addEventListener('pause', ()=>{
+        if(audioStartTimer){ clearTimeout(audioStartTimer); audioStartTimer = null; }
         if(isPlaying){
             try{ jumpAudio.pause(); }catch(e){}
             isPlaying = false;
         }
+        syncAccessibleControllerUI();
     });
 
     // When user seeks using visible video's UI, update audio currentTime
     jumpVideo.addEventListener('seeked', ()=>{
-        try{ jumpAudio.currentTime = jumpVideo.currentTime; }catch(e){}
+        seekAudioForVideoTime(jumpVideo.currentTime);
+    });
+    jumpVideo.addEventListener('ended', () => {
+        if(audioStartTimer){ clearTimeout(audioStartTimer); audioStartTimer = null; }
+        try{ jumpAudio.pause(); }catch(e){}
+        isPlaying = false;
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
     });
 
     // If sync changes while playing, adjust without restarting.
     function syncWhilePlaying(){
-        if(!isPlaying || !orchestrationSupported) return;
+        if(!isPlaying || !controllerFlow.soundAllowed) return;
         const ct = jumpVideo.currentTime || 0;
         if(storedSync >= 0){
             if(delayNode) delayNode.delayTime.value = storedSync / 1000;
-            try{ jumpAudio.currentTime = ct; }catch(e){}
+            seekAudioForVideoTime(ct);
         }else{
             if(delayNode) delayNode.delayTime.value = 0;
             const audioOffset = Math.abs(storedSync) / 1000;
@@ -4307,41 +5387,51 @@ enabled: ${!!cameraAction?.enabled}`;
     function startVisualizer(){
         if(!analyser || !canvasCtx) return;
         const bufferLength = analyser.fftSize;
-        const dataArray = new Uint8Array(bufferLength);
+        const dataArray = new Float32Array(bufferLength);
         const width = canvas.width;
         const height = canvas.height;
         const minDb = -54;
         const maxDb = 0;
         const silentThreshold = minDb;
+        let smoothedNorm = 0;
+        let previousFrameAt = performance.now();
 
         function draw(){
-            analyser.getByteTimeDomainData(dataArray);
+            analyser.getFloatTimeDomainData(dataArray);
             let peak = 0;
             for(let i=0;i<dataArray.length;i++){
-                const centered = (dataArray[i] - 128) / 128;
-                const abs = Math.abs(centered);
+                const abs = Math.abs(dataArray[i]);
                 if(abs > peak) peak = abs;
             }
             const db = peak > 0 ? 20 * Math.log10(peak) : -Infinity;
             const isSilent = !(Number.isFinite(db)) || db <= silentThreshold;
             const clampedDb = isSilent ? minDb : Math.max(minDb, Math.min(maxDb, db));
             const norm = (clampedDb - minDb) / (maxDb - minDb);
-            const level = norm * height;
+            const frameAt = performance.now();
+            const frameMs = Math.max(1, Math.min(80, frameAt - previousFrameAt));
+            previousFrameAt = frameAt;
+            const responseMs = norm > smoothedNorm ? 42 : 190;
+            const smoothing = 1 - Math.exp(-frameMs / responseMs);
+            smoothedNorm += (norm - smoothedNorm) * smoothing;
+            if(smoothedNorm < 0.001 && isSilent) smoothedNorm = 0;
+            const level = smoothedNorm * height;
 
-            let meterColor = '#2aa198';
-            if(db > -6){
-                meterColor = '#e44b4b';
-            }else if(db > -18){
-                meterColor = '#e3c14a';
-            }
+            const isClipped = peak >= 0.999;
+            const meterColor = isClipped ? '#e3293f' : '#123b29';
+            if(isClipped) vizPeakClipped = true;
 
             if(!isSilent && db > vizPeakDb){
                 vizPeakDb = db;
-                vizPeakColor = meterColor;
+                vizPeakColor = vizPeakClipped ? '#ff293f' : '#28a85b';
             }
 
             canvasCtx.clearRect(0,0,width,height);
-            canvasCtx.fillStyle = meterColor;
+            const meterGradient = canvasCtx.createLinearGradient(0, 0, width, 0);
+            meterGradient.addColorStop(0, 'rgba(18,59,41,0)');
+            meterGradient.addColorStop(0.18, meterColor);
+            meterGradient.addColorStop(0.82, meterColor);
+            meterGradient.addColorStop(1, 'rgba(18,59,41,0)');
+            canvasCtx.fillStyle = meterGradient;
             canvasCtx.fillRect(0, height - level, width, level);
 
                 if(Number.isFinite(vizPeakDb)){
@@ -4351,6 +5441,16 @@ enabled: ${!!cameraAction?.enabled}`;
                 canvasCtx.fillStyle = vizPeakColor;
                 canvasCtx.fillRect(0, Math.max(0, peakY - 1), width, 2);
             }
+
+            const peakClamped = Number.isFinite(vizPeakDb)
+                ? Math.max(minDb, Math.min(maxDb, vizPeakDb))
+                : minDb;
+            settingsControllerBridge.updateAudioMeter?.({
+                level: smoothedNorm,
+                peak: (peakClamped - minDb) / (maxDb - minDb),
+                clipped: isClipped,
+                peakClipped: vizPeakClipped
+            });
 
             if(vizDb){
                 if(isSilent){
@@ -4373,19 +5473,11 @@ enabled: ${!!cameraAction?.enabled}`;
         const focusOutline = document.getElementById('a11y_focus_outlines').checked ? 'always':'auto';
         try{ window.SiteA11y.set({ reducedMotion, highContrast, textScale, focusOutline }); }catch(e){}
 
-        a11ySection.style.display = 'none';
-        jumpContainer.style.display = 'block';
-        topTabA11y.classList.remove('active');
-        topTabAudio.classList.add('active');
-        leadText.textContent = 'Please customize volume and audio sync for best comfort and accuracy.';
-
-        showPermissionIfNeeded();
-        loadVideo(currentVideoKey);
-        updateA11yDebugFlags();
+        showSaveConfirmation();
     });
 
     resetBtn.addEventListener('click', ()=>{
-        try { localStorage.removeItem('site.a11y.settings'); } catch {}
+        try { localPreferences.removeItem('site.a11y.settings'); } catch {}
         window.SiteA11y.apply(window.SiteA11y.get());
         hydrate();
         updateA11yDebugFlags();
@@ -4394,6 +5486,7 @@ enabled: ${!!cameraAction?.enabled}`;
     // Top tabs behavior
     topTabA11y.addEventListener('click', ()=>{
         topTabA11y.classList.add('active'); topTabAudio.classList.remove('active');
+        topTabA11y.setAttribute('aria-selected', 'true'); topTabAudio.setAttribute('aria-selected', 'false');
         a11ySection.style.display = 'block';
         jumpContainer.style.display = 'none';
         leadText.textContent = 'Letâ€™s tune a few preferences so the site works best for you.';
@@ -4403,10 +5496,10 @@ enabled: ${!!cameraAction?.enabled}`;
     });
     topTabAudio.addEventListener('click', ()=>{
         topTabAudio.classList.add('active'); topTabA11y.classList.remove('active');
+        topTabAudio.setAttribute('aria-selected', 'true'); topTabA11y.setAttribute('aria-selected', 'false');
         a11ySection.style.display = 'none';
         jumpContainer.style.display = 'block';
         leadText.textContent = 'Please customize volume and audio sync for best comfort and accuracy.';
-        loadVideo(currentVideoKey);
         showPermissionIfNeeded();
         if(settingsControllerBridge?.setAudioView){
             settingsControllerBridge.setAudioView();
@@ -4418,6 +5511,20 @@ enabled: ${!!cameraAction?.enabled}`;
             window.location.href = '_1-about/about.html';
         });
     }
+    if(returnGalleryBtn){
+        returnGalleryBtn.addEventListener('click', resetSyncExercise);
+    }
+    accessibleAudioMode?.addEventListener('click', () => settingsControllerBridge.selectMode?.('audio'));
+    accessibleVisualsMode?.addEventListener('click', () => settingsControllerBridge.selectMode?.('visuals'));
+    accessibleVolume?.addEventListener('input', (event) => setVolumeFromPercent(Number(event.target.value)));
+    accessibleSync?.addEventListener('input', (event) => applySyncValue(Number(event.target.value)));
+    accessibleBrightness?.addEventListener('input', (event) => applyLuxFromSource(Number(event.target.value) / 100, 'accessible'));
+    accessibleContrast?.addEventListener('input', (event) => applyEmiFromSource(Number(event.target.value) / 100, 'accessible'));
+    accessibleCounts?.addEventListener('click', startSyncExercise);
+    accessiblePlayPause?.addEventListener('click', registerSyncExerciseTap);
+    accessibleGallery?.addEventListener('click', resetSyncExercise);
+    accessibleConfirmYes?.addEventListener('click', () => resolveSaveConfirmation(true));
+    accessibleConfirmNo?.addEventListener('click', () => resolveSaveConfirmation(false));
 
     // Video tabs
     tabNumbers.addEventListener('click', ()=>{ tabNumbers.classList.add('active'); tabAlphabet.classList.remove('active'); loadVideo('counts'); });
@@ -4442,8 +5549,8 @@ enabled: ${!!cameraAction?.enabled}`;
         v = Math.max(-3000, Math.min(3000, v));
         syncSlider.value = v; applySyncValue(v);
     }
-    bindStepButton(syncLeft, -10, -50, changeSyncBy);
-    bindStepButton(syncRight, 10, 50, changeSyncBy);
+    bindStepButton(syncLeft, -5, -10, changeSyncBy);
+    bindStepButton(syncRight, 5, 10, changeSyncBy);
 
     // Volume arrows
     function changeVolumeBy(deltaPct){
@@ -4454,8 +5561,14 @@ enabled: ${!!cameraAction?.enabled}`;
     bindStepButton(volUp, 1, 5, changeVolumeBy);
 
     // Sliders input
-    syncSlider.addEventListener('input', (e)=>{ applySyncValue(e.target.value); if(modalSync) modalSync.value = e.target.value; });
-    if(modalSync) modalSync.addEventListener('input', (e)=>{ applySyncValue(e.target.value); syncSlider.value = e.target.value; });
+    syncSlider.addEventListener('input', (e)=>{
+        applySyncValue(e.target.value);
+        if(modalSync) modalSync.value = e.target.value;
+    });
+    if(modalSync) modalSync.addEventListener('input', (e)=>{
+        applySyncValue(e.target.value);
+        syncSlider.value = e.target.value;
+    });
     window.addEventListener('syncOffsetChanged', (e)=>{
         const ms = parseInt(e?.detail?.offsetMs, 10) || 0;
         storedSync = ms;
@@ -4464,17 +5577,8 @@ enabled: ${!!cameraAction?.enabled}`;
         syncDisplay.textContent = `Sync: ${ms} ms`;
         applySyncValue(ms);
     });
-    if(volumeSlider) volumeSlider.addEventListener('input', (e)=>{ setVolumeFromPercent(parseInt(e.target.value, 10)); });
-
-    // Capture native volume/mute changes on the video and persist them across pages
-    // Note: users will use visible video's controls; we map them to stored values
-    jumpVideo.addEventListener('volumechange', ()=>{
-        if(suppressVolumeEvent) return;
-        const vol = jumpVideo.volume;
-        const muted = jumpVideo.muted;
-        storedVolume = vol;
-        storedMuted = muted;
-        applyVolumeAndMuted();
+    if(volumeSlider) volumeSlider.addEventListener('input', (e)=>{
+        setVolumeFromPercent(parseInt(e.target.value, 10));
     });
 
     // When metadata loaded apply persisted settings
@@ -4484,13 +5588,11 @@ enabled: ${!!cameraAction?.enabled}`;
     // Fallback to native video playback if orchestration fails
     function fallbackToNativePlayback(){
         try{
-            // ensure video is unmuted if user didn't mute
-            jumpVideo.muted = storedMuted;
-            jumpVideo.volume = storedVolume;
-            // stop audio element
-            try{ jumpAudio.pause(); }catch(e){}
-            // play video natively
+            jumpVideo.muted = true;
+            jumpAudio.muted = !controllerFlow.soundAllowed || storedMuted;
+            jumpAudio.volume = storedVolume;
             jumpVideo.play().catch(()=>{});
+            if(controllerFlow.soundAllowed) startAudioForVideoPlayback();
         }catch(e){}
     }
 
@@ -4543,7 +5645,7 @@ enabled: ${!!cameraAction?.enabled}`;
         const actions = {};
         if(saveBtn) actions['Save a11y prefs'] = () => saveBtn.click();
         if(resetBtn) actions['Reset a11y prefs'] = () => resetBtn.click();
-        actions['Reset camera anim'] = () => resetCustomCameraAnimation();
+        actions['Reset camera anim'] = () => settingsControllerBridge.resetCustomCameraAnimation?.();
         if(typeof window.registerDebugHooks === 'function'){
             window.registerDebugHooks({ flags, actions });
         }
@@ -4586,28 +5688,20 @@ enabled: ${!!cameraAction?.enabled}`;
     window.addEventListener('debug-ui-ready', registerLightingDebugActions);
     registerLightingDebugActions();
 
-    document.addEventListener('DOMContentLoaded', ()=>{
+    document.addEventListener('DOMContentLoaded', async ()=>{
         initSettingsControllerScene();
-        bindAnimTuningControls();
         hydrate();
-        showPermissionIfNeeded();
-        storedVolume = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || storedVolume);
-        storedMuted = (localStorage.getItem(AUDIO_MUTED_KEY) === 'true');
-        storedSync = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || storedSync, 10);
+        await showPermissionIfNeeded();
+        storedVolume = parseFloat(localPreferences.getItem(AUDIO_VOLUME_KEY) || storedVolume);
+        storedMuted = isLocalReview ? false : (localPreferences.getItem(AUDIO_MUTED_KEY) === 'true');
+        storedSync = parseInt(localPreferences.getItem(AUDIO_SYNC_KEY) || storedSync, 10);
         syncSlider.value = storedSync;
         if(modalSync) modalSync.value = storedSync;
         applySyncValue(storedSync);
-        preloadMedia();
-        loadVideo(currentVideoKey);
-        if(localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true'){
-            storedMuted = false;
-            storedVolume = 0.25;
-            localStorage.setItem(AUDIO_MUTED_KEY, 'false');
-            localStorage.setItem(AUDIO_VOLUME_KEY, String(storedVolume));
-            ensureAudioRouting();
-            applyVolumeAndMuted();
-            jumpVideo.play().catch(()=>{});
-        }
+        syncVoiceAudio.load();
+        syncTicksAudio.load();
+        applyVolumeAndMuted();
+        resetSyncExercise();
     });
 })();
 
@@ -4628,4 +5722,4 @@ if ("serviceWorker" in navigator) {
     }
 }
 
-loadDebugIfEnabled();
+if(isLocalReview) loadDebugIfEnabled();

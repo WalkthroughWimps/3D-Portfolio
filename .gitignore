@@ -100,3 +100,6 @@ rename-*.log
 assets-move-report.txt
 console-export-*.log
 dist-labs-root/
+/errors.local/
+*.cfa
+*.pek

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { applyStandardGlbMouseControlMode } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const MODEL_PATH = assetUrl('glb/card-test.glb');
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
@@ -23,15 +24,9 @@ camera.position.set(0, 0, 6);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
-controls.enablePan = false;
-controls.enableZoom = true;
+applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
 controls.zoomSpeed = 0.9;
 controls.rotateSpeed = 0.7;
-controls.mouseButtons = {
-  LEFT: THREE.MOUSE.ROTATE,
-  MIDDLE: THREE.MOUSE.DOLLY,
-  RIGHT: THREE.MOUSE.NONE
-};
 controls.touches = {
   ONE: THREE.TOUCH.ROTATE,
   TWO: THREE.TOUCH.DOLLY_PAN

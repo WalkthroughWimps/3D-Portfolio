@@ -15,9 +15,6 @@ body {
     --hl-tertiary-color: var(--green-tertiary);
     --hl-dark-color: var(--green-dark);
     --hl-text-color: var(--green-text-color);
-    --controls-bg: var(--purple-primary);
-    --controls-fg: var(--green-tertiary);
-    --controls-bg-alpha: 0.9;
 }
 
 video {

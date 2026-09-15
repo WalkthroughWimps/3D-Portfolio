@@ -6,10 +6,11 @@ import { createVideoControlsUI } from '../_7-shared-scripts/shared-video-control
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
 import { createVideosVideoAdapter } from './videos-video-adapter.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
-const USE_SHARED_CONTROLS = false;
+const USE_SHARED_CONTROLS = true;
 
 const videosPageConfig = {
   intro: {
@@ -43,6 +44,12 @@ const videosPageConfig = {
       distance: 10.44,
       azimuthOffsetDeg: 0.0,
       elevationOffsetDeg: 70.0
+    },
+    // Keep orbiting useful without allowing the camera to enter the tablet
+    // and expose the display overlay at an unusable grazing angle.
+    controls: {
+      minDistance: 5.5,
+      maxDistance: 14.0
     }
   }
 };
@@ -147,10 +154,10 @@ function getStoredAudioSettings() {
   const AUDIO_MUTED_KEY = 'site.audio.muted';
   try {
     const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
-    const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true';
+    const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !isAudioAllowed();
     return { volume, muted };
   } catch (e) {
-    return { volume: 1, muted: false };
+    return { volume: 1, muted: !isAudioAllowed() };
   }
 }
 
@@ -210,7 +217,7 @@ function setupIntroVideo() {
   let allowSound = false;
   try {
     allowSound = (new URLSearchParams(location.search)).get('sound') === '1'
-      || localStorage.getItem('site.audio.allowed') === 'true';
+      || isAudioAllowed();
   } catch (e) { /* ignore */ }
   introState.videoEl = videoEl;
   videoEl.crossOrigin = 'anonymous';
@@ -482,8 +489,12 @@ function onReady(fn) {
   else fn();
 }
 
-onReady(() => {
+onReady(async () => {
   showLoadingUIImmediately();
+  await ensureAudioConsentPrompt({
+    title: 'Allow sound?',
+    message: 'This page can play sound for the Videos player. Allow audio playback?'
+  });
   requestAnimationFrame(() => {
     // Delay heavy initialization slightly to allow first paint and make
     // the page interactive immediately. This prevents blocking the UI
@@ -568,7 +579,7 @@ onReady(() => {
   }
 
   const primaryPath = assetUrl('../glb/video-tablet.glb');
-  const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || localStorage.getItem('site.audio.allowed') === 'true';
+  const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || isAudioAllowed();
 
   // load GLB and init
   const doLoadGlb = () => {
@@ -652,15 +663,23 @@ onReady(() => {
               if (USE_SHARED_CONTROLS && gridApi) {
                 const adapter = createVideosVideoAdapter({
                   getActiveVideo: () => gridApi.getActiveVideo?.(),
+                  getActivePreviewVideo: () => gridApi.getActivePreviewVideo?.(),
                   getActiveAudio: () => gridApi.getActiveAudio?.(),
                   getViewportRect: () => gridApi.getViewportRect?.(),
                   getAudioSettings: () => gridApi.getAudioSettings?.(),
+                  getTitle: () => gridApi.getTitle?.(),
                   setVolume: (v) => gridApi.setVolumeRatio?.(v),
                   toggleMute: () => gridApi.toggleMute?.(),
                   setPlaybackRate: (rate) => gridApi.setPlaybackRate?.(rate),
+                  getPreservePitch: () => gridApi.getPreservePitch?.(),
+                  togglePitch: () => gridApi.togglePitch?.(),
+                  getSyncMs: () => gridApi.getSyncMs?.(),
+                  setSyncMs: (value) => gridApi.setSyncMs?.(value),
+                  isTabletView: () => gridApi.isTabletView?.(),
+                  toggleTabletView: () => gridApi.toggleTabletView?.(),
                   exit: () => gridApi.exitPlayback?.()
                 });
-                const ui = createVideoControlsUI({ enablePointer: false });
+                const ui = createVideoControlsUI();
                 ui.setViewportRectProvider(adapter.getViewportRect);
                 ui.onAction = (action) => adapter.dispatch(action);
                 gridApi.setSharedControls?.(ui, adapter);

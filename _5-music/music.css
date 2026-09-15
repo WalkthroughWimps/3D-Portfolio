@@ -11,9 +11,6 @@ body {
     --hl-tertiary-color: var(--red-tertiary);
     --hl-dark-color: var(--red-dark);
     --hl-text-color: var(--red-text-color);
-    --controls-bg: rgba(10, 56, 32, 0.85);
-    --controls-fg: var(--green-text-color);
-    --controls-bg-alpha: 0.85;
     background-image: url("../assets/overlays/overlay-music-dark.png");
     background-repeat: repeat;    
     overflow-y: hidden;

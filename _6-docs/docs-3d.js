@@ -12,8 +12,29 @@ if (!mount) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.className = "glb-viewer-canvas";
   mount.appendChild(renderer.domElement);
   renderer.setClearColor(0x000000, 0);
+
+  const crankGuide = document.createElement("div");
+  crankGuide.className = "crank-guide";
+  crankGuide.setAttribute("aria-hidden", "true");
+  const crankGuideRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  crankGuideRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  crankGuideRenderer.setSize(220, 220, false);
+  crankGuideRenderer.outputColorSpace = THREE.SRGBColorSpace;
+  crankGuideRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+  crankGuideRenderer.toneMappingExposure = 1.05;
+  crankGuideRenderer.setClearColor(0x070b12, 0);
+  crankGuide.appendChild(crankGuideRenderer.domElement);
+  mount.appendChild(crankGuide);
+
+  const crankGuideScene = new THREE.Scene();
+  const crankGuideCamera = new THREE.PerspectiveCamera(34, 1, 0.01, 100);
+  crankGuideScene.add(new THREE.HemisphereLight(0xffffff, 0x181322, 1.8));
+  const crankGuideKey = new THREE.DirectionalLight(0xffffff, 2.1);
+  crankGuideKey.position.set(2, 4, 5);
+  crankGuideScene.add(crankGuideKey);
 
   const status = document.createElement("div");
   status.className = "glb-viewer-status";
@@ -69,9 +90,15 @@ if (!mount) {
   let faceRightBtnMesh = null;
   let faceLeftBtnMesh = null;
   let crankshaftHandle = null;
+  let crankGuideModel = null;
+  let crankRestX = 0;
+  let crankAngle = 0;
+  let crankTargetAngle = 0;
+  let crankGuideHideTimer = null;
   let skillGroup = null;
   const cardProxies = new Map();
   let spinX = 0;
+  let spinY = 0;
   const rotationTweens = new Map();
   const quarterTurn = Math.PI / 2;
   const FRONT_FILL = 1;
@@ -113,6 +140,51 @@ if (!mount) {
   THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
   const textureLoader = new THREE.TextureLoader();
   textureLoader.setCrossOrigin("anonymous");
+
+  function buildCrankGuideModel() {
+    if (!crankshaft) return;
+    if (crankGuideModel) crankGuideScene.remove(crankGuideModel);
+    crankGuideModel = crankshaft.clone(true);
+    crankGuideModel.position.set(0, 0, 0);
+    crankGuideModel.rotation.set(0, 0, 0);
+    crankGuideScene.add(crankGuideModel);
+    crankGuideModel.updateMatrixWorld(true);
+
+    const bounds = new THREE.Box3().setFromObject(crankGuideModel);
+    const center = bounds.getCenter(new THREE.Vector3());
+    const size = bounds.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.y, size.z, 0.2);
+    const distance = maxDim / (2 * Math.tan(THREE.MathUtils.degToRad(crankGuideCamera.fov * 0.5))) * 1.45;
+    crankGuideCamera.position.set(center.x + Math.max(distance, size.x * 1.4), center.y, center.z);
+    crankGuideCamera.up.set(0, 1, 0);
+    crankGuideCamera.lookAt(center);
+    crankGuideCamera.near = Math.max(distance / 100, 0.01);
+    crankGuideCamera.far = distance * 10;
+    crankGuideCamera.updateProjectionMatrix();
+  }
+
+  function showCrankGuide(event) {
+    if (crankGuideHideTimer) {
+      window.clearTimeout(crankGuideHideTimer);
+      crankGuideHideTimer = null;
+    }
+    crankGuide.classList.add("is-visible");
+    const mountRect = mount.getBoundingClientRect();
+    const diameter = crankGuide.getBoundingClientRect().width || 190;
+    const radius = diameter * 0.5;
+    const x = THREE.MathUtils.clamp(event.clientX - mountRect.left, radius + 8, mountRect.width - radius - 8);
+    const y = THREE.MathUtils.clamp(event.clientY - mountRect.top, radius + 8, mountRect.height - radius - 8);
+    crankGuide.style.left = `${x}px`;
+    crankGuide.style.top = `${y}px`;
+  }
+
+  function scheduleCrankGuideHide() {
+    if (crankGuideHideTimer) window.clearTimeout(crankGuideHideTimer);
+    crankGuideHideTimer = window.setTimeout(() => {
+      crankGuide.classList.remove("is-visible");
+      crankGuideHideTimer = null;
+    }, 700);
+  }
 
   const rotationLocks = [
     "lockedAxes",
@@ -748,34 +820,42 @@ if (!mount) {
           });
         });
       };
-      const normalizeParagraphMaterial = (object3d) => {
+      const stabilizeParagraphMaterial = (object3d) => {
         if (!object3d) return;
         object3d.traverse((child) => {
           if (!child.isMesh || !child.material) return;
           const materials = Array.isArray(child.material) ? child.material : [child.material];
           const normalized = materials.map((mat) => {
             const next = mat.clone();
-            next.flatShading = true;
-            next.normalMap = null;
-            next.bumpMap = null;
-            next.aoMap = null;
-            next.lightMap = null;
-            next.emissiveMap = null;
-            if (next.emissive) next.emissive.setHex(0x000000);
+            const materialName = String(next.name || "").toLowerCase();
+            const isParagraphText = materialName.includes("gold") || materialName.includes("text");
+
+            // The gold lettering was previously treated like the blue leather,
+            // leaving it dependent on the cube's angle to the key light. Keep a
+            // small amount of the material response while giving the lettering a
+            // stable, texture-shaped luminance floor at every resting face.
+            if (isParagraphText) {
+              if ("metalness" in next) next.metalness = 0.08;
+              if ("roughness" in next) next.roughness = 0.78;
+              next.metalnessMap = null;
+              next.roughnessMap = null;
+              if (next.color) next.color.setHex(0xffefd0);
+              if (next.emissive) {
+                next.emissive.setHex(0x6a4a1c);
+                next.emissiveMap = next.map || null;
+                next.emissiveIntensity = 0.62;
+              }
+            } else if (materialName.includes("blue_leather") && next.color) {
+              next.color.setHex(0x7896b8);
+            }
             next.needsUpdate = true;
             return next;
           });
           child.material = Array.isArray(child.material) ? normalized : normalized[0];
-          if (child.geometry) {
-            child.geometry.computeVertexNormals();
-            child.geometry.normalizeNormals();
-          }
         });
       };
-      normalizeParagraphMaterial(cubeParagraph);
+      stabilizeParagraphMaterial(cubeParagraph);
       if (cubeParagraph) {
-        const paragraphColor = new THREE.Color(0x2b4a6f);
-        tintMaterials(cubeParagraph, paragraphColor, 0.55);
         cubeParagraph.traverse((child) => {
           if (!child.isMesh || !child.material) return;
           const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -784,6 +864,10 @@ if (!mount) {
       }
       cubeAbout = findObjectByNames(modelRoot, ["cube-about"]);
       crankshaft = findObjectByNames(modelRoot, ["crankshaft"]);
+      if (crankshaft) {
+        crankRestX = crankshaft.rotation.x;
+        buildCrankGuideModel();
+      }
       if (cubeAbout) {
         const woodTint = new THREE.Color(0x8b0f16);
         cubeAbout.traverse((child) => {
@@ -829,9 +913,16 @@ if (!mount) {
     requestAnimationFrame(animate);
     if (modelPivot) {
       modelPivot.rotation.x = spinX;
+      modelPivot.rotation.y = spinY;
     }
-    if (crankshaft && modelPivot) {
-      crankshaft.rotation.x = -2 * spinX;
+    if (crankshaft) {
+      crankAngle += (crankTargetAngle - crankAngle) * 0.24;
+      if (Math.abs(crankTargetAngle - crankAngle) < 0.0001) crankAngle = crankTargetAngle;
+      crankshaft.rotation.x = crankRestX + crankAngle;
+    }
+    if (crankGuideModel && (isDraggingCrank || crankGuide.classList.contains("is-visible"))) {
+      crankGuideModel.rotation.x = crankAngle;
+      crankGuideRenderer.render(crankGuideScene, crankGuideCamera);
     }
     const now = performance.now();
     rotationTweens.forEach((tween, object3d) => {
@@ -900,13 +991,12 @@ if (!mount) {
   const rotationDuration = 1200;
   const hoverRotationDuration = 450;
   const paragraphAxis = "x";
-  const faceAxis = "y";
   function rotateFaces(direction) {
-    if (!cubeParagraph || !cubeFace) return;
+    if (!cubeParagraph) return;
     const paragraphAxisResolved = resolveAxis(cubeParagraph, paragraphAxis, "y");
-    const faceAxisResolved = resolveAxis(cubeFace, faceAxis, "x");
+    // The portrait is shared by every paragraph; keeping its textured face
+    // forward avoids exposing the cube's differently mapped side faces.
     tweenRotation(cubeParagraph, paragraphAxisResolved, -direction, rotationDuration);
-    tweenRotation(cubeFace, faceAxisResolved, -direction, rotationDuration);
   }
 
   if (faceRightBtn) {
@@ -919,7 +1009,13 @@ if (!mount) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
   let isDraggingCrank = false;
-  let lastCrankAngle = null;
+  let crankPointerId = null;
+  let lastCrankPoint = null;
+  let crankDragDirection = 0;
+  let isDraggingModel = false;
+  let modelPointerId = null;
+  let lastModelPointer = null;
+  let modelDragDistance = 0;
   let lastHoveredCard = null;
 
   function updatePointerFromEvent(event) {
@@ -954,16 +1050,61 @@ if (!mount) {
     return { rect, cx, cy };
   }
 
+  function getObjectScreenPoint(object3d) {
+    if (!object3d || !activeCamera) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const point = new THREE.Vector3();
+    object3d.getWorldPosition(point);
+    point.project(activeCamera);
+    return {
+      x: (point.x * 0.5 + 0.5) * rect.width + rect.left,
+      y: (-point.y * 0.5 + 0.5) * rect.height + rect.top
+    };
+  }
+
+  function distanceToSegment(point, start, end) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const lengthSquared = dx * dx + dy * dy;
+    if (!lengthSquared) return Math.hypot(point.x - start.x, point.y - start.y);
+    const projection = THREE.MathUtils.clamp(
+      ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared,
+      0,
+      1
+    );
+    return Math.hypot(point.x - (start.x + dx * projection), point.y - (start.y + dy * projection));
+  }
+
   function startCrankDrag(event) {
     if (!crankshaftHandle || !activeCamera) return false;
-    const hit = getTopHit(event);
-    if (!hit || !isDescendant(hit.object, crankshaftHandle)) return false;
     const center = getCrankCenterScreen();
-    if (!center) return false;
+    const handle = getObjectScreenPoint(crankshaftHandle);
+    if (!center || !handle) return false;
+    const hit = getTopHitFiltered(event, (entry) => isDescendant(entry.object, crankshaft));
+    const nearCrank = distanceToSegment(
+      { x: event.clientX, y: event.clientY },
+      { x: center.cx, y: center.cy },
+      handle
+    ) <= 42;
+    if (!hit && !nearCrank) return false;
     isDraggingCrank = true;
-    lastCrankAngle = Math.atan2(event.clientY - center.cy, event.clientX - center.cx);
+    crankPointerId = event.pointerId;
+    lastCrankPoint = { x: event.clientX - center.cx, y: event.clientY - center.cy };
+    crankDragDirection = 0;
+    showCrankGuide(event);
+    renderer.domElement.setPointerCapture?.(event.pointerId);
     event.preventDefault();
     return true;
+  }
+
+  function startModelDrag(event) {
+    isDraggingModel = true;
+    modelPointerId = event.pointerId;
+    lastModelPointer = { x: event.clientX, y: event.clientY };
+    modelDragDistance = 0;
+    renderer.domElement.classList.add("is-rotating");
+    renderer.domElement.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
   }
 
   function handleMeshClick(event) {
@@ -1088,6 +1229,10 @@ if (!mount) {
   }
 
   renderer.domElement.addEventListener("pointerdown", (event) => {
+    if (event.button === 2) {
+      startModelDrag(event);
+      return;
+    }
     if (event.button !== 0) return;
     if (startCrankDrag(event)) return;
     if (handleMeshClick(event)) return;
@@ -1099,24 +1244,65 @@ if (!mount) {
       lastHoveredCard = null;
     }
   });
-  window.addEventListener("pointerup", () => {
-    isDraggingCrank = false;
-    lastCrankAngle = null;
-  });
+  function finishPointerInteraction(event) {
+    if (isDraggingCrank && (crankPointerId == null || event.pointerId === crankPointerId)) {
+      isDraggingCrank = false;
+      lastCrankPoint = null;
+      crankDragDirection = 0;
+      crankPointerId = null;
+      scheduleCrankGuideHide();
+    }
+    if (isDraggingModel && (modelPointerId == null || event.pointerId === modelPointerId)) {
+      isDraggingModel = false;
+      lastModelPointer = null;
+      modelPointerId = null;
+      renderer.domElement.classList.remove("is-rotating");
+    }
+    if (renderer.domElement.hasPointerCapture?.(event.pointerId)) {
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    }
+  }
+  window.addEventListener("pointerup", finishPointerInteraction);
+  window.addEventListener("pointercancel", finishPointerInteraction);
   window.addEventListener("pointermove", (event) => {
     if (isDraggingCrank && crankshaft) {
       const center = getCrankCenterScreen();
       if (!center) return;
-      const angle = Math.atan2(event.clientY - center.cy, event.clientX - center.cx);
-      if (lastCrankAngle == null) {
-        lastCrankAngle = angle;
+      const currentPoint = { x: event.clientX - center.cx, y: event.clientY - center.cy };
+      if (!lastCrankPoint) {
+        lastCrankPoint = currentPoint;
         return;
       }
-      let delta = angle - lastCrankAngle;
-      if (delta > Math.PI) delta -= Math.PI * 2;
-      if (delta < -Math.PI) delta += Math.PI * 2;
-      spinX -= delta * 0.5;
-      lastCrankAngle = angle;
+      const previousRadius = Math.hypot(lastCrankPoint.x, lastCrankPoint.y);
+      const currentRadius = Math.hypot(currentPoint.x, currentPoint.y);
+      if (previousRadius < 12 || currentRadius < 12) {
+        lastCrankPoint = currentPoint;
+        return;
+      }
+      const cross = lastCrankPoint.x * currentPoint.y - lastCrankPoint.y * currentPoint.x;
+      const dot = lastCrankPoint.x * currentPoint.x + lastCrankPoint.y * currentPoint.y;
+      const rawDelta = Math.atan2(cross, dot);
+      if (Math.abs(rawDelta) > 0.001) {
+        if (!crankDragDirection) crankDragDirection = Math.sign(rawDelta);
+        // Once a turn begins, preserve that direction for the whole gesture.
+        // Large cursor jumps are reduced to a short step instead of reversing
+        // or throwing the crank across the circle.
+        const safeDelta = Math.min(Math.abs(rawDelta), 0.24) * crankDragDirection;
+        crankTargetAngle += safeDelta;
+      }
+      lastCrankPoint = currentPoint;
+      event.preventDefault();
+      return;
+    }
+    if (isDraggingModel && lastModelPointer) {
+      const dx = event.clientX - lastModelPointer.x;
+      const dy = event.clientY - lastModelPointer.y;
+      modelDragDistance += Math.hypot(dx, dy);
+      lastModelPointer = { x: event.clientX, y: event.clientY };
+      if (modelDragDistance >= 3) {
+        spinY += dx * 0.008;
+        spinX += dy * 0.008;
+      }
       event.preventDefault();
       return;
     }

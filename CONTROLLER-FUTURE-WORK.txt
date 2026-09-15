@@ -1,0 +1,60 @@
+CONTROLLER AND SITE: DEFERRED WORK
+Updated: September 15, 2026
+
+The six phases in _8-tools-and-notes/start-controller-audited-handoff.md have
+been implemented or superseded by later design decisions. Phase 6 regression
+work was completed on September 15, 2026. The items below are intentionally
+left for later and are not blockers for the completed handoff.
+
+CONTROLLER / SYNC EXERCISE
+
+1. Replace the generated Microsoft Zira (US English) READY-SET-GO-3-2-1-GO
+   voice with a genuinely British-English female recording.
+
+2. Tune the current 180 ms assumed listener reaction allowance by ear and with
+   several real users. Adjust cue spacing, tick/offbeat balance, and delayed
+   separator lighting if the exercise feels early or late.
+
+3. Stress-test the volume meter with quiet speech, music, transients, and a
+   full-scale clipping source. Fine-tune attack, release, feathering, peak hold,
+   and clip thresholds only if those tests expose a problem.
+
+4. Revisit Blender/model underlighting when the model is edited again. Decide
+   whether to improve the exported material/geometry or keep the web-side
+   HemisphereLight treatment.
+
+5. Reconsider the currently hidden counting/alphabet videos and thumbnails if
+   a later design brings them back. The SYNC exercise intentionally supersedes
+   that portion of the original handoff.
+
+RESPONSIVE / MANUAL QA
+
+6. The review layout is comfortable at the normal desktop review viewport.
+   At portrait and roughly 1024-pixel-wide test sizes, the review-only Settings
+   panel overlaps the enlarged controller and parts of the controller extend
+   beyond the viewport before the first review gesture establishes the final
+   camera pose. Decide later whether review mode needs a dedicated mobile layout.
+   The in-app browser and external Chrome were compared; this environment did
+   not expose Visual Studio Code's embedded preview for a separate comparison.
+
+7. Perform one manual operating-system reduced-motion run on a machine/browser
+   configured for prefers-reduced-motion: reduce. The reduced-motion branch and
+   explanatory prompt were source-reviewed, but this environment did not expose
+   a reliable runtime emulation control for that preference.
+
+OTHER SITE ISSUES FOUND DURING PHASE 6
+
+8. _3-graphics/graphics.html requests _3-graphics/glb/card-test.glb, which is
+   absent and produces a 404 warning. The page currently says COMING SOON, so
+   either add the intended model or remove the placeholder load later.
+
+9. The Videos and Music pages still emit Three.js migration warnings for
+   physicallyCorrectLights/useLegacyLights. Music also warns about the retired
+   Texture.encoding property and logs its automatic scale factor as a warning.
+   These are separate from the duplicate-Three-instance issue fixed in Phase 6.
+
+DELIVERY
+
+10. Review the complete dirty worktree, separate unrelated existing changes if
+    desired, then commit and deploy when the broader site is ready. No commit or
+    deployment was performed as part of the controller handoff.

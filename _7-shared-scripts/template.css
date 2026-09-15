@@ -4,8 +4,8 @@
     --nav-icon-size: 3.2vw;
     --overlay-size: 650px;
     --controls-bg: var(--primary-color);
-    --controls-fg: var(--hl-primary-color);
-    --controls-bg-alpha: 0.85;
+    --controls-fg: var(--hl-tertiary-color);
+    --controls-bg-alpha: 0.9;
     /* default tile size for page overlays */
     box-sizing: border-box;
 }

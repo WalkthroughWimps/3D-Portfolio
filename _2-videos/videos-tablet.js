@@ -4,6 +4,7 @@ import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
 import { GLTFLoader } from 'https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const DEBUG_PINK_RECT = false; // draw a diagnostic 16:9 plane in front of the screen
 const SCREEN_W = 5.1520628;
@@ -196,28 +197,26 @@ export function setupTabletControls({ camera, domElement, tabletGroup, modelCent
   try {
     if (!camera || !domElement) return null;
     const controls = new OrbitControls(camera, domElement);
+    const raycaster = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    // By default, lock panning to keep rotation origin at the tablet center.
-    // Callers can override via config.enablePan = true.
-    controls.enablePan = !!(config && config.enablePan);
-      try {
-        controls.mouseButtons = {
-          LEFT: THREE.MOUSE.PAN,
-          MIDDLE: THREE.MOUSE.DOLLY,
-          RIGHT: THREE.MOUSE.ROTATE
-        };
-        controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-        // Use camera-space panning behavior (matches `stupid.js`) so pan moves
-        // relative to the viewing plane (prevents forward/back pan movement).
-        // This makes vertical drags move the tablet up/down in view space.
-        controls.screenSpacePanning = true;
-      } catch (e) { /* ignore */ }
-    // sensible defaults; callers may override
-    controls.minDistance = (config && config.minDistance) || 0.5;
-    controls.maxDistance = (config && config.maxDistance) || 10.0;
-    controls.rotateSpeed = (config && config.rotateSpeed) || 0.65;
-    controls.zoomSpeed = (config && config.zoomSpeed) || 0.9;
+    applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
+    try {
+      controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+      controls.screenSpacePanning = true;
+    } catch (e) { /* ignore */ }
+    // Sensible defaults; page-level tablet settings take precedence. The
+    // previous lookup ignored `tabletAlignment`, leaving the Videos tablet at
+    // a 0.5-unit minimum and allowing the camera to enter the display.
+    const controlConfig = (config && config.tabletAlignment && config.tabletAlignment.controls)
+      || (config && config.controls)
+      || config
+      || {};
+    controls.minDistance = Number.isFinite(controlConfig.minDistance) ? controlConfig.minDistance : 0.5;
+    controls.maxDistance = Number.isFinite(controlConfig.maxDistance) ? controlConfig.maxDistance : 10.0;
+    controls.rotateSpeed = Number.isFinite(controlConfig.rotateSpeed) ? controlConfig.rotateSpeed : 0.65;
+    controls.zoomSpeed = Number.isFinite(controlConfig.zoomSpeed) ? controlConfig.zoomSpeed : 0.9;
 
     if (modelCenter && modelCenter.isVector3) {
       controls.target.copy(modelCenter);
@@ -230,6 +229,22 @@ export function setupTabletControls({ camera, domElement, tabletGroup, modelCent
         controls.update();
       } catch { }
     }
+    function raycastModelHit(clientX, clientY) {
+      const rect = domElement.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      ndc.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+      raycaster.setFromCamera(ndc, camera);
+      const hits = tabletGroup ? raycaster.intersectObject(tabletGroup, true) : [];
+      return hits.length ? hits[0] : null;
+    }
+    controls.userData = controls.userData || {};
+    controls.userData.raycastModelHit = raycastModelHit;
+    controls.userData.sharedMouse = installStandardGlbMouseControls({
+      controls,
+      domElement,
+      canInteract: () => !!(controls && controls.enabled)
+    });
     return controls;
   } catch (e) {
     console.warn('setupTabletControls failed:', e);

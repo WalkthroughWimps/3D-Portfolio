@@ -3,11 +3,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS3DRenderer, CSS3DObject } from 'three/addons/renderers/CSS3DRenderer.js';
 import VideoPlayer from '../_7-shared-scripts/video-player-controls.js';
-import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyncAudioToVideo, setPreservePitchFlag } from '../_7-shared-scripts/shared-video-controls.js';
+import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyncAudioToVideo, setPreservePitchFlag, getStoredPreservePitch, setStoredPreservePitch, showVideoKeyboardShortcuts } from '../_7-shared-scripts/shared-video-controls.js';
 import { createGameAudioBridge } from './game-audio-bridge.js';
 import { createGamesVideoAdapter } from './games-video-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
 import { assetUrl, safeDrawImage, markBroken, isBroken, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const STAGE_ID = 'model-stage';
 const GLB_URL = assetUrl('../glb/Arcade-Console.glb');
@@ -146,7 +148,7 @@ const AUDIO_SYNC_KEY = 'site.audio.sync';
 const AUDIO_MUTED_KEY = 'site.audio.muted';
 
 function getStoredAudioSettings() {
-  const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
+  const allowed = isAudioAllowed();
   const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
   const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
   return { muted, volume };
@@ -155,6 +157,16 @@ function getStoredAudioSettings() {
 function getStoredSyncMs() {
   const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
   return Number.isFinite(raw) ? raw : 0;
+}
+
+function setStoredSyncMs(ms) {
+  const snapped = Math.round((Number.isFinite(ms) ? ms : 0) / 10) * 10;
+  const clamped = Math.max(-3000, Math.min(3000, snapped));
+  try { localStorage.setItem(AUDIO_SYNC_KEY, String(clamped)); } catch (e) { /* ignore */ }
+  try {
+    window.dispatchEvent(new CustomEvent('syncOffsetChanged', { detail: { offsetMs: clamped } }));
+  } catch (e) { /* ignore */ }
+  return clamped;
 }
 
 function createAudioElement(src) {
@@ -194,6 +206,7 @@ function applyAudioSettings(audio) {
   const { muted, volume } = getStoredAudioSettings();
   audio.muted = muted;
   try { audio.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+  setPreservePitchFlag(audio, getStoredPreservePitch());
 }
 
 function applyVideoAudioSettings(video) {
@@ -201,6 +214,17 @@ function applyVideoAudioSettings(video) {
   const { muted, volume } = getStoredAudioSettings();
   try { video.muted = muted; } catch (e) { /* ignore */ }
   try { video.volume = muted ? 0 : volume; } catch (e) { /* ignore */ }
+  setPreservePitchFlag(video, getStoredPreservePitch());
+}
+
+function toggleStoredPreservePitch() {
+  const next = setStoredPreservePitch(!getStoredPreservePitch());
+  const video = getSharedActiveVideo() || playerVideo || reelVideo;
+  const audio = getSharedActiveAudio() || playerAudio || reelAudio;
+  if (video) setPreservePitchFlag(video, next);
+  if (audio) setPreservePitchFlag(audio, next);
+  needsRedraw = true;
+  return next;
 }
 
 function applyGameMediaSettings(force = false) {
@@ -280,6 +304,7 @@ let scene;
 let activeCamera;
 let fallbackCamera;
 let controls;
+let defaultOrbitTarget = new THREE.Vector3(0, 1.1, 0);
 let cabinetRoot = null;
 let screenMesh = null;
 let screenCenter = new THREE.Vector3();
@@ -297,6 +322,7 @@ let playerBaseVideo = null;
 let videoReady = false;
 let reelVideo = null;
 let reelAudio = null;
+let reelVideoId = null;
 let reelReady = false;
 let reelSource = '';
 const audioSyncStateByEl = new WeakMap();
@@ -304,6 +330,7 @@ let sharedControlsUi = null;
 let sharedControlsAdapter = null;
 let sharedControlsActive = null;
 let lastControlsDrawLog = 0;
+let lastVideoControlsActivityTs = performance.now();
 let activeVideoRect = null;
 let gameUiLayout = null;
 
@@ -400,6 +427,10 @@ const introToQuat = new THREE.Quaternion();
 const stage = document.getElementById(STAGE_ID);
 if (!stage) throw new Error(`Missing #${STAGE_ID} container`);
 
+await ensureAudioConsentPrompt({
+  title: 'Allow sound?',
+  message: 'This page can play sound for videos and arcade media. Allow audio playback?'
+});
 init();
 loadCabinet();
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
@@ -466,12 +497,12 @@ function init() {
 
   controls = new OrbitControls(activeCamera, renderer.domElement);
   controls.enableDamping = true;
-  controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
-  controls.enablePan = false;
+  applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
   controls.target.set(0, 1.1, 0);
 
   raycaster = new THREE.Raycaster();
   pointerNDC = new THREE.Vector2();
+  bindSharedMouseControls();
 
   letterboxColor = getCssVar('--secondary-color', letterboxColor);
 
@@ -484,7 +515,10 @@ function init() {
   renderer.domElement.addEventListener('pointerdown', handlePointerDown, { capture: true });
   renderer.domElement.addEventListener('pointerup', handlePointerUp, { capture: true });
   renderer.domElement.addEventListener('pointercancel', handlePointerUp, { capture: true });
-  renderer.domElement.addEventListener('pointerleave', () => { if (contentMode === 'menu') clearMenuHover(); });
+  renderer.domElement.addEventListener('pointerleave', () => {
+    if (sharedControlsUi && sharedControlsUi.clearHoverPreview) sharedControlsUi.clearHoverPreview();
+    if (contentMode === 'menu') clearMenuHover();
+  });
   renderer.domElement.addEventListener('wheel', handleWheel, { capture: true, passive: false });
   renderer.domElement.addEventListener('contextmenu', handleContextMenu, { capture: true });
   window.addEventListener('resize', onResize);
@@ -531,8 +565,21 @@ function initCameraPanel() {
   cameraPanelInputBtn = null;
 }
 
+function bindSharedMouseControls() {
+  try { renderer?.domElement?.__gamesSharedMouse?.dispose?.(); } catch (e) { /* ignore */ }
+  if (!controls || !activeCamera || !renderer?.domElement) return;
+  renderer.domElement.__gamesSharedMouse = installStandardGlbMouseControls({
+    controls,
+    domElement: renderer.domElement,
+    canInteract: () => !!(controls && controls.enabled && !isGameActive())
+  });
+}
+
 function toggleCameraZoom() {
-  if (!activeCamera) return;
+  if (!activeCamera || cameraAnimId) return;
+  const now = performance.now();
+  if (now - (toggleCameraZoom.lastToggleAt || 0) < 1000) return;
+  toggleCameraZoom.lastToggleAt = now;
   applyCameraMode(!cameraZoomAlt);
   cameraZoomUserEnabled = cameraZoomAlt;
 }
@@ -572,8 +619,9 @@ function loadCabinet() {
         controls.dispose();
         controls = new OrbitControls(activeCamera, renderer.domElement);
         controls.enableDamping = true;
-        controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
+        applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
         controls.target.copy(center);
+        bindSharedMouseControls();
         updateControlsForContent(contentMode);
         gamesLog('glb', 'Using GLB camera:', activeCamera.name || '(unnamed)');
       } else {
@@ -594,6 +642,7 @@ function loadCabinet() {
       }
 
       applyDefaultCameraTransform();
+      captureDefaultOrbitTarget();
       startIntroAnimation();
 
       setupScreenCanvas(screenMesh);
@@ -673,11 +722,18 @@ function setupScreenCanvas(mesh) {
     getViewportRect: getSharedControlsViewportRect,
     getScreenRect: getSharedControlsScreenRect,
     getActiveVideo: getSharedActiveVideo,
+    getActivePreviewVideo: getSharedActivePreviewVideo,
     getActiveAudio: getSharedActiveAudio,
     getContentMode: () => contentMode,
     setVolume: setSharedVolume,
     toggleMute: toggleSharedMute,
     setPlaybackRate: setSharedPlaybackRate,
+    cyclePlaybackRate: () => cycleSpeed(),
+    getPreservePitch: () => getStoredPreservePitch(),
+    togglePitch: () => toggleStoredPreservePitch(),
+    setSyncMs: (value) => setStoredSyncMs(value),
+    isFullscreen: () => !!cameraZoomAlt,
+    toggleFullscreen: () => toggleCameraZoom(),
     exit: exitSharedControls
   });
   sharedControlsUi = createVideoControlsUI();
@@ -755,16 +811,22 @@ function getAlternateCameraSnapshot() {
   return { position: pos, quaternion: quat, fov: 22.9 };
 }
 
-function animateCameraTo(target, durationMs = CAMERA_ZOOM_DURATION) {
+function easeCameraAnim(t, mode = 'standard') {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function animateCameraTo(target, durationMs = CAMERA_ZOOM_DURATION, opts = {}) {
   if (!activeCamera || !target) return;
   if (cameraAnimId) cancelAnimationFrame(cameraAnimId);
   cameraAnimStart = performance.now();
   cameraAnimFrom = captureCameraSnapshot();
   cameraAnimTo = target;
+  const easing = opts.easing || 'standard';
+  const onComplete = typeof opts.onComplete === 'function' ? opts.onComplete : null;
 
   const step = (now) => {
     const t = Math.min(1, (now - cameraAnimStart) / durationMs);
-    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const ease = easeCameraAnim(t, easing);
     const pos = cameraAnimFrom.position.clone().lerp(cameraAnimTo.position, ease);
     const quat = cameraAnimFrom.quaternion.clone().slerp(cameraAnimTo.quaternion, ease);
     activeCamera.position.copy(pos);
@@ -779,9 +841,15 @@ function animateCameraTo(target, durationMs = CAMERA_ZOOM_DURATION) {
       cameraAnimId = requestAnimationFrame(step);
     } else {
       cameraAnimId = null;
+      if (onComplete) onComplete();
     }
   };
   cameraAnimId = requestAnimationFrame(step);
+}
+
+function captureDefaultOrbitTarget() {
+  if (!controls) return;
+  defaultOrbitTarget.copy(controls.target);
 }
 
 function applyCameraMode(altView, opts = {}) {
@@ -832,6 +900,7 @@ function setDefaultCameraFromActive() {
   if (activeCamera.isPerspectiveCamera && typeof activeCamera.fov === 'number') {
     DEFAULT_CAMERA.fov = activeCamera.fov;
   }
+  captureDefaultOrbitTarget();
   console.log('[camera] setDefaultCameraFromActive()', { worldPos: DEFAULT_CAMERA.pos.clone(), worldQuat: DEFAULT_CAMERA.quat.clone(), fov: DEFAULT_CAMERA.fov });
 }
 
@@ -1413,6 +1482,11 @@ function getSharedActiveVideo() {
   return reelVideo || null;
 }
 
+function getSharedActivePreviewVideo() {
+  if (contentMode !== 'video' || !reelVideoId) return null;
+  return ensurePreviewVideo(reelVideoId);
+}
+
 function getSharedActiveAudio() {
   if (contentMode !== 'video') return null;
   return reelAudio || null;
@@ -1423,18 +1497,21 @@ function setSharedVolume(value) {
   if (!audio || !Number.isFinite(value)) return;
   audio.volume = Math.max(0, Math.min(1, value));
   if (audio.volume > 0.001) audio.muted = false;
+  needsRedraw = true;
 }
 
 function toggleSharedMute() {
   const audio = getSharedActiveAudio();
   if (!audio) return;
   audio.muted = !audio.muted;
+  needsRedraw = true;
 }
 
 function setSharedPlaybackRate(rate) {
   const video = getSharedActiveVideo();
   if (!video || !Number.isFinite(rate)) return;
   video.playbackRate = rate;
+  needsRedraw = true;
 }
 
 function exitSharedControls() {
@@ -1448,7 +1525,7 @@ function exitSharedControls() {
 function mapPointerToScreenPixels(ev) {
   const hit = raycastScreen(ev);
   if (!hit) return null;
-  return { x: hit.displayX, y: hit.displayY };
+  return mapControlsPoint({ x: hit.displayX, y: hit.displayY });
 }
 
 function mapControlsPoint(pt) {
@@ -1512,6 +1589,7 @@ function startVideoReel(entry) {
   loggedReelRect = false;
   console.log(`[games-reel] canvas=${screenCanvas.width}x${screenCanvas.height} screenAR=${(screenCanvas.width / screenCanvas.height).toFixed(3)} targetAR=${TARGET_SCREEN_AR.toFixed(3)}`);
   reelSource = entry && entry.src ? entry.src : '';
+  reelVideoId = entry && entry.id ? entry.id : null;
   const audioSrc = entry && entry.id ? VIDEO_AUDIO[entry.id] : null;
   // Preserve the current menu camera as the video-default so exiting the reel returns here.
   setDefaultCameraFromActive();
@@ -1569,6 +1647,7 @@ function stopVideoReel() {
   reelVideo.removeAttribute('src');
   reelVideo.load();
   reelVideo = null;
+  reelVideoId = null;
   reelReady = false;
   reelSource = '';
   loggedReelRect = false;
@@ -1641,15 +1720,19 @@ function drawScreen() {
     contentRect = surface;
   } else {
     contentRect = surface;
+    // Reserve genuine top and bottom frame areas for the player chrome.  The
+    // movie is fitted into the remaining aperture rather than being painted
+    // underneath a large translucent lower panel.
+    const mediaAperture = {
+      x: surface.x,
+      y: surface.y + Math.round(surface.h * 0.11),
+      w: surface.w,
+      h: Math.max(1, surface.h - Math.round(surface.h * 0.11) - Math.round(surface.h * 0.13))
+    };
     if (contentMode === 'video' && reelReady && reelVideo) {
-      const srcW = reelVideo.videoWidth || 16;
-      const srcH = reelVideo.videoHeight || 9;
-      videoRect = rectRound(fitRectContain(srcW, srcH, surface));
+      videoRect = rectRound(fitRectContain(16, 9, mediaAperture));
     } else {
-      const activeAspect = (videoReady && playerVideo && playerVideo.videoWidth && playerVideo.videoHeight)
-        ? playerVideo.videoWidth / playerVideo.videoHeight
-        : 16 / 9;
-      videoRect = fitRectToAspect(surface, activeAspect);
+      videoRect = fitRectToAspect(mediaAperture, 16 / 9);
     }
   }
   activeVideoRect = (contentMode === 'video') ? videoRect : null;
@@ -1834,10 +1917,6 @@ function drawScreen() {
     }
   }
   if (isVideoContent) {
-    const rect = videoRect || contentRect;
-    if (!getSharedActiveVideo() || getSharedActiveVideo().paused || getSharedActiveVideo().ended) {
-      drawPlayOverlay(ctx, rect);
-    }
   }
 
     ctx.save();
@@ -1852,33 +1931,14 @@ function drawScreen() {
         console.log('%c[games-controls] draw using screenRect ' + JSON.stringify(screenRect), 'color:#00ccff');
       }
       sharedControlsUi.setState(sharedControlsAdapter.getState());
-      sharedControlsUi.draw(ctx);
+      const controlsVisible = (now - lastVideoControlsActivityTs) < 2000;
+      sharedControlsUi.draw(ctx, { alpha: controlsVisible ? 1 : 0 });
+      renderer.domElement.style.cursor = controlsVisible ? '' : 'none';
     }
   ctx.restore();
 
   screenTexture.needsUpdate = true;
   needsRedraw = false;
-}
-
-function drawPlayOverlay(ctx, rect) {
-  const size = Math.min(rect.w, rect.h) * 0.22;
-  const x = rect.x + (rect.w - size) / 2;
-  const y = rect.y + (rect.h - size) / 2;
-  const fg = getCssVar('--controls-fg', '#fff');
-  ctx.save();
-  ctx.strokeStyle = fg;
-  ctx.lineWidth = Math.max(3, Math.round(size * 0.08));
-  ctx.beginPath();
-  ctx.arc(x + size / 2, y + size / 2, size * 0.45, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = fg;
-  ctx.beginPath();
-  ctx.moveTo(x + size * 0.46, y + size * 0.32);
-  ctx.lineTo(x + size * 0.46, y + size * 0.68);
-  ctx.lineTo(x + size * 0.72, y + size * 0.50);
-  ctx.closePath();
-  ctx.fill();
-  ctx.restore();
 }
 
 function drawSpeedBadge(ctx, videoRect) {
@@ -2157,9 +2217,14 @@ function updateCameraPanel() {
 }
 
 function handlePointerMove(ev) {
+  if (contentMode === 'video') {
+    lastVideoControlsActivityTs = performance.now();
+    renderer.domElement.style.cursor = '';
+  }
   if (!screenMesh || !screenCanvas) return;
   const hit = raycastScreen(ev);
   if (!hit) {
+    if (sharedControlsUi && sharedControlsUi.clearHoverPreview) sharedControlsUi.clearHoverPreview();
     if (contentMode === 'menu') clearMenuHover();
     return;
   }
@@ -2182,6 +2247,18 @@ function handlePointerMove(ev) {
     return;
   }
   if (sharedControlsUi && contentMode === 'video' && getSharedActiveVideo()) {
+    const screenPt = mapPointerToScreenPixels(ev);
+    if (screenPt && sharedControlsUi.handlePointerMove) {
+      sharedControlsUi.handlePointerMove({
+        canvasX: screenPt.x,
+        canvasY: screenPt.y,
+        type: ev?.type || 'pointermove'
+      }, {
+        canvasWidth: screenCanvas.width,
+        canvasHeight: screenCanvas.height
+      });
+      needsRedraw = true;
+    }
     return;
   }
   if (isGameActive()) {
@@ -2197,11 +2274,16 @@ function handlePointerMove(ev) {
 function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
-  if (contentMode === 'menu' && ev.button === 2) return;
+  if (ev.button !== 0 && !isGameActive()) return;
   if (sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
+    lastVideoControlsActivityTs = performance.now();
+    renderer.domElement.style.cursor = '';
     const screenPt = mapPointerToScreenPixels(ev);
     if (screenPt) {
-      const handled = sharedControlsUi.handlePointerEvent(ev, {
+      const handled = sharedControlsUi.handlePointerEvent({
+        canvasX: screenPt.x,
+        canvasY: screenPt.y
+      }, {
         canvasWidth: screenCanvas.width,
         canvasHeight: screenCanvas.height
       });
@@ -2211,6 +2293,8 @@ function handlePointerDown(ev) {
         ev.stopPropagation();
         return;
       }
+      const wasPaused = !!reelVideo?.paused;
+      sharedControlsUi.notifyTransportToggle?.(wasPaused ? 'play' : 'pause');
       sharedControlsAdapter?.dispatch?.({ type: 'togglePlay' });
       console.log('[games] surface toggle px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', false);
       ev.preventDefault();
@@ -2315,7 +2399,10 @@ function handleWheel(ev) {
 }
 
 function handleContextMenu(ev) {
-  if (!isGameActive()) return;
+  if (!isGameActive()) {
+    ev.preventDefault();
+    return;
+  }
   const hit = raycastScreen(ev);
   if (!hit) return;
   ev.preventDefault();
@@ -2381,6 +2468,7 @@ function setHoveredGame(id) {
 }
 
 function handlePointerUp(ev) {
+  sharedControlsUi?.endPointerInteraction?.();
   if (pointerCaptured) {
     ev.preventDefault();
     ev.stopPropagation();
@@ -2416,6 +2504,11 @@ function handleKeyDown(ev) {
     const shift = ev.shiftKey;
     const prevent = () => { try { ev.preventDefault(); } catch (e) { /* ignore */ } };
 
+  if (shift && key === '?') { prevent(); showVideoKeyboardShortcuts(); return; }
+  if (key === 'f') { prevent(); toggleCameraZoom(); return; }
+  if (key === 'home') { prevent(); seekBy(-Infinity); return; }
+  if (key === 'end') { prevent(); seekBy(Infinity); return; }
+
   const seekBy = (delta) => {
     if (!activeVideo.duration || !isFinite(activeVideo.duration)) return;
     try { activeVideo.currentTime = Math.max(0, Math.min(activeVideo.duration, activeVideo.currentTime + delta)); } catch (e) { /* ignore */ }
@@ -2424,6 +2517,7 @@ function handleKeyDown(ev) {
 
   if (key === ' ' || key === 'k') {
     prevent();
+    sharedControlsUi?.notifyTransportToggle?.(activeVideo.paused ? 'play' : 'pause');
     if (activeVideo.paused) activeVideo.play().catch(() => {});
     else activeVideo.pause();
     needsRedraw = true;
@@ -2519,10 +2613,7 @@ function restoreViewAfterContent() {
 function updateControlsForContent(mode) {
   if (!controls) return;
   const allowTransform = !cameraZoomAlt;
-  controls.enablePan = false;
-  controls.enableRotate = allowTransform;
-  controls.enableZoom = allowTransform;
-  controls.enabled = allowTransform;
+  applyStandardGlbMouseControlMode(controls, { enabled: allowTransform, allowRotate: allowTransform, allowZoom: allowTransform });
   setGameAudioControlsVisible(mode === 'game');
 }
 
@@ -2903,6 +2994,17 @@ function raycastScreen(ev) {
   const displayX = displayU * screenCanvas.width;
   const displayY = (1 - displayV) * screenCanvas.height;
   return { x, y, displayX, displayY, uv: hits[0].uv };
+}
+
+function raycastCabinetHit(ev) {
+  if (!cabinetRoot) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  pointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNDC.y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
+  raycaster.setFromCamera(pointerNDC, activeCamera);
+  const hits = raycaster.intersectObject(cabinetRoot, true);
+  return hits.length ? hits[0] : null;
 }
 
 function toCanvasEvent(x, y) {

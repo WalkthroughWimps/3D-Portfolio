@@ -11,9 +11,6 @@ body {
     --hl-tertiary-color: var(--orange-tertiary);
     --hl-dark-color: var(--orange-dark);
     --hl-text-color: var(--orange-text-color);
-    --controls-bg: var(--primary-color);
-    --controls-fg: var(--hl-primary-color);
-
     /* Videos page font hooks */
     --videos-heading-font: var(--reel-heading-font, 'Fascinate Inline', system-ui, -apple-system, Segoe UI, Roboto, sans-serif);
     --videos-info-font: var(--reel-info-font, 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, system-ui, sans-serif);

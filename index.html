@@ -189,8 +189,8 @@
                 <div class="debug-camera-info">
                     <div class="debug-camera-label">Anim Duration (Custom)</div>
                     <div class="debug-camera-slider">
-                        <input id="animDurationCustom" type="range" min="1000" max="8000" step="100" value="5000">
-                        <span id="animDurationCustomValue" class="debug-camera-value">5000ms</span>
+                        <input id="animDurationCustom" type="range" min="1000" max="8000" step="100" value="6000">
+                        <span id="animDurationCustomValue" class="debug-camera-value">6000ms</span>
                     </div>
                 </div>
             </div>
@@ -223,9 +223,9 @@
             </div>
         </section>
 
-        <div class="top-tabs">
-            <div id="topTabA11y" class="tab active">Accessibility</div>
-            <div id="topTabAudio" class="tab">Volume / Sync</div>
+        <div class="top-tabs" role="tablist" aria-label="Controller mode">
+            <button id="topTabA11y" class="tab active" type="button" role="tab" aria-selected="true">VISUALS</button>
+            <button id="topTabAudio" class="tab" type="button" role="tab" aria-selected="false">AUDIO</button>
         </div>
         <section id="a11ySection" aria-labelledby="a11y-title">
             <h2 id="a11y-title" class="section-title">Accessibility</h2>
@@ -327,7 +327,7 @@
                     <div class="sync-controls">
                         <div class="sync-row">
                             <button class="arrow-btn" id="syncLeft">&lt;</button>
-                            <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="10" value="0" aria-label="A/V sync (ms)">
+                            <input id="syncSlider" class="sync-slider" type="range" min="-3000" max="3000" step="1" value="0" aria-label="A/V sync (ms)">
                             <button class="arrow-btn" id="syncRight">&gt;</button>
                         </div>
                         <div class="mouse-legend" aria-hidden="true">
@@ -335,6 +335,7 @@
                             <img class="mouse-icon" src="assets/SVG/mouse_RMB.svg" alt="Right mouse button">
                         </div>
                         <div class="jump-actions">
+                            <button id="returnGalleryBtn" class="secondary" type="button">Pause / Gallery</button>
                             <button id="nextBtn" class="primary" type="button">Next</button>
                         </div>
                     </div>
@@ -354,18 +355,6 @@
 
     </main>
 
-    <!-- Permission modal -->
-    <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
-        <div class="permission-box">
-            <h3 id="permTitle">Allow sound?</h3>
-            <p>This site would like to play sound for the sample videos. Allow audio playback?</p>
-            <div style="display:flex;gap:8px;margin-top:12px;">
-                <button id="permAllow" class="primary">Allow</button>
-                <button id="permDeny" class="secondary">Deny</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Settings modal (triggered by nav/settings button) -->
     <div id="settingsModal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
         <div class="settings-box">
@@ -384,7 +373,7 @@
                 <div id="modalAudioContent">
                     <div style="display:flex;gap:12px;align-items:center;">
                         <div>Sync</div>
-                        <input id="modalSync" type="range" min="-3000" max="3000" step="50" value="0">
+                        <input id="modalSync" type="range" min="-3000" max="3000" step="1" value="0">
                     </div>
                     <div style="margin-top:8px;display:flex;gap:8px;">
                         <button id="modalClose2" class="secondary">Close</button>
@@ -423,6 +412,60 @@
             <section class="ui-panel" id="panel-debug" role="tabpanel"></section>
             <section class="ui-panel" id="panel-cam" role="tabpanel"></section>
         </aside>
+    </div>
+    <aside id="backgroundLookPanel" class="background-look-panel" aria-labelledby="backgroundLookTitle">
+        <button id="backgroundLookToggle" class="background-look-toggle" type="button" aria-expanded="true" aria-controls="backgroundLookControls">HIDE SETTINGS</button>
+        <div id="backgroundLookControls" class="background-look-controls">
+            <h2 id="backgroundLookTitle">Review settings</h2>
+            <div class="background-look-sliders">
+                <label class="background-look-control" for="backgroundToneSlider">
+                    <span class="background-look-label">Background tone</span>
+                    <input id="backgroundToneSlider" type="range" min="0" max="100" step="1" value="50" aria-describedby="backgroundToneValue">
+                    <output id="backgroundToneValue" for="backgroundToneSlider">50%</output>
+                </label>
+                <label class="background-look-control" for="backgroundContrastSlider">
+                    <span class="background-look-label">Background detail</span>
+                    <input id="backgroundContrastSlider" type="range" min="0" max="100" step="1" value="50" aria-describedby="backgroundContrastValue">
+                    <output id="backgroundContrastValue" for="backgroundContrastSlider">50%</output>
+                </label>
+                <label class="background-look-control" for="undersideLightSlider">
+                    <span class="background-look-label">Underlight</span>
+                    <input id="undersideLightSlider" type="range" min="0" max="300" step="1" value="65" aria-describedby="undersideLightValue">
+                    <output id="undersideLightValue" for="undersideLightSlider">65%</output>
+                </label>
+                <label class="background-look-control" for="speakerPurpleSlider">
+                    <span class="background-look-label">Speaker purple</span>
+                    <input id="speakerPurpleSlider" type="range" min="0" max="300" step="1" value="65" aria-describedby="speakerPurpleValue">
+                    <output id="speakerPurpleValue" for="speakerPurpleSlider">65%</output>
+                </label>
+            </div>
+            <button id="backgroundToneReset" class="background-look-reset" type="button">Reset</button>
+        </div>
+    </aside>
+    <!-- Shared accessible equivalent of the GLB sound/motion prompts. -->
+    <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
+        <div class="permission-box">
+            <h3 id="permTitle">Allow sound?</h3>
+            <p>Allow sound for paired sample-video audio?</p>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button id="permAllow" class="primary" type="button">Yes</button>
+                <button id="permDeny" class="secondary" type="button">No</button>
+            </div>
+        </div>
+    </div>
+    <div class="controller-accessible-controls" role="group" aria-label="3D controller alternatives">
+        <button id="accessibleAudioMode" type="button" aria-pressed="false">Audio mode</button>
+        <button id="accessibleVisualsMode" type="button" aria-pressed="true">Visuals mode</button>
+        <label>Volume <input id="accessibleVolume" type="range" min="0" max="100" step="1" value="25"></label>
+        <label>Audio sync <input id="accessibleSync" type="range" min="-3000" max="3000" step="1" value="0"></label>
+        <label>Brightness <input id="accessibleBrightness" type="range" min="0" max="100" step="1" value="50"></label>
+        <label>Contrast <input id="accessibleContrast" type="range" min="0" max="100" step="1" value="50"></label>
+        <button id="accessibleCounts" type="button">Start audio sync exercise</button>
+        <button id="accessibleAlphabet" type="button" hidden>Second video hidden</button>
+        <button id="accessiblePlayPause" type="button" hidden>Tap the current sync cue</button>
+        <button id="accessibleGallery" type="button" hidden>Reset audio sync exercise</button>
+        <button id="accessibleConfirmYes" type="button" hidden>Yep, proceed to the site</button>
+        <button id="accessibleConfirmNo" type="button" hidden>Um, return to settings</button>
     </div>
     <script type="module" src="_0-start/start-page.js" defer></script>
 </body>

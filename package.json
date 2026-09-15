@@ -19,6 +19,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "review": "node tools/review-server.mjs",
     "export:attributions": "node tools/export-attributions.mjs",
     "imslp:import": "node tools/imslp_importer.mjs"
   },
