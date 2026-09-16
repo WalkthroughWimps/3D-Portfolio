@@ -12,7 +12,7 @@ import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/a
 import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const STAGE_ID = 'model-stage';
-const GLB_URL = assetUrl('../glb/Arcade-Console.glb');
+const GLB_URL = assetUrl('../assets/glb/Arcade-Console.glb');
 const SCREEN_MESH_CANDIDATES = ['arcade_screen_surface', 'arcade_screen'];
 const TARGET_SCREEN_AR = 0.693 / 0.449;
 
@@ -434,7 +434,7 @@ await ensureAudioConsentPrompt({
 init();
 loadCabinet();
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
-  corsProbe('glb/Arcade-Console.glb');
+corsProbe('assets/glb/Arcade-Console.glb');
   corsProbe('Videos/games-page/video-games-reel-hq.webm');
   corsProbe('Videos/games-page/video-games-reel.opus');
 }

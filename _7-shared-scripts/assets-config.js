@@ -45,6 +45,7 @@ export const ASSETS_BASE = (() => {
 console.info('[assets] base =', ASSETS_BASE);
 
 const ASSET_PREFIXES = [
+  'assets/glb/',
   'glb/',
   'videos/',
   'renders/',
@@ -59,6 +60,16 @@ function isAssetHostedPath(path) {
   const normalized = String(path).replace(/^[./]+/, '');
   const lowered = normalized.toLowerCase();
   return ASSET_PREFIXES.some((prefix) => lowered.startsWith(prefix));
+}
+
+function hostedAssetPath(path) {
+  const normalized = String(path || "").replace(/^[./]+/, "");
+  // Keep the repository organized under assets/, but preserve the R2 layout
+  // that already exists in production.
+  if (normalized.toLowerCase().startsWith('assets/glb/')) {
+    return `glb/${normalized.slice('assets/glb/'.length)}`;
+  }
+  return normalized;
 }
 
 let didLogAssetDiagnostics = false;
@@ -87,8 +98,7 @@ export function assetUrl(path) {
   if (!base) return path; // local dev / disabled
   if (!isAssetHostedPath(path)) return path;
 
-  const normalized = String(path || "").replace(/^[./]+/, "");
-  return `${base}/${normalized}`;
+  return `${base}/${hostedAssetPath(path)}`;
 }
 
 const brokenAssets = new Set();

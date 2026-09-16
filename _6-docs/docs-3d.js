@@ -674,7 +674,7 @@ if (!mount) {
   window.addEventListener("resize", resize);
 
   // IMPORTANT: set this path to your real GLB path
-  const GLB_PATH = assetUrl("../glb/about-cube.glb");
+  const GLB_PATH = assetUrl("../assets/glb/about-cube.glb");
 
   const loader = new GLTFLoader();
   const draco = new DRACOLoader();
@@ -1323,7 +1323,7 @@ if (!mount) {
   resize();
   animate();
   if (isLocalDev() || new URLSearchParams(window.location.search || "").has("assetsDebug")) {
-    corsProbe("glb/about-cube.glb");
+corsProbe("assets/glb/about-cube.glb");
     corsProbe("../assets/computer-app-icons/Ableton Live.png");
     corsProbe("../assets/computer-app-icons/backs/Ableton Live_back.png");
   }

@@ -74,6 +74,8 @@ Combiners/
 *.mkv
 *.avi
 *.wav
+!assets/audio/
+!assets/audio/*.wav
 *.flac
 *.zip
 *.7z

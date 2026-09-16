@@ -165,7 +165,7 @@ function frameModel(model) {
   controls.maxDistance = distance * 1.85;
   controls.update();
 }
-new GLTFLoader().load(assetUrl('../glb/tester-cube.glb'), (gltf) => {
+new GLTFLoader().load(assetUrl('../assets/glb/tester-cube.glb'), (gltf) => {
   cube = gltf.scene;
   targetCubeQuaternion.copy(cube.quaternion);
   prepareArrowGeometries(cube);

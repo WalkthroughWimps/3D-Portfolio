@@ -578,7 +578,7 @@ onReady(async () => {
     animId = requestAnimationFrame(animate);
   }
 
-  const primaryPath = assetUrl('../glb/video-tablet.glb');
+  const primaryPath = assetUrl('../assets/glb/video-tablet.glb');
   const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || isAudioAllowed();
 
   // load GLB and init

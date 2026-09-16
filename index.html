@@ -453,7 +453,7 @@
     <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
         <div class="permission-box">
             <h3 id="permTitle">Allow sound?</h3>
-            <p>Allow sound for paired sample-video audio?</p>
+            <p>Allow the optional controller and camera introduction animation?</p>
             <div style="display:flex;gap:8px;margin-top:12px;">
                 <button id="permAllow" class="primary" type="button">Yes</button>
                 <button id="permDeny" class="secondary" type="button">No</button>
@@ -461,8 +461,8 @@
         </div>
     </div>
     <div class="controller-accessible-controls" role="group" aria-label="3D controller alternatives">
-        <button id="accessibleAudioMode" type="button" aria-pressed="false">Audio mode</button>
-        <button id="accessibleVisualsMode" type="button" aria-pressed="true">Visuals mode</button>
+        <button id="accessibleAudioMode" type="button" aria-pressed="false">AUDIO (A)</button>
+        <button id="accessibleVisualsMode" type="button" aria-pressed="true">VISUAL (V)</button>
         <label>Volume <input id="accessibleVolume" type="range" min="0" max="100" step="1" value="25"></label>
         <label>Audio sync <input id="accessibleSync" type="range" min="-3000" max="3000" step="1" value="0"></label>
         <label>Brightness <input id="accessibleBrightness" type="range" min="0" max="100" step="1" value="50"></label>

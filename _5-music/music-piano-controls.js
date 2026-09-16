@@ -42,7 +42,7 @@ async function fetchAudioBuffer(url) {
 const USE_TOPPAD_GRID = true;
 let showTopPadGrid = false;
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
-  corsProbe('glb/toy-piano.glb');
+  corsProbe('assets/glb/toy-piano.glb');
   corsProbe('Videos/music-page/sunil-video.jpg');
   corsProbe('Renders/tablet_animation_1.opus');
 }
@@ -5627,7 +5627,7 @@ function animate(){
 animate();
 // Proper signature: (url, onLoad, onProgress, onError)
 const MODEL_VERSION = 'v20251115a'; // bump to bust cache when GLB updated
-loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
+loader.load(`${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`,
   gltf => {
     root = gltf.scene;
     scene.add(root);
@@ -6536,7 +6536,7 @@ function buildPendingNotes(){
   },
   undefined,
   (err) => {
-    console.error('GLTF LOAD FAILED:', `${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`, err);
+console.error('GLTF LOAD FAILED:', `${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`, err);
   });
   pendingNotes.sort((a,b)=>a.startSec - b.startSec);
 }

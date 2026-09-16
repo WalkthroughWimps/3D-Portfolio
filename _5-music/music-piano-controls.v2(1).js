@@ -44,7 +44,7 @@ async function fetchAudioBuffer(url) {
 const USE_TOPPAD_GRID = true;
 let showTopPadGrid = false;
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
-  corsProbe('glb/toy-piano.glb');
+  corsProbe('assets/glb/toy-piano.glb');
   corsProbe('Videos/music-page/sunil-video.jpg');
   corsProbe('Renders/tablet_animation_1.opus');
 }

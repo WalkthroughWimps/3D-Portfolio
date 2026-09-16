@@ -14,9 +14,10 @@ const localReviewParams = new URLSearchParams(window.location.search);
 const isLocalReview = isLocalHost && localReviewParams.get('review') === '1';
 const localReviewStartMode = localReviewParams.get('mode') === 'audio' ? 'audio' : 'visuals';
 document.documentElement.classList.toggle('is-local-review', isLocalReview);
-// This is the previously deployed controller asset, retained as the production-safe default.
-const SETTINGS_CONTROLLER_GLB = assetUrl("glb/settings-controller-applied.glb");
-const WELCOME_JINGLE_SRC = assetUrl("music/welcome-jingle.wav");
+// This is the latest controller export. Keep the 2D controller fallback in
+// index.html available when its CDN copy cannot be reached.
+const SETTINGS_CONTROLLER_GLB = assetUrl("assets/glb/settings-controller.glb");
+const WELCOME_JINGLE_SRC = assetUrl("assets/audio/welcome-jingle.wav");
 let settingsControllerReadyResolve = () => {};
 let hasSignaledSettingsControllerReady = false;
 const settingsControllerReady = new Promise((resolve) => {
@@ -417,8 +418,8 @@ if (isLocalReview) {
             thumbnail: assetUrl('_0-start/alphabet-thumb.jpg')
         }
     };
-    const SYNC_VOICE_URL = assetUrl('_0-start/audio/sync-voice.wav');
-    const SYNC_TICKS_URL = assetUrl('_0-start/audio/sync-ticks.wav');
+    const SYNC_VOICE_URL = assetUrl('assets/audio/sync-voice.wav');
+    const SYNC_TICKS_URL = assetUrl('assets/audio/sync-ticks.wav');
     const SYNC_BEAT_MS = 800;
     const SYNC_REACTION_ALLOWANCE_MS = 180;
     const SYNC_WORDS = ['GO', '3', '2', '1', 'GO'];
@@ -2049,6 +2050,7 @@ if (isLocalReview) {
         let allowAudioRect = { x: 0.27, y: 0.66, w: 0.24, h: 0.18 };
         let muteAudioRect = { x: 0.53, y: 0.66, w: 0.24, h: 0.18 };
         let pendingAudioAllowed = null;
+        let controllerEntrance = null;
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
@@ -2911,6 +2913,7 @@ if (isLocalReview) {
         settingsControllerBridge.finishOnboarding = (allowAnimation) => {
             introActive = false;
             setPreIntroZoomEnabled(false);
+            settingsControllerBridge.revealController?.(allowAnimation);
             controllerFlow.stage = 'gallery';
             settingsControllerBridge.renderScreen?.();
             if(catAction){
@@ -3156,7 +3159,13 @@ if (isLocalReview) {
                     const soundStep = controllerFlow.stage === 'sound';
                     ctx.fillStyle = '#e5cafc';
                     ctx.font = '32px "Press Start 2P", "Segoe UI", sans-serif';
-                    ctx.fillText(soundStep ? 'ALLOW SOUND?' : 'ALLOW ANIMATION?', size * 0.5, height * 0.32);
+                    ctx.fillText(soundStep ? 'ALLOW SOUND?' : 'ALLOW ANIMATION?', size * 0.5, height * 0.25);
+                    if(soundStep){
+                        ctx.fillStyle = '#c9dcf4';
+                        ctx.font = '14px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillText('SOME MEDIA MAY PLAY SOUND', size * 0.5, height * 0.37);
+                        ctx.fillText('AUTOMATICALLY AFTER YOU ALLOW IT.', size * 0.5, height * 0.44);
+                    }
                     const yes = { x: 0.22, y: 0.60, w: 0.24, h: 0.20 };
                     const no = { x: 0.54, y: 0.60, w: 0.24, h: 0.20 };
                     [[yes, '#8cd8ff', 'YES', true], [no, '#f5b7d9', 'NO', false]].forEach(([rect, fill, label, value]) => {
@@ -3272,6 +3281,24 @@ if (isLocalReview) {
                 controls.update();
             }
             const delta = clock.getDelta();
+            if(controllerEntrance){
+                const { model, homePosition, homeScale, homeRotation, startedAt, durationMs } = controllerEntrance;
+                const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
+                const pop = 1 + 0.16 * Math.sin(progress * Math.PI) * (1 - progress);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                model.position.copy(homePosition);
+                model.position.y -= (1 - eased) * 0.62;
+                model.scale.copy(homeScale).multiplyScalar(Math.max(0.02, eased * pop));
+                model.rotation.copy(homeRotation);
+                model.rotation.y += (1 - progress) * Math.PI * 0.7;
+                model.rotation.z += (1 - progress) * 0.16;
+                if(progress >= 1){
+                    model.position.copy(homePosition);
+                    model.scale.copy(homeScale);
+                    model.rotation.copy(homeRotation);
+                    controllerEntrance = null;
+                }
+            }
             if(uiMixer){
                 if((uiAction && !uiAction.paused) || (catAction && !catAction.paused)){
                     uiMixer.update(delta);
@@ -3465,6 +3492,9 @@ enabled: ${!!cameraAction?.enabled}`;
             const model = gltf.scene;
             if(!model) return;
             scene.add(model);
+            // The first question is intentionally outside the controller. The
+            // controller itself appears only after that choice.
+            model.visible = false;
             model.updateMatrixWorld(true);
             const nodeByName = (name) => model.getObjectByName(name) || null;
             // The audited visible layout is authoritative: the left
@@ -4673,6 +4703,24 @@ enabled: ${!!cameraAction?.enabled}`;
             settingsControllerBridge.renderer = renderer;
             settingsControllerBridge.camera = activeCamera;
             settingsControllerBridge.model = model;
+            settingsControllerBridge.revealController = (animateIn = true) => {
+                if(model.visible) return;
+                const homePosition = model.position.clone();
+                const homeScale = model.scale.clone();
+                const homeRotation = model.rotation.clone();
+                model.visible = true;
+                if(!animateIn){
+                    model.position.copy(homePosition);
+                    model.scale.copy(homeScale);
+                    model.rotation.copy(homeRotation);
+                    controllerEntrance = null;
+                    return;
+                }
+                controllerEntrance = {
+                    model, homePosition, homeScale, homeRotation,
+                    startedAt: performance.now(), durationMs: 850
+                };
+            };
             settingsControllerBridge.controls = controls;
             settingsControllerBridge.canvas = settingsControllerCanvas;
             settingsControllerBridge.updateKnobTransformsFromState = updateKnobTransformsFromState;
@@ -4773,6 +4821,20 @@ enabled: ${!!cameraAction?.enabled}`;
         });
     }
 
+    function askControllerScreenPermission(stage){
+        controllerFlow.stage = stage;
+        settingsControllerBridge.renderScreen?.();
+        return new Promise((resolve) => {
+            let settled = false;
+            controllerFlow.resolvePrompt = (value) => {
+                if(settled) return;
+                settled = true;
+                controllerFlow.resolvePrompt = null;
+                resolve(!!value);
+            };
+        });
+    }
+
     let onboardingPromise = null;
 
     function waitForLocalReviewGesture(){
@@ -4831,11 +4893,12 @@ enabled: ${!!cameraAction?.enabled}`;
             localPreferences.setItem(ANIMATION_ALLOWED_KEY, String(animationAllowed));
             controllerFlow.animationAllowed = animationAllowed;
 
-            const soundAllowed = await askControllerPermission(
-                'sound',
-                'Allow sound?',
-                'Allow sound for the paired sample-video audio? No media will start automatically.'
-            );
+            // The animation choice belongs outside the screen. Once made, the
+            // controller pops in and its own display owns the sound choice.
+            await settingsControllerBridge.ready;
+            settingsControllerBridge.revealController?.(animationAllowed);
+
+            const soundAllowed = await askControllerScreenPermission('sound');
             controllerFlow.soundAllowed = soundAllowed;
             applyAudioPermission(soundAllowed);
             await settingsControllerBridge.ready;

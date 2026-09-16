@@ -5,7 +5,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
 import { applyStandardGlbMouseControlMode } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
-const MODEL_PATH = assetUrl('glb/card-test.glb');
+const MODEL_PATH = assetUrl('assets/glb/card-test.glb');
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
 const canvas = document.createElement('canvas');
@@ -180,7 +180,7 @@ loader.load(
   }
 );
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
-  corsProbe('glb/card-test.glb');
+corsProbe('assets/glb/card-test.glb');
 }
 
 function animate() {
