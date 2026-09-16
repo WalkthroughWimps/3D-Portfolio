@@ -14,7 +14,8 @@ const localReviewParams = new URLSearchParams(window.location.search);
 const isLocalReview = isLocalHost && localReviewParams.get('review') === '1';
 const localReviewStartMode = localReviewParams.get('mode') === 'audio' ? 'audio' : 'visuals';
 document.documentElement.classList.toggle('is-local-review', isLocalReview);
-const SETTINGS_CONTROLLER_GLB = assetUrl("glb/settings-controller.glb");
+// This is the previously deployed controller asset, retained as the production-safe default.
+const SETTINGS_CONTROLLER_GLB = assetUrl("glb/settings-controller-applied.glb");
 const WELCOME_JINGLE_SRC = assetUrl("music/welcome-jingle.wav");
 let settingsControllerReadyResolve = () => {};
 let hasSignaledSettingsControllerReady = false;
@@ -4689,6 +4690,7 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             settingsControllerScene.classList.remove('controller-loading');
             settingsControllerScene.classList.remove('controller-ready');
+            settingsControllerScene.classList.add('controller-fallback');
             signalSettingsControllerReady();
         });
     }

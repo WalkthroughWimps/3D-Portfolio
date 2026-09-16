@@ -674,6 +674,16 @@ canvas#visualizer { width:28px; height:420px; background:transparent; display:bl
     border-color: rgba(42,161,152,.6);
     box-shadow: 0 0 20px rgba(42,161,152,.3);
 }
+.settings-controller-fallback { display: none; position: absolute; inset: 0; padding: clamp(1rem, 4vw, 3rem); box-sizing: border-box; overflow-x: auto; scroll-snap-type: x mandatory; background: radial-gradient(circle at 50% 0%, rgba(67, 121, 137, .32), transparent 52%), #091018; }
+.controller-fallback .settings-controller-canvas, .controller-fallback .settings-controller-status { display: none; }
+.controller-fallback .settings-controller-fallback { display: block; }
+.settings-fallback-track { display: flex; width: 300%; height: 100%; }
+.settings-fallback-track article { flex: 0 0 33.333%; box-sizing: border-box; scroll-snap-align: center; display: grid; align-content: center; gap: 1rem; padding: clamp(1rem, 5vw, 4rem); border: 1px solid rgba(139, 231, 143, .35); background: linear-gradient(135deg, rgba(20, 39, 54, .95), rgba(7, 12, 20, .98)); color: #e7f6f0; }
+.settings-fallback-track article:nth-child(2) { background: linear-gradient(135deg, rgba(48, 32, 66, .95), rgba(10, 12, 22, .98)); }
+.settings-fallback-track article:nth-child(3) { background: linear-gradient(135deg, rgba(26, 55, 49, .95), rgba(8, 17, 17, .98)); }
+.settings-fallback-track h2 { margin: 0; font-size: clamp(1.5rem, 5vw, 3.4rem); }
+.settings-fallback-track p { max-width: 32ch; margin: 0; font: 1rem/1.7 system-ui, sans-serif; }
+.settings-fallback-track span { color: #8be78f; font-size: .8rem; letter-spacing: .18em; }
 .emissive-list-panel {
     position: fixed;
     left: var(--panel-gap);
