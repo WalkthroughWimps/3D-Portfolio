@@ -1,63 +1,34 @@
-// global-sync.js
-// Provides persistent audio/MIDI sync offset utilities across pages.
-// Offset semantics: Positive offset (ms) delays AUDIO relative to MIDI.
-// Negative offset starts AUDIO earlier (MIDI delayed by |offset|).
-
-const OFFSET_KEY = 'globalAudioMidiOffsetMs';
-const DEFAULT_OFFSET = -270;
-
-export function getSyncOffsetMs(){
-  const v = localStorage.getItem(OFFSET_KEY);
-  if(v === null){
-    try{ localStorage.setItem(OFFSET_KEY, String(DEFAULT_OFFSET)); }catch(e){}
-    return DEFAULT_OFFSET;
-  }
-  const parsed = parseInt(v,10);
-  if(!Number.isFinite(parsed)){
-    try{ localStorage.setItem(OFFSET_KEY, String(DEFAULT_OFFSET)); }catch(e){}
-    return DEFAULT_OFFSET;
-  }
-  return parsed;
+// One browser/device offset for every page. Positive delays audio.
+import { localPreferences } from './local-preferences.js';
+export const SYNC_KEY = 'site.audio.sync';
+export function snapSyncMs(value) {
+ const n = Number(value);
+ return Math.max(-3000, Math.min(3000, Math.round((Number.isFinite(n) ? n : 0) / 5) * 5));
 }
-
-export function setSyncOffsetMs(ms){
-  if(typeof ms !== 'number' || !isFinite(ms)) return;
-  ms = Math.max(-3000, Math.min(3000, Math.round(ms))); // clamp
-  localStorage.setItem(OFFSET_KEY, String(ms));
-  window.dispatchEvent(new CustomEvent('syncOffsetChanged', { detail:{ offsetMs: ms }}));
+export function getSyncOffsetMs() {
+ const raw = localPreferences.getItem(SYNC_KEY) ?? localPreferences.getItem('globalAudioMidiOffsetMs') ?? '-270';
+ const value = snapSyncMs(raw);
+ if(localPreferences.getItem(SYNC_KEY) !== String(value)) localPreferences.setItem(SYNC_KEY, String(value));
+ return value;
 }
-
-// Page helper to auto-wire slider if present
-function initSlider(){
-  const slider = document.getElementById('syncOffset');
-  const label = document.getElementById('syncOffsetValue');
-  if(!slider || !label) return;
-  const initial = getSyncOffsetMs();
-  slider.value = initial;
-  label.textContent = initial + ' ms';
-  const DEAD_ZONE = 25; // ms within which we snap to 0
-  slider.addEventListener('input', ()=>{
-    const v = parseInt(slider.value,10) || 0;
-    if(Math.abs(v) <= DEAD_ZONE){
-      label.textContent = '0 ms';
-    } else {
-      label.textContent = v + ' ms';
-    }
-  });
-  slider.addEventListener('change', ()=>{
-    let v = parseInt(slider.value,10) || 0;
-    if(Math.abs(v) <= DEAD_ZONE){ v = 0; slider.value = '0'; }
-    setSyncOffsetMs(v);
-  });
-  window.addEventListener('syncOffsetChanged', e=>{
-    const ms = e.detail.offsetMs;
-    slider.value = ms;
-    label.textContent = ms + ' ms';
-  });
+export function setSyncOffsetMs(ms) {
+ const value = snapSyncMs(ms), previous = getSyncOffsetMs();
+ localPreferences.setItem(SYNC_KEY, String(value));
+ if(window.siteConfig) window.siteConfig.audioSyncMs = value;
+ if(previous !== value) window.dispatchEvent(new CustomEvent('syncOffsetChanged', {detail:{offsetMs:value, previousMs:previous}}));
+ return value;
 }
-
-document.addEventListener('DOMContentLoaded', initSlider);
-
-// Expose on window for non-module scripts if needed
-window.getSyncOffsetMs = getSyncOffsetMs;
-window.setSyncOffsetMs = setSyncOffsetMs;
+window.addEventListener('storage', event => {
+ if(event.key === SYNC_KEY || event.key === null) window.dispatchEvent(new CustomEvent('syncOffsetChanged', {detail:{offsetMs:getSyncOffsetMs(), source:'other-tab'}}));
+});
+function initSlider() {
+ const slider=document.getElementById('syncOffset'), label=document.getElementById('syncOffsetValue');
+ if(!slider) return;
+ slider.step='5';
+ const update=()=>{slider.value=getSyncOffsetMs(); if(label) label.textContent=slider.value+' ms';};
+ slider.addEventListener('input', ()=>{setSyncOffsetMs(slider.value); update();});
+ window.addEventListener('syncOffsetChanged', update); update();
+}
+if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded',initSlider); else initSlider();
+window.getSyncOffsetMs=getSyncOffsetMs;
+window.setSyncOffsetMs=setSyncOffsetMs;

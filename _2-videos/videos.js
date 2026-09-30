@@ -1,3 +1,4 @@
+import { getSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 ﻿// videos.js — minimal orchestrator for the Videos page (clean, minimal debug panel)
 /* eslint-disable no-unused-vars */
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
@@ -135,19 +136,7 @@ function markIntroDone() {
   tryStartDrop();
 }
 
-function getStoredSyncMs() {
-  try {
-    const v = localStorage.getItem('site.audio.sync');
-    if (v === null) {
-      localStorage.setItem('site.audio.sync', '-270');
-      return -270;
-    }
-    const n = parseInt(v, 10);
-    return Number.isFinite(n) ? n : -270;
-  } catch (e) {
-    return -270;
-  }
-}
+function getStoredSyncMs() { return getSyncOffsetMs(); }
 
 function getStoredAudioSettings() {
   const AUDIO_VOLUME_KEY = 'site.audio.volume';

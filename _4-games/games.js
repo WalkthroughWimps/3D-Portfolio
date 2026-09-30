@@ -1,3 +1,4 @@
+import { getSyncOffsetMs, setSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -154,20 +155,9 @@ function getStoredAudioSettings() {
   return { muted, volume };
 }
 
-function getStoredSyncMs() {
-  const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
-  return Number.isFinite(raw) ? raw : 0;
-}
+function getStoredSyncMs() { return getSyncOffsetMs(); }
 
-function setStoredSyncMs(ms) {
-  const snapped = Math.round((Number.isFinite(ms) ? ms : 0) / 10) * 10;
-  const clamped = Math.max(-3000, Math.min(3000, snapped));
-  try { localStorage.setItem(AUDIO_SYNC_KEY, String(clamped)); } catch (e) { /* ignore */ }
-  try {
-    window.dispatchEvent(new CustomEvent('syncOffsetChanged', { detail: { offsetMs: clamped } }));
-  } catch (e) { /* ignore */ }
-  return clamped;
-}
+function setStoredSyncMs(ms) { return setSyncOffsetMs(ms); }
 
 function createAudioElement(src) {
   const audio = document.createElement('audio');
@@ -2282,7 +2272,11 @@ function handlePointerDown(ev) {
     if (screenPt) {
       const handled = sharedControlsUi.handlePointerEvent({
         canvasX: screenPt.x,
-        canvasY: screenPt.y
+        canvasY: screenPt.y,
+        type: ev.type || 'pointerdown',
+        button: ev.button,
+        buttons: ev.buttons,
+        pointerId: ev.pointerId
       }, {
         canvasWidth: screenCanvas.width,
         canvasHeight: screenCanvas.height

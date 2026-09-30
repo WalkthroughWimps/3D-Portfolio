@@ -1,3 +1,4 @@
+import { getSyncOffsetMs, snapSyncMs } from './global-sync.js';
 console.log('%c[shared-video-controls] loaded', 'color:#00ffcc;font-weight:bold');
 console.log('%c[shared-video-controls] primary API active', 'color:#00ccff;font-weight:bold');
 
@@ -162,15 +163,7 @@ const AUDIO_ALLOWED_KEY = 'site.audio.allowed';
 const AUDIO_SYNC_KEY = 'site.audio.sync';
 const DEFAULT_SYNC_MS = -270;
 
-export function getStoredSyncMs() {
-  const raw = localStorage.getItem(AUDIO_SYNC_KEY);
-  if (raw === null) {
-    try { localStorage.setItem(AUDIO_SYNC_KEY, String(DEFAULT_SYNC_MS)); } catch (e) { /* ignore */ }
-    return DEFAULT_SYNC_MS;
-  }
-  const parsed = parseInt(raw, 10);
-  return Number.isFinite(parsed) ? parsed : DEFAULT_SYNC_MS;
-}
+export function getStoredSyncMs() { return getSyncOffsetMs(); }
 
 export function canUseAudio(allowSound = true) {
   return !!allowSound && isAudioAllowed();
@@ -510,16 +503,30 @@ export function createVideoControlsUI(options = {}) {
     };
     const back = { x: pad, y: topY + Math.round((barH - icon) / 2), w: icon, h: icon };
     const sync = { x: cw - pad - icon, y: topY + Math.round((barH - icon) / 2), w: icon, h: icon };
+    const syncArrowSize = Math.max(18, Math.round(icon * 0.72));
+    const syncArrowGap = Math.max(6, Math.round(pad * 0.28));
+    const syncIncrease = {
+      x: sync.x - Math.round(pad * 0.45) - syncArrowSize,
+      y: topY + Math.round((barH - syncArrowSize) / 2),
+      w: syncArrowSize,
+      h: syncArrowSize
+    };
     const syncSliderW = Math.max(Math.round(cw * 0.23), Math.round(icon * 3.6));
     const syncSlider = {
-      x: sync.x - Math.round(pad * 0.45) - syncSliderW,
+      x: syncIncrease.x - syncArrowGap - syncSliderW,
       y: topY + Math.round(barH * 0.58),
       w: syncSliderW,
       h: Math.max(7, Math.round(barH * 0.17))
     };
+    const syncDecrease = {
+      x: syncSlider.x - syncArrowGap - syncArrowSize,
+      y: syncIncrease.y,
+      w: syncArrowSize,
+      h: syncArrowSize
+    };
     const syncTextY = syncSlider.y - Math.max(8, Math.round(barH * 0.16));
     const titleLeft = back.x + back.w + Math.round(pad * 0.8);
-    const titleRight = syncSlider.x - Math.round(pad * 0.8);
+    const titleRight = syncDecrease.x - Math.round(pad * 0.8);
     const titleRect = {
       x: titleLeft,
       y: topY + Math.round(barH * 0.18),
@@ -534,7 +541,9 @@ export function createVideoControlsUI(options = {}) {
       back,
       titleRect,
       sync,
+      syncDecrease,
       syncSlider,
+      syncIncrease,
       syncTextY,
       play,
       mute,
@@ -588,6 +597,30 @@ export function createVideoControlsUI(options = {}) {
     ctx.globalAlpha = alpha * 0.4;
     ctx.fillStyle = color;
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.restore();
+  }
+
+  function drawStepArrow(ctx, rect, direction, color, alpha) {
+    if (!ctx || !rect) return;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const halfW = rect.w * 0.24;
+    const halfH = rect.h * 0.34;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    if (direction < 0) {
+      ctx.moveTo(cx - halfW, cy);
+      ctx.lineTo(cx + halfW, cy - halfH);
+      ctx.lineTo(cx + halfW, cy + halfH);
+    } else {
+      ctx.moveTo(cx + halfW, cy);
+      ctx.lineTo(cx - halfW, cy - halfH);
+      ctx.lineTo(cx - halfW, cy + halfH);
+    }
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
 
@@ -702,7 +735,7 @@ export function createVideoControlsUI(options = {}) {
     const ui = getLayout(cw, ch);
     const alpha = Number.isFinite(meta.alpha) ? meta.alpha : 1;
     const controls = getControlAvailability(s);
-    const syncRangeMs = Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 500;
+    const syncRangeMs = Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 3000;
     const syncMs = Number.isFinite(s.syncMs) ? s.syncMs : 0;
     const syncRatio = Math.max(0, Math.min(1, (syncMs + syncRangeMs) / (syncRangeMs * 2)));
     const volume = Math.max(0, Math.min(1, Number.isFinite(s.volume) ? s.volume : 0));
@@ -753,6 +786,8 @@ export function createVideoControlsUI(options = {}) {
       ctx.textBaseline = 'middle';
       ctx.font = `${Math.round(ui.sync.h * 0.82)}px "Material Symbols Rounded","Material Symbols Outlined","Material Icons"`;
       ctx.fillText('schedule', ui.sync.x + ui.sync.w / 2, ui.sync.y + ui.sync.h / 2 + 1);
+      drawStepArrow(ctx, ui.syncDecrease, -1, theme.fg, alpha);
+      drawStepArrow(ctx, ui.syncIncrease, 1, theme.fg, alpha);
       ctx.fillRect(ui.syncSlider.x, ui.syncSlider.y, ui.syncSlider.w, ui.syncSlider.h);
       ctx.globalAlpha = alpha * 0.45;
       ctx.fillRect(ui.syncSlider.x, ui.syncSlider.y, ui.syncSlider.w * syncRatio, ui.syncSlider.h);
@@ -851,7 +886,7 @@ export function createVideoControlsUI(options = {}) {
     const { x, y, cw, ch } = pos;
     const ui = getLayout(cw, ch);
     const controls = getControlAvailability(s);
-    const syncRangeMs = Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 500;
+    const syncRangeMs = Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 3000;
     const within = (r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
     if (within(ui.back)) {
@@ -875,9 +910,16 @@ export function createVideoControlsUI(options = {}) {
     if (within(ui.pitch)) {
       return { hit: true, handled: !!controls.pitch, action: controls.pitch ? { type: 'togglePitch' } : null, control: 'pitch' };
     }
+    if (within(ui.syncDecrease) || within(ui.syncIncrease)) {
+      const direction = within(ui.syncDecrease) ? -1 : 1;
+      const step = Number(ev?.button) === 2 ? 10 : 5;
+      const current = Number.isFinite(s.syncMs) ? s.syncMs : 0;
+      const value = Math.max(-syncRangeMs, Math.min(syncRangeMs, current + direction * step));
+      return { hit: true, handled: !!controls.sync, action: controls.sync ? { type: 'setSyncMs', value } : null, control: 'sync-step' };
+    }
     if (within(ui.sync) || within(ui.syncSlider)) {
       const ratio = Math.max(0, Math.min(1, (x - ui.syncSlider.x) / ui.syncSlider.w));
-      const syncMs = Math.round((ratio * 2 - 1) * syncRangeMs);
+      const syncMs = snapSyncMs((ratio * 2 - 1) * syncRangeMs);
       return { hit: true, handled: !!controls.sync, action: controls.sync ? { type: 'setSyncMs', value: syncMs, ratio } : null, control: 'sync' };
     }
     if (y >= ui.progress.y - 6 && y <= ui.progress.y + ui.progress.h + 6 && x >= ui.progress.x && x <= ui.progress.x + ui.progress.w) {
@@ -900,7 +942,18 @@ export function createVideoControlsUI(options = {}) {
     }
     const result = inspectPointerEvent(ev, meta);
     if (!result.hit) return false;
-    if (result.handled && ['volume', 'sync', 'seek'].includes(result.control)) sliderDrag = result.control;
+    // Only a press can begin slider ownership. A browser fires `click` after
+    // pointerup (including after a long drag); treating that trailing click as
+    // another drag start leaves the seek/volume control latched to hover moves.
+    const beginsPointerGesture = !eventType
+      || eventType === 'pointerdown'
+      || eventType === 'mousedown'
+      || eventType === 'touchstart';
+    if (result.handled && beginsPointerGesture && ['volume', 'sync', 'seek'].includes(result.control)) {
+      sliderDrag = result.control;
+      hoverPreview.visible = false;
+      hoverPreview.lastRatio = -1;
+    }
     if (result.handled && result.action?.type === 'togglePlay') {
       // A small, non-blocking transport acknowledgement makes screen clicks
       // understandable even while the chrome is fading away.
@@ -915,8 +968,14 @@ export function createVideoControlsUI(options = {}) {
   }
 
   function handlePointerMove(ev, meta = {}) {
+    // A release can occur outside a projected WebGL control surface. Recover
+    // on the next move as well as through each host page's explicit release
+    // handler so one slider can never remain latched indefinitely.
+    if (sliderDrag && typeof ev?.buttons === 'number' && ev.buttons === 0) {
+      sliderDrag = null;
+    }
     const s = state.current;
-    if (!s || !s.canSeek) {
+    if (!s || (!s.canSeek && !sliderDrag)) {
       hoverPreview.visible = false;
       return false;
     }
@@ -927,6 +986,8 @@ export function createVideoControlsUI(options = {}) {
     }
     const ui = getLayout(pos.cw, pos.ch);
     if (sliderDrag) {
+      hoverPreview.visible = false;
+      hoverPreview.lastRatio = -1;
       const rect = sliderDrag === 'volume' ? ui.volumeSlider : (sliderDrag === 'sync' ? ui.syncSlider : ui.progress);
       // A held slider follows only along its own axis. Leaving either end
       // pauses the value instead of snapping it to 0 or 100%; re-entering the
@@ -935,7 +996,7 @@ export function createVideoControlsUI(options = {}) {
         const ratio = Math.max(0, Math.min(1, (pos.x - rect.x) / rect.w));
         if (sliderDrag === 'volume') onAction?.({ type: 'setVolume', volume: ratio });
         if (sliderDrag === 'seek') onAction?.({ type: 'seekToRatio', ratio });
-        if (sliderDrag === 'sync') onAction?.({ type: 'setSyncMs', value: Math.round((ratio * 2 - 1) * (Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 500)), ratio });
+        if (sliderDrag === 'sync') onAction?.({ type: 'setSyncMs', value: Math.round((ratio * 2 - 1) * (Number.isFinite(s.syncRangeMs) ? Math.max(100, s.syncRangeMs) : 3000)), ratio });
       }
       return true;
     }
@@ -979,7 +1040,11 @@ export function createVideoControlsUI(options = {}) {
       hoverPreview.visible = false;
       hoverPreview.lastRatio = -1;
     },
-    endPointerInteraction() { sliderDrag = null; },
+    endPointerInteraction() {
+      sliderDrag = null;
+      hoverPreview.visible = false;
+      hoverPreview.lastRatio = -1;
+    },
     handlePointerEvent,
     inspectPointerEvent,
     notifyTransportToggle(kind) {

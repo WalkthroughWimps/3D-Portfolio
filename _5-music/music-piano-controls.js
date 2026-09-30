@@ -470,7 +470,7 @@ const AUDIO_VOLUME_KEY = 'site.audio.volume';
 const AUDIO_MUTED_KEY = 'site.audio.muted';
 const SYNC_OFFSET_MIN = -3000;
 const SYNC_OFFSET_MAX = 3000;
-const SYNC_OFFSET_STEP = 10;
+const SYNC_OFFSET_STEP = 5;
 const SYNC_OFFSET_DEADZONE = 25;
 let topPadSyncDragging = false;
 let topPadSyncPointerId = null;
@@ -962,7 +962,7 @@ function clampSyncOffset(ms){
 
 function normalizeSyncOffset(ms){
   const clamped = clampSyncOffset(ms);
-  return Math.abs(clamped) <= SYNC_OFFSET_DEADZONE ? 0 : clamped;
+  return clamped;
 }
 
 function setTopPadSyncOffsetFromPx(px, rect){
@@ -9246,6 +9246,10 @@ const NoteEngine = {
 };
 
 function onGlobalPointerUp(e){
+  // Shared video sliders own an independent drag latch. Always release both
+  // possible players, even when no piano/key pointer gesture is active.
+  try{ topPadVideo.ui?.endPointerInteraction?.(); }catch(err){}
+  try{ trackVideo.ui?.endPointerInteraction?.(); }catch(err){}
   if(topPadSyncDragging){
     topPadSyncDragging = false;
     topPadSyncPointerId = null;

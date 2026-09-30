@@ -1,3 +1,4 @@
+import { getSyncOffsetMs, setSyncOffsetMs } from './global-sync.js';
 /**
  * video-player-controls.js
  * Reusable video player with controls for tablet/canvas-based playback
@@ -197,16 +198,7 @@ function setStoredAudioVolumeGlobal(volume) {
   return v;
 }
 
-function setStoredSyncMsLocal(ms) {
-  const step = 10;
-  const snapped = Math.round((Number.isFinite(ms) ? ms : 0) / step) * step;
-  const clamped = Math.max(-SYNC_RANGE_MS, Math.min(SYNC_RANGE_MS, snapped));
-  try { localStorage.setItem(AUDIO_SYNC_KEY, String(clamped)); } catch (e) { /* ignore */ }
-  try {
-    window.dispatchEvent(new CustomEvent('syncOffsetChanged', { detail: { offsetMs: clamped } }));
-  } catch (e) { /* ignore */ }
-  return clamped;
-}
+function setStoredSyncMsLocal(ms) { return setSyncOffsetMs(ms); }
 
 function drawClockIcon(ctx, rect, color, fontFamily) {
   ctx.save();
@@ -307,6 +299,7 @@ function formatTime(t) {
         pointerMove: this.handlePointerMove.bind(this),
         pointerDown: this.handlePointerDown.bind(this),
         pointerUp: this.handlePointerUp.bind(this),
+        pointerCancel: this.handlePointerUp.bind(this),
         pointerLeave: this.handlePointerLeave.bind(this)
       };
 
@@ -324,7 +317,11 @@ function formatTime(t) {
       this.canvas.addEventListener('pointermove', this.boundHandlers.pointerMove);
       this.canvas.addEventListener('pointerdown', this.boundHandlers.pointerDown);
       this.canvas.addEventListener('pointerup', this.boundHandlers.pointerUp);
+      this.canvas.addEventListener('pointercancel', this.boundHandlers.pointerCancel);
       this.canvas.addEventListener('pointerleave', this.boundHandlers.pointerLeave);
+      window.addEventListener('pointerup', this.boundHandlers.pointerUp);
+      window.addEventListener('pointercancel', this.boundHandlers.pointerCancel);
+      window.addEventListener('blur', this.boundHandlers.pointerCancel);
     }
 
       keepControlsVisible() {
@@ -382,7 +379,11 @@ function formatTime(t) {
       this.canvas.removeEventListener('pointermove', this.boundHandlers.pointerMove);
       this.canvas.removeEventListener('pointerdown', this.boundHandlers.pointerDown);
       this.canvas.removeEventListener('pointerup', this.boundHandlers.pointerUp);
+      this.canvas.removeEventListener('pointercancel', this.boundHandlers.pointerCancel);
       this.canvas.removeEventListener('pointerleave', this.boundHandlers.pointerLeave);
+      window.removeEventListener('pointerup', this.boundHandlers.pointerUp);
+      window.removeEventListener('pointercancel', this.boundHandlers.pointerCancel);
+      window.removeEventListener('blur', this.boundHandlers.pointerCancel);
       this.stopAllVideos();
     }
 
@@ -1593,7 +1594,7 @@ function formatTime(t) {
       let dragState = null;
       let pendingSingleClick = null;
       let pendingClickPos = null;
-      let suppressSharedClickUntil = 0;
+      let suppressNextSharedClick = false;
 
       function clearPendingSingleClick() {
         if (pendingSingleClick) {
@@ -2586,7 +2587,14 @@ function formatTime(t) {
       function getSharedControlPointerEvent(ev) {
         const pt = pointFromEvent(ev);
         if (!pt || pt.target === 'top' || pt.target === 'bottom') return null;
-        return { canvasX: pt.x, canvasY: pt.y, type: ev?.type || '' };
+        return {
+          canvasX: pt.x,
+          canvasY: pt.y,
+          type: ev?.type || '',
+          button: ev?.button,
+          buttons: ev?.buttons,
+          pointerId: ev?.pointerId
+        };
       }
 
       function cellIndexFromPoint(pt) {
@@ -2709,8 +2717,11 @@ function formatTime(t) {
       function drawLoadProgress(video) {
         if (!video) return;
         const duration = video.duration || 0;
-        const isReady = video.readyState >= 2 && duration > 0;
-        if (isReady) return;
+        // This is initial-load feedback, not a seek/buffer indicator. During a
+        // scrub, readyState can briefly fall below 2 even though metadata and
+        // the player UI are already established; drawing here produced the
+        // stray blue bar beneath the playhead.
+        if (duration > 0 || video.seeking || video.readyState >= 2) return;
         const frames = getActiveRects();
         if (!frames || !frames.surfaceRect) return;
         const barW = Math.min(frames.surfaceRect.w * 0.6, gridCanvas.width * 0.7);
@@ -3884,7 +3895,8 @@ function formatTime(t) {
 
       function handleClick(ev) {
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
-        if (suppressSharedClickUntil && performance.now() < suppressSharedClickUntil) {
+        if (suppressNextSharedClick) {
+          suppressNextSharedClick = false;
           ev.stopImmediatePropagation?.();
           ev.stopPropagation?.();
           ev.preventDefault?.();
@@ -3958,7 +3970,11 @@ function formatTime(t) {
             const sharedEv = getSharedControlPointerEvent(ev);
             const handled = !!sharedEv && sharedControls.ui.handlePointerEvent(sharedEv, { canvasWidth: controlsCanvas.width, canvasHeight: controlsCanvas.height });
             if (handled) {
-              suppressSharedClickUntil = performance.now() + 500;
+              // Suppress the click belonging to this exact press/release
+              // sequence. A timeout fails for deliberate drags lasting longer
+              // than the timeout and lets their trailing click re-arm a slider.
+              suppressNextSharedClick = true;
+              try { ev.currentTarget?.setPointerCapture?.(ev.pointerId); } catch (e) { /* ignore */ }
               ev.stopImmediatePropagation?.();
               ev.stopPropagation?.();
               ev.preventDefault?.();
@@ -4052,7 +4068,16 @@ function formatTime(t) {
       }
 
       function handlePointerUp(ev) {
+        sharedControls?.ui?.endPointerInteraction?.();
+        try { ev?.currentTarget?.releasePointerCapture?.(ev.pointerId); } catch (e) { /* ignore */ }
         if (uiState.fullscreen && ev && ev.currentTarget && ev.currentTarget !== gridCanvas) return;
+        dragState = null;
+        uiState.volumeHover = false;
+      }
+
+      function cancelPointerInteraction() {
+        sharedControls?.ui?.endPointerInteraction?.();
+        suppressNextSharedClick = false;
         dragState = null;
         uiState.volumeHover = false;
       }
@@ -4063,6 +4088,10 @@ function formatTime(t) {
       dom.addEventListener('click', handleClick);
       dom.addEventListener('pointerdown', handlePointerDown);
       dom.addEventListener('pointerup', handlePointerUp);
+      dom.addEventListener('pointercancel', cancelPointerInteraction);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', cancelPointerInteraction);
+      window.addEventListener('blur', cancelPointerInteraction);
       const handleGlobalPointerMove = () => {
         lastMouseMoveTs = performance.now();
         if (chromeTarget === 0) { chromeTarget = 1; chromeAnimStart = lastMouseMoveTs; }
@@ -4297,7 +4326,7 @@ function formatTime(t) {
                 applySettingsToAllVideos();
                 return;
               case 'setSyncMs':
-                if (Number.isFinite(Number(action.value))) setStoredSyncMs(Number(action.value));
+                if (Number.isFinite(Number(action.value))) setStoredSyncMsLocal(Number(action.value));
                 return;
               case 'toggleTablet':
                 setTabletView(!uiState.tabletView);
@@ -4338,7 +4367,7 @@ function formatTime(t) {
           return getStoredSyncMs();
         },
         setSyncMs(value) {
-          setStoredSyncMs(value);
+          setStoredSyncMsLocal(value);
           return getStoredSyncMs();
         },
         isTabletView() {
@@ -4372,6 +4401,10 @@ function formatTime(t) {
           dom.removeEventListener('click', handleClick);
           dom.removeEventListener('pointerdown', handlePointerDown);
           dom.removeEventListener('pointerup', handlePointerUp);
+          dom.removeEventListener('pointercancel', cancelPointerInteraction);
+          window.removeEventListener('pointerup', handlePointerUp);
+          window.removeEventListener('pointercancel', cancelPointerInteraction);
+          window.removeEventListener('blur', cancelPointerInteraction);
           try { window.removeEventListener('pointermove', handleGlobalPointerMove); } catch (e) { /* ignore */ }
           try { document.removeEventListener('keydown', handleKeydown); } catch (e) { /* ignore */ }
           restoreOriginalMaterial();

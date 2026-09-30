@@ -33,7 +33,7 @@ export function createMediaController(options = {}) {
       canSeek,
       preservePitch: !!options.getPreservePitch?.(),
       syncMs: Number.isFinite(getSyncMs()) ? getSyncMs() : 0,
-      syncRangeMs: Number.isFinite(options.syncRangeMs) ? options.syncRangeMs : 500,
+      syncRangeMs: Number.isFinite(options.syncRangeMs) ? options.syncRangeMs : 3000,
       fullscreen: !!options.isFullscreen?.(),
       controls: {
         exit: capabilities.exit ?? true,

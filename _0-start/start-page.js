@@ -1,3 +1,4 @@
+import { getSyncOffsetMs, setSyncOffsetMs, snapSyncMs } from '../_7-shared-scripts/global-sync.js';
 import { localPreferences } from '../_7-shared-scripts/local-preferences.js';
 import { createCameraTransition } from './camera-transition.js';
 import { assetUrl, isLocalDev } from "../_7-shared-scripts/assets-config.js";
@@ -4040,7 +4041,6 @@ enabled: ${!!cameraAction?.enabled}`;
             const ab = knobState.pMax.clone().sub(knobState.pMin);
             const abLenSq = Math.max(1e-6, ab.lengthSq());
             let t = point.clone().sub(knobState.pMin).dot(ab) / abLenSq;
-            t = Math.max(0, Math.min(1, t));
             return t;
         }
 
@@ -4127,7 +4127,7 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function updateControllerHoverHint(event){
-            if(introActive || activeSettingsView !== 'visuals'){
+            if(introActive || activeSettingsView !== 'audio'){
                 setControllerHoverHint('');
                 return;
             }
@@ -4135,7 +4135,7 @@ enabled: ${!!cameraAction?.enabled}`;
             const firstHit = hits[0]?.object || null;
             const knobType = resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit);
             setControllerHoverHint(knobType === 'sync'
-                ? 'MOVE THE KNOB SLOWLY TO FINE-TUNE CONTRAST'
+                ? 'SYNC: 5 MS STEPS - USE ARROW KEYS TO FINE-TUNE'
                 : '');
         }
 
@@ -4186,7 +4186,7 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function applyKeyboardStep(type, direction, shifted = false){
-            const isContrast = type === 'sync' && activeSettingsView === 'visuals';
+            const isContrast = type === 'sync';
             const amount = isContrast
                 ? (shifted ? 10 : 5)
                 : (shifted ? 5 : 1);
@@ -4431,36 +4431,16 @@ enabled: ${!!cameraAction?.enabled}`;
                     // coordinate in this asset); one is right/top.
                     const pMin = makeScreenPoint(constraint.max);
                     const pMax = makeScreenPoint(constraint.min);
-                    const axisVec = pMax.clone().sub(pMin);
-                    const pointerInvert = false;
                     knobDragState = {
                         type: knobType,
+                        pointerId: event.pointerId,
+                        grabOffset: getActiveKnobT(knobType) - getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY),
                         pMin,
-                        pMax,
-                        axisDir: axisVec.clone().normalize(),
-                        startX: event.clientX,
-                        startY: event.clientY,
-                        isDragging: false,
-                        pointerInvert,
-                        lastRawT: getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY),
-                        lastX: event.clientX,
-                        lastY: event.clientY,
-                        lastMoveAt: performance.now(),
-                        slowMs: 0,
-                        precision: null,
-                        pointerLocked: false,
-                        relativeValue: getActiveKnobT(knobType),
-                        dragDistance: 0
+                        pMax
                     };
                     controls.enabled = false;
                     try{ settingsControllerCanvas.setPointerCapture(event.pointerId); }catch(e){}
-                    // Request relative mouse input while the initiating gesture
-                    // still has browser activation. This gives knob drags
-                    // effectively unlimited travel at the screen edges.
-                    try{
-                        const lockRequest = settingsControllerCanvas.requestPointerLock?.();
-                        lockRequest?.catch?.(() => {});
-                    }catch(e){}
+                    // Capture keeps the drag active outside the canvas without hiding or locking the cursor.
                     event.preventDefault();
                     event.stopPropagation();
                     return;
@@ -4514,76 +4494,16 @@ enabled: ${!!cameraAction?.enabled}`;
                 updateControllerHoverHint(event);
                 return;
             }
-            const dx = event.clientX - knobDragState.startX;
-            const dy = event.clientY - knobDragState.startY;
-            const locked = document.pointerLockElement === settingsControllerCanvas;
-            const initialMoveX = locked ? event.movementX : event.clientX - knobDragState.lastX;
-            const initialMoveY = locked ? event.movementY : event.clientY - knobDragState.lastY;
-            knobDragState.dragDistance += Math.hypot(initialMoveX, initialMoveY);
-            const moved = locked ? knobDragState.dragDistance : Math.hypot(dx, dy);
-            if(!knobDragState.isDragging){
-                if(moved < 10) return;
-                knobDragState.isDragging = true;
-            }
+            if(event.pointerId !== knobDragState.pointerId) return;
+            if(!(event.buttons & 1)) { handlePointerCancel(event); return; }
             const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
-            const semanticRawT = knobDragState.pointerInvert ? (1 - rawT) : rawT;
-            const now = performance.now();
-            knobDragState.pointerLocked = locked;
-            const moveX = locked ? event.movementX : event.clientX - knobDragState.lastX;
-            const moveY = locked ? event.movementY : event.clientY - knobDragState.lastY;
-            const stepDistance = Math.hypot(moveX, moveY);
-            const elapsed = Math.max(1, now - knobDragState.lastMoveAt);
-            let relativePixels = (moveX * knobDragState.axisDir.x) + (moveY * knobDragState.axisDir.y);
-            if(knobDragState.pointerInvert) relativePixels *= -1;
-            const trackPixels = Math.max(40, knobDragState.pMin.distanceTo(knobDragState.pMax));
-            const normalT = locked
-                ? Math.max(0, Math.min(1, knobDragState.relativeValue + (relativePixels / trackPixels)))
-                : semanticRawT;
-            const semanticMovement = Math.abs(normalT - knobDragState.relativeValue);
-            const insideTrack = normalT > 0.0001 && normalT < 0.9999;
-            const slowDeliberateMovement = stepDistance > 0
-                && stepDistance <= 4
-                && (stepDistance / elapsed) <= 0.12
-                && semanticMovement > 1e-6
-                && insideTrack;
-            knobDragState.slowMs = slowDeliberateMovement
-                ? knobDragState.slowMs + Math.min(elapsed, 40)
-                : 0;
-            if(!knobDragState.precision && knobDragState.slowMs >= 220){
-                knobDragState.precision = {
-                    value: normalT,
-                    justStarted: true
-                };
-                settingsControllerScene.classList.add('is-precision-adjusting');
-            }
-            let t = normalT;
-            if(knobDragState.precision){
-                if(!knobDragState.precision.justStarted){
-                    const relativeSpeed = Math.abs(relativePixels) / elapsed;
-                    // Fine motion is one millisecond per pixel for AUDIO SYNC,
-                    // or one tenth of a percent per pixel for other controls.
-                    // Faster movement accelerates smoothly so a deliberate
-                    // fling can still cross the complete slider range.
-                    const baseSensitivity = knobDragState.type === 'sync' && activeSettingsView === 'audio'
-                        ? (1 / 6000)
-                        : 0.001;
-                    const acceleration = relativeSpeed <= 0.20
-                        ? 1
-                        : Math.min(10, 1 + ((relativeSpeed - 0.20) * 7.5));
-                    knobDragState.precision.value = Math.max(0, Math.min(1,
-                        knobDragState.precision.value + (relativePixels * baseSensitivity * acceleration)
-                    ));
-                }
-                knobDragState.precision.justStarted = false;
-                t = knobDragState.precision.value;
-            }
-            knobDragState.relativeValue = t;
-            knobDragState.lastRawT = rawT;
-            knobDragState.lastSemanticT = t;
-            knobDragState.lastX = event.clientX;
-            knobDragState.lastY = event.clientY;
-            knobDragState.lastMoveAt = now;
+            const t = Math.max(0, Math.min(1, rawT + knobDragState.grabOffset));
             applyKnobStateFromT(knobDragState.type, t);
+            window.dispatchEvent(new CustomEvent('syncDragDebug', { detail: {
+                control: knobDragState.type, mode: activeSettingsView, rawT: rawT.toFixed(4),
+                appliedT: t.toFixed(4), trackPixels: knobDragState.pMin.distanceTo(knobDragState.pMax).toFixed(1),
+                grabOffset: knobDragState.grabOffset.toFixed(4), pointerId: event.pointerId
+            } }));
         }
 
         function handlePointerUp(event){
@@ -4600,12 +4520,7 @@ enabled: ${!!cameraAction?.enabled}`;
                 event.stopPropagation();
                 return;
             }
-            if(event.button === 0 && knobDragState){
-                if(!knobDragState.isDragging){
-                    const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
-                    const t = knobDragState.pointerInvert ? (1 - rawT) : rawT;
-                    applyKnobStateFromT(knobDragState.type, t);
-                }
+            if(event.button === 0 && knobDragState && event.pointerId === knobDragState.pointerId){
                 knobDragState = null;
                 settingsControllerScene.classList.remove('is-precision-adjusting');
                 if(document.pointerLockElement === settingsControllerCanvas) document.exitPointerLock?.();
@@ -4657,6 +4572,7 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function handlePointerCancel(event){
+            const capturedId = knobDragState?.pointerId ?? arrowPointerState?.pointerId;
             if(arrowPointerState?.pointerId === event.pointerId){
                 arrowPointerState = null;
                 if(controls) setUserCameraControlsEnabled(true);
@@ -4669,12 +4585,18 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             if(controls) controls.enablePan = false;
             middlePointerState = null;
+            if(capturedId !== undefined && settingsControllerCanvas.hasPointerCapture(capturedId)){
+                try{ settingsControllerCanvas.releasePointerCapture(capturedId); }catch(e){}
+            }
         }
 
             settingsControllerCanvas.addEventListener('pointerdown', handlePointerDown, { capture: true });
             settingsControllerCanvas.addEventListener('pointerup', handlePointerUp);
+            window.addEventListener('pointerup', handlePointerUp);
             settingsControllerCanvas.addEventListener('pointercancel', handlePointerCancel);
             settingsControllerCanvas.addEventListener('pointermove', handlePointerMove);
+            settingsControllerCanvas.addEventListener('lostpointercapture', handlePointerCancel);
+            window.addEventListener('blur', () => handlePointerCancel({ pointerId: arrowPointerState?.pointerId }));
             settingsControllerCanvas.addEventListener('pointerleave', () => setControllerHoverHint(''));
             settingsControllerCanvas.addEventListener('contextmenu', (event) => {
                 event.preventDefault();
@@ -4778,7 +4700,7 @@ enabled: ${!!cameraAction?.enabled}`;
     let storedVolume = parseFloat(localPreferences.getItem(AUDIO_VOLUME_KEY) || '0.25');
     let storedMuted = (localPreferences.getItem(AUDIO_MUTED_KEY) === 'true');
     let welcomeJingle = null;
-    let storedSync = parseInt(localPreferences.getItem(AUDIO_SYNC_KEY) || '0', 10);
+    let storedSync = getSyncOffsetMs();
     let isOrchestrating = false;
     let jumpPlaybackRateIndex = SHARED_PLAYBACK_RATES.indexOf(1);
     if(jumpPlaybackRateIndex < 0) jumpPlaybackRateIndex = 0;
@@ -4786,6 +4708,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
     // Initialize UI values
     syncSlider.value = storedSync;
+    if(accessibleSync) accessibleSync.value = String(storedSync);
     if(modalSync) modalSync.value = storedSync;
     syncDisplay.textContent = `Sync: ${storedSync} ms`;
 
@@ -4987,8 +4910,11 @@ enabled: ${!!cameraAction?.enabled}`;
     }
 
     function applySyncValue(ms){
-        storedSync = parseInt(ms, 10) || 0;
-        localPreferences.setItem(AUDIO_SYNC_KEY, String(storedSync));
+        storedSync = snapSyncMs(ms);
+        setSyncOffsetMs(storedSync);
+        if(syncSlider) syncSlider.value = String(storedSync);
+        if(modalSync) modalSync.value = String(storedSync);
+        syncAccessibleControllerUI();
         syncDisplay.textContent = `Sync: ${storedSync} ms`;
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState();
@@ -5128,6 +5054,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 canvasWidth: controlsCanvas.width,
                 canvasHeight: controlsCanvas.height
             });
+            if(handled){
+                try{ controlsCanvas.setPointerCapture(event.pointerId); }catch(e){}
+            }
             if(!handled){
                 if(jumpVideo.paused) jumpVideo.play().catch(()=>{});
                 else jumpVideo.pause();
@@ -5135,6 +5064,28 @@ enabled: ${!!cameraAction?.enabled}`;
             event.preventDefault();
             event.stopPropagation();
         });
+        controlsCanvas.addEventListener('pointermove', (event) => {
+            resizeControlsCanvas();
+            if(ui.handlePointerMove(event, {
+                canvasWidth: controlsCanvas.width,
+                canvasHeight: controlsCanvas.height
+            })){
+                event.preventDefault();
+                event.stopPropagation();
+            }
+        });
+        const endControlsPointerInteraction = (event) => {
+            ui.endPointerInteraction();
+            if(event?.pointerId !== undefined){
+                try{ controlsCanvas.releasePointerCapture(event.pointerId); }catch(e){}
+            }
+        };
+        controlsCanvas.addEventListener('pointerup', endControlsPointerInteraction);
+        controlsCanvas.addEventListener('pointercancel', endControlsPointerInteraction);
+        controlsCanvas.addEventListener('lostpointercapture', () => ui.endPointerInteraction());
+        window.addEventListener('pointerup', endControlsPointerInteraction);
+        window.addEventListener('pointercancel', endControlsPointerInteraction);
+        window.addEventListener('blur', () => ui.endPointerInteraction());
         controlsCanvas.addEventListener('contextmenu', (event) => event.preventDefault());
         const draw = () => {
             resizeControlsCanvas();

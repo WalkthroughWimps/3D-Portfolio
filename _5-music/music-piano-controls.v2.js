@@ -485,7 +485,7 @@ const AUDIO_MUTED_KEY = 'site.audio.muted';
 const SYNC_OFFSET_MIN = -3000;
 const SYNC_OFFSET_MAX = 3000;
 const MUSIC_SYNC_SLIDER_RANGE = 500;
-const SYNC_OFFSET_STEP = 10;
+const SYNC_OFFSET_STEP = 5;
 const SYNC_OFFSET_DEADZONE = 25;
 let topPadSyncDragging = false;
 let topPadSyncPointerId = null;
@@ -999,7 +999,7 @@ function clampSyncOffset(ms){
 
 function normalizeSyncOffset(ms){
   const clamped = clampSyncOffset(ms);
-  return Math.abs(clamped) <= SYNC_OFFSET_DEADZONE ? 0 : clamped;
+  return clamped;
 }
 
 function setTopPadSyncOffsetFromPx(px, rect){
@@ -10444,6 +10444,8 @@ const NoteEngine = {
 };
 
 function onGlobalPointerUp(e){
+  try{ topPadVideo.ui?.endPointerInteraction?.(); }catch(err){}
+  try{ trackVideo.ui?.endPointerInteraction?.(); }catch(err){}
   if(topPadSyncDragging){
     topPadSyncDragging = false;
     topPadSyncPointerId = null;
@@ -10634,7 +10636,7 @@ function onPointerDown(e){
               width: Math.max(1, Math.round(cr.w)),
               height: Math.max(1, Math.round(cr.h))
             }));
-            const ev = { canvasX: px - cr.x, canvasY: py - cr.y };
+            const ev = { canvasX: px - cr.x, canvasY: py - cr.y, type: e.type || 'pointerdown', button: e.button, buttons: e.buttons, pointerId: e.pointerId };
             const hit = topPadVideo.ui.inspectPointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             handled = !!topPadVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             if(!handled && !hit.hit){
@@ -10653,7 +10655,7 @@ function onPointerDown(e){
               width: Math.max(1, Math.round(cr.w)),
               height: Math.max(1, Math.round(cr.h))
             }));
-            const ev = { canvasX: px - cr.x, canvasY: py - cr.y };
+            const ev = { canvasX: px - cr.x, canvasY: py - cr.y, type: e.type || 'pointerdown', button: e.button, buttons: e.buttons, pointerId: e.pointerId };
             const hit = trackVideo.ui.inspectPointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             handled = !!trackVideo.ui.handlePointerEvent(ev, { canvasWidth: cr.w, canvasHeight: cr.h });
             if(!handled && !hit.hit){
