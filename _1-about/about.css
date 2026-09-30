@@ -3,6 +3,7 @@ body {
   --primary-color: var(--red-primary);
   --secondary-color: var(--red-secondary);
   --tertiary-color: var(--red-tertiary);
+  --grey-color: var(--red-grey);
   --text-color: var(--red-text-color);
   --hl-primary-color: var(--blue-primary);
   --hl-secondary-color: var(--blue-secondary);
@@ -16,6 +17,9 @@ body {
   background-blend-mode: multiply;
 }
 .about-header { z-index: 100; }
+/* Keep local review tools clear of the shared navigation. */
+body #filter-admin { top: 100px; }
+body #sync-debug { top: 100px; }
 .about-header .head-wrapper { display: flex; }
 .about-header .head-pic-container { overflow: hidden; }
 .about-header .head-pic { display: block; width: 100%; height: 100%; object-fit: contain; }

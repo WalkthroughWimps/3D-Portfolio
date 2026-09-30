@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { assetUrl } from '../_7-shared-scripts/assets-config.js';
+import { alignedCubeQuaternion } from './cube-alignment.js';
 import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const canvas = document.getElementById('about-cube');
@@ -32,6 +33,11 @@ let frameDeltaSeconds = 0;
 const targetCubeQuaternion = new THREE.Quaternion();
 const arrowGeometries = [];
 let rotatePointer = null;
+let alignAt = null;
+let aligning = true;
+let pointerLockPending = false;
+const ALIGN_DELAY_MS = 350;
+const ALIGN_SPEED = 2.2;
 
 function getUvAxes(mesh) {
   const geometry = mesh.geometry;
@@ -120,32 +126,61 @@ function alignVisibleArrows() {
   });
 }
 
-canvas.addEventListener('pointerdown', (event) => {
+canvas.addEventListener('mousedown', (event) => {
   if (event.button !== 2 || !cube) return;
   event.preventDefault();
-  rotatePointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
-  canvas.setPointerCapture(event.pointerId);
+  // A new drag interrupts settling immediately without jumping to its destination.
+  targetCubeQuaternion.copy(cube.quaternion);
+  alignAt = null;
+  aligning = false;
+  rotatePointer = { x: event.clientX, y: event.clientY };
+  // Native pointer lock supplies unlimited relative motion, hides the cursor,
+  // and restores its pre-lock position when released. Fall back to capture if denied.
+  try {
+    pointerLockPending = typeof canvas.requestPointerLock === 'function';
+    const request = canvas.requestPointerLock?.();
+    request?.catch?.(() => { pointerLockPending = false; });
+  } catch { pointerLockPending = false; /* Keep visible dragging available. */ }
 });
-canvas.addEventListener('pointermove', (event) => {
-  if (!rotatePointer || event.pointerId !== rotatePointer.id) return;
-  const dx = THREE.MathUtils.clamp(event.clientX - rotatePointer.x, -22, 22);
-  const dy = THREE.MathUtils.clamp(event.clientY - rotatePointer.y, -22, 22);
-  rotatePointer.x = event.clientX;
-  rotatePointer.y = event.clientY;
-  // Capped deltas keep even an abrupt pointer event comfortably below a fast spin.
-  // Trackball-like world-axis turns make horizontal and vertical RMB drags equally effective.
+function rotateBy(dx, dy) {
+  dx = THREE.MathUtils.clamp(dx, -22, 22);
+  dy = THREE.MathUtils.clamp(dy, -22, 22);
   const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.0045);
   const cameraRight = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
   const pitch = new THREE.Quaternion().setFromAxisAngle(cameraRight, dy * 0.0035);
   targetCubeQuaternion.premultiply(yaw).premultiply(pitch).normalize();
-});
-function stopCubeRotation(event) {
-  if (!rotatePointer || event.pointerId !== rotatePointer.id) return;
-  if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-  rotatePointer = null;
 }
-canvas.addEventListener('pointerup', stopCubeRotation);
-canvas.addEventListener('pointercancel', stopCubeRotation);
+// Use one mouse-event stream for both modes. Cancelling pointerdown can suppress
+// compatibility mouse events, leaving pointer lock active with no rotation input.
+window.addEventListener('mousemove', (event) => {
+  if (!rotatePointer) return;
+  const locked = document.pointerLockElement === canvas;
+  // Locked motion may report buttons=0 during the browser's lock transition.
+  // Actual mouseup, Escape, blur and visibility loss end the drag explicitly.
+  if (!locked && !pointerLockPending && !(event.buttons & 2)) { stopCubeRotation(); return; }
+  const dx = locked ? event.movementX : event.clientX - rotatePointer.x;
+  const dy = locked ? event.movementY : event.clientY - rotatePointer.y;
+  rotatePointer.x = event.clientX;
+  rotatePointer.y = event.clientY;
+  rotateBy(dx, dy);
+}, true);
+function stopCubeRotation() {
+  if (!rotatePointer) return;
+  rotatePointer = null;
+  alignAt = performance.now() + ALIGN_DELAY_MS;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+}
+window.addEventListener('mouseup', event => { if (event.button === 2) stopCubeRotation(); }, true);
+window.addEventListener('pointerup', event => { if (event.button === 2) stopCubeRotation(); }, true);
+window.addEventListener('blur', stopCubeRotation);
+document.addEventListener('visibilitychange', () => { if (document.hidden) stopCubeRotation(); });
+document.addEventListener('pointerlockchange', () => {
+  pointerLockPending = false;
+  if (document.pointerLockElement === canvas) {
+    if (!rotatePointer) document.exitPointerLock();
+  } else if (rotatePointer) stopCubeRotation();
+});
+document.addEventListener('pointerlockerror', () => { pointerLockPending = false; });
 
 function resize() {
   const width = window.innerWidth, height = window.innerHeight;
@@ -171,6 +206,7 @@ new GLTFLoader().load(assetUrl('../assets/glb/tester-cube.glb'), (gltf) => {
   prepareArrowGeometries(cube);
   scene.add(cube);
   frameModel(cube);
+  targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
   status.classList.add('is-hidden');
 }, undefined, () => {
   canvas.hidden = true;
@@ -187,8 +223,13 @@ function render() {
   lastFrameTime = now;
   frameDeltaSeconds = deltaSeconds;
   if (cube) {
-    // Approach the target rather than jumping to it: movement settles softly after RMB release.
-    const settle = 1 - Math.exp(-7 * deltaSeconds);
+    if (!rotatePointer && alignAt !== null && now >= alignAt) {
+      alignAt = null;
+      aligning = true;
+      targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
+    }
+    // Drag follow-through stays responsive; face alignment is deliberately slower.
+    const settle = 1 - Math.exp(-(aligning ? ALIGN_SPEED : 7) * deltaSeconds);
     cube.quaternion.slerp(targetCubeQuaternion, settle);
     alignVisibleArrows();
   }
