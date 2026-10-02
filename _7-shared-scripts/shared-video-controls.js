@@ -419,6 +419,7 @@ export function createVideoControlsUI(options = {}) {
   const enablePointer = options.enablePointer !== false;
   let transportFlash = null;
   let sliderDrag = null;
+  let syncDrag = null;
   const hoverPreview = {
     visible: false,
     ratio: 0,
@@ -524,6 +525,7 @@ export function createVideoControlsUI(options = {}) {
       w: syncArrowSize,
       h: syncArrowSize
     };
+    syncIncrease.y = syncDecrease.y = syncSlider.y + (syncSlider.h - syncArrowSize) / 2;
     const syncTextY = syncSlider.y - Math.max(8, Math.round(barH * 0.16));
     const titleLeft = back.x + back.w + Math.round(pad * 0.8);
     const titleRight = syncDecrease.x - Math.round(pad * 0.8);
@@ -580,11 +582,11 @@ export function createVideoControlsUI(options = {}) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     if (Array.isArray(textLines) && textLines.length === 2) {
-      ctx.font = `${Math.round(rect.h * 0.38)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.font = `${Math.round(rect.h * 0.48)}px "Source Sans 3","Segoe UI",sans-serif`;
       ctx.fillText(textLines[0], rect.x + rect.w / 2, rect.y + rect.h * 0.38);
       ctx.fillText(textLines[1], rect.x + rect.w / 2, rect.y + rect.h * 0.76);
     } else {
-      ctx.font = `${Math.round(rect.h * 0.5)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.font = `${Math.round(rect.h * 0.62)}px "Source Sans 3","Segoe UI",sans-serif`;
       ctx.fillText(String(textLines || ''), rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
     }
     ctx.restore();
@@ -626,18 +628,25 @@ export function createVideoControlsUI(options = {}) {
 
   function drawFocusButton(ctx, rect, focused, color, alpha) {
     ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(2, Math.round(rect.h * 0.09));
-    const inset = focused ? rect.w * 0.17 : rect.w * 0.28;
-    const w = rect.w - inset * 2;
-    const h = rect.h - inset * 2;
-    ctx.strokeRect(rect.x + inset, rect.y + inset, w, h);
-    // The smaller inner frame means “focus this display”; the broad frame
-    // means “return to the normal camera view”, without requiring an icon font.
-    if (!focused) {
-      const inner = rect.w * 0.12;
-      ctx.strokeRect(rect.x + inset + inner, rect.y + inset + inner, Math.max(1, w - inner * 2), Math.max(1, h - inner * 2));
+    ctx.globalAlpha = Math.max(0.8, alpha);
+    // A proper four-corner icon stays legible at the tablet's projected size.
+    ctx.fillStyle = 'rgba(12,12,16,0.85)';
+    ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(2, rect.h * 0.075);
+    ctx.lineCap = 'round';
+    const pad = rect.w * (focused ? 0.16 : 0.2), arm = rect.w * (focused ? 0.16 : 0.22);
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      const x = rect.x + rect.w / 2 + sx * (rect.w / 2 - pad);
+      const y = rect.y + rect.h / 2 + sy * (rect.h / 2 - pad);
+      const cx = focused ? x - sx * arm : x;
+      const cy = focused ? y - sy * arm : y;
+      const direction = focused ? 1 : -1;
+      ctx.beginPath();
+      ctx.moveTo(cx + direction * sx * arm, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + direction * sy * arm);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -797,7 +806,7 @@ export function createVideoControlsUI(options = {}) {
       ctx.fill();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      ctx.font = `700 ${Math.round(ui.barH * 0.31)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.font = `${Math.round(ui.barH * 0.28)}px "Source Sans 3","Segoe UI",sans-serif`;
       ctx.fillText(`SYNC ${syncMs} ms`, ui.syncSlider.x + ui.syncSlider.w / 2, ui.syncTextY);
       ctx.restore();
     }
@@ -833,14 +842,7 @@ export function createVideoControlsUI(options = {}) {
 
     if (controls.tablet) {
       if (controls.pitch || controls.speed) drawDivider(ctx, ui.dividerRight, theme.fg, alpha);
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = theme.fg;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = `${Math.round(ui.tablet.h * 0.82)}px "Material Symbols Rounded","Material Symbols Outlined","Material Icons"`;
-      ctx.fillText(s.tabletView ? 'picture_in_picture_center' : 'capture', ui.tablet.x + ui.tablet.w / 2, ui.tablet.y + ui.tablet.h / 2 + 1);
-      ctx.restore();
+      drawFocusButton(ctx, ui.tablet, !!s.tabletView, theme.fg, alpha);
     }
 
     if (controls.fullscreen) {
@@ -919,7 +921,7 @@ export function createVideoControlsUI(options = {}) {
     }
     if (within(ui.sync) || within(ui.syncSlider)) {
       const ratio = Math.max(0, Math.min(1, (x - ui.syncSlider.x) / ui.syncSlider.w));
-      const syncMs = snapSyncMs((ratio * 2 - 1) * syncRangeMs);
+      const syncMs = snapSyncMs(s.syncMs || 0);
       return { hit: true, handled: !!controls.sync, action: controls.sync ? { type: 'setSyncMs', value: syncMs, ratio } : null, control: 'sync' };
     }
     if (y >= ui.progress.y - 6 && y <= ui.progress.y + ui.progress.h + 6 && x >= ui.progress.x && x <= ui.progress.x + ui.progress.w) {
@@ -951,6 +953,10 @@ export function createVideoControlsUI(options = {}) {
       || eventType === 'touchstart';
     if (result.handled && beginsPointerGesture && ['volume', 'sync', 'seek'].includes(result.control)) {
       sliderDrag = result.control;
+      if (sliderDrag === 'sync') {
+        const pos = getPointerPosition(ev, meta);
+        syncDrag = { x: Number.isFinite(ev.clientX) ? ev.clientX : pos.x * 800 / pos.cw, value: state.current?.syncMs || 0 };
+      }
       hoverPreview.visible = false;
       hoverPreview.lastRatio = -1;
     }
@@ -963,7 +969,7 @@ export function createVideoControlsUI(options = {}) {
         durationMs: 500
       };
     }
-    if (result.handled && onAction && result.action) onAction(result.action);
+    if (result.handled && onAction && result.action && !(result.control === 'sync' && eventType === 'click')) onAction(result.action);
     return !!result.handled;
   }
 
@@ -988,6 +994,12 @@ export function createVideoControlsUI(options = {}) {
     if (sliderDrag) {
       hoverPreview.visible = false;
       hoverPreview.lastRatio = -1;
+      if (sliderDrag === 'sync' && syncDrag) {
+        const x = Number.isFinite(ev.clientX) ? ev.clientX : pos.x * 800 / pos.cw;
+        const value = snapSyncMs(syncDrag.value + Math.round((x - syncDrag.x) / 2) * 5);
+        onAction?.({ type: 'setSyncMs', value });
+        return true;
+      }
       const rect = sliderDrag === 'volume' ? ui.volumeSlider : (sliderDrag === 'sync' ? ui.syncSlider : ui.progress);
       // A held slider follows only along its own axis. Leaving either end
       // pauses the value instead of snapping it to 0 or 100%; re-entering the
@@ -1042,6 +1054,7 @@ export function createVideoControlsUI(options = {}) {
     },
     endPointerInteraction() {
       sliderDrag = null;
+      syncDrag = null;
       hoverPreview.visible = false;
       hoverPreview.lastRatio = -1;
     },

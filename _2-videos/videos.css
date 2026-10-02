@@ -1,4 +1,7 @@
 /* Body Styling */
+body .header { transition: transform 850ms cubic-bezier(0.45, 0, 0.55, 1); transform: translateY(calc((-100% - 100px) * var(--tablet-focus-progress, 0))); }
+body.tablet-focus .attrib-tests { display: none !important; }
+
 body {
     --dark-color: var(--blue-dark);
     --primary-color: var(--blue-primary);

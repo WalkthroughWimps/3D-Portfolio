@@ -1,4 +1,6 @@
+import { previewSegments } from './preview-segments.js';
 import { getSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
+import { createTabletFocus } from './tablet-focus.js';
 ﻿// videos.js — minimal orchestrator for the Videos page (clean, minimal debug panel)
 /* eslint-disable no-unused-vars */
 import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
@@ -535,17 +537,16 @@ onReady(async () => {
   const subtleAmbient = new THREE.AmbientLight(0xffffff, 0.15);
   scene.add(subtleAmbient);
 
-  let camera = null; let controls = null; let animId = null;
+  let camera = null; let controls = null; let animId = null; let tabletFocus = null;
 
+  let pendingRenderSize = null;
+  const renderedSize = new THREE.Vector2();
   function resizeRenderer() {
     try {
       const w = window.innerWidth;
-      const headerEl = document.querySelector('.header') || document.getElementById('patterned-background');
-      const headerRect = headerEl && headerEl.getBoundingClientRect ? headerEl.getBoundingClientRect() : { bottom: 0 };
-      const availH = Math.max(1, window.innerHeight - Math.max(0, Math.round(headerRect.bottom || 0)));
-      try { const stage = document.querySelector('.tablet-stage'); if (stage && stage.style) { stage.style.top = (headerRect.bottom||0)+'px'; stage.style.height = availH+'px'; } } catch (e) {}
-      renderer.setSize(w, availH, false);
-      if (camera && camera.isPerspectiveCamera) { camera.aspect = w / availH; camera.updateProjectionMatrix(); }
+      const h = Math.max(1, window.innerHeight);
+      pendingRenderSize = { w, h };
+      if (camera && camera.isPerspectiveCamera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
     } catch (e) { /* ignore */ }
   }
   window.addEventListener('resize', resizeRenderer);
@@ -554,7 +555,16 @@ onReady(async () => {
   setupIntroSkip();
 
   function animate() {
-    try { if (controls && typeof controls.update === 'function') controls.update(); if (camera) renderer.render(scene, camera); }
+    // Resizing clears WebGL. Resize immediately before drawing, never in a
+    // separate animation callback after the scene has already been rendered.
+    if (pendingRenderSize) {
+      renderer.getSize(renderedSize);
+      if (renderedSize.x !== pendingRenderSize.w || renderedSize.y !== pendingRenderSize.h) {
+        renderer.setSize(pendingRenderSize.w, pendingRenderSize.h, false);
+      }
+      pendingRenderSize = null;
+    }
+    try { if (controls?.enabled && typeof controls.update === 'function') controls.update(); if (camera) renderer.render(scene, camera); }
     catch (e) { /* ignore */ }
     if (dropAnim.active && dropAnim.group) {
       const t = Math.min(1, (performance.now() - dropAnim.start) / dropAnim.durationMs);
@@ -648,7 +658,8 @@ onReady(async () => {
             } catch (e) { /* ignore orientation check errors */ }
 
             if (VideoPlayer && typeof VideoPlayer.createGrid === 'function') {
-              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true });
+              const setTabletFocus = tabletFocus = createTabletFocus({ camera: refs.camera, controls: refs.controls, tabletGroup: refs.tabletGroup, screenMesh: refs.screenMesh, renderer });
+              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus });
               if (USE_SHARED_CONTROLS && gridApi) {
                 const adapter = createVideosVideoAdapter({
                   getActiveVideo: () => gridApi.getActiveVideo?.(),
@@ -664,6 +675,8 @@ onReady(async () => {
                   togglePitch: () => gridApi.togglePitch?.(),
                   getSyncMs: () => gridApi.getSyncMs?.(),
                   setSyncMs: (value) => gridApi.setSyncMs?.(value),
+                  play: () => gridApi.playActiveVideo?.(),
+                  pause: () => gridApi.pauseActiveVideo?.(),
                   isTabletView: () => gridApi.isTabletView?.(),
                   toggleTabletView: () => gridApi.toggleTabletView?.(),
                   exit: () => gridApi.exitPlayback?.()
@@ -709,6 +722,7 @@ onReady(async () => {
         } catch (e) { console.warn('createGrid failed', e); }
 
         try { applyBlenderAlignment({ tabletGroupRef: refs.tabletGroup, camera: refs.camera, controls, renderer, videosPageConfig }); } catch (e) { /* ignore */ }
+        tabletFocus?.initialize();
         try {
           if (introState.enabled && refs && refs.tabletGroup) {
             const box = new THREE.Box3().setFromObject(refs.tabletGroup);

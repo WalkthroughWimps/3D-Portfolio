@@ -1659,7 +1659,9 @@ function formatTime(t) {
         } catch (e) { /* ignore */ }
       }
 
-      function setTabletView(active) {
+      function setTabletView(active, remember = true) {
+        if (opts.setTabletFocus && remember) { try { localStorage.setItem("video.tablet.focus", String(active)); } catch {} }
+        if (opts.setTabletFocus) { opts.setTabletFocus(active); uiState.tabletView = active; return; }
         if (!camera) return;
         if (active) {
           if (!camPose.tabletActive) saveCamPose();
@@ -1785,6 +1787,7 @@ function formatTime(t) {
 
       
       function toggleFullscreenMode() {
+        if (opts.setTabletFocus) { setTabletView(!uiState.tabletView); return; }
         uiState.fullscreen = !uiState.fullscreen;
         try {
           if (uiState.fullscreen) {
@@ -2094,6 +2097,7 @@ function formatTime(t) {
       }
 
       function exitPlayback() {
+        if (opts.setTabletFocus && uiState.tabletView) setTabletView(false, false);
         if (fullIndex >= 0) startZoomOut(fullIndex);
       }
 
@@ -2101,6 +2105,7 @@ function formatTime(t) {
         const video = fullVideos[idx];
         const audio = getFullAudio(idx);
         if (!video) return;
+        if (["prepare", "in", "out", "fade"].includes(animation.phase)) return;
         ensureVideoMuted(video);
         if (canUseAudio()) {
           startAudioForVideo(video, audio);
@@ -2267,20 +2272,15 @@ function formatTime(t) {
         video.addEventListener('seeking', () => { resetAudioSyncState(idx); });
         video.addEventListener('timeupdate', () => {
           syncAudioToVideo(video, audio, idx);
-          if (playingFull && fullIndex === idx && !autoZoomOutTriggered) {
-            const duration = video.duration || 0;
-            const remaining = duration - (video.currentTime || 0);
-            if (duration > 0 && remaining <= 1.0) {
-              autoZoomOutTriggered = true;
-              startZoomOut(idx, { keepPlaying: true });
-            }
-          }
         });
         video.addEventListener('ratechange', () => {
           applyAudioPlaybackSettings(audio);
           resetAudioSyncState(idx);
         });
-        video.addEventListener('ended', () => { try { audio.pause(); } catch (e) {} });
+        video.addEventListener('ended', () => {
+          try { audio.pause(); } catch (e) {}
+          if (playingFull && fullIndex === idx) startZoomOut(idx);
+        });
       });
 
       fullVideos.forEach((vid, idx) => {
@@ -2292,13 +2292,15 @@ function formatTime(t) {
       });
 
       let hoverIndex = -1;
-      let description = 'Hover a thumbnail to preview a random snippet.';
+      let description = 'Hover a thumbnail to preview selected highlights.';
       let playingFull = false;
       let fullIndex = -1;
       let lastFullRect = null;
       let autoZoomOutTriggered = false;
       let lastHoverEntry = null;
-      const previewWindows = entries.map(() => ({ until: 0 }));
+      const previewWindows = entries.map(() => ({ phase: 'idle', bag: [], previous: -1, clip: null }));
+      let exitStill = null;
+      let entryStill = null;
       const animation = { phase: 'idle', start: 0, from: null, to: null, playOnComplete: false };
       const cellsBounds = (() => {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -2593,6 +2595,7 @@ function formatTime(t) {
           type: ev?.type || '',
           button: ev?.button,
           buttons: ev?.buttons,
+          clientX: ev?.clientX,
           pointerId: ev?.pointerId
         };
       }
@@ -2813,35 +2816,112 @@ function formatTime(t) {
         ctx.restore();
       }
 
-      function pickPreviewTime(v) {
-        const dur = Math.max(10, v.duration || 60);
-        const mid = dur * 0.5;
-        const span = Math.min(30, dur * 0.6);
-        let t = mid + (Math.random() - 0.5) * span;
-        t = Math.max(1, Math.min(dur - 5, t));
-        return t;
-      }
-
       function startPreview(idx) {
-        const v = previewVideos[idx];
-        if (!v) return;
-        try {
-          if (v.readyState >= 1) v.currentTime = pickPreviewTime(v);
-          v.muted = true;
-          v.play().catch(() => {});
-          previewWindows[idx].until = performance.now() + 3500;
-        } catch (e) { /* ignore */ }
+        const v = previewVideos[idx], state = previewWindows[idx];
+        if (!v || !state) return;
+        const clips = opts.previewSegments?.[entries[idx].id] || [[1, 7]];
+        if (!state.bag.length) {
+          state.bag = clips.map((_, i) => i);
+          for (let i = state.bag.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [state.bag[i], state.bag[j]] = [state.bag[j], state.bag[i]];
+          }
+          // The first item of a fresh shuffle cannot repeat the last played item.
+          if (state.bag.length > 1 && state.bag[0] === state.previous) {
+            const j = 1 + Math.floor(Math.random() * (state.bag.length - 1));
+            [state.bag[0], state.bag[j]] = [state.bag[j], state.bag[0]];
+          }
+        }
+        state.previous = state.bag.shift();
+        state.clip = clips[state.previous];
+        state.phase = 'loading';
+        state.seekRequested = false;
+        v.muted = true;
+        v.pause();
       }
 
       function stopPreview(idx) {
-        const v = previewVideos[idx];
-        if (!v) return;
-        try { v.pause(); } catch (e) { /* ignore */ }
-        previewWindows[idx].until = 0;
+        previewVideos[idx]?.pause();
+        previewWindows[idx].phase = 'idle';
+        previewWindows[idx].outgoing = null;
+      }
+
+      function previewOpacity(idx, now) {
+        const v = previewVideos[idx], state = previewWindows[idx];
+        if (state.phase === 'loading' && v.readyState >= 1) {
+          if (!state.seekRequested) {
+            state.seekRequested = true;
+            v.currentTime = Math.min(state.clip[0], Math.max(0, v.duration - 0.5));
+          }
+          if (!v.seeking && v.readyState >= 2) {
+            state.phase = 'playing';
+            state.fadeStarted = now;
+            v.play().catch(() => { state.phase = 'idle'; });
+          }
+        }
+        if (state.phase !== 'playing' || v.seeking) return 0;
+        const [, end] = state.clip;
+        if (v.currentTime >= end || v.ended) {
+          v.pause();
+          // Hold the outgoing frame during the seek, then blend in the next clip.
+          const frame = document.createElement('canvas');
+          frame.width = v.videoWidth; frame.height = v.videoHeight;
+          if (frame.width && frame.height) {
+            frame.getContext('2d').drawImage(v, 0, 0);
+            state.outgoing = frame;
+          }
+          startPreview(idx);
+          return 0;
+        }
+        const alpha = Math.max(0, Math.min(1, (now - state.fadeStarted) / 120));
+        if (alpha === 1) state.outgoing = null;
+        return alpha;
+      }
+
+      function captureEntryStill(idx) {
+        const rc = layout.cells[idx];
+        const shot = document.createElement('canvas');
+        shot.width = Math.round(rc.w); shot.height = Math.round(rc.h);
+        const sc = shot.getContext('2d');
+        const cover = el => {
+          const w = el.videoWidth || el.width, h = el.videoHeight || el.height;
+          if (!w || !h) return;
+          const k = Math.max(shot.width / w, shot.height / h);
+          sc.drawImage(el, (shot.width - w * k) / 2, (shot.height - h * k) / 2, w * k, h * k);
+        };
+        try {
+          cover(thumbs[idx]);
+          if (hoverIndex === idx) {
+            const alpha = previewOpacity(idx, performance.now());
+            if (previewWindows[idx].outgoing) cover(previewWindows[idx].outgoing);
+            sc.globalAlpha = alpha;
+            if (sc.globalAlpha > 0) cover(previewVideos[idx]);
+          }
+        } catch { return thumbs[idx]; }
+        return shot;
+      }
+
+      function drawCameraPlaceholder(rc) {
+        const css = getComputedStyle(document.body);
+        ctx.save();
+        ctx.fillStyle = css.getPropertyValue('--grey-color').trim() || '#30282b';
+        ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
+        // Keep the navigation panel's theme tint, with a dark neutral base.
+        ctx.fillStyle = 'rgba(12,12,16,0.55)';
+        ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
+        ctx.strokeStyle = css.getPropertyValue('--tertiary-color').trim() || '#b7a7ac';
+        ctx.globalAlpha = 0.7;
+        const w = rc.w * 0.22, h = w * 0.65;
+        const x = rc.x + (rc.w - w) / 2, y = rc.y + (rc.h - h) / 2;
+        ctx.lineWidth = Math.max(2, w * 0.055);
+        ctx.strokeRect(x, y, w, h);
+        ctx.strokeRect(x + w * 0.15, y - h * 0.17, w * 0.3, h * 0.17);
+        ctx.beginPath(); ctx.arc(x + w / 2, y + h / 2, h * 0.28, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
       }
 
       function setHover(idx) {
-        if (playingFull) return;
+        if (playingFull || animation.phase === "out" || animation.phase === "fade") return;
         if (idx === hoverIndex) return;
         if (hoverIndex >= 0) stopPreview(hoverIndex);
         hoverIndex = idx;
@@ -2855,6 +2935,7 @@ function formatTime(t) {
       function startFull(idx) {
         const v = fullVideos[idx];
         if (!v) return;
+        entryStill = captureEntryStill(idx);
         fullIndex = idx;
         playingFull = true;
         autoZoomOutTriggered = false;
@@ -2867,10 +2948,14 @@ function formatTime(t) {
           v.currentTime = 0;
           v.pause();
         } catch (e) { /* ignore */ }
+        previewVideos.forEach((_, i) => stopPreview(i));
+        hoverIndex = -1;
         if (!uiState.fullscreen) {
-          setTabletView(true);
+          let focus = !opts.setTabletFocus;
+          try { if (opts.setTabletFocus) focus = localStorage.getItem("video.tablet.focus") === "true"; } catch {}
+          animation.focus = focus;
         }
-        animation.phase = 'in';
+        animation.phase = 'prepare';
         animation.start = performance.now();
         animation.from = layout.cells[idx];
         animation.playOnComplete = true;
@@ -2879,12 +2964,16 @@ function formatTime(t) {
         animation.to = fillRect;
       }
 
-      function startZoomOut(idx, options = {}) {
+      function startZoomOut(idx) {
         if (idx === -1) return;
-        if (animation.phase === 'out' && fullIndex === idx) return;
-        const keepPlaying = !!options.keepPlaying;
-        if (!keepPlaying) pauseFullPlayback(idx);
-        if (uiState.tabletView) setTabletView(false);
+        if (['out', 'fade'].includes(animation.phase) && fullIndex === idx) return;
+        pauseFullPlayback(idx);
+        exitStill = document.createElement("canvas");
+        const v = fullVideos[idx];
+        exitStill.width = v.videoWidth || 1280;
+        exitStill.height = v.videoHeight || 720;
+        try { exitStill.getContext("2d").drawImage(v, 0, 0, exitStill.width, exitStill.height); } catch { exitStill = thumbs[idx]; }
+        if (uiState.tabletView) setTabletView(false, false);
         animation.phase = 'out';
         animation.start = performance.now();
         animation.from = lastFullRect || animation.to || layout.cells[idx];
@@ -2897,10 +2986,8 @@ function formatTime(t) {
         layout.cells.forEach((rc, idx) => {
           const thumb = thumbs[idx];
           const preview = previewVideos[idx];
-          const showPreview = hoverIndex === idx && preview && preview.readyState >= 2;
-          if (showPreview && previewWindows[idx].until && now > previewWindows[idx].until) {
-            startPreview(idx);
-          }
+          if (idx === fullIndex) { drawCameraPlaceholder(rc); return; }
+          const previewAlpha = hoverIndex === idx ? previewOpacity(idx, now) : 0;
           // Thumbnails should be strict 16:9 tiles, filled edge-to-edge.
           const scale = hoverIndex === idx ? 1.04 : 1;
           const cx = rc.x + rc.w / 2;
@@ -2908,7 +2995,12 @@ function formatTime(t) {
           const w = rc.w * scale;
           const h = rc.h * scale;
           const drawRc = { x: cx - w / 2, y: cy - h / 2, w, h };
-          drawElementInRect(showPreview ? preview : thumb, drawRc, 'cover');
+          const background = hoverIndex === idx ? previewWindows[idx].outgoing || thumb : thumb;
+          drawElementInRect(background, drawRc, 'cover');
+          if (previewAlpha > 0) {
+            ctx.save(); ctx.globalAlpha = previewAlpha;
+            drawElementInRect(preview, drawRc, 'cover'); ctx.restore();
+          }
         });
       }
 
@@ -3498,25 +3590,54 @@ function formatTime(t) {
           uiState.lastPlayingState = playingNow;
         }
         let rect = animation.to;
-        if (animation.phase === 'in' || animation.phase === 'out') {
-          const t = Math.min(1, (now - animation.start) / opts.zoomDuration);
-          const eased = easeInOutQuad(t);
-          rect = lerpRect(animation.from || animation.to, animation.to || animation.from, eased);
+        if (['prepare', 'in', 'out', 'fade'].includes(animation.phase)) {
+          if (topPanelMesh) topPanelMesh.visible = false;
+          if (bottomPanelMesh) bottomPanelMesh.visible = false;
+          if (animation.phase === 'prepare') {
+            const t = Math.min(1, (now - animation.start) / 260);
+            ctx.save();
+            drawElementInRect(entryStill, animation.from, 'cover');
+            ctx.globalAlpha = t;
+            drawElementInRect(thumbs[fullIndex], animation.from, 'cover');
+            ctx.restore();
+            if (t >= 1) {
+              animation.phase = 'in'; animation.start = now; entryStill = null;
+              if (!uiState.fullscreen) setTabletView(!!animation.focus, false);
+            }
+            return;
+          }
+          const phase = animation.phase;
+          const t = Math.min(1, (now - animation.start) / (phase === 'fade' ? 240 : opts.zoomDuration));
+          const eased = t * t * t * (t * (t * 6 - 15) + 10);
+          rect = phase === 'fade' ? animation.to : lerpRect(animation.from, animation.to, eased);
+          ctx.save();
+          ctx.fillStyle = '#000';
+          ctx.globalAlpha = phase === 'in' ? eased : phase === 'out' ? 1 - eased : 0;
+          ctx.fillRect(0, 0, gridCanvas.width, gridCanvas.height);
+          ctx.globalAlpha = 1;
+          drawElementInRect(phase === 'in' ? thumbs[fullIndex] : exitStill, rect, 'cover');
+          if (phase === 'fade') {
+            ctx.globalAlpha = eased;
+            drawElementInRect(thumbs[fullIndex], rect, 'cover');
+          }
+          ctx.restore();
+          lastFullRect = rect;
           if (t >= 1) {
-            if (animation.phase === 'in') {
+            if (phase === 'in') {
               animation.phase = 'hold';
-              if (animation.playOnComplete && fullIndex >= 0) {
-                animation.playOnComplete = false;
-                startFullPlayback(fullIndex);
-              }
+              animation.playOnComplete = false;
+              startFullPlayback(fullIndex);
+            } else if (phase === 'out') {
+              animation.phase = 'fade';
+              animation.start = now;
             } else {
               animation.phase = 'idle';
-              animation.playOnComplete = false;
               fullIndex = -1;
+              exitStill = null;
               lastFullRect = null;
-              return;
             }
           }
+          return;
         }
         const frames = getActiveRects();
         const targetRect = computeVideoRect(frames.videoRect, video);
@@ -3626,7 +3747,7 @@ function formatTime(t) {
         drawGridCells(now);
         drawDescription();
         if (hoverIndex >= 0 && !playingFull) drawHoverOutline(hoverIndex);
-        if (playingFull || animation.phase === 'in' || animation.phase === 'out') {
+        if (playingFull || ['prepare', 'in', 'out', 'fade'].includes(animation.phase)) {
           renderFull(now);
         }
         if (!playingFull && !uiState.fullscreen) {
@@ -4112,6 +4233,7 @@ function formatTime(t) {
         if (!playingFull || fullIndex < 0) return;
         const video = fullVideos[fullIndex];
         if (!video) return;
+        if (ev.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
         const key = (ev.key || '').toLowerCase();
         const shift = ev.shiftKey;
         const ctrl = ev.ctrlKey || ev.metaKey;
@@ -4136,7 +4258,8 @@ function formatTime(t) {
         // Mute
         if (key === 'm') { prevent(); toggleStoredMute(); return; }
         // Fullscreen
-        if (key === 'f') { prevent(); toggleFullscreenMode(); return; }
+        if (key === 'f') { prevent(); if (!ev.repeat) toggleFullscreenMode(); return; }
+        if (key === 'escape' && opts.setTabletFocus && uiState.tabletView) { prevent(); setTabletView(false); return; }
         // Seek
         if (key === 'j') { prevent(); seekBy(-10); return; }
         if (key === 'l') { prevent(); seekBy(10); return; }
@@ -4378,12 +4501,14 @@ function formatTime(t) {
           return !!uiState.tabletView;
         },
         getTitle: getActiveEntryTitle,
-        reset() { description = 'Hover a thumbnail to preview a random snippet.'; },
+        reset() { description = 'Hover a thumbnail to preview selected highlights.'; },
         applyToMesh,
         applyToMeshById,
         isScreenPointInteractive,
         isPlayingFull() { return !!playingFull; },
         getActiveVideo,
+        playActiveVideo() { if (fullIndex >= 0) startFullPlayback(fullIndex); },
+        pauseActiveVideo() { if (fullIndex >= 0) pauseFullPlayback(fullIndex); },
         getActivePreviewVideo() {
           return previewVideos[fullIndex] || null;
         },

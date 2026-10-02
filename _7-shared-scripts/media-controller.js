@@ -35,6 +35,7 @@ export function createMediaController(options = {}) {
       syncMs: Number.isFinite(getSyncMs()) ? getSyncMs() : 0,
       syncRangeMs: Number.isFinite(options.syncRangeMs) ? options.syncRangeMs : 3000,
       fullscreen: !!options.isFullscreen?.(),
+      tabletView: !!options.isTabletView?.(),
       controls: {
         exit: capabilities.exit ?? true,
         play: capabilities.play ?? canPlay,
