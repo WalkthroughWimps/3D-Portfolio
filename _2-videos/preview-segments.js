@@ -4,12 +4,14 @@ export const previewSegments = {
   'online-classes': [
     // User bookmarks, paired by ascending timestamp (not bookmark labels).
     [6.105, 8.645],
+    [15.585, 18.169],
     [27.294, 29.935],
     [35.666, 38.229],
     [51.475, 53.945],
     [68.510, 70.717],
     [77.515, 79.733],
     [108.878, 111.680],
+    [116.898, 118.999],
     [121.845, 124.246],
   ],
   'a-list-videos': [
