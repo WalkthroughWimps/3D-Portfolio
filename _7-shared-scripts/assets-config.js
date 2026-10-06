@@ -1,76 +1,20 @@
-// assets-config.js
-// Central place to control where large assets are served from (R2 via custom domain)
-
-function normalizeBase(base) {
-  if (!base) return "";
-  return base.endsWith("/") ? base.slice(0, -1) : base;
-}
-
-function normalizePath(p) {
-  if (!p) return "";
-  // Ensure exactly one leading slash
-  return p.startsWith("/") ? p : `/${p}`;
-}
+// Compatibility facade for existing pages; core/assets.js owns URL policy.
+import { createAssets } from './core/assets.js';
+import { DEFAULT_ASSET_ORIGIN, isLocalHost } from './core/asset-policy.js';
 
 export function isLocalDev() {
   const host = window.location.hostname;
-  return host === "localhost" || host === "127.0.0.1";
+  return isLocalHost(host);
 }
 
-export const ASSET_ORIGIN = "https://assets.matthallportfolio.com";
+export const ASSET_ORIGIN = DEFAULT_ASSET_ORIGIN;
 
-export const ASSETS_BASE = (() => {
-  const search = window.location.search || "";
-  try {
-    const params = new URLSearchParams(search);
-    const qsBase = params.get("assetsBase");
-    if (qsBase !== null) {
-      return qsBase;
-    }
-  } catch (e) { /* ignore */ }
-
-  try {
-    const stored = localStorage.getItem("ASSETS_BASE");
-    if (stored !== null) return stored;
-  } catch (e) { /* ignore */ }
-
-  // Local dev: serve from local project structure
-  if (isLocalDev()) return "";
-
-  // Production: serve from R2 custom domain (recommended)
-  // If user uses a different subdomain, they can change it here.
-  return ASSET_ORIGIN;
-})();
+const storedBase = (() => { try { return localStorage.getItem('ASSETS_BASE'); } catch { return null; } })();
+const assets = createAssets({ pageUrl: window.location.href, stored: storedBase,
+  report: issue => console.warn('[assets] invalid base override', issue) });
+export const ASSETS_BASE = assets.assetsBase;
 
 console.info('[assets] base =', ASSETS_BASE);
-
-const ASSET_PREFIXES = [
-  'assets/glb/',
-  'glb/',
-  'videos/',
-  'renders/',
-  'midi/',
-  'music/',
-  'soundboards/',
-  'soundfonts/'
-];
-
-function isAssetHostedPath(path) {
-  if (!path) return false;
-  const normalized = String(path).replace(/^[./]+/, '');
-  const lowered = normalized.toLowerCase();
-  return ASSET_PREFIXES.some((prefix) => lowered.startsWith(prefix));
-}
-
-function hostedAssetPath(path) {
-  const normalized = String(path || "").replace(/^[./]+/, "");
-  // Keep the repository organized under assets/, but preserve the R2 layout
-  // that already exists in production.
-  if (normalized.toLowerCase().startsWith('assets/glb/')) {
-    return `glb/${normalized.slice('assets/glb/'.length)}`;
-  }
-  return normalized;
-}
 
 let didLogAssetDiagnostics = false;
 export function logAssetDiagnosticsOnce(sampleVideoPath = "Videos/videos-page/music-videos-hq.webm", sampleAudioPath = "Renders/tablet_animation_1.opus") {
@@ -88,17 +32,7 @@ export function logAssetDiagnosticsOnce(sampleVideoPath = "Videos/videos-page/mu
 logAssetDiagnosticsOnce();
 
 export function assetUrl(path) {
-  if (typeof path === "string") {
-    // Leave absolute URLs and special schemes untouched.
-    if (/^https?:\/\//i.test(path)) return path;
-    if (/^(blob:|data:|about:|mailto:)/i.test(path)) return path;
-  }
-
-  const base = normalizeBase(ASSETS_BASE);
-  if (!base) return path; // local dev / disabled
-  if (!isAssetHostedPath(path)) return path;
-
-  return `${base}/${hostedAssetPath(path)}`;
+  return assets.resolve(path);
 }
 
 const brokenAssets = new Set();
@@ -143,4 +77,4 @@ try {
   window.markBroken = markBroken;
   window.isBroken = isBroken;
   window.corsProbe = corsProbe;
-} catch (e) { /* ignore */ }
+} catch { /* ignore */ }

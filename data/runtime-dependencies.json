@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "three": {
+    "candidate": "0.159.0",
+    "status": "candidate-under-review",
+    "routes": {
+      "index.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_1-about/about.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_2-videos/videos.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_3-graphics/graphics.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_4-games/games.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_5-music/music.html": { "version": "0.159.0", "origin": "https://unpkg.com" },
+      "_6-docs/docs.html": { "version": "0.159.0", "origin": "https://unpkg.com" }
+    }
+  },
+  "introAssetKey": "Renders/tablet-animation.webm",
+  "defaultAssetOrigin": "https://assets.matthallportfolio.com"
+}

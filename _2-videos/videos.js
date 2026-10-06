@@ -1,15 +1,19 @@
+import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+void bootstrapPage({ pageId: 'videos' }).catch(error => console.error('Shared bootstrap failed', error));
 import { previewSegments } from './preview-segments.js';
+import { getEffectiveAudioSettings } from '../_7-shared-scripts/audio-settings.js';
+import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { getSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { createTabletFocus } from './tablet-focus.js';
 ﻿// videos.js — minimal orchestrator for the Videos page (clean, minimal debug panel)
 /* eslint-disable no-unused-vars */
-import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+import * as THREE from 'three';
 import VideoPlayer from '../_7-shared-scripts/video-player-controls.js?v=tablet-ui-1';
 import { createVideoControlsUI } from '../_7-shared-scripts/shared-video-controls.js';
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
 import { createVideosVideoAdapter } from './videos-video-adapter.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
-import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
@@ -75,10 +79,21 @@ const introState = {
   done: !(videosPageConfig && videosPageConfig.intro && videosPageConfig.intro.enabled),
   videoEl: null,
   audioEl: null,
-  timeoutId: null,
-  audioTimer: null,
-  forceReadyTimer: null,
-  audioStarted: false,
+  phase: 'loading',
+  completionReason: null,
+  startPending: false,
+  audioRequested: false,
+  audioPlayPending: false,
+  audioGeneration: 0,
+  audioPlaying: false,
+  audioBlocked: false,
+  readyTimer: null,
+  timers: [],
+  cleanups: [],
+  listeners: [],
+  unsubscribeConsent: null,
+  unsubscribeSettings: null,
+  onTerminal: null,
   skipBtn: null,
   gateEl: null,
   playBtn: null,
@@ -103,22 +118,21 @@ function tryStartDrop() {
   dropAnim.start = performance.now();
 }
 
-function markIntroDone() {
+function markIntroDone(reason = 'skip') {
   if (introState.done) return;
   introState.done = true;
+  introState.phase = reason === 'ended' ? 'completed' : 'skipped';
+  introState.completionReason = reason;
   try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
-  if (introState.timeoutId) {
-    clearTimeout(introState.timeoutId);
-    introState.timeoutId = null;
-  }
-  if (introState.audioTimer) {
-    clearTimeout(introState.audioTimer);
-    introState.audioTimer = null;
-  }
-  if (introState.forceReadyTimer) {
-    clearTimeout(introState.forceReadyTimer);
-    introState.forceReadyTimer = null;
-  }
+  try { document.body.dataset.introCompletionReason = reason; } catch (e) { /* ignore */ }
+  if (introState.readyTimer) clearTimeout(introState.readyTimer);
+  introState.timers.splice(0).forEach(clearTimeout);
+  introState.cleanups.splice(0).forEach(cleanup => cleanup());
+  introState.readyTimer = null;
+  introState.unsubscribeConsent?.();
+  introState.unsubscribeSettings?.();
+  introState.unsubscribeConsent = introState.unsubscribeSettings = null;
+  introState.listeners.splice(0).forEach(([target, type, fn]) => target.removeEventListener(type, fn));
   if (introState.videoEl) {
     introState.videoEl.classList.remove('visible');
     introState.videoEl.classList.add('hidden');
@@ -127,7 +141,20 @@ function markIntroDone() {
     } catch (e) { /* ignore */ }
   }
   if (introState.audioEl) {
-    try { introState.audioEl.pause(); } catch (e) { /* ignore */ }
+    introState.audioGeneration++;
+    introState.audioPlayPending = false;
+    const audioEl = introState.audioEl;
+    const endingAudioSettings = getStoredAudioSettings();
+    const audioTail = reason === 'ended' && isAudioAllowed() && !audioEl.paused && !endingAudioSettings.muted && Number(endingAudioSettings.volume) > 0.001 && Number.isFinite(audioEl.duration) && audioEl.currentTime < audioEl.duration - 0.01;
+    if (audioTail) {
+      audioEl.addEventListener('ended', () => {
+        try { audioEl.removeAttribute('src'); audioEl.load(); } catch (e) { /* ignore */ }
+        introState.audioEl = null; introState.audioPlaying = false; introState.audioRequested = false;
+      }, { once: true });
+    } else {
+      try { audioEl.pause(); audioEl.removeAttribute('src'); audioEl.load(); } catch (e) { /* ignore */ }
+      introState.audioEl = null;
+    }
   }
   if (introState.skipBtn) {
     introState.skipBtn.classList.add('hidden');
@@ -136,80 +163,22 @@ function markIntroDone() {
     introState.gateEl.classList.add('is-hidden');
   }
   tryStartDrop();
+  introState.onTerminal?.(reason);
 }
 
 function getStoredSyncMs() { return getSyncOffsetMs(); }
 
 function getStoredAudioSettings() {
-  const AUDIO_VOLUME_KEY = 'site.audio.volume';
-  const AUDIO_MUTED_KEY = 'site.audio.muted';
-  try {
-    const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
-    const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !isAudioAllowed();
-    return { volume, muted };
-  } catch (e) {
-    return { volume: 1, muted: !isAudioAllowed() };
-  }
-}
-
-function startIntroAudio(videoEl) {
-  if (!introState.audioEl || introState.audioStarted) return;
-  const audioEl = introState.audioEl;
-  const stored = getStoredAudioSettings();
-  const safeVol = Math.max(0, Math.min(1, stored.volume || 0));
-  try { audioEl.volume = stored.muted ? 0 : safeVol; } catch (e) { /* ignore */ }
-  try { audioEl.muted = !!stored.muted; } catch (e) { /* ignore */ }
-  if (stored.muted || safeVol <= 0.001) return;
-
-  const syncMs = getStoredSyncMs();
-  introState.audioStarted = true;
-
-  const performStart = () => {
-    const ct = videoEl && Number.isFinite(videoEl.currentTime) ? videoEl.currentTime : 0;
-    try {
-      if (syncMs >= 0) {
-        try { if (audioEl.readyState >= 1) audioEl.currentTime = Math.max(0, ct); } catch (e) {}
-        introState.audioTimer = setTimeout(() => { try { audioEl.play().catch(() => { introState.audioStarted = false; }); } catch (e) { introState.audioStarted = false; } }, Math.max(0, syncMs));
-      } else {
-        const offset = Math.abs(syncMs) / 1000;
-        try { if (audioEl.readyState >= 1) audioEl.currentTime = Math.max(0, ct + offset); } catch (e) {}
-        try { audioEl.play().catch(() => { introState.audioStarted = false; }); } catch (e) { introState.audioStarted = false; }
-      }
-    } catch (e) { introState.audioStarted = false; }
-  };
-
-  const waitForReady = (mediaEl, timeout = 1500) => new Promise((resolve) => {
-    if (!mediaEl) return resolve();
-    if (mediaEl.readyState >= 1) return resolve();
-    const onReady = () => { cleanup(); resolve(); };
-    const cleanup = () => { try { mediaEl.removeEventListener('loadedmetadata', onReady); } catch (e) {} };
-    mediaEl.addEventListener('loadedmetadata', onReady, { once: true });
-    setTimeout(() => { cleanup(); resolve(); }, timeout);
-  });
-
-  (async () => {
-    try { await Promise.all([waitForReady(videoEl, 1500), waitForReady(audioEl, 1500)]); } catch (e) { /* ignore */ }
-    performStart();
-  })();
-
-  try {
-    const syncRate = () => { try { audioEl.playbackRate = videoEl.playbackRate || 1; } catch (e) {} };
-    videoEl.addEventListener('ratechange', syncRate);
-  } catch (e) {}
+  return getEffectiveAudioSettings();
 }
 
 function setupIntroVideo() {
   if (!introState.enabled) return;
   const videoEl = document.getElementById('tabletIntro');
   if (!videoEl) {
-    markIntroDone();
+    introState.phase = 'error';
     return;
   }
-  let allowSound = false;
-  try {
-    allowSound = (new URLSearchParams(location.search)).get('sound') === '1'
-      || isAudioAllowed();
-  } catch (e) { /* ignore */ }
   introState.videoEl = videoEl;
   videoEl.crossOrigin = 'anonymous';
   videoEl.src = videosPageConfig.intro.video;
@@ -219,138 +188,6 @@ function setupIntroVideo() {
   videoEl.classList.add('visible');
   videoEl.preload = 'auto';
   videoEl.load();
-  // Try to prime the video decoder by briefly playing muted video so
-  // the first frames are decoded and the initial play doesn't stutter.
-  // Some browsers allow muted autoplay; catch rejections and fall back
-  // to waiting for canplay/loadeddata.
-  (function primeIntroVideo() {
-    if (!videoEl) return;
-    if (videoEl.__priming) return;
-    videoEl.__priming = true;
-    videoEl.__primed = false;
-    const markPrimed = () => {
-      videoEl.__primed = true;
-      videoEl.__priming = false;
-      try { if (introState.loadBar) introState.loadBar.style.width = '100%'; } catch (e) {}
-      try { if (introState.loadText) introState.loadText.textContent = 'Ready'; } catch (e) {}
-      try { if (introState.playBtn) introState.playBtn.disabled = false; } catch (e) {}
-    };
-
-    try {
-      // Ensure muted so autoplay is allowed in most browsers
-      videoEl.muted = true;
-      const p = videoEl.play();
-      if (p && typeof p.then === 'function') {
-        p.then(() => {
-          try { videoEl.pause(); videoEl.currentTime = 0; } catch (e) {}
-          markPrimed();
-        }).catch(() => {
-          // autoplay blocked or failed — wait for canplay as fallback
-          const onReady = () => { videoEl.removeEventListener('canplay', onReady); markPrimed(); };
-          videoEl.addEventListener('canplay', onReady, { once: true });
-          setTimeout(() => { if (!videoEl.__primed) markPrimed(); }, 1500);
-        });
-      } else {
-        // Not a promise — treat as primed after a short delay
-        setTimeout(() => { try { videoEl.pause(); videoEl.currentTime = 0; } catch (e) {} ; markPrimed(); }, 300);
-      }
-    } catch (e) {
-      const onReady = () => { videoEl.removeEventListener('canplay', onReady); markPrimed(); };
-      videoEl.addEventListener('canplay', onReady, { once: true });
-      setTimeout(() => { if (!videoEl.__primed) markPrimed(); }, 1500);
-    }
-  })();
-  if (allowSound && videosPageConfig.intro && videosPageConfig.intro.audio) {
-    // Defer assigning the audio `src` until the video actually begins
-    // playing so we don't start network/audio work prematurely.
-    const audioEl = document.createElement('audio');
-    audioEl.crossOrigin = 'anonymous';
-    audioEl.preload = 'none';
-    audioEl.addEventListener('error', () => {
-      const err = audioEl.error;
-      console.warn('AUDIO ERROR:', audioEl.src, err ? { code: err.code, message: err.message } : err);
-    });
-    // Store the deferred URL; do not call load() or append yet.
-    audioEl.__deferredSrc = videosPageConfig.intro.audio;
-    introState.audioEl = audioEl;
-    // note: will append and load when the video actually starts playing
-  }
-  const finishOnce = () => markIntroDone();
-  // Keep a conservative fallback: if the video never starts, drop after maxWaitMs.
-  if (!introState.timeoutId) {
-    introState.timeoutId = setTimeout(() => {
-      if (!introState.done && !videoEl.paused && !videoEl.ended && (videoEl.currentTime || 0) === 0) {
-        // video never started — proceed
-        finishOnce();
-      } else if (!introState.done && !videoEl.ended && (videoEl.currentTime || 0) <= 0.01) {
-        // still not progressed — proceed
-        finishOnce();
-      }
-    }, videosPageConfig.intro.maxWaitMs || 12000);
-  }
-
-  videoEl.addEventListener('ended', finishOnce, { once: true });
-  videoEl.addEventListener('error', finishOnce, { once: true });
-
-  // When playback starts, cancel the one-shot fallback and let the
-  // animation run to completion. Add a watchdog that detects if the
-  // playback stalls for longer than the configured threshold and
-  // forces completion only in that case.
-  videoEl.addEventListener('playing', () => {
-    // Ignore priming playback — only start audio when this is a real user-visible play
-    if (videoEl.__priming) return;
-    if (!videoEl.__primed) videoEl.__primed = true;
-    try { if (introState.timeoutId) { clearTimeout(introState.timeoutId); introState.timeoutId = null; } } catch (e) {}
-
-    const ensureAudioLoadedAndStart = async () => {
-      try {
-        const a = introState.audioEl;
-        if (a && a.__deferredSrc && !a.src) {
-          try {
-            a.src = a.__deferredSrc;
-            a.preload = 'auto';
-            document.body.appendChild(a);
-            const loaded = await new Promise((resolve) => {
-              if (a.readyState >= 1) return resolve(true);
-              const onMeta = () => { cleanup(); resolve(true); };
-              const cleanup = () => { try { a.removeEventListener('loadedmetadata', onMeta); } catch (e) {} };
-              a.addEventListener('loadedmetadata', onMeta, { once: true });
-              setTimeout(() => { cleanup(); resolve(false); }, 1500);
-            });
-            try { a.load(); } catch (e) { /* ignore */ }
-          } catch (e) { /* ignore */ }
-        }
-      } catch (e) { /* ignore */ }
-      // Now start audio sync-aware playback
-      startIntroAudio(videoEl);
-    };
-
-    ensureAudioLoadedAndStart();
-
-    const stuckThreshold = Number.isFinite(Number(videosPageConfig.intro && videosPageConfig.intro.maxWaitMs))
-      ? Number(videosPageConfig.intro.maxWaitMs)
-      : 12000;
-    const checkInterval = 500;
-    let lastTime = videoEl.currentTime || 0;
-    let lastProgressTs = performance.now();
-    const watch = () => {
-      try {
-        if (introState.done) { clearInterval(watchTimer); return; }
-        const ct = videoEl.currentTime || 0;
-        if (ct > lastTime + 0.01) { lastTime = ct; lastProgressTs = performance.now(); }
-        if (videoEl.ended) { clearInterval(watchTimer); return; }
-        if (performance.now() - lastProgressTs > stuckThreshold) {
-          // playback appears stuck — allow the intro to finish now
-          clearInterval(watchTimer);
-          finishOnce();
-        }
-      } catch (e) { /* ignore */ }
-    };
-    const watchTimer = setInterval(watch, checkInterval);
-  }, { once: true });
-  videoEl.addEventListener('timeupdate', () => {
-    if (!introState.audioStarted) startIntroAudio(videoEl);
-  });
   const gate = document.getElementById('introGate');
   const playBtn = document.getElementById('introPlay');
   const loadBar = document.getElementById('introLoadBar');
@@ -366,17 +203,179 @@ function setupIntroVideo() {
   }
   if (playBtn) {
     playBtn.disabled = true;
-    playBtn.addEventListener('click', () => {
-      if (introState.done) return;
-      if (playBtn.disabled) return;
-      try { videoEl.play(); } catch (e) { /* ignore */ }
-      startIntroAudio(videoEl);
-      if (!introState.timeoutId) {
-        introState.timeoutId = setTimeout(finishOnce, videosPageConfig.intro.maxWaitMs || 6000);
-      }
-      if (introState.gateEl) introState.gateEl.classList.add('is-hidden');
-    });
   }
+  const listen = (target, type, fn) => { target.addEventListener(type, fn); introState.listeners.push([target, type, fn]); };
+  const showMessage = (message, { recoverable = false, sound = false } = {}) => {
+    if (introState.loadText) introState.loadText.textContent = message;
+    if (introState.gateEl) introState.gateEl.classList.remove('is-hidden');
+    const silentBtn = document.getElementById('introContinueSilent');
+    if (silentBtn) silentBtn.hidden = !sound;
+    if (introState.playBtn) {
+      introState.playBtn.textContent = sound ? 'Enable sound' : (recoverable ? 'Retry' : 'Play');
+      introState.playBtn.disabled = sound || recoverable ? false : videoEl.readyState < 2;
+    }
+  };
+  const stopIntroAudio = ({ clearRequest = true } = {}) => {
+    introState.audioGeneration++;
+    introState.audioPlayPending = false;
+    introState.audioEl?.pause();
+    introState.audioPlaying = false;
+    if (clearRequest) introState.audioRequested = false;
+  };
+  const applyAudioSettings = () => {
+    const audioEl = introState.audioEl;
+    if (!audioEl) return;
+    const consent = isAudioAllowed();
+    const stored = getStoredAudioSettings();
+    const volume = Math.max(0, Math.min(1, Number(stored.volume) || 0));
+    audioEl.volume = volume;
+    audioEl.playbackRate = videoEl.playbackRate || 1;
+    if (!consent || stored.muted || volume <= 0.001) {
+      stopIntroAudio(); audioEl.muted = true;
+      if (!consent) introState.audioBlocked = false;
+      return;
+    }
+    const syncSec = getStoredSyncMs() / 1000;
+    const target = Math.max(0, videoEl.currentTime - syncSec);
+    audioEl.muted = !introState.audioPlaying || videoEl.paused || videoEl.readyState < 2 ||
+      audioEl.readyState < 2 || videoEl.currentTime < syncSec ||
+      Math.abs(audioEl.currentTime - target) > 0.18;
+  };
+  const prepareAudio = () => {
+    if (!isAudioAllowed() || !videosPageConfig.intro.audio) return;
+    if (introState.audioEl) {
+      if (introState.audioEl.error) { introState.audioEl.src = videosPageConfig.intro.audio; introState.audioEl.load(); }
+      return;
+    }
+    const audioEl = document.createElement('audio');
+    audioEl.crossOrigin = 'anonymous'; audioEl.preload = 'auto'; audioEl.src = videosPageConfig.intro.audio;
+    audioEl.addEventListener('error', () => { if (introState.done) return; stopIntroAudio(); introState.audioBlocked = true; if (!videoEl.paused) videoEl.pause(); showMessage('Sound could not load. Retry sound or continue silently.', { sound: true }); });
+    audioEl.addEventListener('playing', () => {
+      if (introState.done) { audioEl.pause(); return; }
+      introState.audioPlaying = true;
+      if (introState.phase === 'waiting-for-audio' && videoEl.paused) startVideo();
+      else alignAudio();
+    });
+    audioEl.addEventListener('pause', () => { introState.audioPlaying = false; });
+    audioEl.addEventListener('waiting', () => {
+      if (introState.done || !introState.audioRequested || !introState.audioPlaying || videoEl.paused) return;
+      stopIntroAudio({ clearRequest: false });
+      introState.audioBlocked = true;
+      videoEl.pause();
+      showMessage('Sound is buffering. Retry when ready, or continue silently.', { sound: true });
+    });
+    introState.audioEl = audioEl;
+    audioEl.load();
+  };
+  const alignAudio = () => {
+    const audioEl = introState.audioEl;
+    if (!audioEl || (!introState.audioPlaying && !introState.audioRequested) || audioEl.readyState < 1) return;
+    const target = Math.max(0, videoEl.currentTime - getStoredSyncMs() / 1000);
+    try { if (Math.abs(audioEl.currentTime - target) > 0.12) audioEl.currentTime = target; } catch (e) { /* wait for metadata */ }
+    audioEl.playbackRate = videoEl.playbackRate || 1;
+    applyAudioSettings();
+  };
+  const startAudioFromGesture = () => {
+    prepareAudio(); applyAudioSettings();
+    const audioEl = introState.audioEl;
+    if (!audioEl || !isAudioAllowed()) return true;
+    const settings = getStoredAudioSettings();
+    if (settings.muted || Number(settings.volume) <= 0.001) return true;
+    if (audioEl.readyState < 2) {
+      introState.audioBlocked = true;
+      showMessage('Sound is loading. Retry when ready, or continue silently.', { sound: true });
+      return false;
+    }
+    const syncMs = getStoredSyncMs();
+    introState.audioRequested = true;
+    introState.audioBlocked = false;
+    audioEl.muted = true;
+    if (audioEl.readyState >= 1) {
+      try { audioEl.currentTime = Math.max(0, videoEl.currentTime - syncMs / 1000); } catch (e) { /* metadata race */ }
+    }
+    requestAudioPlayback(audioEl);
+    return true;
+  };
+  const requestAudioPlayback = (audioEl) => {
+    if (!audioEl || introState.audioPlayPending || introState.audioPlaying) return;
+    const generation = ++introState.audioGeneration;
+    introState.audioPlayPending = true;
+    try {
+      Promise.resolve(audioEl.play()).then(() => {
+        if (generation !== introState.audioGeneration || !introState.audioRequested || !isAudioAllowed() || audioEl.paused) return;
+        introState.audioPlayPending = false; introState.audioBlocked = false; introState.audioPlaying = true; alignAudio();
+      }).catch(() => {
+        if (generation !== introState.audioGeneration) return;
+        introState.audioPlayPending = false; introState.audioPlaying = false;
+        if (introState.audioRequested && isAudioAllowed()) { introState.audioBlocked = true; if (!videoEl.paused) videoEl.pause(); showMessage('Sound is blocked. Select Enable sound to retry, or continue silently.', { sound: true }); }
+      });
+    } catch (error) {
+      if (generation !== introState.audioGeneration) return;
+      introState.audioPlayPending = false; introState.audioPlaying = false; introState.audioBlocked = true;
+      if (!videoEl.paused) videoEl.pause();
+      showMessage('Sound is blocked. Select Enable sound to retry, or continue silently.', { sound: true });
+    }
+  };
+  const startVideo = () => {
+    if (introState.done || introState.startPending) return;
+    if (videoEl.error) { try { videoEl.load(); } catch (e) {} }
+    introState.startPending = true; introState.phase = 'starting';
+    if (introState.playBtn) introState.playBtn.disabled = true;
+    try {
+      const result = videoEl.play();
+      Promise.resolve(result).then(() => {
+        introState.startPending = false;
+        if (introState.done) { videoEl.pause(); return; }
+        if (introState.phase === 'waiting-for-audio') return;
+        introState.phase = 'playing';
+        if (!introState.audioBlocked) introState.gateEl?.classList.add('is-hidden');
+      }).catch(() => {
+        introState.startPending = false; introState.phase = 'blocked';
+        stopIntroAudio();
+        showMessage('Playback could not start. Retry when the video is ready, or Skip.', { recoverable: true });
+      });
+    } catch (error) {
+      introState.startPending = false; introState.phase = 'blocked';
+      stopIntroAudio();
+      showMessage('Playback could not start. Retry when the video is ready, or Skip.', { recoverable: true });
+    }
+  };
+  if (playBtn) listen(playBtn, 'click', () => {
+    if (!startAudioFromGesture()) return;
+    if (videoEl.paused) startVideo();
+  });
+  const continueSilent = document.getElementById('introContinueSilent');
+  if (continueSilent) { continueSilent.hidden = true; listen(continueSilent, 'click', () => { stopIntroAudio(); introState.audioBlocked = false; introState.gateEl?.classList.add('is-hidden'); if (videoEl.paused) startVideo(); }); }
+  listen(videoEl, 'ended', () => markIntroDone('ended'));
+  listen(videoEl, 'playing', () => {
+    if (introState.done) return;
+    introState.startPending = false;
+    if (introState.audioBlocked) { videoEl.pause(); return; }
+    if (introState.audioRequested && !introState.audioPlaying) {
+      introState.phase = 'waiting-for-audio';
+      videoEl.pause();
+      return;
+    }
+    introState.phase = 'playing';
+    introState.gateEl?.classList.add('is-hidden');
+    if (introState.audioRequested && isAudioAllowed()) { alignAudio(); requestAudioPlayback(introState.audioEl); }
+  });
+  listen(videoEl, 'waiting', () => { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); });
+  listen(videoEl, 'stalled', () => { if (!videoEl.paused) { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); } });
+  listen(videoEl, 'error', () => { introState.phase = 'error'; stopIntroAudio(); showMessage('The intro video could not load. Retry or Skip.', { recoverable: true }); });
+  listen(videoEl, 'pause', () => { if (!introState.done && !videoEl.ended && !introState.startPending && !introState.audioBlocked && introState.phase !== 'waiting-for-audio') { introState.phase = 'paused'; stopIntroAudio({ clearRequest: false }); showMessage('Paused. Select Play to resume.'); } });
+  listen(videoEl, 'timeupdate', alignAudio);
+  listen(videoEl, 'ratechange', () => { if (introState.audioEl) introState.audioEl.playbackRate = videoEl.playbackRate || 1; alignAudio(); });
+  listen(document, 'visibilitychange', () => { if (document.hidden && !introState.done && !videoEl.paused) { videoEl.pause(); introState.audioEl?.pause(); showMessage('Paused while this tab was hidden. Select Play to resume.'); } });
+  introState.unsubscribeConsent = onAudioConsentChange((allowed) => {
+    if (!allowed) { stopIntroAudio(); introState.audioBlocked = false; }
+    else prepareAudio();
+    applyAudioSettings();
+  });
+  introState.unsubscribeSettings = getSharedSettings().subscribe((snapshot, change) => {
+    if (change.changed.some(key => key.startsWith('audio.'))) { applyAudioSettings(); alignAudio(); }
+  });
+  prepareAudio();
   const updateLoad = () => {
     if (!introState.loadBar || !introState.loadText) return;
     const duration = Number.isFinite(videoEl.duration) ? videoEl.duration : 0;
@@ -385,7 +384,7 @@ function setupIntroVideo() {
     if (duration > 0 && videoEl.buffered && videoEl.buffered.length) {
       const end = videoEl.buffered.end(videoEl.buffered.length - 1);
       ratio = Math.max(0, Math.min(1, end / duration));
-      ready = ratio >= 0.98;
+      ready = videoEl.readyState >= 2;
     } else if (videoEl.readyState >= 3) {
       ratio = 1;
       ready = true;
@@ -396,26 +395,18 @@ function setupIntroVideo() {
       ratio = 0.35;
     }
     introState.loadBar.style.width = `${Math.round(ratio * 100)}%`;
-    if (introState.playBtn) introState.playBtn.disabled = !ready;
-    introState.loadText.textContent = ready ? 'Ready' : 'Loading…';
+    if (introState.playBtn && !introState.startPending) { introState.playBtn.disabled = !ready; if (ready && ['loading','ready'].includes(introState.phase)) introState.playBtn.textContent = 'Play'; }
+    if (introState.phase === 'loading' || introState.phase === 'ready') {
+      introState.phase = ready ? 'ready' : 'loading';
+      introState.loadText.textContent = ready ? 'Ready to play' : 'Loading video…';
+    }
   };
-  videoEl.addEventListener('progress', updateLoad);
-  videoEl.addEventListener('loadedmetadata', updateLoad);
-  videoEl.addEventListener('loadeddata', updateLoad);
-  videoEl.addEventListener('durationchange', updateLoad);
-  videoEl.addEventListener('canplay', updateLoad);
-  videoEl.addEventListener('canplaythrough', updateLoad);
-  videoEl.addEventListener('stalled', updateLoad);
+  ['progress', 'loadedmetadata', 'loadeddata', 'durationchange', 'canplay', 'canplaythrough', 'stalled'].forEach(type => listen(videoEl, type, updateLoad));
   updateLoad();
-  if (!introState.forceReadyTimer) {
-    const readyFallbackMs = 15000;
-    introState.forceReadyTimer = setTimeout(() => {
-      if (introState.done) return;
-      if (introState.loadBar) introState.loadBar.style.width = '100%';
-      if (introState.loadText) introState.loadText.textContent = 'Ready';
-      if (introState.playBtn) introState.playBtn.disabled = false;
-    }, readyFallbackMs);
-  }
+  introState.readyTimer = setTimeout(() => {
+    if (!introState.done && videoEl.readyState < 2) showMessage('Still loading. Keep waiting, Retry, or Skip.', { recoverable: true });
+  }, 15000);
+  introState.timers.push(introState.readyTimer);
 }
 
 function setupIntroSkip() {
@@ -426,10 +417,15 @@ function setupIntroSkip() {
     btn.classList.add('hidden');
     return;
   }
-  btn.addEventListener('click', () => {
-    markIntroDone();
-  });
+  const listen = (target, type, fn) => { target.addEventListener(type, fn); introState.listeners.push([target, type, fn]); };
+  listen(btn, 'click', () => markIntroDone('skip'));
   const placeNearNav = () => {
+    if (window.innerWidth <= 768) {
+      // Narrow navigation fills its own row; CSS places Skip below it.
+      introState.skipBtn.style.removeProperty('left');
+      introState.skipBtn.style.removeProperty('top');
+      return true;
+    }
     const navBg = document.querySelector('.navigation-bg');
     if (!navBg || !introState.skipBtn) return false;
     const rect = navBg.getBoundingClientRect();
@@ -444,18 +440,20 @@ function setupIntroSkip() {
   const startPlacement = () => {
     if (!placeNearNav()) {
       const timer = setInterval(() => {
-        if (placeNearNav()) clearInterval(timer);
+        if (placeNearNav()) { clearInterval(timer); }
       }, 250);
-      setTimeout(() => clearInterval(timer), 6000);
+      introState.cleanups.push(() => clearInterval(timer));
+      const timeout = setTimeout(() => clearInterval(timer), 6000);
+      introState.timers.push(timeout);
     }
   };
   startPlacement();
-  window.addEventListener('resize', () => placeNearNav());
-  window.addEventListener('keydown', (e) => {
+  listen(window, 'resize', () => placeNearNav());
+  listen(window, 'keydown', (e) => {
     if (introState.done) return;
     if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
-      markIntroDone();
+      markIntroDone('skip');
     }
   });
 }
@@ -578,7 +576,7 @@ onReady(async () => {
   }
 
   const primaryPath = assetUrl('../assets/glb/video-tablet.glb');
-  const allowSound = (new URLSearchParams(location.search)).get('sound') === '1' || isAudioAllowed();
+  const allowSound = isAudioAllowed();
 
   // load GLB and init
   const doLoadGlb = () => {
@@ -659,7 +657,7 @@ onReady(async () => {
 
             if (VideoPlayer && typeof VideoPlayer.createGrid === 'function') {
               const setTabletFocus = tabletFocus = createTabletFocus({ camera: refs.camera, controls: refs.controls, tabletGroup: refs.tabletGroup, screenMesh: refs.screenMesh, renderer });
-              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus });
+              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus, deferPreloadUntilIntro: introState.enabled });
               if (USE_SHARED_CONTROLS && gridApi) {
                 const adapter = createVideosVideoAdapter({
                   getActiveVideo: () => gridApi.getActiveVideo?.(),
@@ -744,92 +742,15 @@ onReady(async () => {
           }
         } catch (e) { console.warn('[videos] intro drop setup failed', e); }
 
-        // --- Preload orchestration: staged LQ then HQ with concurrency control ---
-        try {
-          function createPreloadQueue({ concurrency = 2 } = {}) {
-            let running = 0;
-            const queue = [];
-            const runNext = () => {
-              if (running >= concurrency || queue.length === 0) return;
-              const fn = queue.shift();
-              running++;
-              Promise.resolve().then(() => fn()).then(() => {
-                running--;
-                setTimeout(runNext, 0);
-              }).catch(() => {
-                running--;
-                setTimeout(runNext, 0);
-              });
-            };
-            return {
-              enqueue(task, opts = {}) {
-                const wrapped = () => Promise.resolve().then(() => task());
-                if (opts && opts.priority) queue.unshift(wrapped); else queue.push(wrapped);
-                setTimeout(runNext, 0);
-                // return a promise that resolves when the task completes
-                return new Promise((resolve, reject) => {
-                  const idx = queue.indexOf(wrapped);
-                  // If task already running or consumed, we cannot easily map; simple approach: run wrapped and resolve
-                  wrapped().then(resolve).catch(reject);
-                });
-              }
-            };
-          }
-
-          function waitForCanPlayOrTimeout(v, ms = 1500) {
-            return new Promise((resolve) => {
-              if (!v) return resolve();
-              const onReady = () => {
-                cleanup();
-                resolve();
-              };
-              const cleanup = () => {
-                try { v.removeEventListener('loadeddata', onReady); } catch (e) {}
-                try { v.removeEventListener('canplay', onReady); } catch (e) {}
-              };
-              v.addEventListener('loadeddata', onReady, { once: true });
-              v.addEventListener('canplay', onReady, { once: true });
-              setTimeout(() => { cleanup(); resolve(); }, Math.max(200, ms || 1500));
-            });
-          }
-
-          const startStagedPreloads = () => {
-            try {
-              const lq = Array.isArray(window.__videoGridPreviewVideos) ? window.__videoGridPreviewVideos.slice() : [];
-              const hq = Array.isArray(window.__videoGridFullVideos) ? window.__videoGridFullVideos.slice() : [];
-
-              // LQ previews — low concurrency, warm until canplay or short timeout
-              const qLQ = createPreloadQueue({ concurrency: 2 });
-              lq.forEach((v) => {
-                if (!v) return;
-                qLQ.enqueue(() => { try { v.__ensureSrc && v.__ensureSrc(); } catch (e) {} ; return waitForCanPlayOrTimeout(v, 1500); });
-              });
-
-              // HQ warmups — concurrency=1, gentle metadata-only warmups, sequential
-              setTimeout(() => {
-                const qHQ = createPreloadQueue({ concurrency: 1 });
-                hq.forEach((v, idx) => {
-                  if (!v) return;
-                  qHQ.enqueue(() => {
-                    try { v.__warmMetadata && v.__warmMetadata(); } catch (e) {}
-                    // small gap between items to avoid hammering
-                    return new Promise(r => setTimeout(r, 400));
-                  });
-                });
-              }, 800);
-            } catch (e) { /* ignore preload orchestration errors */ }
+        if (!introState.preloadStarted) {
+          introState.preloadStarted = true;
+          introState.onTerminal = () => {
+            if (introState.gridPreloadStarted) return;
+            introState.gridPreloadStarted = true;
+            window.__videoGridSchedulePreload?.();
           };
-
-          // Start when intro gate is finished (or immediately if intro disabled)
-          (function waitForIntroThenStart() {
-            if (introState.done) { startStagedPreloads(); return; }
-            const poll = setInterval(() => {
-              if (introState.done) { clearInterval(poll); startStagedPreloads(); }
-            }, 250);
-            // Safety: start after a reasonable timeout even if intro didn't finish
-            setTimeout(() => { clearInterval(poll); startStagedPreloads(); }, 15000);
-          }());
-        } catch (e) { /* ignore */ }
+          if (introState.done) introState.onTerminal(introState.completionReason || 'disabled');
+        }
 
       } catch (e) { console.warn('loadTabletGlb init failed', e); }
     }, undefined, (err) => { console.warn('Failed to load GLB', err); });

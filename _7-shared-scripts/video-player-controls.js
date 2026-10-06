@@ -6,9 +6,11 @@ import { getSyncOffsetMs, setSyncOffsetMs } from './global-sync.js';
  */
 import * as THREE from 'three';
 import * as SharedVC from './shared-video-controls.js';
-import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from '../_2-videos/videos-tablet.js';
+import { drawFilteredVideo } from './video-filter.js';
+import { applyScreenCanvasTexture, createTabletRaycaster, createScreenOverlay, createScreenOverlayPlane } from './scene/screen-surface.js';
 import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from './assets-config.js';
 import { isAudioAllowed } from './audio-consent.js';
+import { getEffectiveAudioSettings as getSharedEffectiveAudioSettings, patchAudioSettings } from './audio-settings.js';
 
 // Player state management
 class PlayerState {
@@ -182,18 +184,16 @@ function getStoredSyncMsLocal() {
 
 function getStoredAudioSettingsGlobal() {
   const allowed = isAudioAllowed();
-  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
-  const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
-  return { allowed, muted, volume };
+  return { allowed, ...getSharedEffectiveAudioSettings() };
 }
 
 function setStoredAudioMutedGlobal(muted) {
-  try { localStorage.setItem(AUDIO_MUTED_KEY, muted ? 'true' : 'false'); } catch (e) { /* ignore */ }
+  patchAudioSettings({ muted: !!muted });
 }
 
 function setStoredAudioVolumeGlobal(volume) {
   const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
-  try { localStorage.setItem(AUDIO_VOLUME_KEY, String(v)); } catch (e) { /* ignore */ }
+  patchAudioSettings({ volume: v });
   setStoredAudioMutedGlobal(v <= 0.001);
   return v;
 }
@@ -1542,10 +1542,7 @@ function formatTime(t) {
       }
 
       function getStoredAudioSettings() {
-        const allowed = localStorage.getItem(AUDIO_ALLOWED_KEY) === 'true';
-        const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !allowed;
-        const volume = Math.max(0, Math.min(1, parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1')));
-        return { muted, volume };
+        return getSharedEffectiveAudioSettings();
       }
 
       function getEffectiveAudioSettings() {
@@ -1961,16 +1958,15 @@ function formatTime(t) {
           if (_started) return; _started = true;
 
           // Helper: safe attempt to load a URL via a lightweight video element
-          const warmTabletAnimation = async () => {
-            try {
-              const path = encodeURI(assetUrl(videosPageConfig?.intro?.video || '../Renders/tablet-animation.webm'));
-              if (!path) return;
-              const v = createCorsVideo(path, { muted: true, loop: false, preload: 'auto' });
-              // Fire load(); don't attach to DOM — just warm browser cache/connection
-              try { v.load(); } catch (e) { /* ignore */ }
-              // Wait briefly for network to start (or metadata) but don't block too long
-              await new Promise(r => setTimeout(r, 350));
-            } catch (e) { /* ignore */ }
+          const runLimited = async (items, concurrency, warm) => {
+            let next = 0;
+            const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+              while (next < items.length) {
+                const item = items[next++];
+                try { await warm(item); } catch { /* Continue warming the remaining items. */ }
+              }
+            });
+            await Promise.all(workers);
           };
 
           const warmPreviewsAndAudio = async () => {
@@ -1980,21 +1976,18 @@ function formatTime(t) {
                 try { if (img && img.__deferredSrc && !img.src) img.src = img.__deferredSrc; } catch (e) { /* ignore */ }
               });
               // Warm low-quality preview metadata (fast) and audio sources (opus)
-              previewVideos.forEach((pv) => {
-                try { pv && pv.__warmMetadata && pv.__warmMetadata(); } catch (e) { /* ignore */ }
+              await runLimited(previewVideos.map((video, index) => ({ video, audio: fullAudios[index] })), 2, async ({ video, audio }) => {
+                video?.__warmMetadata?.(); audio?.__ensureSrc?.();
+                await new Promise(resolve => setTimeout(resolve, 225));
               });
-              fullAudios.forEach((a) => {
-                try { a && a.__ensureSrc && a.__ensureSrc(); } catch (e) { /* ignore */ }
-              });
-              // Give a small stagger to let sockets open without flooding
-              await new Promise(r => setTimeout(r, 450));
             } catch (e) { /* ignore */ }
           };
 
           const warmHighQuality = async () => {
             try {
-              fullVideos.forEach((fv) => {
-                try { fv && fv.__ensureSrc && fv.__ensureSrc(); } catch (e) { /* ignore */ }
+              await runLimited(fullVideos, 1, async (video) => {
+                video?.__warmMetadata?.();
+                await new Promise(resolve => setTimeout(resolve, 400));
               });
             } catch (e) { /* ignore */ }
           };
@@ -2002,13 +1995,11 @@ function formatTime(t) {
           (async () => {
             // If page already loaded use immediate, otherwise wait for window load
             if (document.readyState === 'complete') {
-              await warmTabletAnimation();
               await warmPreviewsAndAudio();
               await warmHighQuality();
             } else {
               const onLoad = async () => {
                 try { window.removeEventListener('load', onLoad); } catch (e) {}
-                await warmTabletAnimation();
                 await warmPreviewsAndAudio();
                 await warmHighQuality();
               };
@@ -2020,7 +2011,7 @@ function formatTime(t) {
         // Expose as a function and attach to window so other modules can trigger
         window.__videoGridSchedulePreload = doSchedule;
           // Kick off scheduling immediately so the page can load quickly
-          try { doSchedule(); } catch (e) { /* ignore */ }
+          if (!opts.deferPreloadUntilIntro) { try { doSchedule(); } catch (e) { /* ignore */ } }
           return doSchedule;
       })();
 
@@ -2058,10 +2049,7 @@ function formatTime(t) {
 
       function setStoredVolumeFromRatio(ratio) {
         const clamped = Math.max(0, Math.min(1, ratio));
-        try {
-          localStorage.setItem(AUDIO_VOLUME_KEY, String(clamped));
-          localStorage.setItem(AUDIO_MUTED_KEY, clamped <= 0.001 ? 'true' : 'false');
-        } catch (e) { /* ignore */ }
+        patchAudioSettings({ volume: clamped, muted: clamped <= 0.001 });
       }
 
       function toggleStoredMute() {
@@ -2596,6 +2584,7 @@ function formatTime(t) {
           button: ev?.button,
           buttons: ev?.buttons,
           clientX: ev?.clientX,
+          target: dom,
           pointerId: ev?.pointerId
         };
       }
@@ -2769,7 +2758,7 @@ function formatTime(t) {
             if (el instanceof HTMLImageElement) {
               safeDrawImage(ctx, el, x, y, w, h);
             } else {
-              ctx.drawImage(el, x, y, w, h);
+              drawFilteredVideo(ctx, el, x, y, w, h);
             }
             ctx.restore();
           } catch (e) {
@@ -2789,7 +2778,7 @@ function formatTime(t) {
           if (el instanceof HTMLImageElement) {
             safeDrawImage(ctx, el, x, y, w, h);
           } else {
-            ctx.drawImage(el, x, y, w, h);
+            drawFilteredVideo(ctx, el, x, y, w, h);
           }
         } catch (e) { /* ignore draw failures */ }
       }

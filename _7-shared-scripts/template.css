@@ -6,6 +6,9 @@
     --controls-bg: var(--primary-color);
     --controls-fg: var(--hl-tertiary-color);
     --controls-bg-alpha: 0.9;
+    --target-size: 44px;
+    --focus-ring: #fff;
+    --nav-mobile-gap: 4px;
     /* default tile size for page overlays */
     box-sizing: border-box;
 }
@@ -265,8 +268,8 @@ body[data-page="videos"][data-has-glb="true"][data-intro-done="true"] .page-note
 }
 
 .nav-icon:focus-visible {
-    outline: 3px solid var(--hl-tertiary-color);
-    outline-offset: 2px;
+    outline: 3px solid var(--focus-ring);
+    outline-offset: -3px;
 }
 
 
@@ -481,3 +484,104 @@ only screen and (min-device-pixel-ratio: 2) {
         padding-right: 5vw;
     }
 }
+
+/* Shared HTML navigation and scene alternatives. Insets keep focus rings
+   visible inside the clipped navigation background. */
+.skip-link {
+    position: fixed;
+    top: 8px;
+    left: 8px;
+    transform: translateY(-200%);
+    z-index: 100002;
+    padding: 12px 16px;
+    background: #10141d;
+    color: #fff;
+    border-radius: 6px;
+}
+.skip-link:focus { transform: none; }
+:where(button, input, select, summary, a):focus-visible {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 5px #10141d;
+}
+.a11y-focus-always :where(button, input, select, summary, a):focus {
+    outline: 3px solid var(--focus-ring);
+    outline-offset: 2px;
+}
+.scene-alternative {
+    position: fixed;
+    right: 50px;
+    bottom: 14px;
+    z-index: 101;
+    max-width: min(390px, calc(100vw - 100px));
+    box-sizing: border-box;
+    background: #10141d;
+    color: #f4f6fb;
+    border: 1px solid #8fa2b5;
+    border-radius: 8px;
+    font: 16px/1.5 system-ui, sans-serif;
+}
+.scene-alternative summary {
+    box-sizing: border-box;
+    min-height: var(--target-size);
+    padding: 10px 12px;
+    cursor: pointer;
+}
+.scene-alternative-content { max-height: 55vh; overflow: auto; padding: 0 16px 12px; }
+.scene-alternative-content a { color: #bce4ff; }
+.scene-alternative-content li { margin-block: 8px; }
+.site-audio-consent {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: grid;
+    place-items: center;
+    background: rgba(8, 10, 14, .72);
+    padding: 24px;
+}
+.site-audio-consent__box {
+    max-width: 460px;
+    padding: 22px;
+    border-radius: 18px;
+    background: #10141d;
+    color: #f4f6fb;
+    font: 16px/1.5 sans-serif;
+}
+.site-audio-consent__box button { min-width: var(--target-size); min-height: var(--target-size); margin-right: 8px; }
+
+@media (max-width: 768px) {
+    body .header { min-height: 144px; padding-bottom: 68px; }
+    body .header .nav-wrap {
+        top: auto;
+        bottom: 0;
+        width: 100%;
+        justify-content: center;
+    }
+    body .header .nav-wrap .page-note.page-note--nav { display: none; }
+    body .header .navigation-bg {
+        position: relative;
+        box-sizing: border-box;
+        width: 100%;
+        height: auto;
+        padding: 8px;
+    }
+    body .header .navigation {
+        position: static;
+        gap: var(--nav-mobile-gap);
+        padding: 0;
+        flex-wrap: wrap;
+    }
+    body .header .nav-icon {
+        box-sizing: border-box;
+        flex: 0 0 var(--target-size);
+        width: var(--target-size);
+        height: var(--target-size);
+    }
+    body .header .nav-separator { width: 1px; height: 36px; margin-inline: 2px; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .navigation *, .header, .skip-link { transition: none !important; }
+}
+.a11y-motion-reduced .navigation *,
+.a11y-motion-reduced .header,
+.a11y-motion-reduced .skip-link { transition: none !important; }

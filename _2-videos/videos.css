@@ -148,6 +148,9 @@ body {
 }
 .intro-skip:hover { transform: translateY(-1px); }
 .intro-skip.hidden { opacity: 0; pointer-events: none; }
+@media (max-width: 768px) {
+    .intro-skip { top: 156px; left: 12px; min-height: 44px; }
+}
 
 .intro-gate {
     position: absolute;
