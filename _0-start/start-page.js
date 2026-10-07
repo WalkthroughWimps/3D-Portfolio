@@ -4,7 +4,7 @@ import { createCameraTransition } from './camera-transition.js';
 import { assetUrl, isLocalDev } from "../_7-shared-scripts/assets-config.js";
 import { loadDebugIfEnabled, DEBUG_VISIBILITY_EVENT } from "../debug/debug-loader.js";
 import { getSceneLightingValue, setSceneLightingValue, getLightScaleForValue, MAX_LIGHT_RATIO } from "../_7-shared-scripts/scene-lighting-sync.js";
-import { setAudioConsentAllowed } from "../_7-shared-scripts/audio-consent.js";
+import { ensureAudioConsentPrompt, setAudioConsentAllowed } from "../_7-shared-scripts/audio-consent.js";
 import { applyStartPageMouseControlMode } from "../_7-shared-scripts/shared-glb-mouse-controls.js";
 import { createVideoControlsUI, getStoredPreservePitch, setStoredPreservePitch, setPreservePitchFlag, playbackRates as SHARED_PLAYBACK_RATES } from "../_7-shared-scripts/shared-video-controls.js";
 import * as THREE from "three";
@@ -4859,6 +4859,19 @@ enabled: ${!!cameraAction?.enabled}`;
     }
 
     // Create audio context and routing to apply delay to audio and visualizer
+    function offerSoundOnUnmute(){
+        if(controllerFlow.soundAllowed) return;
+        void ensureAudioConsentPrompt({
+            modalId: 'siteAudioConsentPrompt',
+            allowButtonId: 'siteAudioConsentAllow',
+            denyButtonId: 'siteAudioConsentDeny'
+        }).then(state => {
+            if(!state.allowed) return;
+            controllerFlow.soundAllowed = true;
+            applyAudioPermission(true);
+        });
+    }
+
     function ensureAudioRouting(){
         if(audioCtx) return;
         if(!controllerFlow.soundAllowed) return;
@@ -5012,12 +5025,14 @@ enabled: ${!!cameraAction?.enabled}`;
         const setJumpVolume = (volume) => {
             storedVolume = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
             storedMuted = storedVolume <= 0.001;
+            if(!storedMuted) offerSoundOnUnmute();
             resumeAudioContext();
             applyVolumeAndMuted();
         };
         const toggleJumpMute = () => {
             storedMuted = !storedMuted;
             if(!storedMuted && storedVolume <= 0.001) storedVolume = 0.25;
+            if(!storedMuted) offerSoundOnUnmute();
             resumeAudioContext();
             applyVolumeAndMuted();
         };
@@ -5141,6 +5156,7 @@ enabled: ${!!cameraAction?.enabled}`;
         const clamped = Math.max(0, Math.min(100, percent));
         storedVolume = clamped / 100;
         storedMuted = storedVolume === 0;
+        if(!storedMuted) offerSoundOnUnmute();
         resumeAudioContext();
         applyVolumeAndMuted();
     }

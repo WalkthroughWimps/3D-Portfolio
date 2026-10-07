@@ -315,3 +315,21 @@ siteUtils.formatFullAttribution = formatFullAttribution;
 siteUtils.renderFullAttribution = renderFullAttribution;
 siteUtils.renderFullAttributionByKey = renderFullAttributionByKey;
 window.SiteUtils = siteUtils;
+
+// Every site page shares the same sound choice, including pages without media controls.
+const siteRootPath = new URL('../', document.currentScript?.src || location.href).pathname;
+const siteRoute = location.pathname.startsWith(siteRootPath)
+    ? location.pathname.slice(siteRootPath.length).replace(/\/+$/, '')
+    : location.pathname.replace(/^\/+|\/+$/g, '');
+if (siteRoute && siteRoute !== 'index.html') {
+    const offerSoundConsent = () => {
+        import('../_7-shared-scripts/audio-consent.js')
+            .then(({ isAudioAllowed, ensureAudioConsentPrompt }) => {
+                if (!isAudioAllowed()) return ensureAudioConsentPrompt();
+                return undefined;
+            })
+            .catch(error => console.warn('[site-utils] sound consent prompt unavailable', error));
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', offerSoundConsent, { once: true });
+    else offerSoundConsent();
+}

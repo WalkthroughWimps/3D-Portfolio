@@ -6,7 +6,7 @@ console.log('%c[shared-video-controls] loaded', 'color:#00ffcc;font-weight:bold'
 console.log('%c[shared-video-controls] primary API active', 'color:#00ccff;font-weight:bold');
 
 // Shared video controls helpers (copied from video-player-controls.js).
-import { isAudioAllowed } from './audio-consent.js';
+import { ensureAudioConsentPrompt, isAudioAllowed } from './audio-consent.js';
 
 export class PlayerState {
   constructor() {
@@ -79,6 +79,14 @@ export function toggleMute(media, uiState = createDefaultUiState()) {
   if (!media) return uiState;
   if (media.muted || media.volume <= 0.0001) {
     const target = uiState.lastVolume > 0.001 ? uiState.lastVolume : 0.5;
+    if (!isAudioAllowed()) {
+      void ensureAudioConsentPrompt().then(state => {
+        if (!state.allowed) return;
+        media.muted = false;
+        try { media.volume = target; } catch { /* ignore */ }
+      });
+      return uiState;
+    }
     media.muted = false;
     try { media.volume = target; } catch { /* ignore */ }
   } else {

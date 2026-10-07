@@ -1,4 +1,7 @@
+import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+
 export function createGameAudioBridge(options = {}) {
+  const canUseSound = () => typeof document === 'undefined' || isAudioAllowed();
   const cfg = {
     retryCount: Number.isFinite(options.retryCount) ? options.retryCount : 10,
     retryDelayMs: Number.isFinite(options.retryDelayMs) ? options.retryDelayMs : 250,
@@ -6,7 +9,7 @@ export function createGameAudioBridge(options = {}) {
   };
 
   let lastVolume01 = 1;
-  let muted = false;
+  let muted = !canUseSound();
   let available = false;
   let lastReason = 'init';
   let boundFrame = null;
@@ -21,7 +24,7 @@ export function createGameAudioBridge(options = {}) {
     try {
       void frameEl.contentWindow.location.href;
       return true;
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -31,7 +34,7 @@ export function createGameAudioBridge(options = {}) {
       const win = frameEl?.contentWindow;
       if (!win) return null;
       return win.C3Audio_DOMInterface || win.self?.C3Audio_DOMInterface || null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
@@ -74,7 +77,7 @@ export function createGameAudioBridge(options = {}) {
       try {
         boundInterface._SetMasterVolume({ vol });
         return true;
-      } catch (e) {
+      } catch {
         return false;
       }
     }
@@ -82,19 +85,27 @@ export function createGameAudioBridge(options = {}) {
   }
 
   function setMuted(nextMuted) {
+    if (!nextMuted && !canUseSound()) {
+      muted = true;
+      notify('consent-required');
+      void ensureAudioConsentPrompt().then(state => {
+        if (state.allowed) setMuted(false);
+      });
+      return false;
+    }
     muted = !!nextMuted;
     if (boundInterface && typeof boundInterface._SetSilent === 'function') {
       try {
         boundInterface._SetSilent({ isSilent: muted });
+        notify('mute');
         return true;
-      } catch (e) {
+      } catch {
         /* ignore */
       }
     }
-    if (muted) {
-      return setVolume01(0);
-    }
-    return setVolume01(lastVolume01);
+    const updated = muted ? setVolume01(0) : setVolume01(lastVolume01);
+    notify('mute');
+    return updated;
   }
 
   function attach(frameEl) {

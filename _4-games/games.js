@@ -1485,6 +1485,12 @@ function getSharedActiveAudio() {
 function setSharedVolume(value) {
   const audio = getSharedActiveAudio();
   if (!audio || !Number.isFinite(value)) return;
+  if (value > 0.001 && !isAudioAllowed()) {
+    void ensureAudioConsentPrompt().then(state => {
+      if (state.allowed) setSharedVolume(value);
+    });
+    return;
+  }
   audio.volume = Math.max(0, Math.min(1, value));
   if (audio.volume > 0.001) audio.muted = false;
   needsRedraw = true;
@@ -1493,6 +1499,12 @@ function setSharedVolume(value) {
 function toggleSharedMute() {
   const audio = getSharedActiveAudio();
   if (!audio) return;
+  if (audio.muted && !isAudioAllowed()) {
+    void ensureAudioConsentPrompt().then(state => {
+      if (state.allowed) toggleSharedMute();
+    });
+    return;
+  }
   audio.muted = !audio.muted;
   needsRedraw = true;
 }

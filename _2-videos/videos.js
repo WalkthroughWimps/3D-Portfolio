@@ -211,7 +211,7 @@ function setupIntroVideo() {
     const silentBtn = document.getElementById('introContinueSilent');
     if (silentBtn) silentBtn.hidden = !sound;
     if (introState.playBtn) {
-      introState.playBtn.textContent = sound ? 'Enable sound' : (recoverable ? 'Retry' : 'Play');
+      introState.playBtn.textContent = sound ? 'Retry sound' : (recoverable ? 'Retry' : 'Play');
       introState.playBtn.disabled = sound || recoverable ? false : videoEl.readyState < 2;
     }
   };
@@ -249,20 +249,23 @@ function setupIntroVideo() {
     }
     const audioEl = document.createElement('audio');
     audioEl.crossOrigin = 'anonymous'; audioEl.preload = 'auto'; audioEl.src = videosPageConfig.intro.audio;
-    audioEl.addEventListener('error', () => { if (introState.done) return; stopIntroAudio(); introState.audioBlocked = true; if (!videoEl.paused) videoEl.pause(); showMessage('Sound could not load. Retry sound or continue silently.', { sound: true }); });
+    audioEl.addEventListener('error', () => {
+      if (introState.done) return;
+      const started = !['loading', 'ready'].includes(introState.phase);
+      stopIntroAudio();
+      introState.audioBlocked = true;
+      if (started && videoEl.paused) showMessage('Sound could not load. Retry sound or continue silently.', { sound: true });
+    });
     audioEl.addEventListener('playing', () => {
       if (introState.done) { audioEl.pause(); return; }
       introState.audioPlaying = true;
-      if (introState.phase === 'waiting-for-audio' && videoEl.paused) startVideo();
-      else alignAudio();
+      alignAudio();
     });
     audioEl.addEventListener('pause', () => { introState.audioPlaying = false; });
     audioEl.addEventListener('waiting', () => {
-      if (introState.done || !introState.audioRequested || !introState.audioPlaying || videoEl.paused) return;
-      stopIntroAudio({ clearRequest: false });
-      introState.audioBlocked = true;
-      videoEl.pause();
-      showMessage('Sound is buffering. Retry when ready, or continue silently.', { sound: true });
+      if (introState.done || !introState.audioRequested) return;
+      introState.audioPlaying = false;
+      audioEl.muted = true;
     });
     introState.audioEl = audioEl;
     audioEl.load();
@@ -281,11 +284,6 @@ function setupIntroVideo() {
     if (!audioEl || !isAudioAllowed()) return true;
     const settings = getStoredAudioSettings();
     if (settings.muted || Number(settings.volume) <= 0.001) return true;
-    if (audioEl.readyState < 2) {
-      introState.audioBlocked = true;
-      showMessage('Sound is loading. Retry when ready, or continue silently.', { sound: true });
-      return false;
-    }
     const syncMs = getStoredSyncMs();
     introState.audioRequested = true;
     introState.audioBlocked = false;
@@ -307,13 +305,15 @@ function setupIntroVideo() {
       }).catch(() => {
         if (generation !== introState.audioGeneration) return;
         introState.audioPlayPending = false; introState.audioPlaying = false;
-        if (introState.audioRequested && isAudioAllowed()) { introState.audioBlocked = true; if (!videoEl.paused) videoEl.pause(); showMessage('Sound is blocked. Select Enable sound to retry, or continue silently.', { sound: true }); }
+        if (introState.audioRequested && isAudioAllowed()) {
+          introState.audioBlocked = true;
+          if (videoEl.paused) showMessage('Sound is blocked. Retry sound or continue silently.', { sound: true });
+        }
       });
     } catch (error) {
       if (generation !== introState.audioGeneration) return;
       introState.audioPlayPending = false; introState.audioPlaying = false; introState.audioBlocked = true;
-      if (!videoEl.paused) videoEl.pause();
-      showMessage('Sound is blocked. Select Enable sound to retry, or continue silently.', { sound: true });
+      if (videoEl.paused) showMessage('Sound is blocked. Retry sound or continue silently.', { sound: true });
     }
   };
   const startVideo = () => {
@@ -326,9 +326,8 @@ function setupIntroVideo() {
       Promise.resolve(result).then(() => {
         introState.startPending = false;
         if (introState.done) { videoEl.pause(); return; }
-        if (introState.phase === 'waiting-for-audio') return;
         introState.phase = 'playing';
-        if (!introState.audioBlocked) introState.gateEl?.classList.add('is-hidden');
+        introState.gateEl?.classList.add('is-hidden');
       }).catch(() => {
         introState.startPending = false; introState.phase = 'blocked';
         stopIntroAudio();
@@ -350,12 +349,6 @@ function setupIntroVideo() {
   listen(videoEl, 'playing', () => {
     if (introState.done) return;
     introState.startPending = false;
-    if (introState.audioBlocked) { videoEl.pause(); return; }
-    if (introState.audioRequested && !introState.audioPlaying) {
-      introState.phase = 'waiting-for-audio';
-      videoEl.pause();
-      return;
-    }
     introState.phase = 'playing';
     introState.gateEl?.classList.add('is-hidden');
     if (introState.audioRequested && isAudioAllowed()) { alignAudio(); requestAudioPlayback(introState.audioEl); }
@@ -363,7 +356,7 @@ function setupIntroVideo() {
   listen(videoEl, 'waiting', () => { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); });
   listen(videoEl, 'stalled', () => { if (!videoEl.paused) { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); } });
   listen(videoEl, 'error', () => { introState.phase = 'error'; stopIntroAudio(); showMessage('The intro video could not load. Retry or Skip.', { recoverable: true }); });
-  listen(videoEl, 'pause', () => { if (!introState.done && !videoEl.ended && !introState.startPending && !introState.audioBlocked && introState.phase !== 'waiting-for-audio') { introState.phase = 'paused'; stopIntroAudio({ clearRequest: false }); showMessage('Paused. Select Play to resume.'); } });
+  listen(videoEl, 'pause', () => { if (!introState.done && !videoEl.ended && !introState.startPending && !introState.audioBlocked) { introState.phase = 'paused'; stopIntroAudio({ clearRequest: false }); showMessage('Paused. Select Play to resume.'); } });
   listen(videoEl, 'timeupdate', alignAudio);
   listen(videoEl, 'ratechange', () => { if (introState.audioEl) introState.audioEl.playbackRate = videoEl.playbackRate || 1; alignAudio(); });
   listen(document, 'visibilitychange', () => { if (document.hidden && !introState.done && !videoEl.paused) { videoEl.pause(); introState.audioEl?.pause(); showMessage('Paused while this tab was hidden. Select Play to resume.'); } });

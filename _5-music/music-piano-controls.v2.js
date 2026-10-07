@@ -35,6 +35,19 @@ import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } fro
 // Tablet helper currently a no-op; import kept so future
 // tablet code can be re-enabled without touching this file.
 import { setupMusicTabletScreen } from './music-tablet.js';
+
+function unmuteMediaWithConsent(media, volume = media?.volume) {
+  if (!media) return;
+  const unmute = () => {
+    if (Number.isFinite(volume)) media.volume = Math.max(0, Math.min(1, volume));
+    media.muted = false;
+  };
+  if (isAudioAllowed()) unmute();
+  else void ensureAudioConsentPrompt().then(state => {
+    if (state.allowed) unmute();
+  });
+}
+
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
 async function fetchAudioBuffer(url) {
@@ -5324,11 +5337,12 @@ function renderTopPadGrid(){
               const dur = topPadVideo.hqVideo.duration || 0;
               if(dur > 0) seekMediaWithFreeze(topPadVideo.hqVideo, dur * action.ratio, { audio: topPadVideo.audio, syncMs: getSyncOffsetMs() });
             } else if(action.type === 'toggleMute'){
-              topPadVideo.audio.muted = !topPadVideo.audio.muted;
+              if (topPadVideo.audio.muted) unmuteMediaWithConsent(topPadVideo.audio);
+              else topPadVideo.audio.muted = true;
             } else if(action.type === 'setVolume'){
               const volume = Math.max(0, Math.min(1, Number.isFinite(action.volume) ? action.volume : 0));
-              topPadVideo.audio.muted = volume <= 0.001;
-              topPadVideo.audio.volume = volume;
+              if (volume <= 0.001) { topPadVideo.audio.volume = 0; topPadVideo.audio.muted = true; }
+              else unmuteMediaWithConsent(topPadVideo.audio, volume);
             } else if(action.type === 'cyclePlaybackRate'){
               cycleSharedPlaybackRate();
             } else if(action.type === 'togglePitch'){
@@ -10909,7 +10923,8 @@ function handleTopPadVideoKeys(ev){
       setStoredAudioSettings(settings.volume, !settings.muted);
       applyInstrumentMix();
     } else if(audio){
-      audio.muted = !audio.muted;
+      if (audio.muted) unmuteMediaWithConsent(audio);
+      else audio.muted = true;
     }
     renderTopPadGrid();
     return;
@@ -10926,8 +10941,8 @@ function handleTopPadVideoKeys(ev){
       setStoredAudioSettings(next, next <= 0.001);
       applyInstrumentMix();
     } else if(audio){
-      audio.volume = Math.min(1, (audio.volume || 0) + 0.05);
-      if(audio.volume > 0.001) audio.muted = false;
+      const next = Math.min(1, (audio.volume || 0) + 0.05);
+      if (next > 0.001) unmuteMediaWithConsent(audio, next);
     }
     renderTopPadGrid();
     return;

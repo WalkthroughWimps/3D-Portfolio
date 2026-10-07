@@ -68,7 +68,7 @@ export function createConsent({ doc = document, target = window, storage = {
     return stop;
   }
   function prompt(options = {}) {
-    if (!get().shouldPrompt) return Promise.resolve(get());
+    if (get().allowed) return Promise.resolve(get());
     if (pending) return pending.promise;
     let root = doc.getElementById(options.modalId || 'permissionModal');
     let allow = doc.getElementById(options.allowButtonId || 'permAllow');
