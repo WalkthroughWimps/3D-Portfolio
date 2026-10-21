@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "source": "assets/about-cube/blend/about-cube-clock-v7-supported.blend",
+  "teeth": [
+    216,
+    144,
+    108,
+    72,
+    54,
+    36,
+    18
+  ],
+  "speedFactors": [
+    1,
+    -1.5,
+    2,
+    -3,
+    4,
+    -6,
+    12
+  ],
+  "hourPeriodSeconds": 43200,
+  "rotationAxis": [
+    0,
+    1,
+    0
+  ],
+  "triangles": 128212,
+  "materialBatches": 18,
+  "rotorNodes": [
+    "clock-axle-0",
+    "clock-axle-1",
+    "clock-axle-2",
+    "clock-axle-3",
+    "clock-axle-4",
+    "clock-axle-5",
+    "clock-axle-6"
+  ],
+  "backingIncluded": false,
+  "coordinates": "Shared cube local glTF coordinates: native (x,y,z) -> (x,z,-y).",
+  "phase": "Frame 1 mesh phases baked; clockwise from native front; signed ratios relative to hour.",
+  "bakedSourceMeshes": 73,
+  "assetBytes": 4206296
+}

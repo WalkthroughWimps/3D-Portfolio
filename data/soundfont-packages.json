@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "applicationBudgetBytes": 250000000,
+  "packages": [
+    {
+      "id": "arachno-sf2", "version": "1.0-sha256-9a57fb3b", "format": "sf2", "backend": "js-synthesizer",
+      "instruments": ["arachno-bank"],
+      "files": [{ "path": "soundfonts/arachno/Arachno%20SoundFont%20-%20Version%201.0.sf2", "size": 155405818, "sha256": "9a57fb3b6714e69dda12390e351b087e81fc3b1eca15c6b4bbe172799f4cf3cd" }]
+    },
+    {
+      "id": "definitive-drums-sf2", "version": "1.0-sha256-1bd7d2d9", "format": "sf2", "backend": "js-synthesizer",
+      "instruments": ["definitive-drums-bank"],
+      "files": [{ "path": "soundfonts/drums/definitive-drums.sf2", "size": 256317998, "sha256": "1bd7d2d975718b3eaddb0852a449c8c1e175cc9d40085c3564d637dd0530dd35" }]
+    },
+    {
+      "id": "hypersound-sf2", "version": "1.0-sha256-fbdc7d9c", "format": "sf2", "backend": "js-synthesizer",
+      "instruments": ["hypersound-bank"],
+      "files": [{ "path": "soundfonts/hypersound/hypersound.sf2", "size": 568430, "sha256": "fbdc7d9cb8e52b3114eaf4e08efeb50ec3a5bf81ee9f78edcf17c56c4c107ca0" }]
+    },
+    {
+      "id": "wappydog-sf2", "version": "1.0-sha256-f365e290", "format": "sf2", "backend": "js-synthesizer",
+      "instruments": ["wappydog-bank"],
+      "files": [{ "path": "soundfonts/wappydog/WappyDog.sf2", "size": 6064330, "sha256": "f365e290af6977ca6027144e6806b617dc9097abb9f827ec051ff27ced738dcd" }]
+    }
+  ]
+}

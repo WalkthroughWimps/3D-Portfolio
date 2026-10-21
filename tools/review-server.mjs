@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { stat } from 'node:fs/promises';
+import { stat, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
 
 const host = '127.0.0.1';
@@ -48,6 +48,34 @@ async function resolveRequestPath(requestUrl) {
 }
 
 const server = http.createServer(async (request, response) => {
+  if (request.url === '/__admin/video-filter') {
+    if (request.method !== 'POST') { sendText(response, 405, 'POST required'); return; }
+    if (request.headers.origin !== `http://${host}:${port}` && request.headers.origin !== `http://localhost:${port}`) {
+      sendText(response, 403, 'Local same-origin requests only'); return;
+    }
+    try {
+      let body = '';
+      for await (const chunk of request) {
+        body += chunk;
+        if (body.length > 2048) { sendText(response, 413, 'Settings too large'); return; }
+      }
+      const input = JSON.parse(body);
+      const settings = {};
+      const ranges = { brightness: [0.5, 1.5], contrast: [0.5, 1.5], saturation: [0, 2], hue: [-180, 180], sepia: [0, 1] };
+      for (const key of Object.keys(ranges)) {
+        if (input[key] === undefined && (key === 'hue' || key === 'sepia')) input[key] = 0;
+        if (typeof input[key] !== 'number' || !Number.isFinite(input[key]) || input[key] < ranges[key][0] || input[key] > ranges[key][1]) {
+          sendText(response, 400, 'Invalid filter settings'); return;
+        }
+        settings[key] = input[key];
+      }
+      const destination = path.join(root, 'data/video-filter.json');
+      await writeFile(`${destination}.tmp`, `${JSON.stringify(settings, null, 2)}\n`);
+      await rename(`${destination}.tmp`, destination);
+      sendText(response, 200, 'Saved');
+    } catch { sendText(response, 400, 'Unable to save filter settings'); }
+    return;
+  }
   let resolved;
   try {
     resolved = await resolveRequestPath(request.url);
@@ -61,6 +89,14 @@ const server = http.createServer(async (request, response) => {
   }
 
   const { filePath, fileStat } = resolved;
+  if (path.extname(filePath) === '.html' && request.method === 'GET') {
+    let html = await readFile(filePath, 'utf8');
+    // Admin UI exists only in the local server response, never in public HTML.
+    html = html.replace('</body>', '<script type="module" src="/tools/local-admin/video-filter.mjs"></script></body>');
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end(html);
+    return;
+  }
   const headers = {
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-store',

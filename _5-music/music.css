@@ -242,6 +242,22 @@ body {
     backdrop-filter: blur(6px);
 }
 
+.music-webgl-unavailable #pianoCanvas,
+.music-webgl-unavailable #instrumentPicker,
+.music-webgl-unavailable #instrumentBackendPicker {
+    display: none !important;
+}
+
+.music-webgl-unavailable .scene-alternative {
+    left: 50%;
+    right: auto;
+    top: clamp(10rem, 28vh, 18rem);
+    bottom: auto;
+    width: min(34rem, calc(100vw - 2rem));
+    max-width: none;
+    transform: translateX(-50%);
+}
+
 .instrument-picker--backboard {
     left: 0;
     top: 0;

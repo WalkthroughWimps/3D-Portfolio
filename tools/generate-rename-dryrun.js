@@ -30,7 +30,7 @@ function walk(dir) {
     if (rel === 'rename-dryrun.txt' || rel.startsWith('tools' + path.sep)) return;
     if (ent.isDirectory()) {
       results.push(full);
-      try { results.push(...walk(full)); } catch (e) { /* ignore permission errors */ }
+      try { results.push(...walk(full)); } catch  { /* ignore permission errors */ }
     } else {
       results.push(full);
     }

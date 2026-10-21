@@ -1,0 +1,159 @@
+{
+  "opened": true,
+  "frames": {
+    "1": {
+      "CARRIER | physical lift 0.045 to 0.225": {
+        "location": [
+          -0.045,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "LEFT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.208,
+          0.029,
+          0.48
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          0.058
+        ]
+      },
+      "RIGHT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.208,
+          -0.029,
+          -0.48
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          0.058
+        ]
+      }
+    },
+    "10": {
+      "CARRIER | physical lift 0.045 to 0.225": {
+        "location": [
+          -0.225,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "LEFT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.208,
+          0.826162,
+          0.48
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          0.058
+        ]
+      },
+      "RIGHT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.208,
+          -0.826162,
+          -0.48
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          0.058
+        ]
+      }
+    },
+    "85": {
+      "CARRIER | physical lift 0.045 to 0.225": {
+        "location": [
+          -0.225,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "LEFT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.368,
+          1.6,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          1.978022
+        ]
+      },
+      "RIGHT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.368,
+          -1.6,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          1.978022
+        ]
+      }
+    },
+    "91": {
+      "CARRIER | physical lift 0.045 to 0.225": {
+        "location": [
+          -0.225,
+          0.0,
+          0.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "LEFT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.368,
+          1.6,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          1.978022
+        ]
+      },
+      "RIGHT TABLET | 546 x 900 ratio | width 1.2 nominal": {
+        "location": [
+          -0.368,
+          -1.6,
+          -0.0
+        ],
+        "scale": [
+          1.0,
+          1.2,
+          1.978022
+        ]
+      }
+    }
+  },
+  "dowels": 4,
+  "pane_center_pivots": 2
+}

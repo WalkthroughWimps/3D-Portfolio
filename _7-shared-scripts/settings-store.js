@@ -4,7 +4,7 @@ const defaults = () => ({
   textScale: 1,
   focusOutline: 'auto',
   masterVolume: 0.25,
-  audioSyncMs: 0,
+  audioSyncMs: -270,
   mute: false
 });
 

@@ -2,6 +2,8 @@ import { createScope } from './lifecycle.js';
 import { getSharedSettings } from './settings.js';
 import { createAssets } from './assets.js';
 import { enhanceHeader } from './header.js';
+import { mountPageShortcuts } from './page-shortcuts.js';
+import { initPanelShell } from '../../debug/panel-shell.js';
 
 const instances = new WeakMap();
 function applyA11y(snapshot, root) {
@@ -32,6 +34,8 @@ export function bootstrapPage({ pageId, root = document, mount = () => {}, diagn
         }
       }, { signal: scope.signal, immediate: true });
       enhanceHeader(root);
+      mountPageShortcuts({ pageId, root, scope });
+      initPanelShell({ scope });
       if (diagnostics) await import('../../debug/debug-loader.js').then(module => module.loadDebugIfEnabled?.());
       const mounted = await mount({ settings, assets, scope });
       if (typeof mounted === 'function') scope.defer(mounted);

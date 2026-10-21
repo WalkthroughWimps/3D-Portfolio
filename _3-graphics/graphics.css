@@ -82,6 +82,9 @@ html, body {
     cursor: pointer;
     transition: transform 120ms ease, background 120ms ease;
 }
+
+.graphics-gl { cursor: grab; }
+.graphics-gl:active { cursor: grabbing; }
 .manual-controls button:hover {
     background: rgba(255,255,255,0.25);
 }

@@ -25,7 +25,7 @@ function readMappings() {
   return mappings;
 }
 
-function ensureDir(dir) { try { fs.mkdirSync(dir, { recursive: true }); } catch (e) { /* ignore */ } }
+function ensureDir(dir) { try { fs.mkdirSync(dir, { recursive: true }); } catch  { /* ignore */ } }
 
 function backupFile(relPath) {
   const src = path.join(root, relPath);
@@ -82,12 +82,12 @@ function updateReferences(mappings) {
   const changes = [];
   for (const file of files) {
     let text;
-    try { text = fs.readFileSync(file, 'utf8'); } catch (e) { continue; }
+    try { text = fs.readFileSync(file, 'utf8'); } catch  { continue; }
     let original = text;
     for (const m of mappings) {
       // create several variants to replace: backslashes and forward slashes and encoded
-      const fromBack = m.from.replace(/\//g, '\\\\'); // for regex
-      const fromForward = m.from.replace(/\\\\/g, '/');
+       // for regex
+
       const normBack = m.from.replace(/\//g, '\\');
       const normForward = m.from.replace(/\\/g, '/');
       const encForward = encodeURI(normForward);

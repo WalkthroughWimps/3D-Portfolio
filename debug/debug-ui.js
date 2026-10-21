@@ -748,7 +748,7 @@ function updateRightTabAvailability() {
 
   const overviewButton = panelRefs.tabs.right.get('controls-overview');
   if (overviewButton) {
-    overviewButton.hidden = availableCount > 0 ? false : false;
+    overviewButton.hidden = availableCount === 0;
   }
 
   ensureVisibleActiveTab('right');
@@ -771,13 +771,10 @@ function renderControlStatus() {
 
     const slot = panel.querySelector(`[data-external-slot="${tabDef.slotId}"]`);
     const present = !!slot && slot.childElementCount > 0;
+    if (!present) return;
 
-    if (present) {
-      pill.textContent = 'Ready';
-      pill.classList.add('is-ready');
-    } else {
-      pill.textContent = 'None';
-    }
+    pill.textContent = 'Ready';
+    pill.classList.add('is-ready');
 
     row.appendChild(label);
     row.appendChild(pill);
@@ -888,12 +885,7 @@ function updateToggleButtonsText() {
   visibilityBtnEl.textContent = collapsed ? 'Expand' : 'Collapse';
 }
 
-function toggleCollapseState() {
-  if (!panel) return;
-  collapsed = !collapsed;
-  panel.classList.toggle('collapsed', collapsed);
-  updateToggleButtonsText();
-}
+
 
 function hidePanel() {
   if (!panel || hidden) return;

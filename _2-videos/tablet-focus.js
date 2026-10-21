@@ -5,6 +5,7 @@ import * as THREE from 'three';
 export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, renderer }) {
   let active = false, saved = null, animation = 0, resizeTimer = 0;
   let inset = 0, destinationLimits = null;
+  let disposed = false;
   const snapshot = () => ({ position: camera.position.clone(), target: controls.target.clone(), up: camera.up.clone(), min: controls.minDistance, max: controls.maxDistance });
   const safeInset = () => {
     const header = document.querySelector('.header');
@@ -55,6 +56,7 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     return { position: center.clone().addScaledVector(normal, distance), target: center, up, min: distance * 0.45, max: distance * 3 };
   };
   const transition = (destination, nextInset, duration = 850) => {
+    if (disposed) return;
     cancel();
     const from = snapshot(), fromInset = inset;
     controls.enabled = false;
@@ -64,6 +66,7 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const started = performance.now();
     const step = now => {
+      if (disposed) return;
       const t = Math.min(1, (now - started) / duration);
       const ease = t * t * t * (t * (t * 6 - 15) + 10);
       camera.position.lerpVectors(from.position, destination.position, ease);
@@ -85,6 +88,7 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     animation = requestAnimationFrame(step);
   };
   const resize = () => {
+    if (disposed) return;
     // Preserve the current pose throughout a resize gesture. Only the drawing
     // buffer/aspect update immediately; framing waits for 350 ms of quiet.
     cancel();
@@ -101,6 +105,7 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
   window.addEventListener('resize', resize);
 
   function setFocus(next) {
+    if (disposed) return;
     if (next === active) return;
     clearTimeout(resizeTimer);
     cancel();
@@ -117,11 +122,26 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     if (!active) saved = null;
   }
   setFocus.initialize = () => {
+    if (disposed) return;
     inset = safeInset(); project();
     const pose = fit(snapshot(), inset);
     camera.position.copy(pose.position); controls.target.copy(pose.target);
     controls.minDistance = pose.min; controls.maxDistance = pose.max;
     camera.lookAt(controls.target); controls.update();
+  };
+  setFocus.dispose = () => {
+    if (disposed) return;
+    disposed = true;
+    clearTimeout(resizeTimer);
+    cancel();
+    renderer.domElement.removeEventListener('pointerdown', interact, { capture: true });
+    renderer.domElement.removeEventListener('wheel', interact, { capture: true });
+    window.removeEventListener('resize', resize);
+    camera.clearViewOffset();
+    document.body.classList.remove('tablet-focus');
+    document.body.style.removeProperty('--tablet-focus-progress');
+    active = false;
+    saved = null;
   };
   return setFocus;
 }

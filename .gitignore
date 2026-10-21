@@ -103,5 +103,26 @@ assets-move-report.txt
 console-export-*.log
 dist-labs-root/
 /errors.local/
+/tools/local-admin/
 *.cfa
 *.pek
+
+# Local cooperative reservations, never runtime/deployment inputs
+/tmp/face-file-reservations/
+
+# Local validation evidence, caches, and native Blender studies
+/tmp/
+/output/
+/outputs/
+/blender-cleanup/
+/about-ring-pattern-capacity/
+*.blend
+*.blend[0-9]*
+
+# Active About runtime models are versioned with Git LFS.
+!assets/about-cube/glb/
+assets/about-cube/glb/*
+!assets/about-cube/glb/model.glb
+!assets/about-cube/glb/mechanism.glb
+!assets/about-cube/glb/orbit-v8.glb
+!assets/about-cube/glb/spirals-v9.glb

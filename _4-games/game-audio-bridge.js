@@ -1,4 +1,4 @@
-import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
 
 export function createGameAudioBridge(options = {}) {
   const canUseSound = () => typeof document === 'undefined' || isAudioAllowed();
@@ -14,6 +14,9 @@ export function createGameAudioBridge(options = {}) {
   let lastReason = 'init';
   let boundFrame = null;
   let boundInterface = null;
+  let bindGeneration = 0;
+  let retryTimer = null;
+  let disposed = false;
 
   function notify(reason) {
     if (cfg.onStatus) cfg.onStatus({ available, reason, muted, volume: lastVolume01 });
@@ -69,10 +72,9 @@ export function createGameAudioBridge(options = {}) {
     return true;
   }
 
-  function setVolume01(vol01) {
-    const vol = Math.max(0, Math.min(2, Number.isFinite(vol01) ? vol01 : 0));
-    lastVolume01 = vol;
+  function applyVolume() {
     if (!boundInterface) return false;
+    const vol = muted || !canUseSound() ? 0 : lastVolume01;
     if (typeof boundInterface._SetMasterVolume === 'function') {
       try {
         boundInterface._SetMasterVolume({ vol });
@@ -84,60 +86,96 @@ export function createGameAudioBridge(options = {}) {
     return false;
   }
 
+  function setVolume01(vol01) {
+    if (disposed) return false;
+    const vol = Math.max(0, Math.min(2, Number.isFinite(vol01) ? vol01 : 0));
+    lastVolume01 = vol;
+    return applyVolume();
+  }
+
   function setMuted(nextMuted) {
+    if (disposed) return false;
     if (!nextMuted && !canUseSound()) {
-      muted = true;
+      setMuted(true);
       notify('consent-required');
+      const generation = bindGeneration;
       void ensureAudioConsentPrompt().then(state => {
-        if (state.allowed) setMuted(false);
+        if (!disposed && state.allowed && generation === bindGeneration && boundFrame?.isConnected) setMuted(false);
       });
       return false;
     }
     muted = !!nextMuted;
+    let volumeApplied = muted ? false : applyVolume();
+    let silentApplied = false;
     if (boundInterface && typeof boundInterface._SetSilent === 'function') {
       try {
         boundInterface._SetSilent({ isSilent: muted });
-        notify('mute');
-        return true;
+        silentApplied = true;
       } catch {
         /* ignore */
       }
     }
-    const updated = muted ? setVolume01(0) : setVolume01(lastVolume01);
+    if (muted) volumeApplied = applyVolume();
     notify('mute');
-    return updated;
+    return silentApplied || volumeApplied;
   }
 
   function attach(frameEl) {
+    if (disposed) return;
+    detach();
     boundFrame = frameEl || null;
     if (!boundFrame) {
-      available = false;
-      lastReason = 'no-frame';
-      boundInterface = null;
-      notify(lastReason);
       return;
     }
+    const generation = bindGeneration;
     let attempts = 0;
     const attemptBind = () => {
+      retryTimer = null;
+      if (generation !== bindGeneration || !boundFrame || !boundFrame.isConnected) return;
       attempts += 1;
       if (bindInterface(boundFrame)) {
-        setVolume01(lastVolume01);
-        if (muted) setMuted(true);
+        setMuted(muted || !canUseSound());
         return;
       }
       if (attempts < cfg.retryCount) {
-        setTimeout(attemptBind, cfg.retryDelayMs);
+        retryTimer = setTimeout(attemptBind, cfg.retryDelayMs);
       }
     };
     attemptBind();
+  }
+
+  function detach() {
+    bindGeneration += 1;
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    boundFrame = null;
+    boundInterface = null;
+    available = false;
+    lastReason = 'no-frame';
+    notify(lastReason);
   }
 
   function getState() {
     return { available, muted, volume: lastVolume01, reason: lastReason };
   }
 
+  const stopConsentWatch = onAudioConsentChange(allowed => {
+    if (!allowed) setMuted(true);
+  });
+
+  function dispose() {
+    if (disposed) return;
+    stopConsentWatch();
+    detach();
+    disposed = true;
+  }
+
   return {
     attach,
+    detach,
+    dispose,
     getState,
     setVolume01,
     setMuted

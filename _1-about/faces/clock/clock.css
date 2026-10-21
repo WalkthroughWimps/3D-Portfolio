@@ -1,0 +1,19 @@
+.clock-launcher { min-height: 38px; padding: 5px 8px; border: 1px solid #b4c7d9; border-radius: 7px; background: #182536; color: #fff; font: 650 11px/1.15 system-ui, sans-serif; cursor: pointer; }
+.clock-launcher:focus-visible { outline: 3px solid #ffcf85; outline-offset: 3px; }
+.clock-launcher:disabled { opacity: .65; cursor: wait; }
+.clock-launcher[hidden] { display: none; }
+.clock-toolbar { position: absolute; top: 12px; right: 12px; z-index: 5; display: flex; gap: 5px; }
+.clock-toolbar[hidden] { display: none; }
+.clock-settings { display: grid; gap: 9px; min-width: 0; padding: 3px 0 12px; color: #dce9f1; }
+.clock-settings section { min-width: 0; padding: 10px; border: 1px solid #657888; border-radius: 8px; background: #172332; }
+.clock-settings h3 { margin: 0 0 7px; font-size: .95rem; }
+.clock-settings p { margin: 5px 0 8px; font-size: .82rem; line-height: 1.35; }
+.clock-settings label { display: block; min-width: 0; margin: 8px 0; font-size: .85rem; }
+.clock-settings input[type=range] { display: block; width: 100%; max-width: 100%; margin-top: 5px; }
+.clock-settings input[type=color] { display: block; width: 50px; min-height: 28px; margin-top: 4px; }
+.clock-settings select { display: block; width: 100%; max-width: 100%; margin-top: 4px; }
+.clock-settings output { float: right; font-variant-numeric: tabular-nums; }
+.clock-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+.clock-settings button { min-height: 32px; padding: 5px 8px; border: 1px solid #9fb5c4; border-radius: 5px; background: #31465b; color: #fff; cursor: pointer; }
+.clock-settings button:focus-visible { outline: 3px solid #ffcf85; outline-offset: 2px; }
+.clock-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }

@@ -57,6 +57,7 @@ export function createSettingsStore({ preferences = createPreferences(), target 
   }
   function refresh({ source = 'system', migrate = false } = {}) {
     if (disposed) return snapshot;
+    conflicts = conflicts.filter(key => preferences.pendingKeys?.includes(key));
     const raw = rawRead();
     const version = Number(raw.get(SCHEMA_KEY));
     futureVersion = Number.isFinite(version) && version > SCHEMA_VERSION ? version : null;
@@ -112,7 +113,9 @@ export function createSettingsStore({ preferences = createPreferences(), target 
     return { ok: true, snapshot, errors: [] };
   }
   function reset(fields) {
-    const errors = (Array.isArray(fields) ? fields : []).filter(path => !SETTINGS_FIELDS[path]).map(path => ({ path, code: 'unknown-field' }));
+    if (disposed) return { ok: false, snapshot, errors: [{ code: 'disposed' }] };
+    if (!Array.isArray(fields)) return { ok: false, snapshot, errors: [{ code: 'invalid-fields' }] };
+    const errors = fields.filter(path => !SETTINGS_FIELDS[path]).map(path => ({ path, code: 'unknown-field' }));
     if (errors.length) return { ok: false, snapshot, errors };
     const a11y = readObject(preferences.getItem(A11Y_KEY));
     let a11yChanged = false;
@@ -141,7 +144,9 @@ export function createSettingsStore({ preferences = createPreferences(), target 
   const onStorage = event => {
     if (event.key !== null && !SETTINGS_KEYS.has(event.key)) return;
     const pending = new Set(preferences.pendingKeys || []);
-    conflicts = [...pending].filter(key => key === event.key || event.key === null);
+    for (const key of pending) {
+      if ((key === event.key || event.key === null) && !conflicts.includes(key)) conflicts.push(key);
+    }
     refresh({ source: 'other-tab' });
   };
   const onFocus = () => refresh({ source: 'other-tab' });
@@ -154,8 +159,17 @@ export function createSettingsStore({ preferences = createPreferences(), target 
   media?.addEventListener?.('change', onMotion);
   return {
     get: () => snapshot, patch, reset, refresh, subscribe,
-    retry() { const result = preferences.retry?.(); conflicts = []; refresh({ source: 'system' }); return result; },
-    discardPending(keys) { preferences.discard?.(keys); conflicts = []; refresh({ source: 'system' }); },
+    retry() {
+      const result = preferences.retry?.();
+      conflicts = conflicts.filter(key => preferences.pendingKeys?.includes(key));
+      refresh({ source: 'system' });
+      return result;
+    },
+    discardPending(keys) {
+      preferences.discard?.(keys);
+      conflicts = conflicts.filter(key => preferences.pendingKeys?.includes(key));
+      refresh({ source: 'system' });
+    },
     dispose() {
       if (disposed) return;
       disposed = true;

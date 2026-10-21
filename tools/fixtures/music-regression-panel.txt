@@ -1,0 +1,114 @@
+// Test-only instrumentation appended by music-regression-fixture.mjs.
+// No microphone, recording engine, or production import. Temporary consent
+// changes require the explicitly authorized generator flag and are restored.
+import { setAudioConsentAllowed as setTestConsent } from '/_7-shared-scripts/audio-consent.js';
+{
+  const panel = document.createElement('section');
+  panel.style.cssText = 'position:fixed;z-index:99999;top:90px;left:12px;max-height:75vh;overflow:auto;background:white;color:black;padding:12px;width:460px;font:12px monospace';
+  const button = document.createElement('button');
+  button.textContent = 'Run Music regression';
+  const output = document.createElement('pre');
+  const download = document.createElement('a');
+  download.textContent = 'Download regression results';
+  download.download = 'music-regression-results.json';
+  download.hidden = true;
+  let reportUrl;
+  output.id = 'music-regression-results';
+  output.style.whiteSpace = 'pre-wrap';
+  output.textContent = allowTemporaryAudioTest ? 'Authorized temporary audio test; previous consent restored after run.' : 'Ready to measure. Uses current consent.';
+  panel.append(button, output, download);
+  if (allowTemporaryAudioTest) {
+    const restore = document.createElement('button');
+    restore.textContent = 'Restore denied sound';
+    restore.addEventListener('click', () => { setTestConsent(false); output.textContent = `Sound denied: ${!isAudioAllowed()}`; });
+    panel.append(restore);
+  }
+  document.body.append(panel);
+  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const until = async predicate => {
+    const limit = performance.now() + 15000;
+    while (!predicate()) {
+      if (performance.now() > limit) throw new Error('Readiness timed out');
+      await pause(25);
+    }
+  };
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    const result = { status: 'running', browser: navigator.userAgent, viewport: [innerWidth, innerHeight], origin: location.origin, checks: [], timings: {}, limitations: ['Software timing only; no physical audio-output measurement', 'Recording/transcription is not imported by the active entry', 'No saved-raw/preparation API exists in the baseline'] };
+    const check = (name, ok, details = {}) => { result.checks.push({ name, ok, ...details }); output.textContent = JSON.stringify(result, null, 2); };
+    const priorAllowed = isAudioAllowed();
+    output.textContent = JSON.stringify(result, null, 2);
+    // Restore even if this diagnostic page is left during a pending audio resume.
+    const restoreConsent = () => { if (!priorAllowed && allowTemporaryAudioTest) setTestConsent(false); };
+    window.addEventListener('pagehide', restoreConsent, { once: true });
+    try {
+      if (!priorAllowed && allowTemporaryAudioTest) setTestConsent(true);
+      if (!isAudioAllowed()) throw new Error('Existing consent denies sound; baseline stopped');
+      ensureAudio();
+      await Promise.race([audioCtx.resume(), pause(5000).then(() => { throw new Error('AudioContext.resume timed out'); })]);
+      await until(() => audioReady && midiLoaded && root && instrumentPlayer);
+      result.context = { state: audioCtx.state, sampleRate: audioCtx.sampleRate, baseLatency: audioCtx.baseLatency, outputLatency: audioCtx.outputLatency };
+      result.settings = { effectiveAudio: getStoredAudioSettings(), mix: JSON.parse(JSON.stringify(INSTRUMENT_MIX)), audioTrimMs, currentPlaybackRate };
+      result.catalogIds = INSTRUMENT_CONFIG.map(config => config.id);
+      stopPlayback();
+      const selectionStart = performance.now();
+      await triggerInstrumentButton('keys_acoustic_piano', SINGLE_INSTRUMENT_SIDE);
+      result.timings.selectPianoMapMs = performance.now() - selectionStart;
+      const first = performance.now();
+      const buffer = await instrumentPlayer.loadBufferForMidi(60);
+      result.timings.firstC4DecodeMs = performance.now() - first;
+      const warm = performance.now();
+      const same = await instrumentPlayer.loadBufferForMidi(60);
+      result.timings.warmC4Ms = performance.now() - warm;
+      check('decoded sample reused', !!buffer && buffer === same, { pcmBytes: buffer ? buffer.length * buffer.numberOfChannels * 4 : 0 });
+      const notesBefore = heldNotes.size;
+      noteOn(60); noteOn(64); noteOn(60);
+      await pause(80);
+      check('overlapping note routes populated', heldNotes.size > notesBefore, { held: heldNotes.size });
+      sustainKeyDown = true; sustainPedalDown();
+      noteOff(60); noteOff(64);
+      check('pedal holds released notes', heldNotes.size > 0);
+      sustainKeyDown = false; sustainPedalUp();
+      await pause(800);
+      panicAllNotes();
+      check('panic clears held voices', heldNotes.size === 0, { held: heldNotes.size, active: activeNoteSet.size });
+      const fresh = audioCtx.currentTime;
+      startMIDIPlayback();
+      result.timings.freshAudioLeadMs = (audioStartCtxTime - fresh) * 1000;
+      result.timings.audioMinusFirstMidiMs = (audioStartCtxTime - midiStartCtxTime - midiFirstNoteMs / 1000) * 1000;
+      check('audio and MIDI start', audioPlaying && playingMIDI);
+      await pause(1700);
+      check('MIDI advances', midiIndex > 0, { index: midiIndex, position: getPlaybackPositionSec() });
+      togglePlayPause();
+      const frozen = getPlaybackPositionSec();
+      await pause(80);
+      check('pause freezes transport', !audioPlaying && !playingMIDI && playbackPaused && getPlaybackPositionSec() === frozen);
+      seekTrackToRatio(0.25);
+      check('paused seek maps to quarter', Math.abs(savedAudioPosSec - getTrackDurationSec() * 0.25) < 1e-6);
+      togglePlayPause();
+      await pause(160);
+      check('resume starts both clocks', audioPlaying && playingMIDI && !playbackPaused);
+      check('video follows transport', !trackVideo.hqVideo || Math.abs(trackVideo.hqVideo.currentTime - getPlaybackPositionSec()) < 0.3,
+        { driftSeconds: trackVideo.hqVideo ? trackVideo.hqVideo.currentTime - getPlaybackPositionSec() : null });
+      stopPlayback();
+      check('stop clears transport', !audioPlaying && !playingMIDI && savedAudioPosSec === 0);
+      await Promise.all([triggerInstrumentButton('electric_piano', SINGLE_INSTRUMENT_SIDE), triggerInstrumentButton('keys_bright_piano', SINGLE_INSTRUMENT_SIDE)]);
+      check('rapid switching settles selected player', !!instrumentPlayer && currentInstrumentConfig?.id === selectedSingleInstrumentId, { selected: selectedSingleInstrumentId, loaded: currentInstrumentConfig?.id });
+      await triggerInstrumentButton('keys_acoustic_piano', SINGLE_INSTRUMENT_SIDE);
+      result.status = result.checks.every(item => item.ok) ? 'bounded checks passed' : 'baseline failures';
+    } catch (error) {
+      result.status = 'error'; result.error = String(error.stack || error);
+    } finally {
+      try { stopPlayback(); panicAllNotes(); } catch {}
+      restoreConsent();
+      window.removeEventListener('pagehide', restoreConsent);
+      result.consentRestored = isAudioAllowed() === priorAllowed;
+      output.textContent = JSON.stringify(result, null, 2);
+      if (reportUrl) URL.revokeObjectURL(reportUrl);
+      reportUrl = URL.createObjectURL(new Blob([output.textContent], { type: 'application/json' }));
+      download.href = reportUrl;
+      download.hidden = false;
+      button.disabled = false;
+    }
+  });
+}

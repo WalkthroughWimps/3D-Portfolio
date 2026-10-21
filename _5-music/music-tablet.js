@@ -46,7 +46,7 @@ export function setupMusicTabletScreen(rootObject3D) {
       const size = box.getSize(new THREE.Vector3());
       const dims = [size.x, size.y, size.z].filter(v => isFinite(v) && v > 1e-6).sort((a, b) => b - a);
       if (dims.length >= 2) return Math.max(0.01, dims[0] / dims[1]);
-    } catch (e) { /* ignore */ }
+    } catch  { /* ignore */ }
     return 16 / 10;
   })();
   const MAX_DIM = 2048;

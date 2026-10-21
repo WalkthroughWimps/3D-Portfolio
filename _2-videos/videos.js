@@ -1,5 +1,4 @@
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
-void bootstrapPage({ pageId: 'videos' }).catch(error => console.error('Shared bootstrap failed', error));
 import { previewSegments } from './preview-segments.js';
 import { getEffectiveAudioSettings } from '../_7-shared-scripts/audio-settings.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
@@ -12,12 +11,29 @@ import VideoPlayer from '../_7-shared-scripts/video-player-controls.js?v=tablet-
 import { createVideoControlsUI } from '../_7-shared-scripts/shared-video-controls.js';
 import { loadTabletGlb, initTabletFromGltf, applyBlenderAlignment } from './videos-tablet.js';
 import { createVideosVideoAdapter } from './videos-video-adapter.js';
-import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { ASSET_ORIGIN, assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
 import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
 
 console.log('%c[videos] boot OK', 'color:#ff9f1a;font-weight:700;', { ts: Date.now() });
 
 const USE_SHARED_CONTROLS = true;
+let introWorkerRegistration;
+
+function registerIntroWorkerAfterPlayback() {
+  if (!window.isSecureContext || !('serviceWorker' in navigator)) return;
+  const expected = isLocalDev()
+    ? new URL('../Renders/tablet-animation.webm', import.meta.url)
+    : new URL('Renders/tablet-animation.webm', `${ASSET_ORIGIN}/`);
+  const actual = new URL(videosPageConfig.intro.video);
+  // The worker owns only its generated default intro key. A custom asset base
+  // continues through the browser's normal network/media path.
+  if (actual.origin !== expected.origin || actual.pathname !== expected.pathname) return;
+  introWorkerRegistration ||= navigator.serviceWorker.register(new URL('../sw.js', import.meta.url))
+    .catch(error => {
+      introWorkerRegistration = null;
+      if (isLocalDev()) console.warn('[videos] intro worker registration failed', error);
+    });
+}
 
 const videosPageConfig = {
   intro: {
@@ -164,6 +180,7 @@ function markIntroDone(reason = 'skip') {
   }
   tryStartDrop();
   introState.onTerminal?.(reason);
+  registerIntroWorkerAfterPlayback();
 }
 
 function getStoredSyncMs() { return getSyncOffsetMs(); }
@@ -466,38 +483,122 @@ function showLoadingUIImmediately() {
   if (playBtn) playBtn.disabled = true;
 }
 
-function onReady(fn) {
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true });
+function onReady(fn, signal) {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', fn, { once: true, signal });
   else fn();
 }
 
-onReady(async () => {
+function disposeIntroMedia() {
+  introState.done = true;
+  introState.startPending = false;
+  if (introState.readyTimer) clearTimeout(introState.readyTimer);
+  introState.timers.splice(0).forEach(clearTimeout);
+  introState.cleanups.splice(0).forEach(cleanup => cleanup());
+  introState.listeners.splice(0).forEach(([target, type, fn]) => target.removeEventListener(type, fn));
+  introState.unsubscribeConsent?.();
+  introState.unsubscribeSettings?.();
+  introState.unsubscribeConsent = introState.unsubscribeSettings = null;
+  introState.audioGeneration++;
+  introState.audioRequested = false;
+  introState.onTerminal = null;
+  for (const media of [introState.videoEl, introState.audioEl]) {
+    try { media?.pause(); media?.removeAttribute('src'); media?.load(); } catch (e) { /* ignore */ }
+  }
+  introState.videoEl = introState.audioEl = null;
+}
+
+function disposeModel(root) {
+  if (!root) return;
+  const geometries = new Set(), materials = new Set(), textures = new Set();
+  root.traverse(node => {
+    if (node.geometry) geometries.add(node.geometry);
+    const list = Array.isArray(node.material) ? node.material : [node.material];
+    list.filter(Boolean).forEach(material => {
+      materials.add(material);
+      Object.values(material).forEach(value => { if (value?.isTexture) textures.add(value); });
+    });
+  });
+  textures.forEach(texture => texture.dispose());
+  materials.forEach(material => material.dispose());
+  geometries.forEach(geometry => geometry.dispose());
+  root.parent?.remove(root);
+}
+
+export function mountVideosPage({ scope }) {
+  introState.done = !introState.enabled;
+  introState.phase = 'loading';
+  introState.completionReason = null;
+  introState.startPending = false;
+  introState.audioRequested = false;
+  introState.audioPlaying = false;
+  introState.audioBlocked = false;
+  introState.preloadStarted = false;
+  introState.gridPreloadStarted = false;
+  dropAnim.active = false;
+  dropAnim.ready = false;
+  dropAnim.group = null;
+  let disposed = false, suspended = false;
+  let startupFrame = 0, startupTimer = 0, resumeStartup = null, glbFallbackTimer = 0, glbObserver = null, pendingGlbStart = null;
+  let renderer = null, scene = null, canvas = null, createdCanvas = false;
+  let camera = null, controls = null, animId = 0, animatePage = null, tabletFocus = null, gridApi = null, modelRoot = null;
+  const captionsToggle = document.getElementById('captionsToggle');
+  const updateCaptionsToggle = enabled => {
+    if (!captionsToggle) return;
+    captionsToggle.setAttribute('aria-pressed', String(enabled));
+    captionsToggle.textContent = `Captions: ${enabled ? 'On' : 'Off'} (C) · draft`;
+  };
+  if (captionsToggle) scope.listen(captionsToggle, 'click', () => gridApi?.toggleCaptions?.());
+  let refsOwned = null, resetGridInteraction = null;
+  const priorScreenCandidates = window.__videos_debug?.listScreenCandidatesFromGltf;
+  let screenCandidatesOwned = null;
+  const hadFreezeAutoZoom = Object.prototype.hasOwnProperty.call(window, '__freezeAutoZoom');
+  const priorFreezeAutoZoom = window.__freezeAutoZoom;
+
+  onReady(async () => {
+  if (disposed) return;
   showLoadingUIImmediately();
   await ensureAudioConsentPrompt({
     title: 'Allow sound?',
-    message: 'This page can play sound for the Videos player. Allow audio playback?'
+    message: 'This page can play sound for the Videos player. Allow audio playback?',
+    signal: scope.signal
   });
-  requestAnimationFrame(() => {
+  if (disposed) return;
+  startupFrame = requestAnimationFrame(function beginStartupFrame() {
+    startupFrame = 0;
+    if (disposed) return;
+    if (suspended) { resumeStartup = beginStartupFrame; return; }
     // Delay heavy initialization slightly to allow first paint and make
     // the page interactive immediately. This prevents blocking the UI
     // when navigating from other pages.
-    setTimeout(() => {
+    startupTimer = setTimeout(function initializeHeavy() {
+  startupTimer = 0;
+  if (disposed) return;
+  if (suspended) { resumeStartup = initializeHeavy; return; }
   if (!introState.enabled) {
     try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
   }
   // ensure canvas
-  let canvas = document.getElementById('glCanvas');
+  canvas = document.getElementById('glCanvas');
   if (!canvas) {
     try {
       const container = document.querySelector('.viewer-wrap') || document.querySelector('.tablet-stage') || document.body;
-      canvas = document.createElement('canvas'); canvas.id = 'glCanvas'; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.display = 'block'; canvas.setAttribute('aria-hidden','true');
+      canvas = document.createElement('canvas'); createdCanvas = true; canvas.id = 'glCanvas'; canvas.style.width = '100%'; canvas.style.height = '100%'; canvas.style.display = 'block'; canvas.setAttribute('aria-hidden','true');
       container.appendChild(canvas);
       console.warn('[videos] Created fallback #glCanvas');
     } catch (e) { console.warn('[videos] Failed create canvas', e); }
   }
   if (!canvas) return;
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  try {
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  } catch (error) {
+    console.warn('[videos] Tablet renderer unavailable; using video and text links.', error);
+    canvas.hidden = true;
+    document.querySelector('.scene-alternative')?.setAttribute('open', '');
+    setupIntroVideo();
+    setupIntroSkip();
+    return;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (e) { /* ignore */ }
   // Match backup renderer settings for better HDR/tone and shadow support
@@ -505,7 +606,7 @@ onReady(async () => {
   try { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; } catch (e) { /* ignore */ }
   try { renderer.physicallyCorrectLights = true; } catch (e) { /* ignore */ }
 
-  const scene = new THREE.Scene();
+  scene = new THREE.Scene();
   // Lighting rig: hemisphere + key + fill + rim + under + subtle ambient
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85);
   scene.add(hemi);
@@ -528,8 +629,6 @@ onReady(async () => {
   const subtleAmbient = new THREE.AmbientLight(0xffffff, 0.15);
   scene.add(subtleAmbient);
 
-  let camera = null; let controls = null; let animId = null; let tabletFocus = null;
-
   let pendingRenderSize = null;
   const renderedSize = new THREE.Vector2();
   function resizeRenderer() {
@@ -540,12 +639,14 @@ onReady(async () => {
       if (camera && camera.isPerspectiveCamera) { camera.aspect = w / h; camera.updateProjectionMatrix(); }
     } catch (e) { /* ignore */ }
   }
-  window.addEventListener('resize', resizeRenderer);
+  scope.listen(window, 'resize', resizeRenderer);
   resizeRenderer();
   setupIntroVideo();
   setupIntroSkip();
 
   function animate() {
+    animId = 0;
+    if (disposed || suspended) return;
     // Resizing clears WebGL. Resize immediately before drawing, never in a
     // separate animation callback after the scene has already been rendered.
     if (pendingRenderSize) {
@@ -567,6 +668,7 @@ onReady(async () => {
     }
     animId = requestAnimationFrame(animate);
   }
+  animatePage = animate;
 
   const primaryPath = assetUrl('../assets/glb/video-tablet.glb');
   const allowSound = isAudioAllowed();
@@ -574,14 +676,18 @@ onReady(async () => {
   // load GLB and init
   const doLoadGlb = () => {
     loadTabletGlb(primaryPath, (gltf) => {
+      if (disposed) { disposeModel(gltf.scene); return; }
       try {
         const refs = initTabletFromGltf(gltf, { scene, renderer, canvas, underLight: null, videosPageConfig });
+        modelRoot = gltf.scene;
+        refsOwned = refs;
         window.__videos_debug = window.__videos_debug || {};
         window.__videos_debug._refs = refs;
+        screenCandidatesOwned = window.__videos_debug.listScreenCandidatesFromGltf;
 
         try { camera = refs.camera || camera; } catch (e) {}
         try { controls = refs.controls || controls; } catch (e) {}
-        resizeRenderer(); if (!animId) animate();
+        resizeRenderer(); if (!suspended && !animId) animate();
 
         // If GLB provided a dolly/embedded camera, prefer it and enforce
         // the reference pose from the provided screenshot so the tablet
@@ -650,7 +756,7 @@ onReady(async () => {
 
             if (VideoPlayer && typeof VideoPlayer.createGrid === 'function') {
               const setTabletFocus = tabletFocus = createTabletFocus({ camera: refs.camera, controls: refs.controls, tabletGroup: refs.tabletGroup, screenMesh: refs.screenMesh, renderer });
-              const gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus, deferPreloadUntilIntro: introState.enabled });
+              gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus, deferPreloadUntilIntro: introState.enabled, onCaptionsChange: updateCaptionsToggle });
               if (USE_SHARED_CONTROLS && gridApi) {
                 const adapter = createVideosVideoAdapter({
                   getActiveVideo: () => gridApi.getActiveVideo?.(),
@@ -741,27 +847,40 @@ onReady(async () => {
             if (introState.gridPreloadStarted) return;
             introState.gridPreloadStarted = true;
             window.__videoGridSchedulePreload?.();
+            if (captionsToggle && gridApi) captionsToggle.hidden = false;
           };
           if (introState.done) introState.onTerminal(introState.completionReason || 'disabled');
         }
 
-      } catch (e) { console.warn('loadTabletGlb init failed', e); }
+      } catch (e) {
+        console.warn('loadTabletGlb init failed', e);
+        gridApi?.destroy?.(); gridApi = null;
+        if (captionsToggle) captionsToggle.hidden = true;
+        tabletFocus?.dispose?.(); tabletFocus = null;
+        controls?.dispose?.(); controls = null;
+        cancelAnimationFrame(animId); animId = 0;
+        camera = null;
+        dropAnim.group = null;
+        if (window.__videos_debug?._refs === refsOwned) delete window.__videos_debug._refs;
+        disposeModel(gltf.scene); modelRoot = null;
+      }
     }, undefined, (err) => { console.warn('Failed to load GLB', err); });
   };
 
   // start: lazy-load GLB only when the relevant container becomes visible.
   let __videos_glb_loaded = false;
-  const __startGlbLoad = () => { if (__videos_glb_loaded) return; __videos_glb_loaded = true; try { doLoadGlb(); } catch (e) { console.warn('doLoadGlb failed', e); } };
+  const __startGlbLoad = () => { if (disposed || suspended || __videos_glb_loaded) return; __videos_glb_loaded = true; try { doLoadGlb(); } catch (e) { console.warn('doLoadGlb failed', e); } };
+  pendingGlbStart = __startGlbLoad;
   try {
     const container = document.querySelector('.tablet-stage') || document.querySelector('.viewer-wrap') || null;
     if (container && 'IntersectionObserver' in window) {
-      const io = new IntersectionObserver((entries) => {
-        entries.forEach((en) => { if (en.isIntersecting) { __startGlbLoad(); io.disconnect(); } });
+      glbObserver = new IntersectionObserver((entries) => {
+        entries.forEach((en) => { if (en.isIntersecting && !suspended) { __startGlbLoad(); glbObserver?.disconnect(); glbObserver = null; } });
       }, { threshold: 0.01 });
-      io.observe(container);
+      glbObserver.observe(container);
       // Also ensure if the page is already visible and container intersects immediately we load.
       // If IntersectionObserver fails to trigger within a few seconds, fall back to immediate load.
-      setTimeout(() => { if (!__videos_glb_loaded) { try { const rect = container.getBoundingClientRect(); if (rect && rect.bottom > 0) __startGlbLoad(); } catch (e) {} } }, 2500);
+      glbFallbackTimer = setTimeout(() => { glbFallbackTimer = 0; if (!__videos_glb_loaded && !disposed) { try { const rect = container.getBoundingClientRect(); if (rect && rect.bottom > 0) __startGlbLoad(); } catch (e) {} } }, 2500);
     } else if (document.visibilityState === 'visible') {
       __startGlbLoad();
     } else {
@@ -773,11 +892,67 @@ onReady(async () => {
   }
 
   // reset helper
-  window.resetGridInteraction = function resetGridInteraction() {
+  resetGridInteraction = window.resetGridInteraction = function resetGridInteraction() {
     try { const api = window.__tabletPlayerApi; if (api && typeof api.reset === 'function') return api.reset(); } catch (e) { /* ignore */ }
     console.log('resetGridInteraction: no player API available');
   };
 
     }, 50);
   });
-});
+  }, scope.signal);
+
+  return {
+    suspend() {
+      if (disposed || suspended) return;
+      suspended = true;
+      cancelAnimationFrame(animId); animId = 0;
+      introState.videoEl?.pause();
+      introState.audioEl?.pause();
+      gridApi?.pauseActiveVideo?.();
+      if (gridApi) for (const media of [...(window.__videoGridPreviewVideos || []), ...(window.__videoGridFullVideos || [])]) media.pause?.();
+      gridApi?.getActiveAudio?.()?.pause?.();
+    },
+    resume() {
+      if (disposed || !suspended) return;
+      suspended = false;
+      if (resumeStartup) { const resume = resumeStartup; resumeStartup = null; startupFrame = requestAnimationFrame(resume); }
+      if (pendingGlbStart && !modelRoot) {
+        const container = document.querySelector('.tablet-stage') || document.querySelector('.viewer-wrap');
+        if (!container || container.getBoundingClientRect().bottom > 0) pendingGlbStart();
+      }
+      if (renderer && camera && animatePage && !animId) animId = requestAnimationFrame(function resumeFrame() { animId = 0; if (!disposed && !suspended) animatePage(); });
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      cancelAnimationFrame(startupFrame);
+      clearTimeout(startupTimer);
+      resumeStartup = null;
+      pendingGlbStart = null;
+      clearTimeout(glbFallbackTimer);
+      glbObserver?.disconnect();
+      cancelAnimationFrame(animId); animId = 0;
+      disposeIntroMedia();
+      gridApi?.destroy?.(); gridApi = null;
+      if (captionsToggle) captionsToggle.hidden = true;
+      tabletFocus?.dispose?.(); tabletFocus = null;
+      controls?.dispose?.(); controls = null;
+      disposeModel(modelRoot); modelRoot = null;
+      dropAnim.group = null;
+      if (window.__videos_debug?._refs === refsOwned) delete window.__videos_debug._refs;
+      if (screenCandidatesOwned && window.__videos_debug?.listScreenCandidatesFromGltf === screenCandidatesOwned) {
+        if (priorScreenCandidates) window.__videos_debug.listScreenCandidatesFromGltf = priorScreenCandidates;
+        else delete window.__videos_debug.listScreenCandidatesFromGltf;
+      }
+      if (window.__freezeAutoZoom === true) {
+        if (hadFreezeAutoZoom) window.__freezeAutoZoom = priorFreezeAutoZoom;
+        else delete window.__freezeAutoZoom;
+      }
+      if (window.resetGridInteraction === resetGridInteraction) delete window.resetGridInteraction;
+      renderer?.dispose?.(); renderer = null;
+      if (createdCanvas) canvas?.remove();
+    }
+  };
+}
+
+void bootstrapPage({ pageId: 'videos', mount: mountVideosPage }).catch(error => console.error('Shared bootstrap failed', error));

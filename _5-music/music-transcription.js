@@ -477,7 +477,7 @@ function createRecordingEngine(){
     state.playbackTimers.forEach((t)=>clearTimeout(t));
     state.playbackTimers = [];
     if(state.metronome.enabled) stopMetronome();
-    try{ deps.panic(); }catch(e){}
+    try{ deps.panic(); }catch{}
     deps.render();
   }
 

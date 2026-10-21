@@ -1,3 +1,4 @@
+import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
@@ -5,11 +6,24 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { assetUrl, corsProbe, isLocalDev } from "../_7-shared-scripts/assets-config.js";
 
-const mount = document.getElementById("glb-viewer");
-if (!mount) {
-  console.warn("No #glb-viewer element found.");
-} else {
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+void bootstrapPage({ pageId: 'docs', mount({ scope }) {
+  const mount = document.getElementById("glb-viewer");
+  if (!mount) {
+    console.warn("No #glb-viewer element found.");
+    return;
+  }
+  let frameId = null;
+  let suspended = false;
+  let disposed = false;
+  let renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  } catch (error) {
+    console.warn('[docs] 3D renderer unavailable; showing the text view.', error);
+    mount.textContent = '3D cards are unavailable. The tools and skills are listed below.';
+    document.querySelector('.scene-alternative')?.setAttribute('open', '');
+    return;
+  }
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.className = "glb-viewer-canvas";
@@ -19,7 +33,17 @@ if (!mount) {
   const crankGuide = document.createElement("div");
   crankGuide.className = "crank-guide";
   crankGuide.setAttribute("aria-hidden", "true");
-  const crankGuideRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  let crankGuideRenderer;
+  try {
+    crankGuideRenderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  } catch (error) {
+    console.warn('[docs] 3D guide unavailable; showing the text view.', error);
+    renderer.dispose();
+    renderer.domElement.remove();
+    mount.textContent = '3D cards are unavailable. The tools and skills are listed below.';
+    document.querySelector('.scene-alternative')?.setAttribute('open', '');
+    return;
+  }
   crankGuideRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   crankGuideRenderer.setSize(220, 220, false);
   crankGuideRenderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -71,7 +95,10 @@ if (!mount) {
   scene.add(rim);
 
   const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  const roomEnvironment = new RoomEnvironment();
+  const environmentTarget = pmrem.fromScene(roomEnvironment, 0.04);
+  roomEnvironment.dispose();
+  scene.environment = environmentTarget.texture;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
 
@@ -91,14 +118,18 @@ if (!mount) {
   let faceLeftBtnMesh = null;
   let crankshaftHandle = null;
   let crankGuideModel = null;
-  let crankRestX = 0;
   let crankAngle = 0;
   let crankTargetAngle = 0;
+  let crankReverseTravel = 0;
+  let crankDragCenter = null;
+  let lastCrankFrame = performance.now();
   let crankGuideHideTimer = null;
   let skillGroup = null;
   const cardProxies = new Map();
+  scope.defer(disposeDocs);
   let spinX = 0;
   let spinY = 0;
+  const maxSideTilt = Math.PI / 6;
   const rotationTweens = new Map();
   const quarterTurn = Math.PI / 2;
   const FRONT_FILL = 1;
@@ -130,13 +161,14 @@ if (!mount) {
   ];
   let cardConfig = null;
   let cardColorConfig = null;
-  let cardColorKeyMap = null;
   let cardColorSequence = null;
   let cardColorEntrySequence = null;
   const textureCache = new Map();
   const skillCards = [];
   const cardStates = new Map();
-  let lastFlipDirection = 1;
+
+  let allCardsFlipped = false;
+  let flipAllButton = null;
   THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
   const textureLoader = new THREE.TextureLoader();
   textureLoader.setCrossOrigin("anonymous");
@@ -146,14 +178,17 @@ if (!mount) {
     if (crankGuideModel) crankGuideScene.remove(crankGuideModel);
     crankGuideModel = crankshaft.clone(true);
     crankGuideModel.position.set(0, 0, 0);
-    crankGuideModel.rotation.set(0, 0, 0);
+    // Keep the GLB rest orientation: its handle projects out along +X.
     crankGuideScene.add(crankGuideModel);
     crankGuideModel.updateMatrixWorld(true);
 
     const bounds = new THREE.Box3().setFromObject(crankGuideModel);
     const center = bounds.getCenter(new THREE.Vector3());
+    // Center the guide on the axle, not the off-center handle bounds.
+    center.y = 0;
+    center.z = 0;
     const size = bounds.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.y, size.z, 0.2);
+    const maxDim = 2 * Math.max(Math.abs(bounds.min.y), Math.abs(bounds.max.y), Math.abs(bounds.min.z), Math.abs(bounds.max.z), 0.1);
     const distance = maxDim / (2 * Math.tan(THREE.MathUtils.degToRad(crankGuideCamera.fov * 0.5))) * 1.45;
     crankGuideCamera.position.set(center.x + Math.max(distance, size.x * 1.4), center.y, center.z);
     crankGuideCamera.up.set(0, 1, 0);
@@ -226,14 +261,7 @@ if (!mount) {
     return null;
   }
 
-  function findNamedAncestor(obj, names) {
-    let current = obj;
-    while (current) {
-      if (names.includes(current.name)) return current;
-      current = current.parent;
-    }
-    return null;
-  }
+
 
   function isDescendant(node, ancestor) {
     let current = node;
@@ -339,9 +367,7 @@ if (!mount) {
     texture.needsUpdate = true;
   }
 
-  function isSkillCardContainerName(name) {
-    return typeof name === "string" && name.toLowerCase() === "skill-cards";
-  }
+
 
   // Matches: "skill-card001" AND "skill-card.001" (and other digit counts)
   function isSkillCardGroupName(name) {
@@ -406,7 +432,7 @@ if (!mount) {
     });
   }
 
-  function setCardSelectionVisual(cardRoot, selected) {
+  function setCardSelectionVisual(cardRoot) {
     cardRoot.traverse((child) => {
       if (!child.isMesh || !child.material) return;
       const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -419,21 +445,9 @@ if (!mount) {
     });
   }
 
-  function getCardColorEntry(cardKey) {
-    if (!cardColorConfig) return null;
-    if (!cardColorKeyMap) {
-      cardColorKeyMap = new Map();
-      Object.keys(cardColorConfig).forEach((key) => {
-        cardColorKeyMap.set(key.toLowerCase(), cardColorConfig[key]);
-      });
-    }
-    if (Object.prototype.hasOwnProperty.call(cardColorConfig, cardKey)) {
-      return cardColorConfig[cardKey];
-    }
-    return cardColorKeyMap.get(String(cardKey).toLowerCase()) || null;
-  }
 
-  function getCardBaseColorByIndex(index, config) {
+
+  function getCardBaseColorByIndex(index) {
     if (!cardColorSequence && cardColorConfig) {
       cardColorSequence = Object.values(cardColorConfig)
         .map((entry) => {
@@ -473,7 +487,7 @@ if (!mount) {
       const colorEntry = getCardColorEntryByIndex(index);
       const baseColor = getCardBaseColorByIndex(index, config);
       const sideColor = colorEntry && colorEntry.side ? new THREE.Color(colorEntry.side) : baseColor;
-      const backColor = colorEntry && colorEntry.bg ? new THREE.Color(colorEntry.bg) : baseColor;
+
       card.traverse((child) => {
         if (!child.isMesh || !child.material) return;
         const materials = Array.isArray(child.material) ? child.material : [child.material];
@@ -571,23 +585,24 @@ if (!mount) {
   }
 
   Promise.all([
-    fetch(CARD_CONFIG_URL).then((response) => {
+    fetch(CARD_CONFIG_URL, { signal: scope.signal }).then((response) => {
       if (!response.ok) throw new Error(`Failed to load ${CARD_CONFIG_URL}`);
       return response.json();
     }),
-    fetch(CARD_COLOR_URL)
+    fetch(CARD_COLOR_URL, { signal: scope.signal })
       .then((response) => (response.ok ? response.json() : null))
       .catch(() => null)
   ])
     .then(([configData, colorData]) => {
+      if (disposed) return;
       cardConfig = configData;
       cardColorConfig = colorData;
-      cardColorKeyMap = null;
       cardColorSequence = null;
       cardColorEntrySequence = null;
       applyCardTextures();
     })
     .catch((error) => {
+      if (disposed || error?.name === 'AbortError') return;
       console.warn("Skill card config load failed:", error);
     });
 
@@ -671,23 +686,29 @@ if (!mount) {
       activeCamera.updateProjectionMatrix();
     }
   }
-  window.addEventListener("resize", resize);
+  scope.listen(window, "resize", resize);
 
   // IMPORTANT: set this path to your real GLB path
   const GLB_PATH = assetUrl("../assets/glb/about-cube.glb");
 
   const loader = new GLTFLoader();
   const draco = new DRACOLoader();
-  draco.setDecoderPath("https://www.gstatic.com/draco/v1/decoders/");
+  draco.setDecoderPath("https://unpkg.com/three@0.159.0/examples/jsm/libs/draco/");
   loader.setDRACOLoader(draco);
   loader.load(
     GLB_PATH,
     (gltf) => {
+      if (disposed) {
+        disposeGraph(gltf.scene);
+        return;
+      }
       gltf.scene.updateMatrixWorld(true);
       // Add model
       modelRoot = gltf.scene;
       modelPivot = new THREE.Group();
       modelPivot.name = "modelPivot";
+      // Apply side tilt outside the local long-axis spin: Ry(tilt) * Rx(spin).
+      modelPivot.rotation.order = "YXZ";
       modelPivot.add(modelRoot);
       scene.add(modelPivot);
       skillGroup = modelRoot.getObjectByName("skill-cards");
@@ -704,6 +725,14 @@ if (!mount) {
       const box = new THREE.Box3().setFromObject(modelRoot);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+      // The axle passes through the body origin, not the asymmetric bounds
+      // (which include the projecting crank and handle).
+      const body = modelRoot.getObjectByName("cube-about");
+      if (body) {
+        const axleCenter = body.getWorldPosition(new THREE.Vector3());
+        center.y = axleCenter.y;
+        center.z = axleCenter.z;
+      }
       modelRoot.position.sub(center);
       modelPivot.position.copy(center);
       modelPivot.updateMatrixWorld(true);
@@ -809,17 +838,7 @@ if (!mount) {
           tex.needsUpdate = true;
         });
       };
-      const tintMaterials = (object3d, color, strength) => {
-        if (!object3d) return;
-        object3d.traverse((child) => {
-          if (!child.isMesh || !child.material) return;
-          const materials = Array.isArray(child.material) ? child.material : [child.material];
-          materials.forEach((mat) => {
-            if (!mat || !mat.color) return;
-            mat.color.lerp(color, strength);
-          });
-        });
-      };
+
       const stabilizeParagraphMaterial = (object3d) => {
         if (!object3d) return;
         object3d.traverse((child) => {
@@ -865,7 +884,6 @@ if (!mount) {
       cubeAbout = findObjectByNames(modelRoot, ["cube-about"]);
       crankshaft = findObjectByNames(modelRoot, ["crankshaft"]);
       if (crankshaft) {
-        crankRestX = crankshaft.rotation.x;
         buildCrankGuideModel();
       }
       if (cubeAbout) {
@@ -886,14 +904,26 @@ if (!mount) {
       }
       applyCardTextures();
 
+      flipAllButton = modelRoot.getObjectByName("skill-cards-flip-all");
+      if (!flipAllButton && cubeAbout) {
+        // Automatically use the authored GLB node once it exists.
+        flipAllButton = new THREE.Mesh(
+          new THREE.BoxGeometry(0.32, 0.09, 0.018),
+          new THREE.MeshStandardMaterial({ color: 0xe5b994, roughness: 0.45 })
+        );
+        flipAllButton.name = "skill-cards-flip-all";
+        flipAllButton.position.set(0, 0.43, -0.75);
+        skillGroup.add(flipAllButton);
+      }
       status.remove();
       resize();
     },
-    (xhr) => {
+    () => {
       // progress
       // console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
     },
     (err) => {
+      if (disposed) return;
       console.error("GLTF LOAD FAILED:", GLB_PATH, err);
       console.error("Check path, server, and Network tab for 404:", GLB_PATH);
       status.textContent = "GLB load failed. Check console/network.";
@@ -910,18 +940,29 @@ if (!mount) {
   );
 
   function animate() {
-    requestAnimationFrame(animate);
+    if (disposed || suspended) return;
+    frameId = requestAnimationFrame(animate);
+    if (crankshaft) {
+      const previousAngle = crankAngle;
+      const frameTime = performance.now();
+      const dt = Math.min(0.05, Math.max(0, (frameTime - lastCrankFrame) / 1000));
+      lastCrankFrame = frameTime;
+      const error = crankTargetAngle - crankAngle;
+      const step = error * (1 - Math.exp(-10 * dt));
+      crankAngle += THREE.MathUtils.clamp(step, -3.5 * dt, 3.5 * dt);
+      if (Math.abs(crankTargetAngle - crankAngle) < 0.0001) crankAngle = crankTargetAngle;
+      // The crank drives the entire assembly about the same axle as the wheel.
+      spinX += crankAngle - previousAngle;
+      // Clockwise in the side guide is negative X; counter-rotate the box.
+      // Cancel the body's rotation so the physical crank matches that guide.
+      crankshaft.rotation.x = -crankAngle - spinX;
+    }
     if (modelPivot) {
       modelPivot.rotation.x = spinX;
       modelPivot.rotation.y = spinY;
     }
-    if (crankshaft) {
-      crankAngle += (crankTargetAngle - crankAngle) * 0.24;
-      if (Math.abs(crankTargetAngle - crankAngle) < 0.0001) crankAngle = crankTargetAngle;
-      crankshaft.rotation.x = crankRestX + crankAngle;
-    }
     if (crankGuideModel && (isDraggingCrank || crankGuide.classList.contains("is-visible"))) {
-      crankGuideModel.rotation.x = crankAngle;
+      crankGuideModel.rotation.x = -crankAngle;
       crankGuideRenderer.render(crankGuideScene, crankGuideCamera);
     }
     const now = performance.now();
@@ -941,17 +982,6 @@ if (!mount) {
         }
       }
     });
-    if (skillCards.length) {
-      skillCards.forEach((card) => {
-        const state = cardStates.get(card);
-        if (state && state.isHovered) return;
-        if (rotationTweens.has(card)) return;
-        const restY = getCardRestY(card);
-        if (Math.abs(card.rotation.y - restY) > 0.0001) {
-          card.rotation.y = restY;
-        }
-      });
-    }
     renderer.render(scene, activeCamera);
   }
 
@@ -970,15 +1000,15 @@ if (!mount) {
     }
   }
 
-  renderer.domElement.addEventListener("contextmenu", (event) => {
+  scope.listen(renderer.domElement, "contextmenu", (event) => {
     event.preventDefault();
   });
 
-  renderer.domElement.addEventListener("wheel", (event) => {
+  scope.listen(renderer.domElement, "wheel", (event) => {
     if (!modelRoot) return;
     event.preventDefault();
     const delta = Math.max(-120, Math.min(120, event.deltaY));
-    if (event.ctrlKey || event.metaKey) {
+    if (!event.altKey) {
       zoomCamera(delta);
       controls.update();
       return;
@@ -1000,10 +1030,10 @@ if (!mount) {
   }
 
   if (faceRightBtn) {
-    faceRightBtn.addEventListener("click", () => rotateFaces(1));
+    scope.listen(faceRightBtn, "click", () => rotateFaces(1));
   }
   if (faceLeftBtn) {
-    faceLeftBtn.addEventListener("click", () => rotateFaces(-1));
+    scope.listen(faceLeftBtn, "click", () => rotateFaces(-1));
   }
 
   const raycaster = new THREE.Raycaster();
@@ -1088,10 +1118,15 @@ if (!mount) {
     ) <= 42;
     if (!hit && !nearCrank) return false;
     isDraggingCrank = true;
+    renderer.domElement.style.cursor = 'grabbing';
     crankPointerId = event.pointerId;
     lastCrankPoint = { x: event.clientX - center.cx, y: event.clientY - center.cy };
     crankDragDirection = 0;
     showCrankGuide(event);
+    const guideRect = crankGuide.getBoundingClientRect();
+    crankDragCenter = { cx: guideRect.left + guideRect.width / 2, cy: guideRect.top + guideRect.height / 2 };
+    lastCrankPoint = { x: event.clientX - crankDragCenter.cx, y: event.clientY - crankDragCenter.cy };
+    crankReverseTravel = 0;
     renderer.domElement.setPointerCapture?.(event.pointerId);
     event.preventDefault();
     return true;
@@ -1099,6 +1134,7 @@ if (!mount) {
 
   function startModelDrag(event) {
     isDraggingModel = true;
+    renderer.domElement.style.cursor = 'grabbing';
     modelPointerId = event.pointerId;
     lastModelPointer = { x: event.clientX, y: event.clientY };
     modelDragDistance = 0;
@@ -1128,11 +1164,7 @@ if (!mount) {
     return false;
   }
 
-  function flipCard(cardRoot, direction) {
-    if (!cardRoot) return;
-    tweenRotation(cardRoot, "y", direction * 2, rotationDuration);
-    lastFlipDirection = direction;
-  }
+
 
   function getCardRestY(cardRoot) {
     if (!cardRoot) return 0;
@@ -1143,10 +1175,23 @@ if (!mount) {
     return current;
   }
 
-  function getTweenDirection(object3d, axis) {
-    const tween = rotationTweens.get(object3d);
-    if (!tween || tween.axis !== axis) return 0;
-    return Math.sign(tween.end - tween.start) || 0;
+
+
+  function updateCardSide(cardRoot) {
+    const state = cardStates.get(cardRoot) || {};
+    const flipped = Boolean(allCardsFlipped) !== Boolean(state.isFlipped);
+    const preview = state.isHovered && !state.hoverPinned;
+    const side = flipped !== Boolean(preview);
+    const base = getCardRestY(cardRoot);
+    const current = getActiveRotation(cardRoot, "y");
+    const desired = base + (side ? Math.PI : 0);
+    const target = desired + Math.round((current - desired) / (Math.PI * 2)) * Math.PI * 2;
+    tweenRotationTo(cardRoot, "y", target, hoverRotationDuration, Math.PI);
+  }
+
+  function flipAllCards() {
+    allCardsFlipped = !allCardsFlipped;
+    skillCards.forEach(updateCardSide);
   }
 
   function setCardHover(cardRoot, hovered) {
@@ -1154,29 +1199,9 @@ if (!mount) {
     const state = cardStates.get(cardRoot) || { isFlipped: false, isSelected: false };
     if (state.isHovered === hovered) return;
     state.isHovered = hovered;
-    const base = getCardRestY(cardRoot);
-    const current = getActiveRotation(cardRoot, "y");
-    const offset = normalizeAngle(current - base);
-    const isAtBase = Math.abs(offset) < 0.001 || Math.abs(offset - Math.PI * 2) < 0.001;
-    const direction = 1;
+    state.hoverPinned = false;
     cardStates.set(cardRoot, state);
-    const desiredOffset = hovered ? Math.PI : Math.PI * 2;
-    let targetOffset = desiredOffset;
-    if (targetOffset <= offset + 0.0001) {
-      targetOffset += Math.PI * 2;
-    }
-    if (hovered) {
-      state.flipInProgress = true;
-      cardStates.set(cardRoot, state);
-    }
-    if (!hovered && isAtBase && !rotationTweens.has(cardRoot) && !state.flipInProgress) {
-      state.flipInProgress = false;
-      cardStates.set(cardRoot, state);
-      tweenRotationTo(cardRoot, "y", base, hoverRotationDuration, Math.PI);
-      return;
-    }
-    const target = base + direction * targetOffset;
-    tweenRotationTo(cardRoot, "y", target, hoverRotationDuration, Math.PI);
+    updateCardSide(cardRoot);
   }
 
   function handleCardHover(event) {
@@ -1188,6 +1213,14 @@ if (!mount) {
       return isProxyDescendant(hitEntry.object);
     });
     const proxyTarget = hit ? getProxyCardTarget(hit.object) : null;
+    const directHit = getTopHit(event);
+    const target = directHit?.object;
+    const actionable = (cardProxies.size ? !!proxyTarget : !!(hit && isDescendant(hit.object, skillGroup)))
+      || !!(target && ((flipAllButton && isDescendant(target, flipAllButton))
+        || (faceLeftBtnMesh && isDescendant(target, faceLeftBtnMesh))
+        || (faceRightBtnMesh && isDescendant(target, faceRightBtnMesh))
+        || (crankshaft && isDescendant(target, crankshaft))));
+    renderer.domElement.style.cursor = actionable ? 'pointer' : '';
     if (cardProxies.size && !proxyTarget) {
       if (lastHoveredCard) setCardHover(lastHoveredCard, false);
       lastHoveredCard = null;
@@ -1224,21 +1257,29 @@ if (!mount) {
     }
     state.isFlipped = !state.isFlipped;
     cardStates.set(cardRoot, state);
-    flipCard(cardRoot, state.isFlipped ? 1 : -1);
+    // A click pins the hover preview until the pointer leaves this card.
+    state.hoverPinned = !!state.isHovered;
+    updateCardSide(cardRoot);
     return true;
   }
 
-  renderer.domElement.addEventListener("pointerdown", (event) => {
+  scope.listen(renderer.domElement, "pointerdown", (event) => {
     if (event.button === 2) {
       startModelDrag(event);
       return;
     }
     if (event.button !== 0) return;
+    const buttonHit = getTopHit(event);
+    if (flipAllButton && buttonHit && isDescendant(buttonHit.object, flipAllButton)) {
+      flipAllCards();
+      return;
+    }
     if (startCrankDrag(event)) return;
     if (handleMeshClick(event)) return;
     handleCardClick(event);
   });
-  renderer.domElement.addEventListener("pointerleave", () => {
+  scope.listen(renderer.domElement, "pointerleave", () => {
+    renderer.domElement.style.cursor = '';
     if (lastHoveredCard) {
       setCardHover(lastHoveredCard, false);
       lastHoveredCard = null;
@@ -1261,12 +1302,13 @@ if (!mount) {
     if (renderer.domElement.hasPointerCapture?.(event.pointerId)) {
       renderer.domElement.releasePointerCapture(event.pointerId);
     }
+    renderer.domElement.style.cursor = '';
   }
-  window.addEventListener("pointerup", finishPointerInteraction);
-  window.addEventListener("pointercancel", finishPointerInteraction);
-  window.addEventListener("pointermove", (event) => {
+  scope.listen(window, "pointerup", finishPointerInteraction);
+  scope.listen(window, "pointercancel", finishPointerInteraction);
+  scope.listen(window, "pointermove", (event) => {
     if (isDraggingCrank && crankshaft) {
-      const center = getCrankCenterScreen();
+      const center = crankDragCenter;
       if (!center) return;
       const currentPoint = { x: event.clientX - center.cx, y: event.clientY - center.cy };
       if (!lastCrankPoint) {
@@ -1283,12 +1325,20 @@ if (!mount) {
       const dot = lastCrankPoint.x * currentPoint.x + lastCrankPoint.y * currentPoint.y;
       const rawDelta = Math.atan2(cross, dot);
       if (Math.abs(rawDelta) > 0.001) {
-        if (!crankDragDirection) crankDragDirection = Math.sign(rawDelta);
-        // Once a turn begins, preserve that direction for the whole gesture.
-        // Large cursor jumps are reduced to a short step instead of reversing
-        // or throwing the crank across the circle.
-        const safeDelta = Math.min(Math.abs(rawDelta), 0.24) * crankDragDirection;
-        crankTargetAngle += safeDelta;
+        const direction = Math.sign(rawDelta);
+        const travel = Math.min(Math.abs(rawDelta), 0.65);
+        if (!crankDragDirection) crankDragDirection = direction;
+        if (direction !== crankDragDirection) {
+          crankReverseTravel += travel;
+          // Ignore small wobbles; sustained reverse travel changes direction.
+          if (crankReverseTravel >= 0.35) {
+            crankDragDirection = direction;
+            crankReverseTravel = 0;
+            crankTargetAngle = crankAngle;
+          }
+        } else crankReverseTravel = 0;
+        crankTargetAngle += travel * crankDragDirection;
+        crankTargetAngle = THREE.MathUtils.clamp(crankTargetAngle, crankAngle - 0.8, crankAngle + 0.8);
       }
       lastCrankPoint = currentPoint;
       event.preventDefault();
@@ -1300,7 +1350,7 @@ if (!mount) {
       modelDragDistance += Math.hypot(dx, dy);
       lastModelPointer = { x: event.clientX, y: event.clientY };
       if (modelDragDistance >= 3) {
-        spinY += dx * 0.008;
+        spinY = THREE.MathUtils.clamp(spinY + dx * 0.008, -maxSideTilt, maxSideTilt);
         spinX += dy * 0.008;
       }
       event.preventDefault();
@@ -1308,15 +1358,22 @@ if (!mount) {
     }
     handleCardHover(event);
   });
-  window.addEventListener("keydown", (event) => {
-    if (event.key !== "f" && event.key !== "F") return;
+  scope.listen(window, "keydown", (event) => {
+    if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.repeat) return;
+    if (event.target?.closest?.('input, textarea, select, button, a, [contenteditable="true"]')) return;
+    if (document.querySelector('dialog[open], [aria-modal="true"]:not([hidden])')) return;
+    const key = event.key.toLowerCase();
+    if (key === 'a') { event.preventDefault(); flipAllCards(); return; }
+    if (key === 'l' || key === 'r') { event.preventDefault(); rotateFaces(key === 'r' ? 1 : -1); return; }
+    if (key !== 'f') return;
     const selected = Array.from(cardStates.entries()).filter((entry) => entry[1].isSelected);
     if (!selected.length) return;
-    const direction = -lastFlipDirection || -1;
+    event.preventDefault();
+
     selected.forEach(([cardRoot, state]) => {
       state.isFlipped = !state.isFlipped;
       cardStates.set(cardRoot, state);
-      flipCard(cardRoot, direction);
+      updateCardSide(cardRoot);
     });
   });
 
@@ -1327,4 +1384,77 @@ corsProbe("assets/glb/about-cube.glb");
     corsProbe("../assets/computer-app-icons/Ableton Live.png");
     corsProbe("../assets/computer-app-icons/backs/Ableton Live_back.png");
   }
-}
+
+  function disposeGraph(root, geometries = new Set(), materials = new Set(), textures = new Set()) {
+    root?.traverse(object => {
+      if (object.userData?.flashTimer) clearTimeout(object.userData.flashTimer);
+      if (object.geometry) geometries.add(object.geometry);
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (!material || materials.has(material)) continue;
+        materials.add(material);
+        for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+      }
+    });
+    for (const texture of textures) texture.dispose();
+    for (const material of materials) material.dispose();
+    for (const geometry of geometries) geometry.dispose();
+  }
+
+  function disposeDocs() {
+    if (disposed) return;
+    disposed = true;
+    suspended = true;
+    if (frameId !== null) cancelAnimationFrame(frameId);
+    frameId = null;
+    if (crankGuideHideTimer !== null) clearTimeout(crankGuideHideTimer);
+    crankGuideHideTimer = null;
+    controls.dispose();
+    const geometries = new Set();
+    const materials = new Set();
+    const textures = new Set(textureCache.values());
+    for (const root of [scene, crankGuideScene]) {
+      root?.traverse(object => {
+        if (object.userData?.flashTimer) clearTimeout(object.userData.flashTimer);
+        if (object.geometry) geometries.add(object.geometry);
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+          if (!material || materials.has(material)) continue;
+          materials.add(material);
+          for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
+        }
+      });
+    }
+    for (const texture of textures) texture.dispose();
+    for (const material of materials) material.dispose();
+    for (const geometry of geometries) geometry.dispose();
+    textureCache.clear();
+    cardProxies.clear();
+    cardStates.clear();
+    rotationTweens.clear();
+    environmentTarget.dispose();
+    pmrem.dispose();
+    draco.dispose();
+    renderer.dispose();
+    crankGuideRenderer.dispose();
+    renderer.domElement.remove();
+    crankGuide.remove();
+    status.remove();
+  }
+
+  return {
+    suspend() {
+      suspended = true;
+      if (frameId !== null) cancelAnimationFrame(frameId);
+      frameId = null;
+      if (crankGuideHideTimer !== null) clearTimeout(crankGuideHideTimer);
+      crankGuideHideTimer = null;
+      crankGuide.classList.remove('is-visible');
+    },
+    resume() {
+      if (disposed || !suspended) return;
+      suspended = false;
+      lastCrankFrame = performance.now();
+      resize();
+      animate();
+    }
+  };
+} }).catch(error => console.error('Shared bootstrap failed', error));

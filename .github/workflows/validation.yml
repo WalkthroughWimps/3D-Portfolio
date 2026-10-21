@@ -1,0 +1,69 @@
+name: Release validation (no deployment)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check:site-html
+      - run: npm run hydrate:assets
+      - run: npm test
+      - run: npm run check:artifact
+      - run: node tools/phase-08-references.mjs
+      - run: npm run build:artifact
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runtime-manifest
+          path: output/phase-08/artifact-*.json
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: mkdir -p output/phase-08
+      - run: npm run lint -- --format json --output-file output/phase-08/lint.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-findings
+          path: output/phase-08/lint.json
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx playwright install --with-deps chromium
+      - run: npm run hydrate:assets
+      - run: npm run build:artifact
+      - run: |
+          SITE_ROOT=output/phase-08/artifact/site node tools/phase-08-server.mjs > /tmp/site-preview.log 2>&1 &
+          for attempt in $(seq 1 30); do curl --fail --silent http://127.0.0.1:8879/ > /dev/null && break; sleep 1; done
+          npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-evidence
+          path: output/phase-08/browser/

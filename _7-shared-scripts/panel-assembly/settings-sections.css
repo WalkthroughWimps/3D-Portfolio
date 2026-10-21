@@ -1,0 +1,99 @@
+:is(#review-panels,#controls) .settings-fold { margin-block: 10px; min-width: 0; }
+:is(#review-panels,#controls) .settings-fold > :is(h2,h3,h4) { margin: 0; padding: 0; border: 0; font-size: 17px; text-transform: none; letter-spacing: normal; }
+:is(#review-panels,#controls) .settings-fold-heading { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 8px; text-align: left; font: inherit; font-weight: 650; border: 0; border-bottom: 1px solid #526678; border-radius: 5px; background: #243446; color: #e3f2ff; }
+:is(#review-panels,#controls) .settings-fold-heading::before { content: '▾'; flex: 0 0 12px; }
+:is(#review-panels,#controls) .settings-fold-heading[aria-expanded="false"]::before { content: '▸'; }
+:is(#review-panels,#controls) .settings-fold-body { padding: 8px 3px; min-width: 0; }
+:is(#review-panels,#controls) .settings-fold-body[hidden] { display: none; }
+:is(#review-panels,#controls) .settings-fold-tools { display: flex; justify-content: flex-end; gap: 6px; margin-block: 5px 10px; }
+:is(#review-panels,#controls) .settings-fold-tools button { font-size: 13px; padding: 5px 8px; }
+:is(#review-panels .panel-controls-body,#controlPanels) { font-size: 16px; line-height: 1.4; }
+:is(#review-panels .panel-controls-body,#controlPanels) .control-row.control-row { grid-template-columns: minmax(120px,1fr) minmax(65px,95px) 80px; gap: 8px; margin-block: 11px; }
+:is(#review-panels .panel-controls-body,#controlPanels) .control-row.control-row label { font-size: 16px; }
+:is(#review-panels .panel-controls-body,#controlPanels) :is(input,select,button,textarea) { font-size: 16px; }
+:is(#review-panels .panel-controls-body,#controlPanels) :is(p,.hint,.subtle):not(.settings-fold-heading) { font-size: 14px; line-height: 1.45; }
+:is(#review-panels .panel-controls-body,#controlPanels) :is(input,select,button) { min-height: 36px; }
+:is(#review-panels .panel-controls-body,#controlPanels) input[type="checkbox"] { min-height: 0; }
+:is(#review-panels .panel-controls-tabs.panel-controls-tabs,#controlTabs#controlTabs) { grid-template-columns: repeat(3,minmax(0,1fr)); }
+:is(#review-panels .panel-controls-tabs,#controlTabs) .tab.tab { font-size: 14px; padding: 8px 5px; }
+:is(#review-panels,#controls) .settings-transfer :is(button,select) { font-size: 14px; }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star.axis-star { display: block; position: relative; width: 100px; height: 100px; }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button { position: absolute; width: 84px; height: 20px; min-height: 20px; top: 40px; left: 8px; padding: 0; border: 0; background: transparent; border-radius: 0; font-size: 0; transform-origin: center; }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button::before { content: ''; display: block; height: 3px; border-radius: 3px; background: #8daac1; }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button[aria-pressed="true"]::before { background: #fff; box-shadow: 0 0 5px #74d3f8; }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button[data-axis="V"] { transform: rotate(90deg); }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button[data-axis="D+"] { transform: rotate(-45deg); }
+:is(#review-panels .panel-controls-body,#controlPanels) .axis-star button[data-axis="D-"] { transform: rotate(45deg); }
+@media(max-width:450px) {
+ :is(#review-panels .panel-controls-body,#controlPanels) .control-row.control-row { grid-template-columns: minmax(90px,1fr) 65px 75px; gap: 5px; }
+ :is(#review-panels .panel-controls-body,#controlPanels) .control-row.control-row label { font-size: 15px; }
+}
+
+/* Settings use the page's complementary palette; surfaces stay opaque under navigation. */
+:where(#controls,#review-panels){--settings-surface:#211a2c;--settings-section:#2c2438;--settings-control:#392e48;--settings-border:#9c8bb0;--settings-text:#faf7ff;--settings-muted:#d0c7da;--settings-secondary:#b8e5b1;--settings-accent:#ffc083;color:var(--settings-text);color-scheme:dark}
+#review-panels[data-settings-primary=red]{--settings-surface:#2b1b20;--settings-section:#38252c;--settings-control:#48313a;--settings-border:#ba929f}
+#review-panels[data-settings-primary=blue]{--settings-surface:#192432;--settings-section:#233144;--settings-control:#304157;--settings-border:#8fa9c7}
+#review-panels[data-settings-primary=orange]{--settings-surface:#2a2119;--settings-section:#362c22;--settings-control:#46392c;--settings-border:#bca387}
+#review-panels[data-settings-primary=green]{--settings-surface:#1c2921;--settings-section:#26372c;--settings-control:#314738;--settings-border:#93b59d}
+#review-panels[data-settings-secondary=red]{--settings-secondary:#ffb6c5}#review-panels[data-settings-secondary=blue]{--settings-secondary:#b6d9ff}#review-panels[data-settings-secondary=orange]{--settings-secondary:#ffdbb5}#review-panels[data-settings-secondary=purple]{--settings-secondary:#dfc2ff}
+#review-panels[data-settings-highlight=red]{--settings-accent:#ffb0bf}#review-panels[data-settings-highlight=blue]{--settings-accent:#a9d7ff}#review-panels[data-settings-highlight=purple]{--settings-accent:#dcb4ff}#review-panels[data-settings-highlight=green]{--settings-accent:#b9edac}
+:is(#review-panels#review-panels,#controls#controls) :is(button,input,select,textarea){box-sizing:border-box;color:var(--settings-text);border-color:var(--settings-border);background-color:var(--settings-control);font:inherit}
+:is(#review-panels#review-panels,#controls#controls) :is(button,input,select,textarea):focus-visible{outline:2px solid var(--settings-accent);outline-offset:2px}
+:is(#review-panels#review-panels,#controls#controls) :is(input[type=range],input[type=checkbox]){accent-color:var(--settings-secondary)}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold{margin:7px 0;border:1px solid color-mix(in srgb,var(--settings-border) 55%,transparent);border-left:3px solid var(--settings-secondary);border-radius:8px;background:var(--settings-section);overflow:clip;min-width:0}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold > :is(h2,h3,h4){margin:0;padding:0;border:0;font-size:16px;letter-spacing:normal;text-transform:none}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold-heading{padding:7px 9px;min-height:33px;border:0;border-radius:0;background:var(--settings-control);color:var(--settings-secondary);font-weight:700;text-align:left;cursor:grab;line-height:1.2}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold-body{padding:4px 9px 6px}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold .settings-fold{border-left-width:1px;background:var(--settings-surface);border-color:color-mix(in srgb,var(--settings-border) 35%,transparent)}
+:is(#review-panels#review-panels,#controls#controls) .settings-fold .settings-fold-heading{background:transparent;color:var(--settings-text);font-size:14px;font-weight:600;padding:6px}
+:is(#review-panels#review-panels,#controls#controls) .settings-section-dragging{opacity:.5;border-color:var(--settings-accent)}
+:is(#review-panels#review-panels,#controls#controls) :is(details,details summary){font-size:14px}
+:is(#review-panels#review-panels,#controls#controls) details{padding:7px;margin:7px 0;border-color:var(--settings-border);background:var(--settings-surface)}
+:is(#review-panels#review-panels,#controls#controls) summary{cursor:grab;color:var(--settings-secondary)}
+:is(#review-panels#review-panels,#controls#controls) :is(.panel-controls-body,#controlPanels){font-size:15px;line-height:1.3;scrollbar-gutter:stable}
+:is(#review-panels#review-panels,#controls#controls) .control-row.control-row{grid-template-columns:minmax(112px,1fr) minmax(65px,90px) 72px;gap:7px;margin:5px 0;min-height:32px}
+:is(#review-panels#review-panels,#controls#controls) .control-row.control-row label{font-size:15px;line-height:1.2}
+:is(#review-panels#review-panels,#controls#controls) .control-row select{grid-column:2/4;min-width:0;width:100%}
+:is(#review-panels#review-panels,#controls#controls) :is(.panel-controls-body,#controlPanels) :is(input,select,button){font-size:14px;min-height:31px}
+:is(#review-panels#review-panels,#controls#controls) :is(.panel-controls-body,#controlPanels) input[type=checkbox]{min-height:0}
+:is(#review-panels#review-panels,#controls#controls) :is(.panel-controls-body,#controlPanels) :is(p,.hint,.subtle){font-size:12px;line-height:1.35;color:var(--settings-muted);margin:4px 0 6px}
+:is(#review-panels#review-panels,#controls#controls) :is(.check-row,.button-row){margin:4px 0;min-height:28px}
+:is(#review-panels#review-panels,#controls#controls) .panel-controls-tabs.panel-controls-tabs,
+#controls#controls #controlTabs{position:static;flex:0 0 auto;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:3px;padding:6px 8px;background:var(--settings-surface);border-bottom:1px solid var(--settings-border);z-index:auto}
+:is(#review-panels#review-panels,#controls#controls) .tab.tab{font-size:13px;padding:6px 3px;background:var(--settings-section);color:var(--settings-text);border:1px solid var(--settings-border);border-radius:5px;line-height:1.1;min-height:30px}
+:is(#review-panels#review-panels,#controls#controls) .tab.tab[aria-selected=true]{background:var(--settings-control);border-color:var(--settings-secondary);color:var(--settings-secondary);box-shadow:inset 0 -2px var(--settings-secondary);font-weight:700}
+:is(#review-panels#review-panels,#controls#controls) .settings-preset-dock{display:flex;flex:0 0 auto;gap:8px;padding:6px 8px 8px;background:var(--settings-surface);border-bottom:1px solid var(--settings-border)}
+:is(#review-panels#review-panels,#controls#controls) .settings-preset{display:grid;gap:3px;min-width:0;flex:1;font-size:12px;line-height:1.2;color:var(--settings-muted)}
+:is(#review-panels#review-panels,#controls#controls) .settings-preset[hidden]{display:none!important}
+:is(#review-panels#review-panels,#controls#controls) .settings-preset-slot{display:block;height:32px;min-width:0}
+:is(#review-panels#review-panels,#controls#controls) .settings-preset-slot :is(select,input){width:100%;height:32px;min-height:32px;padding:4px 6px;border:1px solid var(--settings-border);border-radius:5px;font-size:14px}
+:is(#review-panels#review-panels,#controls#controls) .settings-transfer-status{font-size:12px;margin:0;padding:4px 8px;color:var(--settings-accent);flex:none;background:var(--settings-surface)}
+:is(#review-panels#review-panels,#controls#controls) .settings-transfer-status:empty{display:none}
+#review-panels#review-panels .review-panel{background:var(--settings-surface);color:var(--settings-text);border-color:var(--settings-border)}
+#review-panels#review-panels .review-panel-head{background:var(--settings-control);border-color:var(--settings-border);padding:6px 8px;min-height:45px}
+#review-panels#review-panels .review-settings-tab{background:var(--settings-surface);color:var(--settings-text);border:1px solid var(--settings-secondary);border-radius:5px;min-height:32px;padding:5px 12px;font-size:15px}
+#review-panels#review-panels .review-settings-tab[aria-selected=true]{background:var(--settings-secondary);color:#142115;font-weight:700}
+#review-panels#review-panels :is(.review-panel-toggle,.review-panel-close){background:var(--settings-control);color:var(--settings-text);border-color:var(--settings-border)}
+#review-panels#review-panels .review-panel-scroll.has-skills-context{padding:0;overflow:hidden}
+#review-panels#review-panels .panel-controls.review-context-active{display:flex;flex-direction:column;height:100%;overflow:hidden;min-height:0}
+#review-panels#review-panels .panel-controls-body{overflow:auto;min-height:0;flex:1;padding:1px 8px 10px;overscroll-behavior:contain}
+#review-panels#review-panels .review-settings-context{font-size:15px;line-height:1.3}
+#review-panels#review-panels .settings-fold-body > label{min-height:31px;flex-wrap:wrap;margin:3px 0;justify-content:space-between}
+#review-panels#review-panels .settings-fold-body > label:has(input[type=checkbox]){justify-content:flex-start}
+#review-panels#review-panels :is(.card-slot,.card-slot span){font-size:11px;line-height:1.15}
+#review-panels#review-panels .card-slot{background:var(--settings-surface);padding:4px;min-height:64px}
+.settings-context-menu{position:fixed;z-index:2147483647;min-width:180px;max-width:280px;padding:6px;display:grid;gap:4px;border:1px solid var(--settings-border,#9c8bb0);border-radius:9px;background:var(--settings-surface,#211a2c);color:var(--settings-text,#faf7ff);box-shadow:0 8px 26px #0008;font:14px/1.3 system-ui,sans-serif}
+.settings-context-menu[hidden]{display:none}.settings-context-title{padding:5px 7px;font-size:12px;color:var(--settings-accent,#ffc083)}
+.settings-context-menu button{padding:7px 10px;text-align:left;border:1px solid transparent;border-radius:5px;background:var(--settings-control,#392e48);color:inherit;font:inherit;cursor:pointer}
+.settings-context-menu button:focus-visible,.settings-context-menu button:hover{border-color:var(--settings-accent,#ffc083);outline:0}.settings-context-status:empty{display:none}
+.settings-context-menu button.settings-context-cancel{background:#641f2c;color:#ffe3e7;border-color:#e4798c}.settings-context-menu button.settings-context-cancel:hover,.settings-context-menu button.settings-context-cancel:focus-visible{background:#8b2b3e;border-color:#ffbdc9}
+@media(max-width:450px){:is(#review-panels#review-panels,#controls#controls) .control-row.control-row{grid-template-columns:minmax(100px,1fr) minmax(50px,70px) 68px;gap:5px}}
+
+:is(#review-panels,#controls) :is(.settings-fold-heading,summary){touch-action:none;user-select:none}
+
+:is(#review-panels#review-panels,#controls#controls) :is(.card-editor-fields,.card-face-fields) label{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;min-width:0;font-size:14px;line-height:1.25;margin:3px 0}
+:is(#review-panels#review-panels,#controls#controls) :is(.card-editor-fields,.card-face-fields) :is(input,select){box-sizing:border-box;min-width:0;max-width:100%;width:100%}
+:is(#review-panels#review-panels,#controls#controls) :is(.card-editor-fields,.card-face-fields) input[type=checkbox]{width:auto;min-height:0;justify-self:start}
+:is(#review-panels#review-panels,#controls#controls) :is(.card-editor-fields,.card-face-fields) input[type=color]{width:44px}
+:is(#review-panels#review-panels,#controls#controls) .card-face-fields:has(.settings-fold){padding:0;margin:5px 0;border:0;display:block}
+:is(#review-panels#review-panels,#controls#controls) .card-face-fields button{max-width:100%;white-space:normal;text-align:left;font-size:13px}

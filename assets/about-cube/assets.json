@@ -1,0 +1,679 @@
+{
+  "purpose": "About page model relocation map",
+  "hashAlgorithm": "SHA-256",
+  "notes": "Blender files were resaved to rebase relative external paths while preserving their resolved targets. GLB files were moved byte-for-byte.",
+  "moves": [
+    {
+      "from": "_1-about/faces/about/docs-die.glb",
+      "to": "assets/about-cube/glb/Old .glb/_1-about/faces/about/docs-die.glb",
+      "role": "archive",
+      "bytes": 441124,
+      "originalSha256": "45dcc0cd5e0e6e1b45f2eb4c5b91dcbbe7a875b825269ae82a99386b7883a9a9",
+      "finalSha256": "45dcc0cd5e0e6e1b45f2eb4c5b91dcbbe7a875b825269ae82a99386b7883a9a9"
+    },
+    {
+      "from": "_1-about/faces/clock/mechanism.glb",
+      "to": "assets/about-cube/glb/mechanism.glb",
+      "role": "active",
+      "bytes": 4206296,
+      "originalSha256": "698a1b7f7bba9735e6e1601ced9a6c03f7d0bcbddac2356a058839bcea62e885",
+      "finalSha256": "698a1b7f7bba9735e6e1601ced9a6c03f7d0bcbddac2356a058839bcea62e885"
+    },
+    {
+      "from": "_1-about/faces/clock/orbit-v8.glb",
+      "to": "assets/about-cube/glb/orbit-v8.glb",
+      "role": "active",
+      "bytes": 6560260,
+      "originalSha256": "9ae2854b3a846a92af1749ff15d97e998dbcc1bd285e4b83b5ae65f4fbd5ad27",
+      "finalSha256": "9ae2854b3a846a92af1749ff15d97e998dbcc1bd285e4b83b5ae65f4fbd5ad27"
+    },
+    {
+      "from": "_1-about/faces/clock/spirals-v9.glb",
+      "to": "assets/about-cube/glb/spirals-v9.glb",
+      "role": "active",
+      "bytes": 3231180,
+      "originalSha256": "247e2db70d6354a19903087e65ade59ae7a6c386de8f8a24a7d8ea495a95bdd5",
+      "finalSha256": "247e2db70d6354a19903087e65ade59ae7a6c386de8f8a24a7d8ea495a95bdd5"
+    },
+    {
+      "from": "assets/panel-assembly/model.glb",
+      "to": "assets/about-cube/glb/model.glb",
+      "role": "active",
+      "bytes": 13907892,
+      "originalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771",
+      "finalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771"
+    },
+    {
+      "from": "output/blender-bevel-highlights/cube-only-validation.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/blender-bevel-highlights/cube-only-validation.glb",
+      "role": "archive",
+      "bytes": 1260852,
+      "originalSha256": "f49348836dbbac79f2bdf19a4c01b140cf7828d1dbc81b5a846b7ec8d8dbba0d",
+      "finalSha256": "f49348836dbbac79f2bdf19a4c01b140cf7828d1dbc81b5a846b7ec8d8dbba0d"
+    },
+    {
+      "from": "output/blender-bevel-highlights/start-cube-spheres-highlights.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/blender-bevel-highlights/start-cube-spheres-highlights.blend",
+      "role": "archive",
+      "bytes": 81442747,
+      "originalSha256": "986332d0e57a1b0524873fa779f44106857d05c247d7389a27228ce396a64b7c",
+      "finalSha256": "f519862c44e3bc0c578946604b7f75ae76f32fb50c8321518f8c38210e79d2ef"
+    },
+    {
+      "from": "output/blender-bevel-highlights/start-cube-spheres-highlights.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/blender-bevel-highlights/start-cube-spheres-highlights.glb",
+      "role": "archive",
+      "bytes": 2650904,
+      "originalSha256": "981f25882c46adab9d6293f2c654343ebb6f2ec51b57fd7f78b35bb24d645d3a",
+      "finalSha256": "981f25882c46adab9d6293f2c654343ebb6f2ec51b57fd7f78b35bb24d645d3a"
+    },
+    {
+      "from": "output/blender-bevel-highlights/start-cube-spheres-outer-edges.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/blender-bevel-highlights/start-cube-spheres-outer-edges.blend",
+      "role": "archive",
+      "bytes": 119869152,
+      "originalSha256": "0d594cd048b54a02d6d8916dc08b4a65dd559598754c04ce277666469ddf0356",
+      "finalSha256": "c5d22666a357da0b259d48e98f9a724b5c5677430bd560c63e8b701793f6ad01"
+    },
+    {
+      "from": "output/blender-bevel-highlights/validation.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/blender-bevel-highlights/validation.glb",
+      "role": "archive",
+      "bytes": 106744,
+      "originalSha256": "bd7f21971dd398d52cafd6dfbcaf322256e80c011554b8ccae4a5b2190cd07ce",
+      "finalSha256": "bd7f21971dd398d52cafd6dfbcaf322256e80c011554b8ccae4a5b2190cd07ce"
+    },
+    {
+      "from": "output/clock-face-v1/about-cube-clock-v1-work.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v1/about-cube-clock-v1-work.blend",
+      "role": "archive",
+      "bytes": 82873647,
+      "originalSha256": "62cabb11fe36bf3e48e036a0329fc0efe2fc983a3c9585cd0dee6762ed5034c1",
+      "finalSha256": "bd20e4f4150a35d27bf7b62aa15df49dc33d0fb2dfd11b1f53690b420c92c107"
+    },
+    {
+      "from": "output/clock-face-v1/about-cube-clock-v1.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v1/about-cube-clock-v1.blend",
+      "role": "archive",
+      "bytes": 137765663,
+      "originalSha256": "6807a2c4eb5c38b0058fcba77af6b940105aca722d10896aec8bf4d0d359c891",
+      "finalSha256": "9a0b72d734093f9442ba5d6ac401e30ee8b414369b5e0c4ad2235580805691ae"
+    },
+    {
+      "from": "output/clock-face-v2/about-cube-clock-v2-work.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v2/about-cube-clock-v2-work.blend",
+      "role": "archive",
+      "bytes": 82880498,
+      "originalSha256": "44946c4d843a34253295617e661e0844ae1f7436c07b7b985920915292ed44eb",
+      "finalSha256": "e89111b9a16df69f5c1216982bb4ba10f3ad03704605930a89d97a1802261dff"
+    },
+    {
+      "from": "output/clock-face-v3/about-cube-clock-v3-initial-pivot-checkpoint.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v3/about-cube-clock-v3-initial-pivot-checkpoint.blend",
+      "role": "archive",
+      "bytes": 86418530,
+      "originalSha256": "492e707c3e7fc1494068dffdfc5e82ca0c37d3de2690b4f50bdf5936dccc042b",
+      "finalSha256": "77939ab3d2381fd094e123236f3fcdbffb0d7cf26d8d750e2e127e96b1ff5d4b"
+    },
+    {
+      "from": "output/clock-face-v3/about-cube-clock-v3-pre-clearance-revision.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v3/about-cube-clock-v3-pre-clearance-revision.blend",
+      "role": "archive",
+      "bytes": 86404290,
+      "originalSha256": "78a9295d03e9d621de90fa95d46e65a0ec49e6027702e5c7e9cf557d5baee524",
+      "finalSha256": "e505327c60e4cc2cdfbbaed040e25b705803b47917c45067cba32488ea4dd8d0"
+    },
+    {
+      "from": "output/clock-face-v3/about-cube-clock-v3-pre-topology-fix.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v3/about-cube-clock-v3-pre-topology-fix.blend",
+      "role": "archive",
+      "bytes": 86409902,
+      "originalSha256": "3d26d3f2a600e8dce2c3d6768c0a5e31a7f900e0c1deceb2e7774af0cd2eff12",
+      "finalSha256": "292a55321abf2186273aef438a4196150263955db270ed5c0188f3270d53d170"
+    },
+    {
+      "from": "output/clock-face-v3/about-cube-clock-v3-work.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v3/about-cube-clock-v3-work.blend",
+      "role": "archive",
+      "bytes": 86391655,
+      "originalSha256": "0fea63bbc06322d3fd8efeee3196f2f3e9dcdb91b27768cbb045ea853e39f7c2",
+      "finalSha256": "ead693eae58af0ce4555908e37ce6332e7509462211c3be940f36d944aa16525"
+    },
+    {
+      "from": "output/clock-face-v4/about-cube-clock-v4-work.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v4/about-cube-clock-v4-work.blend",
+      "role": "archive",
+      "bytes": 87323108,
+      "originalSha256": "096fc2d94c3179b61ef23d1cd82eb82fae8916b41af1e675d6f41c26ec5575a0",
+      "finalSha256": "2e588783d97c78402298dd277f2cf22436696e2cc4cba5f363b2f34d5b443364"
+    },
+    {
+      "from": "output/clock-face-v5/about-cube-clock-v5-work.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v5/about-cube-clock-v5-work.blend",
+      "role": "archive",
+      "bytes": 87829600,
+      "originalSha256": "99c6cc9df09d7229e270849ce00b3e4e767603cff89887ea031284b04ddfd9ba",
+      "finalSha256": "95a84823dea3aa994f2353d47e1149e297184468e3e8d3b4acf57b04d619b815"
+    },
+    {
+      "from": "output/clock-face-v6-clearance/about-cube-clock-v6-clearance.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-face-v6-clearance/about-cube-clock-v6-clearance.blend",
+      "role": "archive",
+      "bytes": 87863633,
+      "originalSha256": "62508a48b7a51988c431503d459b0256ec2d17d5c1cc5bbd7f69e118febdfaa6",
+      "finalSha256": "d97f40a8c478ed69c334b2a3de243aa7371082387615c5e1175c0ddf76af0ee7"
+    },
+    {
+      "from": "output/clock-face-v7-supports/about-cube-clock-v7-supported.blend",
+      "to": "assets/about-cube/blend/about-cube-clock-v7-supported.blend",
+      "role": "active",
+      "bytes": 87921804,
+      "originalSha256": "d6f8aee5852ba37dd90a59ca964903b0e45d86a216cb91f998ec4c3e566a34e5",
+      "finalSha256": "7dffde7b0b43df9cca6dbcc49ebdbd5fe06799ae2606acfb85ac057e4275c7e0"
+    },
+    {
+      "from": "output/clock-face-v8-orbit/about-cube-clock-v8-orbit.blend",
+      "to": "assets/about-cube/blend/about-cube-clock-v8-orbit.blend",
+      "role": "active",
+      "bytes": 88845243,
+      "originalSha256": "b3ab3e3abbb17b8bb0440239598018ee294091da8b14bfbaa7c893067939987a",
+      "finalSha256": "5137ecf97ae28cb2879861a29bc0582354cf2a532a7c0557ed50e867e519cc21"
+    },
+    {
+      "from": "output/clock-face-v9-spirals/clock-face-v9-spirals.blend",
+      "to": "assets/about-cube/blend/clock-face-v9-spirals.blend",
+      "role": "active",
+      "bytes": 6941750,
+      "originalSha256": "a8b71e12a5d3346411074e812300cfc2804669f8caa01249b59471fddb7bf9ce",
+      "finalSha256": "a8b71e12a5d3346411074e812300cfc2804669f8caa01249b59471fddb7bf9ce"
+    },
+    {
+      "from": "output/clock-spatial-options/clock-spatial-options.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/clock-spatial-options/clock-spatial-options.blend",
+      "role": "archive",
+      "bytes": 89539064,
+      "originalSha256": "1260042f727b9d70101070ae9f7a2658477377dbb70392461e75baa1d5d05deb",
+      "finalSha256": "e75f561d3066ddbf49c3e9e6be96a6652755ff914a9595fc54319da8e8ee21d2"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-cones-faced.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-cones-faced.blend",
+      "role": "archive",
+      "bytes": 119635477,
+      "originalSha256": "db50c8d4a4e990d612f3baa47eaee51e7f5db8b0e807eefef5800e85db9b6b75",
+      "finalSha256": "c9e7c0455b6f35f2db52661f31f85dee9f1b9ca16a8203dae03bbf982d68d251"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-cones-spiral.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-cones-spiral.blend",
+      "role": "archive",
+      "bytes": 119685208,
+      "originalSha256": "bbc9f24f2c33cf2cf60392fb120e8910fa919cb00fce9c58d5d37d5af0761287",
+      "finalSha256": "0501a35cd802c701592dd8b6e5cc7b7936278355213865ffd58c8eb6d5196e67"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-cones.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-cones.blend",
+      "role": "archive",
+      "bytes": 119499553,
+      "originalSha256": "a26bb9e6e8607866924aab7c7caeb68bb6af86a0aa4db836381e54f632252a4f",
+      "finalSha256": "31b57cc3a1973f8f6cb92ef815050d15457246d7c14eee2a7a319a33e52b977e"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-original-shape-panels maybe.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-original-shape-panels maybe.blend",
+      "role": "archive",
+      "bytes": 117275103,
+      "originalSha256": "d6c759ba8367153c5fa4a60757d94a40fe857d82c691ddd384a705b0f85f7a17",
+      "finalSha256": "bbba291d8a0ccd3b7bb1d330dcbdf23509f55b77b3b1abecc54b2cf8d51d196a"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-original-shape-panels.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-original-shape-panels.blend",
+      "role": "archive",
+      "bytes": 117573518,
+      "originalSha256": "fd4cf8ab326825af44c117e2e5d6e6e94bfa0e3895a1705a6c307e16aff4aa43",
+      "finalSha256": "65d1290d9684541a4d65bc250e05d352fb5344237e9c8fc7646eb402336090df"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-curved-smooth-highlights.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-panels-curved-smooth-highlights.blend",
+      "role": "archive",
+      "bytes": 120462703,
+      "originalSha256": "aed53372b9b5881a5b2a7c09b465641c2d877d178f8c309cd9f3a3ad6e4d3832",
+      "finalSha256": "bac4b62df98f92b238e26c4a3b5fd84e1a08ad6226558ab151141952d0bb3a8e"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-curved-smooth-highlights.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/cube-diagnosis/start-cube-panels-curved-smooth-highlights.glb",
+      "role": "archive",
+      "bytes": 4906276,
+      "originalSha256": "356daafa57394800f58ef36c4f5f3b3a5d39f9a0fd11f9efec6983908f40e6d7",
+      "finalSha256": "356daafa57394800f58ef36c4f5f3b3a5d39f9a0fd11f9efec6983908f40e6d7"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-curved-smooth.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-panels-curved-smooth.blend",
+      "role": "archive",
+      "bytes": 119821363,
+      "originalSha256": "1251b3dbdfaa2fdd23ef86d21fa4f9e1982a57d60266a3f838c8046249e36250",
+      "finalSha256": "7ac3773146eedcadb08c521ab6e6e08ca05c8e84d8015d6dd6ce26049c393f90"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-curved.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-panels-curved.blend",
+      "role": "archive",
+      "bytes": 119821187,
+      "originalSha256": "b7365e8537621bbdac6d37b27855bef6cedab1d783a906da48b901ca67819ee9",
+      "finalSha256": "41f27a420bae5826a442c0bdd8996e56879621be3b22875ded4d0a123f9ae3d8"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-highlight-joins.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-panels-highlight-joins.blend",
+      "role": "archive",
+      "bytes": 120950325,
+      "originalSha256": "e2e65c879bc6e5b27eeae202f2bca296130efb77674e2e45598a7689ed50282a",
+      "finalSha256": "7d9d39106ddf32cbc11c72eb856fb4316f198d8ea351c554c6f41e1d64219be1"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels-highlight-joins.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/cube-diagnosis/start-cube-panels-highlight-joins.glb",
+      "role": "archive",
+      "bytes": 8478916,
+      "originalSha256": "b3abb9acd36f35a37a394fc88b5fc2786b393ec1ddb713f525ee0d5df193f6da",
+      "finalSha256": "b3abb9acd36f35a37a394fc88b5fc2786b393ec1ddb713f525ee0d5df193f6da"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-panels.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-panels.blend",
+      "role": "archive",
+      "bytes": 119798810,
+      "originalSha256": "3f5dadc5e7e3a268cfe922da4472f426c775f655b46663ba3a05d0be614453d8",
+      "finalSha256": "8c9c86440f93ad942c0b287e765a254083cff5f043204239dedf7565563a8646"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-spheres.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-spheres.blend",
+      "role": "archive",
+      "bytes": 119823225,
+      "originalSha256": "c14ec44d26b74f9441e2d9ea28eab9f5b4d0b890472c257bb923dc28bc806145",
+      "finalSha256": "5921f506b35212fa90a05cd9f8742ad0d3124c5d9ea4844600657a4cce4e8f41"
+    },
+    {
+      "from": "output/cube-diagnosis/start-cube-UV-repaired.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/cube-diagnosis/start-cube-UV-repaired.blend",
+      "role": "archive",
+      "bytes": 116948902,
+      "originalSha256": "cf208f637d2770f05dc8c2c4f8a60d75ba2896df5dcce08e77395e6606fa3776",
+      "finalSha256": "c10a6c663f18e765bf829cab581033f9ab7f56a3e1cb5c52efaa5d9a2021fd97"
+    },
+    {
+      "from": "output/panel-energy-preview-v2/portable-review/model.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-energy-preview-v2/portable-review/model.glb",
+      "role": "archive",
+      "bytes": 13907892,
+      "originalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771",
+      "finalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771"
+    },
+    {
+      "from": "output/panel-rig-v10/panel-rig-v10-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v10/panel-rig-v10-native-review.blend",
+      "role": "archive",
+      "bytes": 137105584,
+      "originalSha256": "7dc82215e1a6d076e5834a19e7ea1485bdbb8a755539d2efba803758cb48913f",
+      "finalSha256": "883c7be6a4f8fd7c56e05bfe4d82be1bdec1c779cae35cdf8d7c634b62970302"
+    },
+    {
+      "from": "output/panel-rig-v10/panel-rig-v10-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v10/panel-rig-v10-review.glb",
+      "role": "archive",
+      "bytes": 13150868,
+      "originalSha256": "d837479ad0b13986a7183e0816fc20ed12e7afa7257a9ca360ea18a92afb38c8",
+      "finalSha256": "d837479ad0b13986a7183e0816fc20ed12e7afa7257a9ca360ea18a92afb38c8"
+    },
+    {
+      "from": "output/panel-rig-v11/panel-rig-v11-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v11/panel-rig-v11-native-review.blend",
+      "role": "archive",
+      "bytes": 137347268,
+      "originalSha256": "e9771f6e6910f5718bf96d9143c19170a6e142b488657e43cbc18264aae0d71d",
+      "finalSha256": "d25714174dc0abe43d8e2464b80060c1b6cafb98f2199bc64aefd5832e9ac56d"
+    },
+    {
+      "from": "output/panel-rig-v11/panel-rig-v11-pre-card-names.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v11/panel-rig-v11-pre-card-names.blend",
+      "role": "archive",
+      "bytes": 137332838,
+      "originalSha256": "1004c26c8a0f1d129d8c13f1057da975c95c99ecc4808d562a56f09a876182b0",
+      "finalSha256": "6339e47193337f9454690e3da1f26f40316d66d150733acc08f013fa597651c4"
+    },
+    {
+      "from": "output/panel-rig-v11/panel-rig-v11-pre-card-names.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v11/panel-rig-v11-pre-card-names.glb",
+      "role": "archive",
+      "bytes": 13796428,
+      "originalSha256": "4034c66b863ba5679178a593d4b7cc7f17a7f4d87f90e066bdfcb6aef9ead449",
+      "finalSha256": "4034c66b863ba5679178a593d4b7cc7f17a7f4d87f90e066bdfcb6aef9ead449"
+    },
+    {
+      "from": "output/panel-rig-v11/panel-rig-v11-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v11/panel-rig-v11-review.glb",
+      "role": "archive",
+      "bytes": 13797528,
+      "originalSha256": "193fdaa2203c5196a8c2b0ec9dcc7262392df56d193ed0779658de6e7b685ebb",
+      "finalSha256": "193fdaa2203c5196a8c2b0ec9dcc7262392df56d193ed0779658de6e7b685ebb"
+    },
+    {
+      "from": "output/panel-rig-v12/panel-rig-v12-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v12/panel-rig-v12-native-review.blend",
+      "role": "archive",
+      "bytes": 137173756,
+      "originalSha256": "ed560a1ab997960d164f65e133a490734f3e987880a09bd616a01ef683f57677",
+      "finalSha256": "ef6c3ef5a7741e1ba9876988ac3f0f2339f7b4cf30407ef35616e588b33a583d"
+    },
+    {
+      "from": "output/panel-rig-v12/panel-rig-v12-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v12/panel-rig-v12-review.glb",
+      "role": "archive",
+      "bytes": 13229744,
+      "originalSha256": "fc9b6afd8c38a22ae3e3230ec3f7a50db93bac0c5a8cd196b61c702bdcd672d3",
+      "finalSha256": "fc9b6afd8c38a22ae3e3230ec3f7a50db93bac0c5a8cd196b61c702bdcd672d3"
+    },
+    {
+      "from": "output/panel-rig-v13/panel-rig-v13-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v13/panel-rig-v13-native-review.blend",
+      "role": "archive",
+      "bytes": 137182228,
+      "originalSha256": "44ce7dc032179db5083111d76f88868435c6d67b5cfd7c496bb5dd9d9331bc79",
+      "finalSha256": "582ef5f9352daa21cd8a0e08c33486c519add5cbb3a7896604cbfa42b433c61f"
+    },
+    {
+      "from": "output/panel-rig-v13/panel-rig-v13-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v13/panel-rig-v13-review.glb",
+      "role": "archive",
+      "bytes": 13231244,
+      "originalSha256": "516cc3c06ac0a2af0f33934d5be67536b7aafd3c11fd429f749792a5579429cd",
+      "finalSha256": "516cc3c06ac0a2af0f33934d5be67536b7aafd3c11fd429f749792a5579429cd"
+    },
+    {
+      "from": "output/panel-rig-v14/panel-rig-v14-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v14/panel-rig-v14-native-review.blend",
+      "role": "archive",
+      "bytes": 137169992,
+      "originalSha256": "ead05657441e96b67b7b3938b1288757668e6796f97902720b8489fb70792498",
+      "finalSha256": "3acf3154641cd14aba5444e33624f3ae507d7e74e56b7e937df5ad3b5047e46c"
+    },
+    {
+      "from": "output/panel-rig-v14/panel-rig-v14-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v14/panel-rig-v14-review.glb",
+      "role": "archive",
+      "bytes": 13221776,
+      "originalSha256": "cd1b35b5c0e110f64c9da6a351251a559db9a10558299be68b23f986b7b98b32",
+      "finalSha256": "cd1b35b5c0e110f64c9da6a351251a559db9a10558299be68b23f986b7b98b32"
+    },
+    {
+      "from": "output/panel-rig-v15/panel-rig-v15-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v15/panel-rig-v15-native-review.blend",
+      "role": "archive",
+      "bytes": 137306088,
+      "originalSha256": "17fa4a473a3cc0afce01f62fcbd41e6f5c523f931d907d905e5c7836bef91f2f",
+      "finalSha256": "182c1032375721fd5e59d351d530bf669d6b15fca5043a90e03cac668894654a"
+    },
+    {
+      "from": "output/panel-rig-v15/panel-rig-v15-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v15/panel-rig-v15-review.glb",
+      "role": "archive",
+      "bytes": 13275500,
+      "originalSha256": "69864a0bb2595b774181cb4fcb025f3ab35e91756207d0b92e9625b51df646ec",
+      "finalSha256": "69864a0bb2595b774181cb4fcb025f3ab35e91756207d0b92e9625b51df646ec"
+    },
+    {
+      "from": "output/panel-rig-v16/panel-rig-v16-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v16/panel-rig-v16-native-review.blend",
+      "role": "archive",
+      "bytes": 137752139,
+      "originalSha256": "96bf34d63c2bc6e1ce7523fff5b2160d84341e987fe456f05c15d0226b60c9f9",
+      "finalSha256": "8c99e495524a34b96c93ed96f91a5299d4ef377ddbb501eef7b9dc7dd42a713d"
+    },
+    {
+      "from": "output/panel-rig-v16/panel-rig-v16-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v16/panel-rig-v16-review.glb",
+      "role": "archive",
+      "bytes": 13895824,
+      "originalSha256": "1d05b7741c871730b09e04247a223e00374dc7e839e9cec459a6b366e7fd7014",
+      "finalSha256": "1d05b7741c871730b09e04247a223e00374dc7e839e9cec459a6b366e7fd7014"
+    },
+    {
+      "from": "output/panel-rig-v17/panel-rig-v17-native-review.blend",
+      "to": "assets/about-cube/blend/panel-rig-v17-native-review.blend",
+      "role": "active",
+      "bytes": 137765663,
+      "originalSha256": "6807a2c4eb5c38b0058fcba77af6b940105aca722d10896aec8bf4d0d359c891",
+      "finalSha256": "3b6989277f2fc986581f6073609aa9d3b4e5536367db6d624b73b0c02d7899f5"
+    },
+    {
+      "from": "output/panel-rig-v17/panel-rig-v17-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v17/panel-rig-v17-review.glb",
+      "role": "archive",
+      "bytes": 13907892,
+      "originalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771",
+      "finalSha256": "6f1203a6573687c5b8bdf2812565969c707b32014806049f34eeb45b2ff08771"
+    },
+    {
+      "from": "output/panel-rig-v2/geometry-prototype.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v2/geometry-prototype.blend",
+      "role": "archive",
+      "bytes": 131696538,
+      "originalSha256": "c62cea1c0ce6709ebfe5ef2b418427cc61896de66cf80f87878d6d7312a975d7",
+      "finalSha256": "95d667a31607837f21e5eef9af7a94d810ec7f5e4739cab0408ae65fea5f5854"
+    },
+    {
+      "from": "output/panel-rig-v2/square-revised.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v2/square-revised.blend",
+      "role": "archive",
+      "bytes": 585768,
+      "originalSha256": "939b3517142ddd695e7a1ea8a8cf63d764033d44d25567fbc9b9ba3ceb0ca001",
+      "finalSha256": "e09bb88fe104a673a0e1f5b4fcda46d2f2000da31253ff67d715c15624d342e5"
+    },
+    {
+      "from": "output/panel-rig-v2/square-revised.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v2/square-revised.glb",
+      "role": "archive",
+      "bytes": 129208,
+      "originalSha256": "64f960428b20cf6b51a5af8ba6953af74fc91c32183e3e5e4bc2c52d1adeca5a",
+      "finalSha256": "64f960428b20cf6b51a5af8ba6953af74fc91c32183e3e5e4bc2c52d1adeca5a"
+    },
+    {
+      "from": "output/panel-rig-v2/start-cube-panels-pink-ring.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v2/start-cube-panels-pink-ring.blend",
+      "role": "archive",
+      "bytes": 132177117,
+      "originalSha256": "8801b45a364e7f180651dab25702b44ca7a37b80bc9df900bffedb50f243763c",
+      "finalSha256": "214e7c62c9e4e0b5fb876535431494d36a89fb5b22a487c5530632aa36b26330"
+    },
+    {
+      "from": "output/panel-rig-v2/start-cube-panels-rig-no.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v2/start-cube-panels-rig-no.blend",
+      "role": "archive",
+      "bytes": 132067019,
+      "originalSha256": "c104289173ae8a932f7a6571b0dad1613de412ed45d4be28cd184cced508a0ec",
+      "finalSha256": "633d1646eea42d324e812c3733db790ab466a470a3a3d0f86081706caaca046e"
+    },
+    {
+      "from": "output/panel-rig-v2/start-cube-panels-rig-v2.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v2/start-cube-panels-rig-v2.blend",
+      "role": "archive",
+      "bytes": 131912212,
+      "originalSha256": "164f4602174975380f6b4f388bbfd0960743247654a4f0c91fa30a5c335db4fe",
+      "finalSha256": "93c9855b81bae5833f3d2d3f9c70c252e7831ac56d007951cd17906b7f874b37"
+    },
+    {
+      "from": "output/panel-rig-v2/start-cube-panels-rig-v2.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v2/start-cube-panels-rig-v2.glb",
+      "role": "archive",
+      "bytes": 11975780,
+      "originalSha256": "b038a2fe6901b09d51fcbf4aea3df8f57c55e6bf22973dd3e521142e3d3509b9",
+      "finalSha256": "b038a2fe6901b09d51fcbf4aea3df8f57c55e6bf22973dd3e521142e3d3509b9"
+    },
+    {
+      "from": "output/panel-rig-v3-review/start-cube-panels-restored-backing-locked.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v3-review/start-cube-panels-restored-backing-locked.blend",
+      "role": "archive",
+      "bytes": 132043367,
+      "originalSha256": "f2b262259625459170ec50235ed0f10b70290e2f98ea84dc3264ea14793eed84",
+      "finalSha256": "d6437c64d0c9cca3da1c0230f1b6782822c2dabb5d1ed1ae46d242c9d04d3f19"
+    },
+    {
+      "from": "output/panel-rig-v3-review/start-cube-panels-restored-backing.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v3-review/start-cube-panels-restored-backing.blend",
+      "role": "archive",
+      "bytes": 132041513,
+      "originalSha256": "574cdc52bae20e8913fabefaf1e0f5249f46105dc2a9ba973c59f4edcdbba054",
+      "finalSha256": "f12197160518e1290f80e4168c3eca5f748e8f16f2b4791213dbc7f64b1b2801"
+    },
+    {
+      "from": "output/panel-rig-v3-review/start-cube-panels-restored-backing.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v3-review/start-cube-panels-restored-backing.glb",
+      "role": "archive",
+      "bytes": 12124720,
+      "originalSha256": "a1d7cf37dc2749d39f16e357031a67513be188a88447a5e0d4e0f797941ecc0c",
+      "finalSha256": "a1d7cf37dc2749d39f16e357031a67513be188a88447a5e0d4e0f797941ecc0c"
+    },
+    {
+      "from": "output/panel-rig-v6/panel-rig-v6-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v6/panel-rig-v6-native-review.blend",
+      "role": "archive",
+      "bytes": 132575746,
+      "originalSha256": "0e0d2cf0b6aa4a5b707a8913a947069def4ef3173ca9230dc3011fc20d247e7c",
+      "finalSha256": "9f52379a91375ced7f997b5ae091c85a4ac1a1b2fd5c35aedca0b1257f9f71c5"
+    },
+    {
+      "from": "output/panel-rig-v6/panel-rig-v6-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v6/panel-rig-v6-review.glb",
+      "role": "archive",
+      "bytes": 12594708,
+      "originalSha256": "3bce362aee6206d57bcf03d6540b465968877ac0026309e0af50009b6540129b",
+      "finalSha256": "3bce362aee6206d57bcf03d6540b465968877ac0026309e0af50009b6540129b"
+    },
+    {
+      "from": "output/panel-rig-v7/panel-rig-v7-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v7/panel-rig-v7-native-review.blend",
+      "role": "archive",
+      "bytes": 136032978,
+      "originalSha256": "9f96ec42c3ef7aed5b77f0bf94575bb26b453acf239994723e7fa490a3889778",
+      "finalSha256": "87d443555415abc32ec2d9f261c6b684397a42009f88c6ce5fb6d54dc1f0b0fb"
+    },
+    {
+      "from": "output/panel-rig-v7/panel-rig-v7-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v7/panel-rig-v7-review.glb",
+      "role": "archive",
+      "bytes": 12611364,
+      "originalSha256": "cb5582cee769b9057319d14c8698b116aff8c37fd6e6445002ae32e5edf7a020",
+      "finalSha256": "cb5582cee769b9057319d14c8698b116aff8c37fd6e6445002ae32e5edf7a020"
+    },
+    {
+      "from": "output/panel-rig-v8/panel-rig-v8-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v8/panel-rig-v8-native-review.blend",
+      "role": "archive",
+      "bytes": 136032978,
+      "originalSha256": "4685a95a3ef0f1a27bc15c7237c03082131a372916f1b5fa2a6249a05cbe0dc2",
+      "finalSha256": "88d17a2422e2893dec8fbc9324b475a65c78b277d163811ec7b90f5bd6441bdc"
+    },
+    {
+      "from": "output/panel-rig-v8/panel-rig-v8-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v8/panel-rig-v8-review.glb",
+      "role": "archive",
+      "bytes": 12611360,
+      "originalSha256": "2511522f5dd9939720c16a33b8ff3e6b5c28b5ec17a4c53a9c2090357df71677",
+      "finalSha256": "2511522f5dd9939720c16a33b8ff3e6b5c28b5ec17a4c53a9c2090357df71677"
+    },
+    {
+      "from": "output/panel-rig-v9/panel-rig-v9-native-review.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig-v9/panel-rig-v9-native-review.blend",
+      "role": "archive",
+      "bytes": 136114164,
+      "originalSha256": "6b74596b4223595ebfdc6bc74e59bfbd03a63f6c09274466321cb75c0b6c07bc",
+      "finalSha256": "941486c09e0a0d39aee57206450d1b02ad89ad8a9f8ec2fabce20eedcad00775"
+    },
+    {
+      "from": "output/panel-rig-v9/panel-rig-v9-review.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig-v9/panel-rig-v9-review.glb",
+      "role": "archive",
+      "bytes": 12642660,
+      "originalSha256": "40aff9cb902447c5dcf5784d99bfc0a6a01338338f2b7dd011afd952c086ede0",
+      "finalSha256": "40aff9cb902447c5dcf5784d99bfc0a6a01338338f2b7dd011afd952c086ede0"
+    },
+    {
+      "from": "output/panel-rig/axle-prototype.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig/axle-prototype.blend",
+      "role": "archive",
+      "bytes": 122801033,
+      "originalSha256": "b74a968e7d2347aaf1954ccccf51a20b78097af59b5f079b0583fdf63e134e3f",
+      "finalSha256": "64fc686df4eb3db0fefb41e594816f5218d450efce4204cef350cedd97bdccc4"
+    },
+    {
+      "from": "output/panel-rig/material-prototype.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig/material-prototype.blend",
+      "role": "archive",
+      "bytes": 8097520,
+      "originalSha256": "1f3212472577501367af2b40be5ba2c00d696d49a5410396135b35407b4c5fac",
+      "finalSha256": "8e3ef7e45dfa5ce806e0134597e5d178a9db572132a36d6fb9f295303d523756"
+    },
+    {
+      "from": "output/panel-rig/material-prototype.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig/material-prototype.glb",
+      "role": "archive",
+      "bytes": 3619932,
+      "originalSha256": "b9b89bcbf96e604edcca43b13ccb2f30698956407e0a636dff4023a3ad8d5b3c",
+      "finalSha256": "b9b89bcbf96e604edcca43b13ccb2f30698956407e0a636dff4023a3ad8d5b3c"
+    },
+    {
+      "from": "output/panel-rig/square-panel-prototype.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig/square-panel-prototype.blend",
+      "role": "archive",
+      "bytes": 808074,
+      "originalSha256": "2b47819d8cc778caea128b77b1c8ed231cce4bf6a7b98ce92265571e1c3daf3f",
+      "finalSha256": "2b47819d8cc778caea128b77b1c8ed231cce4bf6a7b98ce92265571e1c3daf3f"
+    },
+    {
+      "from": "output/panel-rig/square-panel-prototype.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig/square-panel-prototype.glb",
+      "role": "archive",
+      "bytes": 92788,
+      "originalSha256": "b363d63ae2a4f38960b616ce44c4e2d72f73e3abd5cb2109e8716082471b95a3",
+      "finalSha256": "b363d63ae2a4f38960b616ce44c4e2d72f73e3abd5cb2109e8716082471b95a3"
+    },
+    {
+      "from": "output/panel-rig/start-cube-panels-rig.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/panel-rig/start-cube-panels-rig.blend",
+      "role": "archive",
+      "bytes": 130348253,
+      "originalSha256": "424a1ea9bcd79ee5eef7310b592ffd21884a5afeda8d093970aac607a1a37a26",
+      "finalSha256": "92f5f95c17eb9bde4bfc073e448662d148a39c5ca661b11ec411360effcf29b3"
+    },
+    {
+      "from": "output/panel-rig/start-cube-panels-rig.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/panel-rig/start-cube-panels-rig.glb",
+      "role": "archive",
+      "bytes": 12966692,
+      "originalSha256": "83273e253f33ff14ae74f78e65f85e2ba98cf49e3db2f5adaaab2a5d266dcba3",
+      "finalSha256": "83273e253f33ff14ae74f78e65f85e2ba98cf49e3db2f5adaaab2a5d266dcba3"
+    },
+    {
+      "from": "output/glb-accessibility-blender/about-accessibility.blend",
+      "to": "assets/about-cube/blend/Old .blend/output/glb-accessibility-blender/about-accessibility.blend",
+      "role": "archive",
+      "bytes": 1678842,
+      "originalSha256": "4ba49c8feacd4513814446d603d0ddec168fc8c4d0b80f232d585ca18349ce35",
+      "finalSha256": "4ba49c8feacd4513814446d603d0ddec168fc8c4d0b80f232d585ca18349ce35"
+    },
+    {
+      "from": "output/glb-accessibility-blender/glb/tester-cube.glb",
+      "to": "assets/about-cube/glb/Old .glb/output/glb-accessibility-blender/glb/tester-cube.glb",
+      "role": "archive",
+      "bytes": 575344,
+      "originalSha256": "669fa6b5214c2935ed5118aca95105a00ab7a8e620167aa6b6de9eded2bc8bc8",
+      "finalSha256": "669fa6b5214c2935ed5118aca95105a00ab7a8e620167aa6b6de9eded2bc8bc8"
+    }
+  ]
+}

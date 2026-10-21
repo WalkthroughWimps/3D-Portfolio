@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "origin": "https://assets.matthallportfolio.com",
+  "assets": [
+    {
+      "path": "soundfonts/hypersound/hypersound.sf2",
+      "bytes": 568430,
+      "sha256": "fbdc7d9cb8e52b3114eaf4e08efeb50ec3a5bf81ee9f78edcf17c56c4c107ca0"
+    },
+    {
+      "path": "Videos/videos-page/a-list-videos-hq.webm",
+      "bytes": 37994141,
+      "sha256": "5a9dc3a59baa0d5d6c420fdbeeb0bbfc3613860f2cb67050ea73adb84f1e78e7"
+    },
+    {
+      "path": "Videos/videos-page/music-videos-hq.webm",
+      "bytes": 74213638,
+      "sha256": "044eba1d5c5b4b473fca956f6e68112f0f869894c3ad59e82b74ebb71c29554e"
+    },
+    {
+      "path": "Videos/videos-page/neotube-studios-hq.webm",
+      "bytes": 84828756,
+      "sha256": "6a2c68c9a49f2f3d00a1f377b2d66e2d6a21b05525c6aff9b085f1503d43b334"
+    },
+    {
+      "path": "Videos/videos-page/news-broadcast-hq.webm",
+      "bytes": 60392964,
+      "sha256": "7ec916016bfbaa29ecc2abf780628e4ca6795cee2cf6215a45492c7430192a99"
+    },
+    {
+      "path": "Videos/videos-page/online-classes-hq.webm",
+      "bytes": 42955787,
+      "sha256": "ef90828e091bc780d57746ada896caf032e48ac2ba41f1c2af282898cb6a0466"
+    },
+    {
+      "path": "Videos/videos-page/random-vids-hq.webm",
+      "bytes": 88024949,
+      "sha256": "2b83208f56f8ac0eb3e85a7d94b786edd7d5aed9fb2f70ebfb621c54db98c007"
+    }
+  ]
+}

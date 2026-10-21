@@ -1,0 +1,162 @@
+@import url('../_7-shared-scripts/panel-assembly/settings-sections.css');
+#review-panels {
+  --panel-margin: 12px;
+  position: fixed;
+  inset: 0;
+  z-index: 2147483646;
+  pointer-events: none;
+  color: #eef5ff;
+  font: 13px/1.4 system-ui, sans-serif;
+}
+#review-panels .review-panel {
+  position: absolute;
+  top: var(--review-top, 120px);
+  bottom: var(--panel-margin);
+  width: min(440px, calc(100vw - 2 * var(--panel-margin)));
+  display: flex;
+  flex-direction: column;
+  pointer-events: auto;
+  border: 1px solid #8fa2b5;
+  border-radius: 12px;
+  background: #17212dea;
+  box-shadow: 0 16px 40px #0009;
+  transition: transform .25s ease;
+}
+#review-panels .review-panel--left { left: var(--panel-margin); }
+#review-panels .review-panel--right { right: var(--panel-margin); }
+#review-panels:not(.has-debug) .review-panel--left { display: none; }
+#review-panels .review-panel--left.is-closed { transform: translateX(calc(-100% - var(--panel-margin))); }
+#review-panels .review-panel--right.is-closed { transform: translateX(calc(100% + var(--panel-margin))); }
+#review-panels .review-panel-toggle {
+  position: absolute;
+  bottom: 0;
+  width: 40px;
+  height: 128px;
+  padding: 8px;
+  cursor: pointer;
+  writing-mode: vertical-rl;
+  color: #fff;
+  background: #254157;
+  border: 1px solid #8fa2b5;
+  font: 700 10px/1.1 system-ui, sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+#review-panels .review-panel--left .review-panel-toggle { left: 100%; border-radius: 0 8px 8px 0; }
+#review-panels .review-panel--right .review-panel-toggle { right: 100%; border-radius: 8px 0 0 8px; }
+#review-panels .review-panel-body { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
+#review-panels .review-panel.is-closed .review-panel-body { visibility: hidden; }
+#review-panels .review-panel-head { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 7px 8px; border-bottom: 1px solid #718494; }
+#review-panels .review-panel-head strong { flex: 1; }
+#review-panels .review-panel-close { flex: 0 0 auto; min-height: 32px; padding: 5px 8px; border: 1px solid #718494; border-radius: 6px; color: #fff; background: #254157; }
+#review-panels .review-settings-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: 5px; overflow-x: auto; }
+#review-panels .review-settings-tab { flex: 0 0 auto; min-height: 32px; padding: 5px 10px; }
+#review-panels .review-settings-tab[aria-selected="true"] { background: #46799a; color: #fff; }
+#review-panels .review-panel-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px 20px; }
+#review-panels .review-settings-context[hidden], #review-panels [hidden], #review-panels :is(#filter-admin,#uiLeftColumn,#uiRightColumn,#startPageControls,#emissiveListPanel,#backgroundLookPanel)[hidden] { display: none !important; }
+#review-panels .review-settings-context h2 { margin: 2px 0 12px; font-size: 16px; }
+#review-panels .review-settings-context > label, #review-panels .settings-fold-body > label { display: flex; gap: 8px; align-items: center; min-height: 38px; }
+#review-panels :is(button, select, input, textarea) { font: inherit; }
+#review-panels button { cursor: pointer; }
+#review-panels :is(button, select, input, textarea):focus-visible { outline: 2px solid #bce2ff; outline-offset: 2px; }
+#review-panels .review-panel--right .review-panel-scroll { scrollbar-gutter: stable; }
+#review-panels .review-panel--left :is(#sync-debug, .cam-anim-debug-panel, #debug-panel),
+#review-panels .review-panel--right #filter-admin {
+  position: static !important; inset: auto !important; transform: none !important;
+  display: block !important; width: 100% !important; max-width: none !important;
+  height: auto !important; max-height: none !important; margin: 0 !important;
+  overflow: visible !important; box-sizing: border-box;
+}
+#review-panels #debug-panel .debug-panel__body,
+#review-panels #debug-panel .debug-panel__layout,
+#review-panels #debug-panel .debug-panel__column,
+#review-panels #debug-panel .debug-panel__panes { display: block !important; position: static !important; width: 100% !important; height: auto !important; overflow: visible !important; }
+#review-panels #debug-panel .debug-panel__header,
+#review-panels #debug-panel .debug-panel__footer,
+#review-panels #filter-toggle,
+#review-panels #debug-toggle,
+#review-panels .ui-debug-panels-toggle { display: none !important; }
+#review-panels #sync-debug { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.4 monospace; }
+#review-panels #filter-admin section { position: static; box-shadow: none; width: auto; }
+#review-panels :is(#uiLeftColumn, #uiRightColumn) { position: static !important; inset: auto !important; display: block !important; width: 100% !important; height: auto !important; padding: 0 !important; overflow: visible !important; pointer-events: auto !important; }
+#review-panels #uiRightColumn .ui-right-tabs { position: static; display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+#review-panels #uiRightColumn .ui-panel { position: static; width: 100%; max-height: none; overflow: visible; }
+#review-panels :is(#startPageControls,#emissiveListPanel,#backgroundLookPanel):not([hidden]) { display: block !important; position: static !important; inset: auto !important; transform: none !important; width: 100% !important; height: auto !important; max-height: none !important; margin: 0 !important; overflow: visible !important; pointer-events: auto !important; }
+#review-panels #startPageControls .wrap { width: 100%; max-width: none; margin: 0; padding: 4px; }
+#review-panels #backgroundLookToggle { display: none !important; }
+#review-panels .review-settings-context:not(.review-context-active), #review-panels :is(#startPageControls,#emissiveListPanel,#backgroundLookPanel,#filter-admin).review-settings-context:not(.review-context-active) { display: none !important; }
+@media (max-width: 520px) {
+  #review-panels { --panel-margin: 10px; }
+  #review-panels .review-panel { width: calc(100vw - 2 * var(--panel-margin)); }
+  #review-panels .review-panel-toggle { height: 92px; width: 34px; font-size: 9px; }
+}
+@media (prefers-reduced-motion: reduce) { #review-panels .review-panel { transition: none; } }
+
+/* Debug uses the Settings palette in reverse, with the same panel construction. */
+#review-panels .review-panel--left[data-debug-primary=green] { --settings-surface:#17291e;--settings-section:#20372a;--settings-control:#2c4937;--settings-border:#86b99a; }
+#review-panels .review-panel--left[data-debug-primary=purple] { --settings-surface:#241a31;--settings-section:#30243f;--settings-control:#403151;--settings-border:#b49acb; }
+#review-panels .review-panel--left[data-debug-primary=red] { --settings-surface:#2d1920;--settings-section:#3b222c;--settings-control:#4d2f3b;--settings-border:#c98fa3; }
+#review-panels .review-panel--left[data-debug-primary=blue] { --settings-surface:#172637;--settings-section:#20344a;--settings-control:#2c465f;--settings-border:#8fb8dc; }
+#review-panels .review-panel--left[data-debug-primary=orange] { --settings-surface:#302217;--settings-section:#403021;--settings-control:#53402d;--settings-border:#c5a178; }
+#review-panels .review-panel--left[data-debug-secondary=purple] { --settings-secondary:#dfb8ff; }
+#review-panels .review-panel--left[data-debug-secondary=green] { --settings-secondary:#b8f4c3; }
+#review-panels .review-panel--left[data-debug-secondary=red] { --settings-secondary:#ffb1c5; }
+#review-panels .review-panel--left[data-debug-secondary=blue] { --settings-secondary:#b2dcff; }
+#review-panels .review-panel--left[data-debug-secondary=orange] { --settings-secondary:#ffcf96; }
+#review-panels .review-panel--left .review-panel-head strong { color:var(--settings-secondary); }
+#review-panels .live-performance { border:1px solid var(--settings-border);border-left:3px solid var(--settings-secondary);border-radius:9px;background:var(--settings-section);padding:10px;margin-bottom:14px; }
+#review-panels .live-performance h3 { margin:0 0 6px;color:var(--settings-secondary);font-size:16px; }
+#review-panels .live-performance p { font-size:12px;margin:0 0 9px; }
+#review-panels .live-performance dl { display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0;font-size:12px; }
+#review-panels .live-performance dd { margin:0;text-align:right;font-variant-numeric:tabular-nums;color:var(--settings-secondary); }
+#review-panels .live-performance canvas { display:block;width:100%;height:48px;background:var(--settings-surface);margin-top:10px;border-radius:5px; }
+#review-panels .review-panel--left #debug-panel { --dbg-shell:var(--settings-surface);--dbg-shell-2:var(--settings-section);--dbg-pane:var(--settings-section);--dbg-pane-2:var(--settings-control);--dbg-text:var(--settings-text);--dbg-accent:var(--settings-secondary);--dbg-accent-soft:var(--settings-secondary);background:var(--settings-surface);box-shadow:none; }
+#review-panels .review-panel--left #debug-panel * { min-width:0;overflow-wrap:anywhere; }
+#review-panels .review-panel--left #sync-debug { background:var(--settings-section);border:1px solid var(--settings-border);border-radius:8px;padding:9px;color:var(--settings-text); }
+#review-panels .settings-fold { margin-block: 10px; min-width: 0; }
+#review-panels .settings-fold > :is(h2,h3,h4) { margin: 0; font-size: 17px; text-transform: none; letter-spacing: normal; border: 0; padding: 0; }
+#review-panels .settings-fold-heading { display: flex; align-items: center; gap: 9px; width: 100%; padding: 10px 8px; text-align: left; font: inherit; font-weight: 650; border: 0; border-bottom: 1px solid #526678; border-radius: 5px; background: #243446; color: #e3f2ff; }
+#review-panels .settings-fold-heading::before { content: '▾'; flex: 0 0 12px; }
+#review-panels .settings-fold-heading[aria-expanded="false"]::before { content: '▸'; }
+#review-panels .settings-fold-body { padding: 8px 3px; min-width: 0; }
+#review-panels .settings-fold-tools { display: flex; justify-content: flex-end; gap: 6px; margin-block: 5px 10px; }
+#review-panels .settings-fold-tools button { font-size: 13px; padding: 5px 8px; }
+#review-panels .review-settings-context { font-size: 16px; line-height: 1.4; }
+
+/* One fixed control dock for every face; face content keeps its own scrolling. */
+#review-panels#review-panels .review-settings-pinned { flex:0 0 auto; padding:3px 8px; background:var(--settings-surface); border-bottom:1px solid var(--settings-border); }
+#review-panels#review-panels :is(.face-backing-controls,.face-backing-actions) { position:relative; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:0; padding:0; }
+#review-panels#review-panels :is(.face-backing-controls,.face-backing-actions)::after { content:''; position:absolute; top:2px; bottom:2px; left:calc(50% - .5px); width:1px; background:var(--settings-border); opacity:.65; pointer-events:none; }
+#review-panels#review-panels .face-backing-controls > label { display:flex; align-items:center; gap:6px; min-width:0; min-height:28px; margin:0; padding:1px 5px; font-size:13px; line-height:1.2; cursor:pointer; }
+#review-panels#review-panels .face-backing-controls input { flex:0 0 auto; margin:0; width:15px; height:15px; min-height:0; }
+/* The Notes workspace keeps its binding; the shared dock owns its visible switch. */
+#review-panels#review-panels #review-settings-context-notes label:has(> [data-setting="about.notes.showBacking"]) { display:none; }
+#review-panels#review-panels .all-face-controls { display:grid; gap:4px; }
+#review-panels#review-panels .all-face-controls .face-backing-controls { padding:3px; border:1px solid var(--settings-border); border-radius:6px; background:var(--settings-section); }
+#review-panels#review-panels .face-backing-actions { margin:4px 0; padding:0 4px; }
+#review-panels#review-panels .face-action-stack { display:grid; grid-template-rows:repeat(2,1fr); gap:4px; min-width:0; padding:0 5px; }
+#review-panels#review-panels :is([data-faces],[data-backings]) { min-height:29px; padding:4px; border:1px solid var(--settings-border); border-radius:5px; font-size:13px; }
+
+/* Keep common settings rhythm compact across existing and newly registered tabs. */
+#review-panels#review-panels .review-panel-scroll { padding:5px 8px 10px; }
+#review-panels#review-panels .review-panel-scroll.has-skills-context { padding:0; }
+#review-panels#review-panels .settings-fold { margin:4px 0; }
+#review-panels#review-panels .settings-fold-heading { min-height:30px; padding:5px 8px; }
+#review-panels#review-panels .settings-fold-body { padding:3px 8px 4px; }
+#review-panels#review-panels .settings-fold-body > label { min-height:28px; margin:2px 0; }
+#review-panels#review-panels .settings-fold-tools { margin:3px 0 5px; }
+#review-panels#review-panels details { margin:4px 0; padding:5px; }
+#review-panels#review-panels .control-row.control-row { margin:3px 0; min-height:29px; }
+#review-panels#review-panels :is(.panel-controls-tabs.panel-controls-tabs,.settings-preset-dock) { padding-top:4px; padding-bottom:4px; }
+
+/* About-only experimental workspace retains the shared tab strip and drawer lifecycle. */
+#review-panels .review-panel--right.is-constructor { border-color:rgb(187 116 123 / var(--constructor-accent-alpha,.7)); background:#291e25f2; }
+#review-panels .review-panel--right.is-constructor .review-panel-head { border-color:rgb(187 116 123 / var(--constructor-accent-alpha,.7)); background:#40252b; }
+#review-panels .review-panel--right.is-constructor .review-settings-tab[aria-selected="true"] { background:color-mix(in srgb,#8d414d var(--constructor-accent-percent,70%),#40252b); }
+#review-panels .review-constructor-footer { flex:0 0 auto; padding:8px; border-top:1px solid #9d575d; background:#352027; }
+#review-panels .review-constructor-footer button { display:block; width:100%; min-height:34px; padding:6px 8px; color:#fff4f2; background:#75363e; border:1px solid #bb747b; border-radius:6px; text-align:center; }
+#review-panels .review-constructor-footer button span { display:block; font-size:11px; font-weight:400; }
+#review-panels .review-constructor-context { padding:7px; border:1px solid #9d575d; border-radius:8px; background:#38252b; }
+#review-panels .review-constructor-context h3 { margin:0 0 6px; font-size:17px; }
+#review-panels .review-constructor-context p { margin:6px 0 10px; }
+#review-panels .review-constructor-context button { min-height:30px; padding:4px 8px; color:#fff; background:#58343d; border:1px solid #a3656c; border-radius:5px; }

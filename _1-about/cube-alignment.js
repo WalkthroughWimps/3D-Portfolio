@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 // Choose the most visible face, then the nearest of its four upright orientations.
 // The resulting face is parallel to the camera, so perspective cannot skew its edges.
-export function alignedCubeQuaternion(rotation, cameraRotation) {
+export function alignedCubeQuaternion(rotation, cameraRotation, {skillsUp = false} = {}) {
   const axes = [
     new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
     new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, -1, 0),
@@ -12,6 +12,14 @@ export function alignedCubeQuaternion(rotation, cameraRotation) {
   const normal = axes.reduce((best, axis) =>
     axis.clone().applyQuaternion(rotation).dot(towardCamera) > best.clone().applyQuaternion(rotation).dot(towardCamera)
       ? axis : best);
+  // The skills graphics have an authored +Y up. Keep other faces' familiar
+  // nearest-quarter alignment, while skills lands in its readable orientation.
+  if (skillsUp && normal.z > 0.5) {
+    const up = new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(up, normal);
+    const basis = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal));
+    return cameraRotation.clone().multiply(basis.invert()).normalize();
+  }
   let closest = null;
   let score = -1;
   for (const up of axes) {

@@ -1,3 +1,6 @@
+import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
+import { createDemandRenderLoop } from '../_7-shared-scripts/scene/demand-render-loop.js';
 // graphics.js - minimal GLB preview for the graphics page
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -5,24 +8,68 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
 import { applyStandardGlbMouseControlMode } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
-const MODEL_PATH = assetUrl('assets/glb/card-test.glb');
+const MODEL_PATH = assetUrl('../assets/glb/card-test.glb');
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
+function mountGraphicsPreview() {
 const canvas = document.createElement('canvas');
 canvas.className = 'graphics-gl';
 canvas.setAttribute('aria-hidden', 'true');
 document.body.appendChild(canvas);
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+} catch (error) {
+  canvas.remove();
+  console.warn('Graphics preview unavailable; text and links remain available.', error);
+  void bootstrapPage({ pageId: 'graphics' }).catch(error => console.error('Shared bootstrap failed', error));
+  return;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight, false);
-try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (e) { /* ignore */ }
+try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch  { /* ignore */ }
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, window.innerWidth / window.innerHeight, 0.1, 100);
 camera.position.set(0, 0, 6);
 
 const controls = new OrbitControls(camera, renderer.domElement);
+let disposed = false;
+let cameraFrame = 0;
+let cameraDelay = 0;
+function disposeModel(root) {
+  root?.traverse(object => {
+    object.geometry?.dispose?.();
+    for (const material of [object.material].flat().filter(Boolean)) {
+      for (const value of Object.values(material)) {
+        if (value?.isTexture) value.dispose();
+      }
+      material.dispose?.();
+    }
+  });
+}
+const renderLoop = createDemandRenderLoop({ draw() {
+  controls.update();
+  renderer.render(scene, camera);
+} });
+controls.addEventListener('change', renderLoop.invalidate);
+void bootstrapPage({ pageId: 'graphics', mount: ({ scope }) => {
+  scope.defer(() => {
+    disposed = true;
+    if (cameraFrame) cancelAnimationFrame(cameraFrame);
+    if (cameraDelay) clearTimeout(cameraDelay);
+    window.removeEventListener('resize', onResize);
+    manualControls?.removeEventListener('click', onManualClick);
+    manualControls?.removeEventListener('contextmenu', onManualContextMenu);
+    controls.removeEventListener('change', renderLoop.invalidate);
+    renderLoop.dispose();
+    controls.dispose();
+    disposeModel(model);
+    renderer.dispose();
+    canvas.remove();
+  });
+} }).catch(error => console.error('Shared bootstrap failed', error));
 controls.enableDamping = true;
 applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
 controls.zoomSpeed = 0.9;
@@ -60,6 +107,7 @@ function setCameraState(state) {
   controls.target.copy(state.target);
   camera.lookAt(state.target);
   updateCameraInfo();
+  renderLoop.invalidate();
 }
 
 function animateCameraState(fromState, toState, duration = 10000) {
@@ -69,15 +117,20 @@ function animateCameraState(fromState, toState, duration = 10000) {
   const endTarget = toState.target.clone();
   const startTime = performance.now();
   const step = (now) => {
-    const t = Math.min(1, (now - startTime) / duration);
+    if (disposed) return;
+    const t = getSharedSettings().get().accessibility.reducedMotion
+      ? 1 : Math.min(1, (now - startTime) / duration);
     const eased = 1 - Math.pow(1 - t, 3);
     camera.position.lerpVectors(startPos, endPos, eased);
     controls.target.lerpVectors(startTarget, endTarget, eased);
     camera.lookAt(controls.target);
     updateCameraInfo();
-    if (t < 1) requestAnimationFrame(step);
+    renderLoop.invalidate();
+    if (t < 1) cameraFrame = requestAnimationFrame(step);
+    else cameraFrame = 0;
   };
-  requestAnimationFrame(step);
+  if (cameraFrame) cancelAnimationFrame(cameraFrame);
+  cameraFrame = requestAnimationFrame(step);
 }
 
 function fitCameraToObject(obj) {
@@ -92,6 +145,7 @@ function fitCameraToObject(obj) {
   camera.updateProjectionMatrix();
   controls.target.copy(center);
   updateCameraInfo();
+  renderLoop.invalidate();
 }
 
 const manualControls = document.getElementById('manual-controls');
@@ -106,6 +160,7 @@ function moveCamera(dx, dy) {
   controls.target.addScaledVector(right, dx).addScaledVector(up, dy);
   camera.lookAt(controls.target);
   updateCameraInfo();
+  renderLoop.invalidate();
 }
 
 function scaleCamera(amount) {
@@ -113,6 +168,7 @@ function scaleCamera(amount) {
   camera.position.addScaledVector(dir, amount);
   camera.lookAt(controls.target);
   updateCameraInfo();
+  renderLoop.invalidate();
 }
 
 function handleManual(action, amount) {
@@ -135,22 +191,24 @@ function updateCameraInfo() {
   infoPanel.textContent = `pos ${pos.x.toFixed(2)},${pos.y.toFixed(2)},${pos.z.toFixed(2)}\ntgt ${target.x.toFixed(2)},${target.y.toFixed(2)},${target.z.toFixed(2)} dist ${distance.toFixed(2)}`;
 }
 
+function onManualClick(ev) {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  const step = parseFloat(btn.dataset.step) || 0.4;
+  handleManual(btn.dataset.action, step);
+  updateCameraInfo();
+}
+function onManualContextMenu(ev) {
+  const btn = ev.target.closest('button');
+  if (!btn) return;
+  ev.preventDefault();
+  const step = parseFloat(btn.dataset.precisionStep) || (parseFloat(btn.dataset.step) || 0.4) * 0.35;
+  handleManual(btn.dataset.action, step);
+  updateCameraInfo();
+}
 if (manualControls) {
-  manualControls.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button');
-    if (!btn) return;
-    const step = parseFloat(btn.dataset.step) || 0.4;
-    handleManual(btn.dataset.action, step);
-    updateCameraInfo();
-  });
-  manualControls.addEventListener('contextmenu', (ev) => {
-    const btn = ev.target.closest('button');
-    if (!btn) return;
-    ev.preventDefault();
-    const step = parseFloat(btn.dataset.precisionStep) || (parseFloat(btn.dataset.step) || 0.4) * 0.35;
-    handleManual(btn.dataset.action, step);
-    updateCameraInfo();
-  });
+  manualControls.addEventListener('click', onManualClick);
+  manualControls.addEventListener('contextmenu', onManualContextMenu);
 }
 
 function onResize() {
@@ -159,6 +217,7 @@ function onResize() {
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+  renderLoop.invalidate();
 }
 
 window.addEventListener('resize', onResize);
@@ -168,11 +227,15 @@ loader.setCrossOrigin('anonymous');
 loader.load(
   MODEL_PATH,
   (gltf) => {
+    if (disposed) { disposeModel(gltf.scene); return; }
     model = gltf.scene;
     scene.add(model);
     fitCameraToObject(model);
     setCameraState(initialState);
-    setTimeout(() => animateCameraState(initialState, greenState, 1000), 200);
+    cameraDelay = setTimeout(() => {
+      cameraDelay = 0;
+      if (!disposed) animateCameraState(initialState, greenState, 1000);
+    }, 200);
   },
   undefined,
   (err) => {
@@ -180,12 +243,9 @@ loader.load(
   }
 );
 if (isLocalDev() || new URLSearchParams(window.location.search || '').has('assetsDebug')) {
-corsProbe('assets/glb/card-test.glb');
+corsProbe('../assets/glb/card-test.glb');
 }
 
-function animate() {
-  controls.update();
-  renderer.render(scene, camera);
-  requestAnimationFrame(animate);
+renderLoop.invalidate();
 }
-animate();
+mountGraphicsPreview();

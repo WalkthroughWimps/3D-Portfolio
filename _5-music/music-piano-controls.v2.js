@@ -1,24 +1,43 @@
-// === RESET-DEBUG: detect reload vs navigation vs HMR ===
-(() => {
-  const tag = (msg, extra={}) => console.log('[RESET-DEBUG] ' + msg, extra);
-  try{
-    window.addEventListener('beforeunload', () => tag('beforeunload (page is unloading)', {url: location.href}));
-    window.addEventListener('unload', () => tag('unload', {url: location.href}));
-    window.addEventListener('popstate', () => tag('popstate', {url: location.href}));
-    window.addEventListener('hashchange', () => tag('hashchange', {url: location.href}));
-    const _push = history.pushState.bind(history);
-    const _replace = history.replaceState.bind(history);
-    history.pushState = function(...args){ tag('history.pushState', {args, stack: (new Error()).stack}); return _push(...args); };
-    history.replaceState = function(...args){ tag('history.replaceState', {args, stack: (new Error()).stack}); return _replace(...args); };
-    window.addEventListener('error', (ev) => tag('window error', {message: ev.message, filename: ev.filename, lineno: ev.lineno, colno: ev.colno}));
-    window.addEventListener('unhandledrejection', (ev) => tag('unhandledrejection', {reason: ev.reason}));
-    const key = '__reset_debug_count__';
-    const n = Number(sessionStorage.getItem(key) || 0) + 1;
-    sessionStorage.setItem(key, String(n));
-    tag('boot', {bootCountThisTab: n, url: location.href, navType: performance.getEntriesByType('navigation')?.[0]?.type});
-  }catch(e){ console.warn('[RESET-DEBUG] instrumentation failed', e); }
-})();
-
+import { disposeMusicVideoControls } from './ui/video-controls-lifetime.js';
+import { loadMusicDiagnostics } from '../debug/debug-loader.js';
+import { normalizeSf2Name, extractSf2PresetList, computeSampleRangeFromMap, findNearestSoundfontKey, loadMusyngKiteSoundfont, decodeDataUriToArrayBuffer } from './instruments/loader.js';
+import { createInstrumentCatalog } from './instruments/catalog.js';
+import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { getEffectiveAudioSettings, patchAudioSettings } from '../_7-shared-scripts/audio-settings.js';
+import { bindMusicHighlights } from './music-highlights.js?v=20261021-glow-1';
+let musicPageSignal = null;
+let musicHighlights = null;
+let musicPageDisposed = false;
+let musicPageSuspended = false;
+let musicAudioRequestGeneration = 0;
+void bootstrapPage({ pageId: 'music', mount: ({ scope }) => {
+  musicPageDisposed = false;
+  musicPageSuspended = false;
+  musicPageSignal = scope.signal;
+  scope.defer(() => { ++musicAudioRequestGeneration; musicPageDisposed = true; musicPageSuspended = true; musicPageSignal = null; });
+  scope.defer(() => disposeMusicVideoControls(topPadVideo));
+  scope.defer(() => disposeMusicVideoControls(trackVideo));
+  scope.defer(() => { musicHighlights?.dispose(); musicHighlights = null; });
+  scope.defer(onAudioConsentChange(allowed => {
+    if (allowed || musicPageDisposed) return;
+    ++musicAudioRequestGeneration;
+    try { topPadVideo.audio?.pause(); } catch { /* best effort */ }
+    applyStoredAudioSettings(topPadVideo.audio);
+    if (trackVideo.hqVideo) trackVideo.hqVideo.muted = true;
+    applyInstrumentMix();
+  }));
+  void loadMusicDiagnostics({ scope, pageId: '/_5-music/music.html' });
+  return {
+    suspend() {
+      ++musicAudioRequestGeneration;
+      musicPageSuspended = true;
+      for (const media of [topPadVideo.hqVideo, topPadVideo.audio, trackVideo.hqVideo, trackVideo.lqVideo]) {
+        try { media?.pause(); } catch { /* best effort */ }
+      }
+    },
+    resume() { if (!musicPageDisposed) musicPageSuspended = false; }
+  };
+} }).catch(error => console.error('Shared bootstrap failed', error));
 // music-piano-controls.v2.js
 // Fresh debug loader: isolates GLB visibility without previous logic
 import * as THREE from 'three';
@@ -29,7 +48,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { createVideoControlsUI, syncAudioToVideo, seekMediaWithFreeze, getStoredPreservePitch, setStoredPreservePitch, setPreservePitchFlag, playbackRates as SHARED_PLAYBACK_RATES, showVideoKeyboardShortcuts } from '../_7-shared-scripts/shared-video-controls.js';
 import { assetUrl, safeDrawImage, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
-import { ensureAudioConsentPrompt, isAudioAllowed } from '../_7-shared-scripts/audio-consent.js';
+import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
 import { MEDIA_CATALOG } from '../_7-shared-scripts/media-catalog.js';
 import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 // Tablet helper currently a no-op; import kept so future
@@ -38,14 +57,37 @@ import { setupMusicTabletScreen } from './music-tablet.js';
 
 function unmuteMediaWithConsent(media, volume = media?.volume) {
   if (!media) return;
+  const generation = ++musicAudioRequestGeneration;
   const unmute = () => {
-    if (Number.isFinite(volume)) media.volume = Math.max(0, Math.min(1, volume));
-    media.muted = false;
+    if (musicPageDisposed || musicPageSuspended || musicPageSignal?.aborted || generation !== musicAudioRequestGeneration || !isAudioAllowed() || topPadVideo.audio !== media || topPadVideo.mode !== 'playing') return;
+    const saved = getStoredAudioSettings();
+    const nextVolume = Number.isFinite(volume) && volume > 0.001 ? clamp01(volume) : saved.volume;
+    setStoredAudioSettings(nextVolume, false);
+    applyStoredAudioSettings(media);
   };
   if (isAudioAllowed()) unmute();
-  else void ensureAudioConsentPrompt().then(state => {
+  else void ensureAudioConsentPrompt({ signal: musicPageSignal }).then(state => {
     if (state.allowed) unmute();
   });
+}
+
+function muteTopPadAudio() {
+  if (topPadVideo.mode !== 'playing' || !topPadVideo.audio) return;
+  ++musicAudioRequestGeneration;
+  const { volume } = getStoredAudioSettings();
+  setStoredAudioSettings(volume, true);
+  applyStoredAudioSettings(topPadVideo.audio);
+}
+
+function setTopPadAudioVolume(volume) {
+  if (topPadVideo.mode !== 'playing' || !topPadVideo.audio || !Number.isFinite(volume)) return;
+  const next = clamp01(volume);
+  if (next > 0.001) unmuteMediaWithConsent(topPadVideo.audio, next);
+  else {
+    ++musicAudioRequestGeneration;
+    setStoredAudioSettings(0, true);
+    applyStoredAudioSettings(topPadVideo.audio);
+  }
 }
 
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
@@ -66,8 +108,10 @@ if (isLocalDev() || new URLSearchParams(window.location.search || '').has('asset
 window.addEventListener('DOMContentLoaded', async ()=>{
   await ensureAudioConsentPrompt({
     title: 'Allow sound?',
-    message: 'This page can play sound for music playback and video previews. Allow audio playback?'
+    message: 'This page can play sound for music playback and video previews. Allow audio playback?',
+    signal: musicPageSignal
   });
+  if (musicPageDisposed || musicPageSignal?.aborted) return;
   instrumentPickerEl = document.getElementById('instrumentPicker');
   if(instrumentPickerEl){
     instrumentPickerEl.classList.add('instrument-picker--backboard');
@@ -77,7 +121,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
   try{
     const status = instrumentPickerEl.querySelector('div');
     if(status) status.style.display = 'none';
-  }catch(e){}
+  }catch{}
   document.addEventListener('keydown', (e)=>{
     if(e.code === 'F10'){
       showPanelHitRects = !showPanelHitRects;
@@ -90,7 +134,7 @@ window.addEventListener('DOMContentLoaded', async ()=>{
 });
 
 // Label display mode: 'qwerty' | 'note' | 'none'
-try{ window.qwertyLabelMode = window.qwertyLabelMode || 'qwerty'; }catch(e){}
+try{ window.qwertyLabelMode = window.qwertyLabelMode || 'qwerty'; }catch{}
 window.setQwertyLabelMode = function(mode){
   const valid = ['qwerty','note','none'];
   if(typeof mode === 'string' && valid.includes(mode)){
@@ -105,10 +149,10 @@ window.setQwertyLabelMode = function(mode){
       if(qwertyLabelsGroup && qwertyLabelsGroup.children) qwertyLabelsGroup.children.forEach(c => c.visible = false);
     } else {
       if(qwertyLabelsGroup && qwertyLabelsGroup.children) qwertyLabelsGroup.children.forEach(c => c.visible = true);
-      try{ window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
+      try{ window.rebuildQwertyLabels(window.qwertyLabelMode); }catch{}
     }
-  }catch(e){}
-  try{ requestBackboardRedraw(); }catch(e){}
+  }catch{}
+  try{ requestBackboardRedraw(); }catch{}
   return window.qwertyLabelMode;
 };
 window.toggleQwertyLabelMode = function(){ return window.setQwertyLabelMode(); };
@@ -136,14 +180,14 @@ window.rebuildQwertyLabels = function(mode){
         ctx.fillStyle = shadow; ctx.fillText(String(text).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
         ctx.fillStyle = fill; ctx.fillText(String(text).toUpperCase(), Wc/2, Hc/2);
       }
-      const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+      const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch{}
       tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
-      try{ if(s.material && s.material.map && s.material.map.dispose) s.material.map.dispose(); }catch(e){}
+      try{ if(s.material && s.material.map && s.material.map.dispose) s.material.map.dispose(); }catch{}
       if(s.material) s.material.map = tex;
       s.visible = !!text;
-    }catch(e){/* ignore per-sprite failures */}
+    }catch{/* ignore per-sprite failures */}
   });
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
   return qwertyLabelsGroup.children.length;
 };
 const canvas = document.getElementById('pianoCanvas');
@@ -151,11 +195,11 @@ if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
-try{ renderer.outputColorSpace = THREE.SRGBColorSpace; }catch(e){}
+try{ renderer.outputColorSpace = THREE.SRGBColorSpace; }catch{}
 // Match videos page renderer defaults for tone/shadows
-try{ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; }catch(e){}
-try{ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }catch(e){}
-try{ renderer.physicallyCorrectLights = true; }catch(e){}
+try{ renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.0; }catch{}
+try{ renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }catch{}
+try{ renderer.physicallyCorrectLights = true; }catch{}
 const clock = new THREE.Clock();
 const scene = new THREE.Scene();
 // Lighting rig — mirror videos page for consistent look
@@ -166,7 +210,7 @@ cam.lookAt(0,0,0);
 // Hemisphere + key + fill + rim + under + subtle ambient (videos.js style)
 const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85); scene.add(hemi);
 const keyLight = new THREE.DirectionalLight(0xffffff, 1.25); keyLight.position.set(4,6,8); keyLight.castShadow = true;
-try{ keyLight.shadow.mapSize.set(2048,2048); keyLight.shadow.camera.near = 0.5; keyLight.shadow.camera.far = 30; }catch(e){}
+try{ keyLight.shadow.mapSize.set(2048,2048); keyLight.shadow.camera.near = 0.5; keyLight.shadow.camera.far = 30; }catch{}
 scene.add(keyLight);
 const fillLight = new THREE.DirectionalLight(0xffffff, 0.55); fillLight.position.set(-6,3,-4); scene.add(fillLight);
 const rimLight = new THREE.DirectionalLight(0xffffff, 0.7); rimLight.position.set(0,5,-8); scene.add(rimLight);
@@ -195,7 +239,6 @@ applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, a
 controls.minDistance = 0.5;
 controls.maxDistance = 20; // allow further zooming out
 controls.target.set(0,0.4,0);
-let musicDefaultOrbitState = null;
 bindSharedMouseControls();
 // MIDI structures
 let midiEvents = []; // {timeMs, type:'on'|'off', note, velocity}
@@ -256,6 +299,7 @@ function ensureSustainPedalGlowMat(){
     roughness
   });
   sustainPedalGlowMat.side = THREE.DoubleSide;
+  musicHighlights?.registerMaterial(sustainPedalGlowMat, 1);
   return sustainPedalGlowMat;
 }
 function applySustainPedalGlow(isOn){
@@ -288,7 +332,7 @@ const RELEASE_DECAY_MS = 110; // ramp release
 const VELOCITY_MIN = 20;      // floor for depth scaling
 const VELOCITY_MAX = 127;     // MIDI max
 // NOTE fade / attack constants used for smoothing note start/stops
-const NOTE_FADE_SEC = 0.03; // 0.02–0.06 recommended
+ // 0.02–0.06 recommended
 const NOTE_ATTACK = 0.02;
 const NOTE_ATTACK_SCALE = 0.6;
 const NOTE_ATTACK_MIN = 0.003;
@@ -335,7 +379,7 @@ const PAD_LOOP_SETTINGS = {
   retriggerInterval: 1.4,
   retriggerFade: 0.12
 };
-const FADE_SEC = NOTE_FADE_SEC; // backward-compatible alias used elsewhere
+ // backward-compatible alias used elsewhere
 // Per-note animation state: noteNumber -> { mesh, phase, startMs, fromAngle, targetAngle }
 const keyAnimState = new Map();
 // Audio context and sampler state
@@ -346,7 +390,7 @@ function createAudioContext(){
   if(!Ctx) return null;
   try{
     return new Ctx({ latencyHint: AUDIO_LATENCY_HINT });
-  }catch(e){
+  }catch{
     return new Ctx();
   }
 }
@@ -426,7 +470,7 @@ let animationMixer = null;
 let tabletStandMesh = null; // auto-rotated display stand
 let tabletStandTargetAngle = 0; // computed each frame
 let tabletStandCurrentAngle = 0; // smoothed applied angle
-const TABLET_STAND_VIDEO_ANGLE = Math.PI / 2;
+
 const TABLET_ROTATION_LERP_SPEED = 8.0; // larger = snappier, smaller = looser
 // Backboard screen canvas (note display)
 let backboardMesh = null;
@@ -452,11 +496,11 @@ const topPadIconImages = topPadIconSources.map((src) => {
   img.loading = 'eager';
   img.crossOrigin = 'anonymous';
   img.src = src;
-  img.onload = () => { try { renderTopPadGrid(); } catch (e) {} };
+  img.onload = () => { try { renderTopPadGrid(); } catch  {} };
   return img;
 });
 const topPadVideo = {
-  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async'; img.loading = 'eager'; img.src = assetUrl(MEDIA_CATALOG.music.topPad.thumbnail); img.onload = () => { try { renderTopPadGrid(); } catch (e) {} }; return img; })(),
+  thumbImg: (() => { const img = new Image(); img.crossOrigin = 'anonymous'; img.decoding = 'async'; img.loading = 'eager'; img.src = assetUrl(MEDIA_CATALOG.music.topPad.thumbnail); img.onload = () => { try { renderTopPadGrid(); } catch  {} }; return img; })(),
   lqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl(MEDIA_CATALOG.music.topPad.preview); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
   hqVideo: (() => { const v = document.createElement('video'); v.crossOrigin = 'anonymous'; v.src = assetUrl(MEDIA_CATALOG.music.topPad.video); v.muted = true; v.loop = false; v.preload = 'auto'; v.playsInline = true; v.setAttribute('playsinline',''); return v; })(),
   audio: (() => { const a = document.createElement('audio'); a.crossOrigin = 'anonymous'; a.src = assetUrl(MEDIA_CATALOG.music.topPad.audio); a.preload = 'auto'; return a; })(),
@@ -480,6 +524,7 @@ const topPadVideo = {
 };
 const trackVideo = {
   active: false,
+  keyboardFocused: false,
   key: null,
   hqVideo: null,
   lqVideo: null,
@@ -488,18 +533,16 @@ const trackVideo = {
   uiCtx: null
 };
 const trackVideoElements = new Map();
-const TOPPAD_PREVIEW_MS = 2400;
-const TOPPAD_PREVIEW_SEEK_PAD = 0.6;
+
+
 const TOPPAD_ZOOM_MS = 700;
 const TOPPAD_FOCUS_COOLDOWN_MS = 1000;
 let lastTopPadFocusToggleMs = 0;
-const AUDIO_VOLUME_KEY = 'site.audio.volume';
-const AUDIO_MUTED_KEY = 'site.audio.muted';
 const SYNC_OFFSET_MIN = -3000;
 const SYNC_OFFSET_MAX = 3000;
 const MUSIC_SYNC_SLIDER_RANGE = 500;
 const SYNC_OFFSET_STEP = 5;
-const SYNC_OFFSET_DEADZONE = 25;
+
 let topPadSyncDragging = false;
 let topPadSyncPointerId = null;
 
@@ -540,13 +583,11 @@ function loadInstrumentMixFromStorage(){
         INSTRUMENT_MIX.categories[key] = clampRange(stored, INSTRUMENT_CATEGORY_RANGE.min, INSTRUMENT_CATEGORY_RANGE.max);
       }
     });
-  }catch(e){}
+  }catch{}
 }
 
 function getStoredAudioSettings(){
-  const raw = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) || '1');
-  const muted = localStorage.getItem(AUDIO_MUTED_KEY) === 'true' || !isAudioAllowed();
-  return { volume: clamp01(raw), muted };
+  return getEffectiveAudioSettings();
 }
 
 function getInstrumentAutoGain(config){
@@ -559,7 +600,7 @@ function getInstrumentAutoGain(config){
   try{
     const raw = parseFloat(localStorage.getItem(INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX + id) || '');
     if(Number.isFinite(raw)) stored = clampRange(raw, INSTRUMENT_AUTO_GAIN_RANGE.min, INSTRUMENT_AUTO_GAIN_RANGE.max);
-  }catch(e){}
+  }catch{}
   instrumentAutoGainById.set(id, stored);
   return stored;
 }
@@ -568,27 +609,46 @@ function setInstrumentAutoGain(id, value){
   if(!id) return;
   const clamped = clampRange(value, INSTRUMENT_AUTO_GAIN_RANGE.min, INSTRUMENT_AUTO_GAIN_RANGE.max);
   instrumentAutoGainById.set(String(id), clamped);
-  try{ localStorage.setItem(INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX + id, String(clamped)); }catch(e){}
+  try{ localStorage.setItem(INSTRUMENT_AUTO_GAIN_STORAGE_PREFIX + id, String(clamped)); }catch{}
 }
 
 function setStoredAudioSettings(volume, muted){
-  try{ localStorage.setItem(AUDIO_VOLUME_KEY, String(clamp01(volume))); }catch(e){}
-  try{ localStorage.setItem(AUDIO_MUTED_KEY, muted ? 'true' : 'false'); }catch(e){}
+  patchAudioSettings({ volume: clamp01(volume), muted: !!muted });
+}
+
+function requestMusicSiteAudio(volume, muted, stillCurrent = () => true){
+  const generation = ++musicAudioRequestGeneration;
+  const apply = () => {
+    if(musicPageDisposed || musicPageSuspended || musicPageSignal?.aborted || generation !== musicAudioRequestGeneration || (!muted && volume > 0.001 && !isAudioAllowed()) || !stillCurrent()) return;
+    setStoredAudioSettings(volume, muted);
+    applyStoredAudioSettings(topPadVideo.audio);
+    applyInstrumentMix();
+    updateInstrumentMixReadouts();
+    renderTopPadGrid();
+  };
+  if(muted || volume <= 0.001 || isAudioAllowed()){
+    apply();
+    return;
+  }
+  void ensureAudioConsentPrompt({ signal: musicPageSignal }).then(state => {
+    if(state.allowed) apply();
+    else if(!musicPageDisposed && generation === musicAudioRequestGeneration && stillCurrent()) updateInstrumentMixReadouts();
+  });
 }
 
 function applyStoredAudioSettings(media){
   if(!media) return;
   const { volume, muted } = getStoredAudioSettings();
-  try{ media.volume = muted ? 0 : volume; }catch(e){}
-  try{ media.muted = !!muted; }catch(e){}
+  try{ media.volume = muted ? 0 : volume; }catch{}
+  try{ media.muted = !!muted; }catch{}
   setPreservePitchFlag(media, getStoredPreservePitch());
 }
 
 function applyStoredPitchModeToMusicVideoSurfaces(){
   const preserve = getStoredPreservePitch();
-  try{ setPreservePitchFlag(topPadVideo.hqVideo, preserve); }catch(e){}
-  try{ setPreservePitchFlag(topPadVideo.audio, preserve); }catch(e){}
-  try{ setPreservePitchFlag(trackVideo.hqVideo, preserve); }catch(e){}
+  try{ setPreservePitchFlag(topPadVideo.hqVideo, preserve); }catch{}
+  try{ setPreservePitchFlag(topPadVideo.audio, preserve); }catch{}
+  try{ setPreservePitchFlag(trackVideo.hqVideo, preserve); }catch{}
 }
 
 function toggleStoredPitchMode(){
@@ -657,6 +717,7 @@ function applyInstrumentMix(){
 function updateInstrumentMixReadouts(){
   const settings = getStoredAudioSettings();
   const siteVolume = settings.muted ? 0 : settings.volume;
+  if(instrumentSiteVolumeSlider) instrumentSiteVolumeSlider.value = String(Math.round(siteVolume * 100));
   if(instrumentSiteVolumeReadout){
     instrumentSiteVolumeReadout.textContent = `${Math.round(siteVolume * 100)}% (${formatDb(gainToDb(siteVolume))} dB)`;
   }
@@ -699,14 +760,14 @@ function ensureAudioMeterChain(){
   if(instrumentMeterEnabled){
     ensureInstrumentAnalyser();
     if(instrumentAnalyser){
-      try{ audioMeterMix.disconnect(); }catch(e){}
-      try{ instrumentAnalyser.disconnect(); }catch(e){}
+      try{ audioMeterMix.disconnect(); }catch{}
+      try{ instrumentAnalyser.disconnect(); }catch{}
       audioMeterMix.connect(instrumentAnalyser);
       instrumentAnalyser.connect(audioCtx.destination);
       startInstrumentMeter();
     }
   } else {
-    try{ audioMeterMix.disconnect(); }catch(e){}
+    try{ audioMeterMix.disconnect(); }catch{}
     audioMeterMix.connect(audioCtx.destination);
   }
 }
@@ -825,10 +886,7 @@ function setupInstrumentLevelUi(){
     instrumentSiteVolumeSlider.value = String(Math.round(vol * 100));
     instrumentSiteVolumeSlider.addEventListener('input', (e) => {
       const next = clamp01(Number(e.target.value || 0) / 100);
-      setStoredAudioSettings(next, next <= 0.001);
-      applyStoredAudioSettings(topPadVideo && topPadVideo.audio ? topPadVideo.audio : null);
-      ensureAudio();
-      applyInstrumentMix();
+      requestMusicSiteAudio(next, next <= 0.001, () => instrumentSiteVolumeSlider?.value === String(Math.round(next * 100)));
     });
   }
 
@@ -837,7 +895,7 @@ function setupInstrumentLevelUi(){
     instrumentMasterSlider.addEventListener('input', (e) => {
       const next = clampRange(Number(e.target.value || 0), INSTRUMENT_MASTER_RANGE.min, INSTRUMENT_MASTER_RANGE.max);
       INSTRUMENT_MIX.master = next;
-      try{ localStorage.setItem(INSTRUMENT_MASTER_STORAGE_KEY, String(next)); }catch(e){}
+      try{ localStorage.setItem(INSTRUMENT_MASTER_STORAGE_KEY, String(next)); }catch{}
       ensureAudio();
       applyInstrumentMix();
     });
@@ -862,7 +920,7 @@ function setupInstrumentLevelUi(){
       const categoryId = getSelectedInstrumentCategoryId();
       const next = clampRange(Number(e.target.value || 0), INSTRUMENT_CATEGORY_RANGE.min, INSTRUMENT_CATEGORY_RANGE.max);
       INSTRUMENT_MIX.categories[categoryId] = next;
-      try{ localStorage.setItem(INSTRUMENT_CATEGORY_STORAGE_PREFIX + categoryId, String(next)); }catch(e){}
+      try{ localStorage.setItem(INSTRUMENT_CATEGORY_STORAGE_PREFIX + categoryId, String(next)); }catch{}
       ensureAudio();
       applyInstrumentMix();
     });
@@ -958,11 +1016,11 @@ async function autoLevelInstrumentForSide(side){
   const previousAuto = getInstrumentAutoGain(config);
   const label = config.label || config.id || side;
   console.log('[AutoLevel] start', { side, label, note, previousAuto });
-  try{ NoteEngine.noteOn(note); }catch(e){}
+  try{ NoteEngine.noteOn(note); }catch{}
   const measuredPromise = measurePeakDb(INSTRUMENT_AUTO_LEVEL_WINDOW_MS);
   const holdMs = Math.max(INSTRUMENT_AUTO_LEVEL_WINDOW_MS, INSTRUMENT_AUTO_LEVEL_HOLD_MS);
   await new Promise(resolve => setTimeout(resolve, holdMs));
-  try{ NoteEngine.noteOff(note); }catch(e){}
+  try{ NoteEngine.noteOff(note); }catch{}
   const measuredDb = await measuredPromise;
   if(!Number.isFinite(measuredDb)){
     console.warn('[AutoLevel] no audio detected', { side, label });
@@ -1024,31 +1082,13 @@ function setTopPadSyncOffsetFromPx(px, rect){
   renderTopPadGrid();
 }
 
-function startTopPadPreview(){
-  if(topPadVideo.mode === 'playing') return;
-  const v = topPadVideo.lqVideo;
-  if(!v) return;
-  topPadVideo.mode = 'preview';
-  v.loop = true;
-  try{ v.pause(); }catch(e){}
-  let start = 0;
-  const dur = Number.isFinite(v.duration) ? v.duration : 0;
-  if(dur > TOPPAD_PREVIEW_MS / 1000 + TOPPAD_PREVIEW_SEEK_PAD){
-    const maxStart = Math.max(0, dur - (TOPPAD_PREVIEW_MS / 1000) - TOPPAD_PREVIEW_SEEK_PAD);
-    start = Math.random() * maxStart;
-  }
-  try{ v.currentTime = Math.max(0, start); }catch(e){}
-  try{ v.play().catch(() => {}); }catch(e){}
-  if(topPadVideo.previewTimer){ clearTimeout(topPadVideo.previewTimer); topPadVideo.previewTimer = null; }
-  topPadLastDrawMs = 0;
-  renderTopPadGrid();
-}
+
 
 function stopTopPadPreview(){
   if(topPadVideo.previewTimer){ clearTimeout(topPadVideo.previewTimer); topPadVideo.previewTimer = null; }
   if(topPadVideo.mode === 'preview'){
     topPadVideo.lqVideo.loop = false;
-    try{ topPadVideo.lqVideo.pause(); }catch(e){}
+    try{ topPadVideo.lqVideo.pause(); }catch{}
     topPadVideo.mode = 'idle';
     renderTopPadGrid();
   }
@@ -1169,15 +1209,8 @@ function computeTopPadZoomTarget(){
   return { position: pos, target: center, up };
 }
 
-function captureMusicDefaultOrbitState(){
-  musicDefaultOrbitState = {
-    position: cam.position.clone(),
-    target: controls.target.clone()
-  };
-}
-
 function bindSharedMouseControls(){
-  try{ renderer?.domElement?.__musicSharedMouse?.dispose?.(); }catch(e){}
+  try{ renderer?.domElement?.__musicSharedMouse?.dispose?.(); }catch{}
   renderer.domElement.__musicSharedMouse = installStandardGlbMouseControls({
     controls,
     domElement: renderer.domElement,
@@ -1199,15 +1232,15 @@ function startTopPadVideoPlayback(){
   };
   topPadVideo.mode = 'zooming';
   topPadVideo.focused = true;
-  try{ topPadVideo.audio.pause(); }catch(e){}
-  try{ topPadVideo.hqVideo.pause(); }catch(e){}
-  try{ topPadVideo.audio.currentTime = 0; }catch(e){}
-  try{ topPadVideo.hqVideo.currentTime = 0; }catch(e){}
-  try{ topPadVideo.hqVideo.load(); }catch(e){}
+  try{ topPadVideo.audio.pause(); }catch{}
+  try{ topPadVideo.hqVideo.pause(); }catch{}
+  try{ topPadVideo.audio.currentTime = 0; }catch{}
+  try{ topPadVideo.hqVideo.currentTime = 0; }catch{}
+  try{ topPadVideo.hqVideo.load(); }catch{}
   try{
     topPadVideo.hqVideo.addEventListener('loadeddata', () => { renderTopPadGrid(); }, { once: true });
     topPadVideo.hqVideo.addEventListener('seeked', () => { renderTopPadGrid(); }, { once: true });
-  }catch(e){}
+  }catch{}
   renderTopPadGrid();
   startTopPadZoom({
     position: target.position,
@@ -1215,7 +1248,7 @@ function startTopPadVideoPlayback(){
     up: target.up,
     onComplete: () => {
       topPadVideo.mode = 'playing';
-      try{ renderer?.domElement?.__musicSharedMouse?.cancelFocusAnimation?.(); }catch(e){}
+      try{ renderer?.domElement?.__musicSharedMouse?.cancelFocusAnimation?.(); }catch{}
       controls.enabled = false;
       controls.enableRotate = false;
       controls.enablePan = false;
@@ -1224,15 +1257,15 @@ function startTopPadVideoPlayback(){
       applyStoredPitchModeToMusicVideoSurfaces();
       const startAtFirstFrame = () => {
         if(topPadVideo.mode !== 'playing') return;
-        try{ topPadVideo.hqVideo.currentTime = 0; }catch(e){}
+        try{ topPadVideo.hqVideo.currentTime = 0; }catch{}
         topPadVideo.hqVideo.onended = () => { stopTopPadVideoPlayback(); };
         const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
         const targetTime = Math.max(0, -syncMs / 1000);
-        try{ topPadVideo.audio.currentTime = targetTime; }catch(e){}
+        try{ topPadVideo.audio.currentTime = targetTime; }catch{}
         // Playback begins only after the camera has arrived and the HQ frame is
         // decoded; otherwise the performance is already underway when shown.
-        try{ topPadVideo.hqVideo.play().catch(() => {}); }catch(e){}
-        try{ topPadVideo.audio.play().catch(() => {}); }catch(e){}
+        try{ topPadVideo.hqVideo.play().catch(() => {}); }catch{}
+        try{ topPadVideo.audio.play().catch(() => {}); }catch{}
         renderTopPadGrid();
       };
       if(topPadVideo.hqVideo.readyState >= 2) startAtFirstFrame();
@@ -1242,9 +1275,11 @@ function startTopPadVideoPlayback(){
 }
 
 function stopTopPadVideoPlayback(){
+  ++musicAudioRequestGeneration;
+  disposeMusicVideoControls(topPadVideo);
   if(topPadVideo.mode === 'idle') return;
-  try{ topPadVideo.hqVideo.pause(); }catch(e){}
-  try{ topPadVideo.audio.pause(); }catch(e){}
+  try{ topPadVideo.hqVideo.pause(); }catch{}
+  try{ topPadVideo.audio.pause(); }catch{}
   topPadVideo.mode = 'idle';
   topPadVideo.focused = false;
   if(topPadVideo.cameraRestore){
@@ -1256,7 +1291,6 @@ function stopTopPadVideoPlayback(){
       onComplete: () => {
         restoreTopPadVideoZoomLimits();
         applyStandardGlbMouseControlMode(controls, { enabled: restore.enabled, allowRotate: restore.enabled, allowZoom: restore.enabled });
-        captureMusicDefaultOrbitState();
       }
     });
   }
@@ -1279,7 +1313,6 @@ const BACKBOARD_MAX_FPS = 20; // throttle canvas uploads to ~20 FPS
 function requestBackboardRedraw(){ backboardDirty = true; }
 // Surface aspect (world w/h) used to pre-compensate canvas drawing so
 // circles/text look visually correct when mapped to the mesh UVs.
-let backboardSurfaceAspect = 1;
 let backboardUvDebugLogged = false;
 // logical CSS-pixel drawing size for the backboard canvas (set once at creation)
 let backboardCssW = 2048;
@@ -1297,7 +1330,7 @@ let suppressNoteEventsUntilMs = 0;
 let instrumentPickerEl = null;
 let lastInstrumentPickerRect = { x: 0, y: 0, w: 0, h: 0 };
 let screenPlane = null;
-let screenPlaneNormal = new THREE.Vector3(0,0,1);
+
 
 function toggleTopPadVideoFocus(){
   const now = performance.now();
@@ -1338,10 +1371,8 @@ const DEBUG_INSTRUMENTS = (typeof window !== 'undefined' && typeof window.DEBUG_
 const DEBUG_BEEP_FALLBACK = (typeof window !== 'undefined' && typeof window.DEBUG_BEEP_FALLBACK !== 'undefined')
   ? !!window.DEBUG_BEEP_FALLBACK
   : true;
-const CLOUDFLARE_SOUNDFONT_BASE = (typeof window !== 'undefined' && window.CLOUDFLARE_SOUNDFONT_BASE)
-  ? String(window.CLOUDFLARE_SOUNDFONT_BASE)
-  : '';
-const SOUNDFONT_FALLBACK_URL = assetUrl('../soundfonts/musyngkite/');
+
+
 const SOUND_FONT_BASE = assetUrl('../soundfonts/musyngkite/');
 const LOCAL_SOUNDFONT_BASES = {
   musyngkite: assetUrl('../soundfonts/musyngkite/'),
@@ -1349,10 +1380,10 @@ const LOCAL_SOUNDFONT_BASES = {
   arachno: assetUrl('../soundfonts/arachno/'),
   wappydog: assetUrl('../soundfonts/wappydog/')
 };
-const SF2_ARACHNO_URL = assetUrl('../soundfonts/arachno/Arachno%20SoundFont%20-%20Version%201.0.sf2');
+
 const SF2_HYPERSOUND_URL = assetUrl('../soundfonts/hypersound/hypersound.sf2');
-const SF2_DRUMS_URL = assetUrl('../soundfonts/drums/definitive-drums.sf2');
-const SF2_WAPPYDOG_URL = assetUrl('../soundfonts/wappydog/WappyDog.sf2');
+
+
 
 const SALAMANDER_DRUMS_BASE = assetUrl('../soundfonts/salamander drums/');
 const SALAMANDER_DRUM_FILES = [
@@ -1526,7 +1557,7 @@ function createSalamanderDrumPlayer(){
         src.buffer = buffer;
         if(opts && opts.preGain){
           if(!opts.preGain._connectedToDest){
-            try{ opts.preGain.connect(dest); }catch(e){}
+            try{ opts.preGain.connect(dest); }catch{}
             opts.preGain._connectedToDest = true;
           }
           src.connect(opts.preGain);
@@ -1545,7 +1576,7 @@ function createSalamanderDrumPlayer(){
       wrapper.stop = function(stopWhenSec){
         wrapper._stopped = true;
         if(wrapper._src){
-          try{ wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch(e){}
+          try{ wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch{}
         }
       };
       return wrapper;
@@ -1616,7 +1647,7 @@ function logSoundfontShape(label, api){
   try{
     const keys = Object.keys(api || {}).slice(0, 24);
     console.log('[Instrument] soundfont-player API', { label, type: typeof api, keys });
-  }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
 }
 function getSoundfontAPI(){
   const candidates = [
@@ -1666,7 +1697,7 @@ async function loadLocalSoundfontForConfig(config){
     window.LOCAL_SOUNDFONTS.grandPiano = map;
     if(DEBUG_INSTRUMENTS && !loggedLocalSoundfontKeys){
       loggedLocalSoundfontKeys = true;
-      try{ console.log('[Instrument] local soundfont keys', Object.keys(map).slice(0, 10)); }catch(e){}
+      try{ console.log('[Instrument] local soundfont keys', Object.keys(map).slice(0, 10)); }catch{}
     }
     config.sampleRange = computeSampleRangeFromMap(map);
     if(config.sampleRange && !Number.isFinite(config.minNote) && !Number.isFinite(config.maxNote)){
@@ -1708,12 +1739,7 @@ function getSelectedInstrumentIdForSide(side){
   const ps = panelState[side];
   return ps ? ps.selected : null;
 }
-function getMidiForKeyIndex(keyIndex){
-  if(!keymapEntriesSorted.length) return null;
-  const idx = Math.max(0, Math.min(keymapEntriesSorted.length - 1, Number(keyIndex)));
-  const entry = keymapEntriesSorted[idx];
-  return entry ? Number(entry.note) : null;
-}
+
 function getSplitKeyIndex(){
   const total = keymapEntriesSorted.length || keymapEntries.length || (midiKeyMap ? midiKeyMap.size : 0);
   if(!dualInstrumentMode || !total) return Math.max(0, total - 1);
@@ -1750,9 +1776,7 @@ function getOwnerSideForMidiNote(note){
   if(typeof idx !== 'number') return 'left';
   return getOwnerSideForKeyIndex(idx);
 }
-function getNoteSideForRange(note){
-  return getOwnerSideForMidiNote(note);
-}
+
 function getInstrumentSideForNote(note){
   if(categoryPickerState && categoryPickerState.open && categoryPickerState.panelId){
     return categoryPickerState.panelId;
@@ -1892,79 +1916,13 @@ function syncQwertyRangesToPlayable(reason){
 const sf2NoteOffTimers = new Map(); // key -> timeout id
 const sf2PresetCache = new Map(); // url -> [{ name, preset, bank }]
 
-function normalizeSf2Name(name){
-  if(!name) return '';
-  return String(name).toUpperCase().replace(/\s+/g, '');
-}
 
-function readFourCC(view, offset){
-  return String.fromCharCode(
-    view.getUint8(offset),
-    view.getUint8(offset + 1),
-    view.getUint8(offset + 2),
-    view.getUint8(offset + 3)
-  );
-}
 
-function parseSf2PresetHeaders(view, start, size){
-  const list = [];
-  const recordSize = 38;
-  const count = Math.floor(size / recordSize);
-  for(let i=0;i<count;i++){
-    const base = start + (i * recordSize);
-    if(base + recordSize > view.byteLength) break;
-    let name = '';
-    for(let n=0;n<20;n++){
-      const c = view.getUint8(base + n);
-      if(c === 0) break;
-      name += String.fromCharCode(c);
-    }
-    const preset = view.getUint16(base + 20, true);
-    const bank = view.getUint16(base + 22, true);
-    const trimmed = name.trim();
-    if(trimmed && trimmed.toUpperCase() !== 'EOP'){
-      list.push({ name: trimmed, preset, bank });
-    }
-  }
-  return list;
-}
 
-function extractSf2PresetList(arrayBuffer){
-  if(!arrayBuffer) return [];
-  try{
-    const view = new DataView(arrayBuffer);
-    if(view.byteLength < 12) return [];
-    if(readFourCC(view, 0) !== 'RIFF') return [];
-    let offset = 12;
-    const end = view.byteLength;
-    while(offset + 8 <= end){
-      const id = readFourCC(view, offset);
-      const size = view.getUint32(offset + 4, true);
-      const chunkStart = offset + 8;
-      const chunkEnd = chunkStart + size;
-      if(id === 'LIST' && chunkStart + 4 <= end){
-        const listType = readFourCC(view, chunkStart);
-        if(listType === 'pdta'){
-          let subOffset = chunkStart + 4;
-          const subEnd = Math.min(chunkEnd, end);
-          while(subOffset + 8 <= subEnd){
-            const subId = readFourCC(view, subOffset);
-            const subSize = view.getUint32(subOffset + 4, true);
-            const subStart = subOffset + 8;
-            if(subId === 'phdr'){
-              return parseSf2PresetHeaders(view, subStart, subSize);
-            }
-            subOffset = subStart + subSize + (subSize % 2);
-          }
-        }
-      }
-      offset = chunkStart + size + (size % 2);
-    }
-  }catch(e){
-    console.warn('[SF2] preset parse failed', e);
-  }
-  return [];
-}
+
+
+
+
 
 function cacheSf2PresetList(url, arrayBuffer){
   if(!url || !arrayBuffer) return [];
@@ -2197,7 +2155,7 @@ async function loadSf2InstrumentForConfig(config){
   }
   sf2SynthState.node = getSf2AudioNode(sf2SynthState.synth);
   if(sf2SynthState.node){
-    try{ sf2SynthState.node.disconnect(); }catch(e){}
+    try{ sf2SynthState.node.disconnect(); }catch{}
     sf2SynthState.node.connect(getInstrumentCategoryGain(config));
   }
   const channel = config.sf2IsDrum ? 9 : 0;
@@ -2226,48 +2184,15 @@ async function loadSf2InstrumentForConfig(config){
   return instrumentPlayer;
 }
 
-async function findFirstMp3PackInFolder(baseUrl){
-  if(!baseUrl) return null;
-  try{
-    const res = await fetch(baseUrl, { method: 'GET' });
-    if(!res.ok) return null;
-    const text = await res.text();
-    const match = text.match(/href=[\"']([^\"']+-mp3\\.js)[\"']/i);
-    if(match && match[1]) return match[1];
-  }catch(e){}
-  return null;
-}
 
-async function loadWappyDogInstrument(config){
-  const base = LOCAL_SOUNDFONT_BASES.wappydog;
-  const mappingFile = await findFirstMp3PackInFolder(base);
-  if(mappingFile){
-    const mappingUrl = `${base}${mappingFile}`;
-    try{
-      const info = await loadSoundfontMapFromJs(mappingUrl);
-      if(info && info.map){
-        instrumentPlayer = createLocalSoundfontPlayer(info.map);
-        currentInstrumentConfig = config;
-        updateNoteEngineMode(config);
-        currentInstrumentName = `${config.label} (WappyDog mp3)`;
-        if(HUD) HUD.textContent = `instrument: ${currentInstrumentName}`;
-        console.log('[WappyDog] mp3 pack loaded', { patch: info.key, url: mappingUrl });
-        updateDisabledKeysForConfig();
-        return instrumentPlayer;
-      }
-    }catch(e){
-      console.warn('[WappyDog] mp3 pack load failed', e);
-    }
-  }
-  console.log('[WappyDog] mp3 pack not found; falling back to SF2');
-  return loadSf2InstrumentForConfig(config);
-}
+
+
 function updateDisabledKeysForConfig(){
   if(isTrackPlaybackActive()){
     disabledKeySet.clear();
     clearDisabledKeyMaterials();
-    try{ if(window.rebuildQwertyLabels) window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
-    try{ requestBackboardRedraw(); }catch(e){}
+    try{ if(window.rebuildQwertyLabels) window.rebuildQwertyLabels(window.qwertyLabelMode); }catch{}
+    try{ requestBackboardRedraw(); }catch{}
     return;
   }
   disabledKeySet.clear();
@@ -2301,8 +2226,8 @@ function updateDisabledKeysForConfig(){
   if(midiKeyMap && midiKeyMap.size){
     midiKeyMap.forEach((mesh, note) => updateKeyGlowMaterial(mesh, note));
   }
-  try{ if(window.rebuildQwertyLabels) window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ if(window.rebuildQwertyLabels) window.rebuildQwertyLabels(window.qwertyLabelMode); }catch{}
+  try{ requestBackboardRedraw(); }catch{}
   if(!qwertyRebuildInProgress){
     syncQwertyRangesToPlayable('range-update');
   }
@@ -2352,92 +2277,13 @@ function updateDisabledKeysForConfig(){
   }
 }
 
-function midiToNoteName(midiNum){
-  const n = Number(midiNum);
-  if(!Number.isFinite(n)) return null;
-  const names = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
-  const octave = Math.floor(n / 12) - 1;
-  const name = names[((n % 12) + 12) % 12];
-  return `${name}${octave}`;
-}
-function noteNameToMidi(name){
-  if(!name || typeof name !== 'string') return null;
-  const m = name.match(/^([A-Ga-g])([#sbf]?)(-?\d+)$/);
-  if(!m) return null;
-  const letter = m[1].toUpperCase();
-  const base = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[letter];
-  if(base == null) return null;
-  const accidental = m[2].toLowerCase();
-  const sharp = (accidental === '#' || accidental === 's') ? 1 : 0;
-  const flat = (accidental === 'b' || accidental === 'f') ? -1 : 0;
-  const octave = Number(m[3]);
-  if(!Number.isFinite(octave)) return null;
-  return (octave + 1) * 12 + base + sharp + flat;
-}
-function buildSoundfontNoteIndex(map){
-  if(!map || map._noteList) return;
-  const entries = [];
-  Object.keys(map).forEach(key => {
-    const midi = noteNameToMidi(key);
-    if(Number.isFinite(midi)) entries.push({ name: key, midi });
-  });
-  entries.sort((a,b)=>a.midi - b.midi);
-  map._noteList = entries;
-}
-function computeSampleRangeFromMap(map){
-  if(!map) return null;
-  buildSoundfontNoteIndex(map);
-  const list = map._noteList || [];
-  if(!list.length) return null;
-  return { min: list[0].midi, max: list[list.length - 1].midi };
-}
-function findNearestSoundfontKey(map, midiNum){
-  if(!map) return null;
-  const exact = midiToNoteName(midiNum);
-  if(exact && map[exact]) return exact;
-  buildSoundfontNoteIndex(map);
-  if(!map._noteList || !map._noteList.length) return null;
-  let best = map._noteList[0];
-  let bestDist = Math.abs(best.midi - midiNum);
-  for(let i=1;i<map._noteList.length;i++){
-    const cur = map._noteList[i];
-    const dist = Math.abs(cur.midi - midiNum);
-    if(dist < bestDist){
-      best = cur; bestDist = dist;
-      if(bestDist === 0) break;
-    }
-  }
-  return best ? best.name : null;
-}
-async function loadMusyngKiteSoundfont(url, instrumentKey){
-  const res = await fetch(url);
-  if(!res.ok) throw new Error(`Soundfont mapping fetch failed: ${res.status} ${url}`);
-  const jsText = await res.text();
-  const getMap = new Function(`
-    "use strict";
-    // Use var so MusyngKite's own "var MIDI" statements don't cause a redeclare syntax error.
-    var MIDI = { Soundfont: {} };
-    ${jsText}
-    return (MIDI && MIDI.Soundfont && MIDI.Soundfont["${instrumentKey}"]) || null;
-  `);
-  try{
-    return getMap();
-  }catch(e){
-    console.error("[Soundfont] mapping eval failed", { url, instrumentKey, err: e });
-    throw e;
-  }
-}
-function decodeDataUriToArrayBuffer(uri){
-  const comma = uri.indexOf(',');
-  const header = comma >= 0 ? uri.slice(0, comma) : '';
-  const data = comma >= 0 ? uri.slice(comma + 1) : uri;
-  if(!header.includes('base64')) return null;
-  const binary = atob(data);
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for(let i=0;i<len;i++) bytes[i] = binary.charCodeAt(i);
-  return bytes.buffer;
-}
+
+
+
+
+
+
+
 function createLocalSoundfontPlayer(map){
   const bufferCache = new Map(); // noteName -> AudioBuffer
   const pending = new Map(); // noteName -> Promise
@@ -2456,7 +2302,7 @@ function createLocalSoundfontPlayer(map){
         src.buffer = buffer;
         if(opts && opts.preGain){
           if(!opts.preGain._connectedToDest){
-            try{ opts.preGain.connect(dest); }catch(e){}
+            try{ opts.preGain.connect(dest); }catch{}
             opts.preGain._connectedToDest = true;
           }
           src.connect(opts.preGain);
@@ -2492,7 +2338,7 @@ function createLocalSoundfontPlayer(map){
       wrapper.stop = function(stopWhenSec){
         wrapper._stopped = true;
         if(wrapper._src){
-          try{ wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch(e){}
+          try{ wrapper._src.stop(stopWhenSec || audioCtx.currentTime); }catch{}
         }
       };
       return wrapper;
@@ -2618,7 +2464,7 @@ function playFullPianoSweep(options){
     const playOpts = instrumentPlayer._isLocal ? { gain, duration: durationSec, gainNode: categoryGain } : { gain, duration: durationSec };
     const node = instrumentPlayer.play(midi, when, playOpts);
     if(node && typeof node.stop === 'function'){
-      try{ node.stop(when + durationSec); }catch(e){}
+      try{ node.stop(when + durationSec); }catch{}
     }
     idx++;
   }
@@ -2628,86 +2474,20 @@ function playFullPianoSweep(options){
 window.loadLocalSoundfontInstrument = loadLocalSoundfontInstrument;
 window.playFullPianoSweep = playFullPianoSweep;
 window.LOCAL_SOUNDFONT_BASES = LOCAL_SOUNDFONT_BASES;
-const SOUND_LIBRARY_CONFIG = {
-  keys: {
-    id: 'keys',
-    sources: [
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: SOUND_FONT_BASE },
-      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm }
-    ]
-  },
-  electric: {
-    id: 'electric',
-    sources: [
-      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
-    ]
-  },
-  pads: {
-    id: 'pads',
-    sources: [
-      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
-    ]
-  },
-  solo: {
-    id: 'solo',
-    sources: [
-      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
-    ]
-  },
-  fx: {
-    id: 'fx',
-    sources: [
-      { name: 'local-fluidr3', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.fluidr3_gm },
-      { name: 'local-musyngkite', soundfont: '.', format: 'mp3', url: LOCAL_SOUNDFONT_BASES.musyngkite }
-    ]
-  }
-};
-const INSTRUMENT_CONFIG = [
-  { id: 'keys_acoustic_piano', tab: 'keys', label: 'Grand Piano', library: 'keys', patch: 'acoustic_grand_piano', wafProgram: 1, minNote: 21, maxNote: 108, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.35, attack: 0.01, decay: 0.2, sustain: 0.55, release: 0.32, eq: [{ type: 'lowshelf', freq: 220, gain: 1.5 }, { type: 'highshelf', freq: 2800, gain: -1.5 }] },
-  { id: 'keys_bright_piano', tab: 'keys', label: 'Bright Piano', library: 'keys', patch: 'bright_acoustic_piano', wafProgram: 2, minNote: 21, maxNote: 108, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.45, attack: 0.008, decay: 0.18, sustain: 0.55, release: 0.3, eq: [{ type: 'highshelf', freq: 2400, gain: 4.5 }, { type: 'peaking', freq: 1200, gain: 2.0, q: 0.8 }] },
-  { id: 'keys_honky_tonk', tab: 'keys', label: 'Honky-Tonk', library: 'keys', patch: 'honkytonk_piano', wafProgram: 4, minNote: 28, maxNote: 103, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.2, attack: 0.012, decay: 0.18, sustain: 0.5, release: 0.28 },
-  { id: 'keys_harpsichord', tab: 'keys', label: 'Harpsichord', library: 'keys', patch: 'harpsichord', wafProgram: 7, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.006, decay: 0.12, sustain: 0.4, release: 0.18 },
-  { id: 'electric_piano', tab: 'electric', label: 'Electric Piano 1', library: 'electric', patch: 'electric_piano_1', wafProgram: 5, minNote: 28, maxNote: 103, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.35, attack: 0.012, decay: 0.22, sustain: 0.6, release: 0.36 },
-  { id: 'electric_fm_piano', tab: 'electric', label: 'Electric Piano 2', library: 'electric', patch: 'electric_piano_2', wafProgram: 6, minNote: 28, maxNote: 103, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.35, attack: 0.012, decay: 0.22, sustain: 0.6, release: 0.36 },
-  { id: 'electric_vibraphone', tab: 'electric', label: 'Vibraphone', library: 'electric', patch: 'vibraphone', wafProgram: 12, minNote: 48, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.15, attack: 0.01, decay: 0.2, sustain: 0.55, release: 0.3 },
-  { id: 'electric_clav', tab: 'electric', label: 'Clav', library: 'electric', patch: 'clavinet', wafProgram: 8, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, attack: 0.008, decay: 0.16, sustain: 0.45, release: 0.18, gainScale: 1.15 },
-  { id: 'pad_string', tab: 'pads', label: 'String Pad', library: 'pads', patch: 'string_ensemble_1', wafProgram: 49, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.08, decay: 0.4, sustain: 0.8, release: 0.6 },
-  { id: 'pad_brass', tab: 'pads', label: 'Brass Pad', library: 'pads', patch: 'brass_section', wafProgram: 61, minNote: 40, maxNote: 88, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.06, decay: 0.35, sustain: 0.75, release: 0.5 },
-  { id: 'pad_choir', tab: 'pads', label: 'Choir Pad', library: 'pads', patch: 'choir_aahs', wafProgram: 52, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.08, decay: 0.35, sustain: 0.75, release: 0.55 },
-  { id: 'pad_synth', tab: 'pads', label: 'Synth Pad', library: 'pads', patch: 'pad_1_new_age', wafProgram: 89, minNote: 24, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.09, decay: 0.4, sustain: 0.8, release: 0.6 },
-  { id: 'solo_string', tab: 'solo', label: 'Solo String', library: 'solo', patch: 'violin', wafProgram: 41, minNote: 55, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.02, decay: 0.2, sustain: 0.7, release: 0.35 },
-  { id: 'solo_brass', tab: 'solo', label: 'Solo Brass', library: 'solo', patch: 'trumpet', wafProgram: 57, minNote: 54, maxNote: 94, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.1, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
-  { id: 'solo_wind', tab: 'solo', label: 'Solo Wind', library: 'solo', patch: 'flute', wafProgram: 74, minNote: 60, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
-  { id: 'solo_lead', tab: 'solo', label: 'Lead Synth', library: 'solo', patch: 'lead_1_square', wafProgram: 81, minNote: 36, maxNote: 108, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.015, decay: 0.18, sustain: 0.6, release: 0.25 },
-  { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: SALAMANDER_DRUM_RANGE.min, maxNote: SALAMANDER_DRUM_RANGE.max, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, gainScale: 1.05, attack: 0.005, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: SALAMANDER_DRUM_RANGE, engine: 'sample', drumSampleSet: 'salamander' },
-  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'bird_tweet', wafProgram: 124, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'sf2', sf2Url: SF2_HYPERSOUND_URL, sf2PresetName: 'DOGBW60', sf2ProgramFallback: 0, oneShotMs: 160 },
-  { id: 'fx_telephone', tab: 'fx', label: 'Telephone', library: 'fx', patch: 'telephone_ring', wafProgram: 125, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.01, decay: 0.18, sustain: 0.55, release: 0.2 },
-  { id: 'fx_odd', tab: 'fx', label: 'Odd FX', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
-];
-const INSTRUMENT_BUTTONS = INSTRUMENT_CONFIG.map(item => ({ id: item.id, label: item.label }));
+const { SOUND_LIBRARY_CONFIG, INSTRUMENT_CONFIG, INSTRUMENT_BUTTONS, instrumentById, INSTRUMENT_CONFIG_BY_ID, INSTRUMENT_LAYOUT, LEFT_INSTRUMENT_LAYOUT, RIGHT_INSTRUMENT_LAYOUT, INSTRUMENT_TABS, INSTRUMENT_TAB_IDS, getInstrumentTabId, RANDOM_POOLS, getPreferredBasesForTab, getDefaultConfigForTab } = createInstrumentCatalog({ SOUND_FONT_BASE, LOCAL_SOUNDFONT_BASES, SF2_HYPERSOUND_URL, SALAMANDER_DRUM_RANGE });
+
+
 const GRID_COLS = 24;
 const GRID_ROWS = 12;
 
-const instrumentById = new Map(INSTRUMENT_BUTTONS.map(btn => [btn.id, btn]));
-const INSTRUMENT_CONFIG_BY_ID = new Map(INSTRUMENT_CONFIG.map(item => [item.id, item]));
-const INSTRUMENT_LAYOUT = INSTRUMENT_CONFIG.map(item => ({ id: item.id, label: item.label }));
-const LEFT_INSTRUMENT_LAYOUT = INSTRUMENT_LAYOUT;
-const RIGHT_INSTRUMENT_LAYOUT = INSTRUMENT_LAYOUT;
-const INSTRUMENT_TABS = [
-  { id: 'keys', label: 'KEYS' },
-  { id: 'electric', label: 'ELECTRIC' },
-  { id: 'pads', label: 'PADS' },
-  { id: 'solo', label: 'SOLO' },
-  { id: 'fx', label: 'FX' }
-];
-const INSTRUMENT_TAB_IDS = new Set(INSTRUMENT_TABS.map(tab => tab.id));
-function getInstrumentTabId(item){
-  if(item && item.id && INSTRUMENT_CONFIG_BY_ID.has(item.id)) return INSTRUMENT_CONFIG_BY_ID.get(item.id).tab;
-  return INSTRUMENT_TABS[0].id;
-}
+
+
+
+
+
+
+
+
 const ODD_FX_ID = 'fx_odd';
 const oddFxPickerState = { open: false, panelId: null, options: [], ready: false, loading: false };
 let oddFxPickerEl = null;
@@ -2716,79 +2496,17 @@ let oddFxPickerClose = null;
 let oddFxPickerApply = null;
 const categoryPickerState = { open: false, panelId: null, tabId: null, options: [], selectedIndex: null, columns: 6, maxWidth: 0, maxHeight: 0, rows: 4, scrollRow: 0, maxScrollRow: 0, pageIndex: 0, pageCount: 0 };
 let categoryPickerEl = null;
-let categoryPickerSelect = null;
-let categoryPickerGrid = null;
-let categoryPickerClose = null;
-let categoryPickerApply = null;
+
+
+
+
 
 function isTrackPlaybackActive(){
   return !!(audioPlaying || playingMIDI || playbackPaused || savedAudioPosSec > 0);
 }
-const RANDOM_POOLS = {
-  keys: [
-    { patch: 'acoustic_grand_piano', label: 'Grand Piano' },
-    { patch: 'bright_acoustic_piano', label: 'Bright Piano' },
-    { patch: 'honkytonk_piano', label: 'Honky-Tonk' },
-    { patch: 'harpsichord', label: 'Harpsichord' },
-    { patch: 'celesta', label: 'Celesta' }
-  ],
-  electric: [
-    { patch: 'electric_piano_1', label: 'Electric Piano 1' },
-    { patch: 'electric_piano_2', label: 'Electric Piano 2' },
-    { patch: 'electric_grand_piano', label: 'Electric Grand' },
-    { patch: 'clavinet', label: 'Clavinet' },
-    { patch: 'drawbar_organ', label: 'Drawbar Organ' },
-    { patch: 'rock_organ', label: 'Rock Organ' }
-  ],
-  pads: [
-    { patch: 'pad_1_new_age', label: 'New Age Pad' },
-    { patch: 'pad_2_warm', label: 'Warm Pad' },
-    { patch: 'pad_3_polysynth', label: 'Polysynth Pad' },
-    { patch: 'pad_4_choir', label: 'Choir Pad' },
-    { patch: 'pad_5_bowed', label: 'Bowed Pad' },
-    { patch: 'pad_6_metallic', label: 'Metallic Pad' },
-    { patch: 'pad_7_halo', label: 'Halo Pad' },
-    { patch: 'pad_8_sweep', label: 'Sweep Pad' }
-  ],
-  solo: [
-    { patch: 'lead_1_square', label: 'Lead Square' },
-    { patch: 'lead_2_sawtooth', label: 'Lead Saw' },
-    { patch: 'lead_3_calliope', label: 'Lead Calliope' },
-    { patch: 'lead_4_chiff', label: 'Lead Chiff' },
-    { patch: 'lead_5_charang', label: 'Lead Charang' },
-    { patch: 'lead_6_voice', label: 'Lead Voice' },
-    { patch: 'lead_7_fifths', label: 'Lead Fifths' },
-    { patch: 'lead_8_bass__lead', label: 'Lead Bass' },
-    { patch: 'clarinet', label: 'Clarinet' },
-    { patch: 'oboe', label: 'Oboe' },
-    { patch: 'flute', label: 'Flute' },
-    { patch: 'alto_sax', label: 'Alto Sax' },
-    { patch: 'trumpet', label: 'Trumpet' }
-  ],
-  fx: [
-    { id: 'fx_drums', label: 'Drums' },
-    { id: 'fx_dog', label: 'WappyDog' },
-    { patch: 'applause', label: 'Applause' },
-    { patch: 'whistle', label: 'Whistle' },
-    { patch: 'tinkle_bell', label: 'Tinkle Bell' },
-    { patch: 'seashore', label: 'Seashore' },
-    { patch: 'breath_noise', label: 'Breath Noise' },
-    { patch: 'fx_1_rain', label: 'Rain FX' },
-    { patch: 'fx_3_crystal', label: 'Crystal FX' },
-    { patch: 'fx_4_atmosphere', label: 'Atmosphere FX' },
-    { patch: 'fx_5_brightness', label: 'Brightness FX' },
-    { patch: 'fx_8_scifi', label: 'Sci-Fi FX' }
-  ]
-};
-function getPreferredBasesForTab(tabId){
-  if(tabId === 'keys'){
-    return [LOCAL_SOUNDFONT_BASES.musyngkite, LOCAL_SOUNDFONT_BASES.fluidr3_gm];
-  }
-  return [LOCAL_SOUNDFONT_BASES.fluidr3_gm, LOCAL_SOUNDFONT_BASES.musyngkite];
-}
-function getDefaultConfigForTab(tabId){
-  return INSTRUMENT_CONFIG.find(cfg => cfg.tab === tabId) || INSTRUMENT_CONFIG[0] || null;
-}
+
+
+
 function buildRandomInstrumentConfig(tabId, patch, label, base){
   const baseCfg = getDefaultConfigForTab(tabId) || {};
   const id = `random:${tabId}:${patch}`;
@@ -2874,25 +2592,7 @@ async function loadRandomInstrumentConfig(panelId, tabId, entry){
   }
   return { id: config.id, label: entry.label || config.label };
 }
-async function triggerRandomInstrument(panelId, tabId){
-  const pool = RANDOM_POOLS[tabId] || [];
-  if(!pool.length) return;
-  const ps = panelState[panelId];
-  if(!ps) return;
-  lastInstrumentPanelId = panelId || lastInstrumentPanelId;
-  const choice = pool[Math.floor(Math.random() * pool.length)];
-  const result = await loadRandomInstrumentConfig(panelId, tabId, choice);
-  if(!result) return;
-  ps.selected = result.id;
-  ps.randomActiveTab = tabId;
-  if(!ps.randomByTab) ps.randomByTab = {};
-  ps.randomByTab[tabId] = { id: result.id, label: result.label };
-  if(!dualInstrumentMode){
-    selectedSingleInstrumentId = result.id;
-  }
-  updateInstrumentMixReadouts();
-  requestBackboardRedraw();
-}
+
 const SOUND_BANK_NAMES_URL = 'soundfont-staging/names.json';
 let oddFxAllPatches = null;
 let soundfontCatalog = null;
@@ -2919,7 +2619,7 @@ function getUsedSoundfontPatches(){
   });
   return used;
 }
-function getOddFxPreferredBase(patch){
+function getOddFxPreferredBase(){
   return LOCAL_SOUNDFONT_BASES.musyngkite || SOUND_FONT_BASE;
 }
 function buildOddFxConfig(patch, label, base){
@@ -3262,56 +2962,9 @@ function updateCategoryPickerColumns(){
   categoryPickerState.rows = rows;
 }
 
-function ensureCategoryPicker(){
-  if(categoryPickerEl) return;
-  categoryPickerEl = document.createElement('div');
-  categoryPickerEl.style.cssText = 'position:fixed; z-index:2200; background:rgba(8,24,16,0.96); border:1px solid rgba(90,200,140,0.6); border-radius:10px; padding:12px 14px; box-shadow:0 10px 24px rgba(0,0,0,0.45); color:#e7fff2; font:12px/1.3 "Source Sans 3", system-ui; display:none; min-width:220px; display:flex; flex-direction:column; gap:10px;';
-  const title = document.createElement('div');
-  title.textContent = 'Select Instrument';
-  title.style.cssText = 'font-weight:700; letter-spacing:0.06em; text-transform:uppercase; margin-bottom:6px; color:#9ff5c6;';
-  categoryPickerGrid = document.createElement('div');
-  categoryPickerGrid.style.cssText = 'display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(120px, 1fr)); align-items:stretch; width:100%; flex:1 1 auto;';
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex; gap:6px; justify-content:flex-end; margin-top:auto;';
-  categoryPickerClose = document.createElement('button');
-  categoryPickerClose.type = 'button';
-  categoryPickerClose.textContent = 'Close';
-  categoryPickerClose.style.cssText = 'background:rgba(255,255,255,0.08); color:#fff; border:1px solid rgba(255,255,255,0.2); padding:4px 8px; border-radius:6px; cursor:pointer;';
-  categoryPickerApply = document.createElement('button');
-  categoryPickerApply.type = 'button';
-  categoryPickerApply.textContent = 'Use';
-  categoryPickerApply.style.cssText = 'background:#1f8f4a; color:#fff; border:1px solid rgba(70,200,120,0.9); padding:4px 10px; border-radius:6px; cursor:pointer;';
-  btnRow.appendChild(categoryPickerClose);
-  btnRow.appendChild(categoryPickerApply);
-  categoryPickerEl.appendChild(title);
-  categoryPickerEl.appendChild(categoryPickerGrid);
-  categoryPickerEl.appendChild(btnRow);
-  document.body.appendChild(categoryPickerEl);
-  categoryPickerClose.addEventListener('click', () => closeCategoryPicker());
-  categoryPickerApply.addEventListener('click', () => applyCategorySelection());
-}
 
-function positionCategoryPicker(panelId){
-  const topRect = getTopPadScreenRect();
-  const rect = topRect || getBackboardScreenRect();
-  const baseY = rect ? (rect.y + rect.h * 0.08) : (window.innerHeight * 0.15);
-  const maxW = rect ? Math.min(rect.w * 0.88, window.innerWidth - 24) : Math.min(980, window.innerWidth - 24);
-  const maxH = rect ? Math.min(rect.h * 0.9, window.innerHeight * 0.5) : Math.min(360, window.innerHeight * 0.5);
-  categoryPickerState.maxWidth = maxW;
-  categoryPickerState.maxHeight = maxH;
-  categoryPickerEl.style.width = `${Math.max(320, maxW)}px`;
-  categoryPickerEl.style.maxHeight = `${Math.max(220, maxH)}px`;
-  categoryPickerEl.style.overflow = 'hidden';
-  const panelWidth = Math.max(320, maxW);
-  categoryPickerEl.style.left = `${Math.max(12, (window.innerWidth - panelWidth) * 0.5)}px`;
-  if(rect){
-    categoryPickerEl.style.top = `${Math.max(12, rect.y + 8)}px`;
-    categoryPickerEl.style.bottom = 'auto';
-  } else {
-    categoryPickerEl.style.top = `${Math.max(12, baseY)}px`;
-    categoryPickerEl.style.bottom = 'auto';
-  }
-}
+
+
 
 function buildCategoryPickerOptions(panelId, tabId){
   const pool = buildCatalogOptionsForTab(tabId);
@@ -3342,71 +2995,7 @@ function buildCategoryPickerOptions(panelId, tabId){
   }));
   return applyLibraryNumbering(options, tabId);
 }
-function renderCategoryPickerOptions(){
-  if(!categoryPickerGrid) return;
-  const cols = Math.max(1, Math.min(categoryPickerState.columns || 5, 12));
-  categoryPickerGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(120px, 1fr))`;
-  categoryPickerGrid.innerHTML = '';
-  const isSolo = categoryPickerState.tabId === 'solo';
-  const opts = categoryPickerState.options || [];
-  const items = opts.slice();
-  if(!isSolo && items.length && cols > 1){
-    const remainder = items.length % cols;
-    if(remainder !== 0){
-      const pad = Math.floor((cols - remainder) / 2);
-      const insertAt = items.length - remainder;
-      for(let i=0;i<pad;i++) items.splice(insertAt, 0, null);
-    }
-  }
-  items.forEach((opt, idx) => {
-    if(!opt){
-      const spacer = document.createElement('div');
-      spacer.style.cssText = 'opacity:0; pointer-events:none;';
-      categoryPickerGrid.appendChild(spacer);
-      return;
-    }
-    const cell = document.createElement('button');
-    cell.type = 'button';
-    cell.textContent = opt.label || '';
-    cell.dataset.idx = String(categoryPickerState.options.indexOf(opt));
-    cell.style.cssText = [
-      'background:linear-gradient(180deg, rgba(245,245,245,0.2) 0%, rgba(40,40,40,0.9) 100%)',
-      'border:1px solid rgba(160,160,160,0.75)',
-      'box-shadow:inset 0 1px 2px rgba(255,255,255,0.18), inset 0 -2px 6px rgba(0,0,0,0.5), 0 3px 6px rgba(0,0,0,0.35)',
-      'border-radius:8px',
-      'padding:8px 10px',
-      'color:#e7fff2',
-      'font:600 13px/1.1 "Source Sans 3", system-ui',
-      'cursor:pointer',
-      'text-align:center',
-      'min-height:38px'
-    ].join(';');
-    const isSelected = categoryPickerState.selectedIndex === Number(cell.dataset.idx);
-    if(isSelected){
-      cell.style.background = 'linear-gradient(180deg, rgba(120,240,170,0.85) 0%, rgba(30,120,70,0.95) 100%)';
-      cell.style.borderColor = 'rgba(120,240,170,0.95)';
-      cell.style.color = '#042212';
-    }
-    cell.addEventListener('mouseenter', () => {
-      if(categoryPickerState.selectedIndex === Number(cell.dataset.idx)) return;
-      cell.style.background = 'linear-gradient(180deg, rgba(140,220,190,0.85) 0%, rgba(28,80,56,0.95) 100%)';
-      cell.style.borderColor = 'rgba(120,220,190,0.9)';
-      cell.style.color = '#042214';
-    });
-    cell.addEventListener('mouseleave', () => {
-      if(categoryPickerState.selectedIndex === Number(cell.dataset.idx)) return;
-      cell.style.background = 'linear-gradient(180deg, rgba(245,245,245,0.2) 0%, rgba(40,40,40,0.9) 100%)';
-      cell.style.borderColor = 'rgba(160,160,160,0.75)';
-      cell.style.color = '#e7fff2';
-    });
-    cell.addEventListener('click', () => {
-      categoryPickerState.selectedIndex = Number(cell.dataset.idx);
-      renderCategoryPickerOptions();
-      previewCategorySelection(categoryPickerState.selectedIndex);
-    });
-    categoryPickerGrid.appendChild(cell);
-  });
-}
+
 
 function openCategoryPicker(panelId, tabId){
   categoryPickerState.open = true;
@@ -3666,30 +3255,11 @@ function getKeyUvSpanFromScreen(mesh, screenMesh, screenCenter, screenNormal, ra
     const u0 = Math.min(uL, uR);
     const u1 = Math.max(uL, uR);
     return { u0, u1, uMid: (u0 + u1) * 0.5 };
-  }catch(e){
+  }catch{
     return null;
   }
 }
-async function loadSoundfontMapFromJs(url){
-  const res = await fetch(url);
-  if(!res.ok) throw new Error(`Soundfont mapping fetch failed: ${res.status} ${url}`);
-  const jsText = await res.text();
-  const getMap = new Function(`
-    "use strict";
-    var MIDI = { Soundfont: {} };
-    ${jsText}
-    if(!MIDI || !MIDI.Soundfont) return null;
-    const keys = Object.keys(MIDI.Soundfont);
-    const key = keys[0] || null;
-    return key ? { key, map: MIDI.Soundfont[key] } : null;
-  `);
-  try{
-    return getMap();
-  }catch(e){
-    console.error("[Soundfont] mapping eval failed", { url, err: e });
-    throw e;
-  }
-}
+
 function computeScreenKeymapAnalysis(){
   if(!backboardMesh || !midiKeyMap || !midiKeyMap.size) return null;
   if(!keymapEntries || !keymapEntries.length) return null;
@@ -3868,7 +3438,7 @@ async function fetchKeymap(){
     if(!resp.ok) return null;
     const data = await resp.json();
     return { url: KEYMAP_URL, data };
-  }catch(e){
+  }catch{
     return null;
   }
 }
@@ -3991,11 +3561,11 @@ function selectPanelInstrumentForTab(panelId, tabId){
 }
 const BACKBOARD_VIEW_MODES = ['record-mode', 'playback-mode'];
 let backboardViewMode = 'record-mode';
-try{ window.backboardViewMode = backboardViewMode; }catch(e){}
+try{ window.backboardViewMode = backboardViewMode; }catch{}
 function setBackboardViewMode(mode){
   const next = String(mode || '').toLowerCase();
   backboardViewMode = BACKBOARD_VIEW_MODES.includes(next) ? next : 'record-mode';
-  try{ window.backboardViewMode = backboardViewMode; }catch(e){}
+  try{ window.backboardViewMode = backboardViewMode; }catch{}
   requestBackboardRedraw();
   return backboardViewMode;
 }
@@ -4005,7 +3575,7 @@ function toggleBackboardViewMode(){
 try{
   window.setBackboardViewMode = setBackboardViewMode;
   window.toggleBackboardViewMode = toggleBackboardViewMode;
-}catch(e){}
+}catch{}
 let panelHitRects = [];
 let panelHover = null;
 let lastBackboardPickLogMs = 0;
@@ -4034,35 +3604,20 @@ const codeToMidiDown = new Map(); // ev.code -> latched midi number
 const PERSISTENT_HIGHLIGHTS = []; // C2
 
 // Debug lane guide toggle
-const DEBUG_LANES = true;
-let keyLanesAbs = new Map(); // note -> {u0,u1} derived from world positions
+
 
 const BLACK_PCS = new Set([1,3,6,8,10]);
 function isBlackNoteByNumber(n){ return BLACK_PCS.has(n % 12); }
 
-function noteToGlowColor(note, velocity=1){
-  const pc = note % 12; const hue = Math.round((pc/12)*360);
-  const a = 0.35 + 0.45 * Math.min(1, velocity);
-  return `hsla(${hue},90%,60%,${a})`;
-}
+
 
 // Draw a left->right UV gradient (red@0, green@0.5, blue@1) for debugging UV mapping
-function drawUGradient(canvas){
-  if(!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  const grad = ctx.createLinearGradient(0,0,W,0);
-  grad.addColorStop(0.0, '#ff0000');
-  grad.addColorStop(0.5, '#00ff00');
-  grad.addColorStop(1.0, '#0000ff');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,W,H);
-}
+
 
 // V mapping constants for backboard "island" (local v in [0,1] maps into this UV range)
 const V_MIN = 0.442326;
 const V_MAX = 0.557674;
-const V_RANGE = V_MAX - V_MIN; // 0.115348
+ // 0.115348
 const BACKBOARD_FLIP_V = false;
 
 // Map backboard mesh to screen-space rect for DOM overlays (instrument picker)
@@ -4071,7 +3626,7 @@ function getBackboardScreenRect(){
   if(!target || !renderer || !cam) return null;
   const geom = target.geometry;
   if(!geom) return null;
-  try{ if(!geom.boundingBox) geom.computeBoundingBox(); }catch(e){}
+  try{ if(!geom.boundingBox) geom.computeBoundingBox(); }catch{}
   const bb = geom.boundingBox;
   if(!bb) return null;
   const min = bb.min, max = bb.max;
@@ -4089,8 +3644,8 @@ function getBackboardScreenRect(){
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for(const c of corners){
     const v = c.clone();
-    try{ v.applyMatrix4(target.matrixWorld); }catch(e){}
-    try{ v.project(cam); }catch(e){}
+    try{ v.applyMatrix4(target.matrixWorld); }catch{}
+    try{ v.project(cam); }catch{}
     const x = (v.x * 0.5 + 0.5) * domRect.width + domRect.left;
     const y = (-v.y * 0.5 + 0.5) * domRect.height + domRect.top;
     minX = Math.min(minX, x);
@@ -4101,40 +3656,7 @@ function getBackboardScreenRect(){
   if(!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
   return { x:minX, y:minY, w: Math.max(0, maxX-minX), h: Math.max(0, maxY-minY) };
 }
-function getTopPadScreenRect(){
-  if(!topPadMesh || !renderer || !cam) return null;
-  const geom = topPadMesh.geometry;
-  if(!geom) return null;
-  try{ if(!geom.boundingBox) geom.computeBoundingBox(); }catch(e){}
-  const bb = geom.boundingBox;
-  if(!bb) return null;
-  const min = bb.min, max = bb.max;
-  const corners = [
-    new THREE.Vector3(min.x, min.y, min.z),
-    new THREE.Vector3(min.x, min.y, max.z),
-    new THREE.Vector3(min.x, max.y, min.z),
-    new THREE.Vector3(min.x, max.y, max.z),
-    new THREE.Vector3(max.x, min.y, min.z),
-    new THREE.Vector3(max.x, min.y, max.z),
-    new THREE.Vector3(max.x, max.y, min.z),
-    new THREE.Vector3(max.x, max.y, max.z)
-  ];
-  const domRect = renderer.domElement.getBoundingClientRect();
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for(const c of corners){
-    const v = c.clone();
-    try{ v.applyMatrix4(topPadMesh.matrixWorld); }catch(e){}
-    try{ v.project(cam); }catch(e){}
-    const x = (v.x * 0.5 + 0.5) * domRect.width + domRect.left;
-    const y = (-v.y * 0.5 + 0.5) * domRect.height + domRect.top;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-  }
-  if(!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return null;
-  return { x:minX, y:minY, w: Math.max(0, maxX-minX), h: Math.max(0, maxY-minY) };
-}
+
 
 function updateInstrumentPickerPosition(){
   if(!instrumentPickerEl) return;
@@ -4165,10 +3687,7 @@ function updateInstrumentPickerPosition(){
 }
 
 // Convert a local v (0..1 within the backboard island) into canvas Y pixels
-function vLocalToYPx(vLocal, H){
-  const vAbs = V_MIN + (vLocal * V_RANGE); // absolute UV v
-  return (1.0 - vAbs) * H;                   // convert UV v to canvas y (y=0 top)
-}
+
 
 // Convert an absolute UV v (0..1) into canvas Y pixels
 function vAbsToYPx(vAbs, H){
@@ -4271,8 +3790,8 @@ function createBackboardCanvas(aspect){
 
   backboardCtx = backboardCanvas.getContext('2d');
   backboardTexture = new THREE.CanvasTexture(backboardCanvas);
-  try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
-  try{ backboardTexture.flipY = false; }catch(e){}
+  try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch{ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch{} }
+  try{ backboardTexture.flipY = false; }catch{}
   backboardTexture.needsUpdate = true;
 
   // Aggressive debug draw
@@ -4306,7 +3825,7 @@ function uvToCanvasPx(uv){
   const uNorm = (clampU - bounds.uMin) / Math.max(1e-6, uSpan);
   const vNorm = (clampV - bounds.vMin) / Math.max(1e-6, vSpan);
   if(!isFinite(uNorm) || !isFinite(vNorm)) return null;
-  try{ window.BACKBOARD_FLIP_V = window.BACKBOARD_FLIP_V ?? BACKBOARD_FLIP_V; }catch(e){}
+  try{ window.BACKBOARD_FLIP_V = window.BACKBOARD_FLIP_V ?? BACKBOARD_FLIP_V; }catch{}
   const flipV = (typeof window !== 'undefined' && typeof window.BACKBOARD_FLIP_V !== 'undefined') ? !!window.BACKBOARD_FLIP_V : BACKBOARD_FLIP_V;
   const vNorm2 = flipV ? (1 - vNorm) : vNorm;
   const px = uNorm * backboardCssW;
@@ -4351,16 +3870,7 @@ function getFrontFacingSurfaceHit(target, clientX, clientY){
   return hit;
 }
 
-function raycastModelHit(clientX, clientY){
-  if(!root || !canvas) return null;
-  const rect = canvas.getBoundingClientRect();
-  const nx = ((clientX - rect.left)/rect.width)*2 - 1;
-  const ny = -((clientY - rect.top)/rect.height)*2 + 1;
-  pointer.set(nx, ny);
-  raycaster.setFromCamera(pointer, cam);
-  const hits = raycaster.intersectObject(root, true);
-  return hits.length ? hits[0] : null;
-}
+
 
 function raycastBackboardForUv(clientX, clientY){
   const target = backboardMesh || screenPlane;
@@ -4412,8 +3922,8 @@ function updateTopPadHover(clientX, clientY){
   if(!topPadMesh || !topPadCanvas) return;
   const uv = raycastTopPadForUv(clientX, clientY);
   if(!uv){
-    try{ topPadVideo.ui?.clearHoverPreview?.(); }catch(e){}
-    try{ trackVideo.ui?.clearHoverPreview?.(); }catch(e){}
+    try{ topPadVideo.ui?.clearHoverPreview?.(); }catch{}
+    try{ trackVideo.ui?.clearHoverPreview?.(); }catch{}
     if(topPadHoverCell){
       topPadHoverCell = null;
       renderTopPadGrid();
@@ -4678,8 +4188,8 @@ function createTopPadCanvas(aspect=1){
   topPadCanvas.height = height;
   topPadCtx = topPadCanvas.getContext('2d');
   topPadTexture = new THREE.CanvasTexture(topPadCanvas);
-  try{ topPadTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ topPadTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
-  try{ topPadTexture.flipY = false; }catch(e){}
+  try{ topPadTexture.colorSpace = THREE.SRGBColorSpace; }catch{ try{ topPadTexture.encoding = THREE.sRGBEncoding; }catch{} }
+  try{ topPadTexture.flipY = false; }catch{}
   topPadTexture.needsUpdate = true;
   renderTopPadGrid();
 }
@@ -4690,17 +4200,16 @@ function remapTextureToUvBounds(mesh, texture){
   if(!uv || uv.count < 1) return;
   const pos = mesh.geometry.attributes && mesh.geometry.attributes.position;
   let umin = 1, vmin = 1, umax = 0, vmax = 0;
-  let uminIdx = 0, umaxIdx = 0, vminIdx = 0, vmaxIdx = 0;
   let iMinX = 0, iMaxX = 0, iMinY = 0, iMaxY = 0, iMinZ = 0, iMaxZ = 0;
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
   for(let i=0;i<uv.count;i++){
     const u = uv.getX(i);
     const v = uv.getY(i);
-    if(u < umin){ umin = u; uminIdx = i; }
-    if(u > umax){ umax = u; umaxIdx = i; }
-    if(v < vmin){ vmin = v; vminIdx = i; }
-    if(v > vmax){ vmax = v; vmaxIdx = i; }
+    if(u < umin) umin = u;
+    if(u > umax) umax = u;
+    if(v < vmin) vmin = v;
+    if(v > vmax) vmax = v;
     if(pos){
       const x = pos.getX(i);
       const y = pos.getY(i);
@@ -4795,7 +4304,7 @@ function renderTopPadGrid(){
   // center aperture rather than moving the dividers to fit the source.
   const leftCols = 3.5;
   const midCols = 5;
-  const rightCols = TOPPAD_GRID_COLS - leftCols - midCols;
+
   const leftW = cellW * leftCols;
   const midW = cellW * midCols;
   const rightX = leftW + midW;
@@ -4842,7 +4351,7 @@ function renderTopPadGrid(){
     try{
       const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
       if(val && val.trim()) return val.trim();
-    }catch(e){}
+    }catch{}
     return fallback;
   };
   const greenPrimary = getCssVar('--green-primary', '#091d12');
@@ -4860,7 +4369,7 @@ function renderTopPadGrid(){
 
   const circleMargin = Math.round(cellW * 0.14);
   const circleR = Math.min((leftW - circleMargin * 2) * 0.35, cellH * 0.98);
-  const circleGap = Math.max(10, Math.round((leftW - circleMargin * 2 - circleR * 2) / 2));
+
   const circleYTop = Math.round(cellH * 2.15);
   const circleYRow = Math.round(cellH * 4.25);
   const circleLeftX = circleMargin + circleR;
@@ -5053,7 +4562,7 @@ function renderTopPadGrid(){
   ctx.restore();
 
   const rightPadX = Math.round(cellW * 0.2);
-  const rightPadY = Math.round(cellH * 0.7);
+
   const rightW = W - rightX;
   const rightCenterX = rightX + rightW / 2;
 
@@ -5108,8 +4617,8 @@ function renderTopPadGrid(){
   ctx.font = `700 ${Math.max(12, Math.round(gridBtnH * 0.6))}px "Source Sans 3", system-ui, sans-serif`;
   ctx.fillText(showTopPadGrid ? 'Grid: On' : 'Grid: Off', gridBtnX + gridBtnW / 2, gridBtnY + gridBtnH / 2);
   topPadUiRects.gridToggle = { x: gridBtnX, y: gridBtnY, w: gridBtnW, h: gridBtnH };
-  
- 
+
+
 
   const toggleStartCol = rightX / cellW + 0.18;
   const toggleEndCol = TOPPAD_GRID_COLS - 0.18;
@@ -5194,7 +4703,7 @@ function renderTopPadGrid(){
       || (img && img.tagName === 'VIDEO');
     if(isVideo){
       if((img.readyState || 0) < 2) return;
-      try{ ctx.drawImage(img, drawX, drawY, drawW, drawH); }catch(e){}
+      try{ ctx.drawImage(img, drawX, drawY, drawW, drawH); }catch{}
       return;
     }
     safeDrawImage(ctx, img, drawX, drawY, drawW, drawH);
@@ -5326,23 +4835,22 @@ function renderTopPadGrid(){
               if(topPadVideo.hqVideo.paused){
                 const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
                 const targetTime = Math.max(0, (topPadVideo.hqVideo.currentTime || 0) - (syncMs / 1000));
-                try{ topPadVideo.audio.currentTime = targetTime; }catch(e){}
-                try{ topPadVideo.audio.play().catch(() => {}); }catch(e){}
-                try{ topPadVideo.hqVideo.play().catch(() => {}); }catch(e){}
+                try{ topPadVideo.audio.currentTime = targetTime; }catch{}
+                try{ topPadVideo.audio.play().catch(() => {}); }catch{}
+                try{ topPadVideo.hqVideo.play().catch(() => {}); }catch{}
               } else {
-                try{ topPadVideo.hqVideo.pause(); }catch(e){}
-                try{ topPadVideo.audio.pause(); }catch(e){}
+                try{ topPadVideo.hqVideo.pause(); }catch{}
+                try{ topPadVideo.audio.pause(); }catch{}
               }
             } else if(action.type === 'seekToRatio'){
               const dur = topPadVideo.hqVideo.duration || 0;
               if(dur > 0) seekMediaWithFreeze(topPadVideo.hqVideo, dur * action.ratio, { audio: topPadVideo.audio, syncMs: getSyncOffsetMs() });
             } else if(action.type === 'toggleMute'){
               if (topPadVideo.audio.muted) unmuteMediaWithConsent(topPadVideo.audio);
-              else topPadVideo.audio.muted = true;
+              else muteTopPadAudio();
             } else if(action.type === 'setVolume'){
               const volume = Math.max(0, Math.min(1, Number.isFinite(action.volume) ? action.volume : 0));
-              if (volume <= 0.001) { topPadVideo.audio.volume = 0; topPadVideo.audio.muted = true; }
-              else unmuteMediaWithConsent(topPadVideo.audio, volume);
+              setTopPadAudioVolume(volume);
             } else if(action.type === 'cyclePlaybackRate'){
               cycleSharedPlaybackRate();
             } else if(action.type === 'togglePitch'){
@@ -5459,15 +4967,7 @@ function renderTopPadGrid(){
   topPadTexture.needsUpdate = true;
 }
 
-function getCellRectFromLabel(label, cellW, cellH, cols=24, rows=12){
-  if(!label || typeof label !== 'string' || label.length < 2) return null;
-  const col = label.charCodeAt(0) - 65; // 'A' => 0
-  const rowNum = Number(label.slice(1));
-  if(!Number.isFinite(rowNum) || rowNum < 1 || rowNum > rows) return null;
-  if(col < 0 || col >= cols) return null;
-  const rowIndex = Math.max(0, Math.min(rowNum - 1, rows - 1));
-  return { x: col * cellW, y: rowIndex * cellH, w: cellW, h: cellH };
-}
+
 
 async function triggerInstrumentButton(id, panelId){
   // keep selection per panel; caller sets desired panel before calling
@@ -5559,9 +5059,9 @@ async function triggerInstrumentButton(id, panelId){
 // Backboard UV map mode: 'none' | 'u' | 'v'
 let backboardUVMapMode = 'none';
 // mirror current mode on window so non-module scripts can read it
-try{ window.backboardUVMapMode = backboardUVMapMode; }catch(e){}
+try{ window.backboardUVMapMode = backboardUVMapMode; }catch{}
 let backboardDebugGrid = false;
-try{ window.backboardDebugGrid = window.backboardDebugGrid ?? backboardDebugGrid; }catch(e){}
+try{ window.backboardDebugGrid = window.backboardDebugGrid ?? backboardDebugGrid; }catch{}
 
 // Set backboard UV map mode and request a texture update
 function setBackboardUVMapMode(mode){
@@ -5570,16 +5070,16 @@ function setBackboardUVMapMode(mode){
   if(!['none','u','v','checker'].includes(mode)) mode = 'none';
   console.log('UV mode ->', mode);
   backboardUVMapMode = mode;
-  try{ window.backboardUVMapMode = backboardUVMapMode; }catch(e){}
+  try{ window.backboardUVMapMode = backboardUVMapMode; }catch{}
   // trigger a redraw/update of the texture if canvas exists
   try{
     requestBackboardRedraw();
-  }catch(e){}
+  }catch{}
   try{
     if(backboardTexture){
       // re-apply repeat/offset so the live canvas remains cropped to the UV island
-      try{ backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan); }catch(e){}
-      try{ backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin); }catch(e){}
+      try{ backboardTexture.repeat.set(backboardUVBounds.uSpan, backboardUVBounds.vSpan); }catch{}
+      try{ backboardTexture.offset.set(backboardUVBounds.uMin, backboardUVBounds.vMin); }catch{}
       backboardTexture.needsUpdate = true;
       // One-time debug print
       try{
@@ -5587,9 +5087,9 @@ function setBackboardUVMapMode(mode){
           console.log('Backboard UV', 'flipY:', backboardTexture.flipY, 'repeat:', backboardTexture.repeat.x, backboardTexture.repeat.y, 'offset:', backboardTexture.offset.x, backboardTexture.offset.y);
           backboardUvDebugLogged = true;
         }
-      }catch(e){}
+      }catch{}
     }
-  }catch(e){}
+  }catch{}
 }
 
 function toggleBackboardUVMap(){
@@ -5604,7 +5104,7 @@ function drawUMap(canvas){
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = backboardCssW, H = backboardCssH;
-  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  try{ ctx.imageSmoothingEnabled = true; }catch{}
   // Draw gradient only across the U local viewport (keymapULeft..keymapURight)
   const uMin = Number(keymapULeft || 0);
   const uMax = Number(keymapURight || 1);
@@ -5623,29 +5123,13 @@ function drawUMap(canvas){
 // Map helpers: localU/localV in [0..1] -> absolute UV -> canvas px
 // Map normalized local coords [0..1] -> absolute UV (0..1) taking into account
 // the detected UV island bounds and any axis swap or per-axis mirroring.
-function mapNormToUv(localU, localV){
-  const ub = backboardUVBounds || { uMin: Number(keymapULeft||0), uMax: Number(keymapURight||1), vMin: V_MIN, vMax: V_MAX, uSpan: (Number(keymapURight||1) - Number(keymapULeft||0)), vSpan: V_RANGE };
-  const uSpan = (ub.uSpan != null) ? ub.uSpan : (ub.uMax - ub.uMin);
-  const vSpan = (ub.vSpan != null) ? ub.vSpan : (ub.vMax - ub.vMin);
-  let uAbs, vAbs;
-  if(backboardUVCorrection && backboardUVCorrection.swap){
-    // axes swapped: localU -> V, localV -> U
-    uAbs = ub.uMin + (localV * vSpan);
-    vAbs = ub.vMin + (localU * uSpan);
-  } else {
-    uAbs = ub.uMin + (localU * uSpan);
-    vAbs = ub.vMin + (localV * vSpan);
-  }
-  if(backboardUVCorrection && backboardUVCorrection.mirrorU){ uAbs = (ub.uMin + ub.uMax) - uAbs; }
-  if(backboardUVCorrection && backboardUVCorrection.mirrorV){ vAbs = (ub.vMin + ub.vMax) - vAbs; }
-  return { u: uAbs, v: vAbs };
-}
 
-function localUToAbs(localU){ return mapNormToUv(localU, 0).u; }
-function localVToAbs(localV){ return mapNormToUv(0, localV).v; }
 
-function absUToXpx(uAbs, W){ return Math.round(uAbs * W); }
-function absVToYpx(vAbs, H){ return Math.round((1.0 - vAbs) * H); }
+
+
+
+
+
 
 // Convert absolute U (0..1) to backboard canvas X taking UV cropping into account
 function absUToBackboardX(uAbs, W){
@@ -5656,24 +5140,7 @@ function absUToBackboardX(uAbs, W){
 }
 
 // Compute approximate world-per-UV scale for the backboard mesh so markers draw with correct aspect
-function computeWorldPerUV(mesh){
-  if(!mesh || !mesh.isMesh){ return null; }
-  try{
-    const bb = new THREE.Box3().setFromObject(mesh);
-    const size = bb.getSize(new THREE.Vector3());
-    // pick largest and second-largest components as width/height
-    const comps = [size.x, size.y, size.z].map((v,i)=>({v, i})).sort((a,b)=>b.v-a.v);
-    const worldW = Math.max(1e-6, comps[0].v);
-    const worldH = Math.max(1e-6, comps[1].v);
-    const uMin = Number(keymapULeft || 0);
-    const uMax = Number(keymapURight || 1);
-    const uvW = Math.max(1e-6, (uMax - uMin));
-    const uvH = Math.max(1e-6, V_RANGE);
-    const worldPerU = worldW / uvW;
-    const worldPerV = worldH / uvH;
-    return { worldPerU, worldPerV, worldW, worldH };
-  }catch(e){ return null; }
-}
+
 
 // Derive backboard horizontal axis and span from its world-space bounding box
 function computeBackboardWorldSpan(mesh){
@@ -5688,7 +5155,7 @@ function computeBackboardWorldSpan(mesh){
     backboardHorizAxis = axis;
     backboardWorldSpan = { min, max, span };
     return true;
-  }catch(e){ return false; }
+  }catch{ return false; }
 }
 
 // Compute per-key lane boundaries in absolute U [0..1] derived from world positions
@@ -5711,7 +5178,7 @@ function computeKeyLanesFromWorld(){
       existing.u0_abs = u0; existing.u1_abs = u1;
       keyByNote.set(Number(note), existing);
       entries.push({ note:Number(note), mid:(u0+u1)*0.5 });
-    }catch(e){ /* ignore per-key failure */ }
+    }catch{ /* ignore per-key failure */ }
   });
   // Mirror if mids decrease with ascending MIDI
   try{
@@ -5732,9 +5199,8 @@ function computeKeyLanesFromWorld(){
       });
       console.warn('Mirrored world-derived key lanes to enforce left-to-right order');
     }
-  }catch(e){ /* ignore mirror check */ }
-  keyLanesAbs = lanes;
-  try{ requestBackboardRedraw(); }catch(e){}
+  }catch{ /* ignore mirror check */ }
+  try{ requestBackboardRedraw(); }catch{}
 }
 
 
@@ -5743,7 +5209,7 @@ function drawVMap(canvas){
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = backboardCssW, H = backboardCssH;
-  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  try{ ctx.imageSmoothingEnabled = true; }catch{}
   // Map local V [0..1] into absolute V range V_MIN..V_MAX and draw gradient within that band
   const yTop = vAbsToYPx(V_MAX, H);    // top (smaller y)
   const yBottom = vAbsToYPx(V_MIN, H); // bottom (larger y)
@@ -5761,7 +5227,7 @@ function drawCheckerMap(canvas, cellW = 16, cellH = 12){
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
   const W = backboardCssW, H = backboardCssH;
-  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  try{ ctx.imageSmoothingEnabled = true; }catch{}
   // Draw checker only inside local UV viewport (u: keymapULeft..keymapURight, v: V_MIN..V_MAX)
   const uMin = Number(keymapULeft || 0);
   const uMax = Number(keymapURight || 1);
@@ -5787,22 +5253,10 @@ function drawCheckerMap(canvas, cellW = 16, cellH = 12){
 window.setBackboardUVMapMode = setBackboardUVMapMode;
 window.toggleBackboardUVMap = toggleBackboardUVMap;
 // Diagnostic helpers for note names and on-screen debug text
-const NOTE_NAMES = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
-function midiToName(n) {
-  const pc = ((n % 12) + 12) % 12;
-  const octave = Math.floor(n / 12) - 1;
-  return `${NOTE_NAMES[pc]}${octave}`;
-}
-function drawDebugText(ctx, lines){
-  ctx.save();
-  ctx.font = "16px sans-serif";
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(8, 8, 420, 24 * lines.length + 12);
-  ctx.fillStyle = "white";
-  lines.forEach((s, i) => ctx.fillText(s, 16, 32 + i * 24));
-  ctx.restore();
-}
-const TABLET_HYSTERESIS = 0.0025; // radians: small threshold before target updates (~0.14deg)
+
+
+
+ // radians: small threshold before target updates (~0.14deg)
 const TABLET_MAX_ROT_SPEED = 3.0; // radians per second maximum applied change
 let animActionsA = [];
 let animActionsB = [];
@@ -5990,7 +5444,7 @@ async function loadWebAudioFontProgram(program, label){
       const env = this._player.queueWaveTable(audioCtx, dest, this._preset, whenSec || audioCtx.currentTime, midiNum, dur, vol);
       return {
         _env: env,
-        stop: function(stopWhenSec){ try{ if(env && env.audioBufferSourceNode){ env.audioBufferSourceNode.stop(stopWhenSec||audioCtx.currentTime); } }catch(e){} }
+        stop: function(stopWhenSec){ try{ if(env && env.audioBufferSourceNode){ env.audioBufferSourceNode.stop(stopWhenSec||audioCtx.currentTime); } }catch{} }
       };
     }
   };
@@ -6120,7 +5574,7 @@ function ensureAudio(){
     instrumentLimiter.connect(masterGain);
   }
   if(masterGain){
-    try{ masterGain.disconnect(); }catch(e){}
+    try{ masterGain.disconnect(); }catch{}
     ensureAudioMeterChain();
     if(audioMeterMix){
       masterGain.connect(audioMeterMix);
@@ -6196,7 +5650,7 @@ function applyTrackGlow(noteNumber, mesh, part, on){
   }
   const targetMesh = mesh || midiKeyMap.get(noteNumber);
   updateKeyGlowMaterial(targetMesh, noteNumber);
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 function applyKeyGlow(mesh, noteNumber, on){
   if(!mesh) return;
@@ -6205,7 +5659,7 @@ function applyKeyGlow(mesh, noteNumber, on){
   keyActiveCount.set(noteNumber, next);
   updateKeyGlowMaterial(mesh, noteNumber);
   // Request backboard redraw when visual key glow changes
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 function applyPersistentHighlights(){
   PERSISTENT_HIGHLIGHTS.forEach((note)=>{
@@ -6291,7 +5745,6 @@ function fit(box){
   cam.position.copy(camPos);
   cam.lookAt(center);
   controls.target.copy(center);
-  captureMusicDefaultOrbitState();
 }
 function collectKeys(node){
   const found=[];
@@ -6365,7 +5818,7 @@ function unifyWhiteKeysToReference(){
     // Gentle contact shadows on white keys; avoid them casting onto others
     mesh.castShadow = false;
     mesh.receiveShadow = true;
-    try{ mesh.material.needsUpdate = true; }catch(e){}
+    try{ mesh.material.needsUpdate = true; }catch{}
     if(mesh.userData) mesh.userData._origMaterial = ivory;
   });
 }
@@ -6401,7 +5854,7 @@ function animate(){
         const deltaY = desiredWorld.y - boxCenter.y;
         autoYOffset = deltaY;
       }
-    }catch(e){ /* ignore auto-centering failures */ }
+    }catch{ /* ignore auto-centering failures */ }
     autoCenterOffsetY = autoCenterOffsetY + (autoYOffset - autoCenterOffsetY) * Math.min(1, dt * 6);
     if(fitDistance && fitSizeY){
       const currentDist = cam.position.distanceTo(controls.target);
@@ -6460,7 +5913,7 @@ function animate(){
       syncAudioToVideo(topPadVideo.hqVideo, topPadVideo.audio, topPadVideo.syncState, {
         syncMs: getSyncOffsetMs()
       });
-    }catch(e){}
+    }catch{}
   }
       // update backboard overlay
       try{
@@ -6468,22 +5921,22 @@ function animate(){
         const playbackVisualsActive = (backboardViewMode === 'playback-mode')
           && (playingMIDI || audioPlaying || pendingNotes.length || activeFallingNotes.length || playbackParticles.length || savedAudioPosSec > 0);
     if(playbackVisualsActive){
-      try{ renderBackboardOverlay(dt); }catch(e){}
+      try{ renderBackboardOverlay(dt); }catch{}
       backboardDirty = false;
       lastBackboardDrawMs = nowMs;
     } else if(backboardDirty && (nowMs - lastBackboardDrawMs) >= (1000 / BACKBOARD_MAX_FPS)){
-          try{ renderBackboardOverlay(dt); }catch(e){}
+          try{ renderBackboardOverlay(dt); }catch{}
           backboardDirty = false;
           lastBackboardDrawMs = nowMs;
         }
-      }catch(e){ /* ignore */ }
+      }catch{ /* ignore */ }
   }
   updateInstrumentPickerPosition();
 }
 animate();
 // Proper signature: (url, onLoad, onProgress, onError)
 const MODEL_VERSION = 'v20251115a'; // bump to bust cache when GLB updated
-loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
+loader.load(`${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`,
   gltf => {
     root = gltf.scene;
     scene.add(root);
@@ -6492,12 +5945,12 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
       try { setupMusicTabletScreen(root); } catch (e) { console.warn('setupMusicTabletScreen failed', e); }
     }
     // brightening + double side
-    root.traverse(o=>{ 
+    root.traverse(o=>{
       if(/note_stickers|noteSticker|noteAccidental|noteText/i.test(o.name)) { stickerMeshes.push(o); o.visible = true; }
       if(!sustainPedalMesh && /(sustain|damper|right.*pedal|pedal.*right)/i.test(o.name)){
         sustainPedalMesh = o;
       }
-      if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch(e){} }
+      if(!tabletStandMesh && /tablet_stand/i.test(o.name)) { tabletStandMesh = o; try{ tabletStandCurrentAngle = (tabletStandMesh.rotation && typeof tabletStandMesh.rotation.x === 'number') ? tabletStandMesh.rotation.x : 0; tabletStandTargetAngle = tabletStandCurrentAngle; }catch{} }
         if(!topPadMesh && /(perpad_screen|pe'rpad_screen)/i.test(o.name)){
           topPadMesh = o;
           console.log('Top pad mesh found:', topPadMesh?.name, topPadMesh?.type);
@@ -6509,12 +5962,12 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
                 const bb = o.geometry.boundingBox;
                 if(bb){ bb.getSize(size); }
               }
-            }catch(e){}
+            }catch{}
             if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
               try{
                 o.updateMatrixWorld(true);
                 size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
-              }catch(e){}
+              }catch{}
             } else {
               try{
                 o.updateMatrixWorld(true);
@@ -6523,7 +5976,7 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
                 const _s = new THREE.Vector3(1,1,1);
                 o.matrixWorld.decompose(_p, _q, _s);
                 size.multiply(new THREE.Vector3(Math.abs(_s.x), Math.abs(_s.y), Math.abs(_s.z)));
-              }catch(e){}
+              }catch{}
             }
             const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
             const planeH = dims[1];
@@ -6571,28 +6024,27 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
               const bb = o.geometry.boundingBox;
               if(bb){ bb.getSize(size); }
             }
-          }catch(e){}
+          }catch{}
           if(!isFinite(size.x) || !isFinite(size.y) || !isFinite(size.z)){
             try{
               o.updateMatrixWorld(true);
               size = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
-            }catch(e){}
+            }catch{}
           }
           const dims = [size.x, size.y, size.z].map(v => Math.max(1e-6, v)).sort((a,b)=>a-b);
           const planeH = dims[1];
           const planeW = dims[2];
           const aspect = planeW / planeH;
-          backboardSurfaceAspect = aspect;
           console.log('Backboard plane dims (local):', planeW.toFixed(4), planeH.toFixed(4), 'aspect:', aspect.toFixed(4));
           createBackboardCanvas(aspect);
           console.log('Backboard canvas:', backboardCanvas.width, backboardCanvas.height, 'css:', backboardCssW, backboardCssH, 'aspect:', (backboardCanvas.width/backboardCanvas.height).toFixed(4));
           backboardTexture = new THREE.CanvasTexture(backboardCanvas);
-          try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch(e){ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch(e){} }
-          try{ backboardTexture.flipY = false; }catch(e){}
-          try{ backboardTexture.generateMipmaps = true; }catch(e){}
-          try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch(e){ backboardTexture.minFilter = THREE.LinearFilter; }
-          try{ backboardTexture.magFilter = THREE.LinearFilter; }catch(e){ backboardTexture.magFilter = THREE.LinearFilter; }
-          try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch(e){}
+          try{ backboardTexture.colorSpace = THREE.SRGBColorSpace; }catch{ try{ backboardTexture.encoding = THREE.sRGBEncoding; }catch{} }
+          try{ backboardTexture.flipY = false; }catch{}
+          try{ backboardTexture.generateMipmaps = true; }catch{}
+          try{ backboardTexture.minFilter = THREE.LinearMipmapLinearFilter; }catch{ backboardTexture.minFilter = THREE.LinearFilter; }
+          try{ backboardTexture.magFilter = THREE.LinearFilter; }catch{ backboardTexture.magFilter = THREE.LinearFilter; }
+          try{ backboardTexture.anisotropy = (renderer && renderer.capabilities && typeof renderer.capabilities.getMaxAnisotropy === 'function') ? (renderer.capabilities.getMaxAnisotropy() || 1) : 1; }catch{}
           backboardTexture.wrapS = THREE.ClampToEdgeWrapping; backboardTexture.wrapT = THREE.ClampToEdgeWrapping;
           backboardTexture.needsUpdate = true;
 
@@ -6611,10 +6063,10 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
             screenPlane.name = 'UI_ScreenOverlay';
             screenPlane.position.set(0, 0, 0.01);
             // Rotate overlay 180deg so the canvas appears upright
-            try{ screenPlane.rotateZ(Math.PI); }catch(e){}
+            try{ screenPlane.rotateZ(Math.PI); }catch{}
             screenPlane.renderOrder = 999;
             // Ensure overlay UI never writes to depth
-            try{ if(screenPlane.material) screenPlane.material.depthWrite = false; }catch(e){}
+            try{ if(screenPlane.material) screenPlane.material.depthWrite = false; }catch{}
             backboardMesh.add(screenPlane);
             screenPlane.updateMatrixWorld(true);
           }catch(e){ console.warn('ScreenPlane creation failed', e); }
@@ -6672,13 +6124,13 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
               console.log('Backboard UV correction detected:', backboardUVCorrection, 'verticalAxis', verticalAxis, 'du', du.toFixed(3), 'dv', dv.toFixed(3));
             }
           }catch(e){ console.warn('backboard UV detect failed', e); }
-          try{ console.log('[BackboardUV] mirrorU', backboardUVCorrection ? backboardUVCorrection.mirrorU : false); }catch(e){}
+          try{ console.log('[BackboardUV] mirrorU', backboardUVCorrection ? backboardUVCorrection.mirrorU : false); }catch{}
         }catch(e){ console.warn('Backboard overlay setup failed', e); }
       }
-      if(o.isMesh && o.material && o.material.color){ 
-        if(o.material.color.getHex()===0x000000) o.material.color.set(0x333333); 
-        o.material.side=THREE.DoubleSide; 
-        o.frustumCulled=false; 
+      if(o.isMesh && o.material && o.material.color){
+        if(o.material.color.getHex()===0x000000) o.material.color.set(0x333333);
+        o.material.side=THREE.DoubleSide;
+        o.frustumCulled=false;
       }
       // Set all shape keys (morph targets) to 1.0
       if(o.isMesh && Array.isArray(o.morphTargetInfluences)){
@@ -6748,7 +6200,7 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
             const q = new THREE.Vector3(); mMesh.getWorldPosition(q);
             const d = p.distanceTo(q);
             if(d < bestDist){ bestDist = d; best = Number(mNum); }
-          }catch(e){}
+          }catch{}
         });
         return (bestDist < 0.12) ? best : null; // threshold in world units
       };
@@ -6792,7 +6244,7 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
           ctx.fillStyle = '#000'; ctx.font = 'bold 92px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           ctx.fillText(String(keyChar).toUpperCase(), W/2, H/2 + 6);
 
-          const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+          const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch{}
           tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
 
           // Use sprite so it always faces camera and avoids complex UV/clipping
@@ -6846,19 +6298,27 @@ loader.load(`${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`,
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(String(label).toUpperCase(), Wc/2 + 1, Hc/2 + 1);
             ctx.fillStyle = 'white'; ctx.fillText(String(label).toUpperCase(), Wc/2, Hc/2);
-            const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch(e){}
+            const tex = new THREE.CanvasTexture(c); try{ tex.encoding = THREE.sRGBEncoding; }catch{}
             tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.needsUpdate = true;
             const mat = new THREE.SpriteMaterial({ map: tex, depthTest: true, depthWrite: false });
             const sprite = new THREE.Sprite(mat);
             sprite.position.copy(pos);
             sprite.scale.set(baseScale, baseScale * (Hc / Wc) * 0.9, 1);
             // store metadata so labels can be rebuilt to show note names or QWERTY
-            try{ sprite.userData = { midi: mNum, qwerty: String(label), noteName: getKeymapNoteName ? getKeymapNoteName(mNum) : null }; }catch(e){ sprite.userData = { midi: mNum, qwerty: String(label), noteName: null }; }
+            try{ sprite.userData = { midi: mNum, qwerty: String(label), noteName: getKeymapNoteName ? getKeymapNoteName(mNum) : null }; }catch{ sprite.userData = { midi: mNum, qwerty: String(label), noteName: null }; }
             qwertyLabelsGroup.add(sprite);
-          }catch(e){ /* ignore single-label failures */ }
+          }catch{ /* ignore single-label failures */ }
         });
       }catch(e){ console.warn('qwerty label generation failed', e); }
     }catch(e){ console.warn('user sticker generation failed', e); }
+    musicHighlights?.dispose();
+    musicHighlights = bindMusicHighlights({
+      model: root,
+      lights: [hemi, keyLight, fillLight, rimLight, underLight, subtleAmbient],
+      keyMaterials: [glowMatBlack, glowMatWhite, glowMatMelody, glowMatHarmony],
+      signal: musicPageSignal
+    });
+    if (sustainPedalGlowMat) musicHighlights.registerMaterial(sustainPedalGlowMat, 1);
     // After keys are collected and backboard identified, generate runtime keymap via raycasting
     try{ if(backboardMesh && keyMeshes && keyMeshes.length){
       if(!jsonKeymapLoaded){
@@ -7275,12 +6735,12 @@ function syncTrackVideoToPlayback(autoplay){
   const posSec = getPlaybackPositionSec();
   const syncMs = getSyncOffsetMs();
   const targetTime = Math.max(0, posSec - (syncMs / 1000));
-  try{ trackVideo.hqVideo.currentTime = targetTime; }catch(e){}
-  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch(e){}
+  try{ trackVideo.hqVideo.currentTime = targetTime; }catch{}
+  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch{}
   if(autoplay){
-    try{ trackVideo.hqVideo.play().catch(() => {}); }catch(e){}
+    try{ trackVideo.hqVideo.play().catch(() => {}); }catch{}
   } else {
-    try{ trackVideo.hqVideo.pause(); }catch(e){}
+    try{ trackVideo.hqVideo.pause(); }catch{}
   }
 }
 
@@ -7293,14 +6753,8 @@ function ensureTrackVideoUi(){
     } else if(action.type === 'seekToRatio'){
       seekTrackToRatio(action.ratio);
     } else if(action.type === 'setVolume'){
-      const settings = getStoredAudioSettings();
       const volume = Math.max(0, Math.min(1, Number.isFinite(action.volume) ? action.volume : 0));
-      setStoredAudioSettings(volume, volume <= 0.001 ? true : false);
-      if(settings.muted && volume > 0.001){
-        applyInstrumentMix();
-      } else {
-        applyInstrumentMix();
-      }
+      requestMusicSiteAudio(volume, volume <= 0.001, () => trackVideo.active);
     } else if(action.type === 'cyclePlaybackRate'){
       cycleSharedPlaybackRate();
     } else if(action.type === 'togglePitch'){
@@ -7308,9 +6762,7 @@ function ensureTrackVideoUi(){
     } else if(action.type === 'toggleMute'){
       const settings = getStoredAudioSettings();
       const nextMuted = !settings.muted;
-      setStoredAudioSettings(settings.volume, nextMuted);
-      applyInstrumentMix();
-      renderTopPadGrid();
+      requestMusicSiteAudio(settings.volume, nextMuted, () => trackVideo.active);
     } else if(action.type === 'exit'){
       stopPlayback();
     }
@@ -7322,6 +6774,7 @@ function startTrackVideoPlayback(key){
   if(!track || !track.video) return;
   const videos = getTrackVideoElements(key);
   if(!videos) return;
+  ++musicAudioRequestGeneration;
   trackVideo.active = true;
   trackVideo.key = key;
   trackVideo.lqVideo = videos.lq;
@@ -7336,20 +6789,23 @@ function startTrackVideoPlayback(key){
     videos.hq.addEventListener('loadeddata', () => renderTopPadGrid(), { once: true });
     videos.hq.addEventListener('seeked', () => renderTopPadGrid(), { once: true });
     videos.hq.load();
-  }catch(e){}
+  }catch{}
   syncTrackVideoToPlayback(!playbackPaused && (audioPlaying || playingMIDI));
   renderTopPadGrid();
 }
 
 function pauseTrackVideoPlayback(){
   if(!trackVideo.active || !trackVideo.hqVideo) return;
-  try{ trackVideo.hqVideo.pause(); }catch(e){}
+  try{ trackVideo.hqVideo.pause(); }catch{}
 }
 
 function stopTrackVideoPlayback(){
+  ++musicAudioRequestGeneration;
+  disposeMusicVideoControls(trackVideo);
   if(!trackVideo.active) return;
-  try{ if(trackVideo.hqVideo){ trackVideo.hqVideo.pause(); trackVideo.hqVideo.currentTime = 0; } }catch(e){}
+  try{ if(trackVideo.hqVideo){ trackVideo.hqVideo.pause(); trackVideo.hqVideo.currentTime = 0; } }catch{}
   trackVideo.active = false;
+  trackVideo.keyboardFocused = false;
   trackVideo.key = null;
   trackVideo.hqVideo = null;
   trackVideo.lqVideo = null;
@@ -7368,29 +6824,29 @@ function updateTrackVideoSync(){
   const cur = trackVideo.hqVideo.currentTime || 0;
   const threshold = Math.max(0.25, 0.12 * Math.max(1, currentPlaybackRate));
   if(Math.abs(cur - targetTime) > threshold && !trackVideo.hqVideo.seeking){
-    try{ trackVideo.hqVideo.currentTime = targetTime; }catch(e){}
+    try{ trackVideo.hqVideo.currentTime = targetTime; }catch{}
   }
-  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch(e){}
+  try{ trackVideo.hqVideo.playbackRate = currentPlaybackRate; }catch{}
   if(trackVideo.hqVideo.paused){
-    try{ trackVideo.hqVideo.play().catch(() => {}); }catch(e){}
+    try{ trackVideo.hqVideo.play().catch(() => {}); }catch{}
   }
 }
 function stopAllNotesAndPedal(){
-  try{ NoteEngine.panic(); }catch(e){}
-  try{ allNotesOff(); }catch(e){}
-  try{ activeNotes.clear(); }catch(e){}
-  try{ activeNoteSet.clear(); }catch(e){}
+  try{ NoteEngine.panic(); }catch{}
+  try{ allNotesOff(); }catch{}
+  try{ activeNotes.clear(); }catch{}
+  try{ activeNoteSet.clear(); }catch{}
   sustainKeyDown = false;
   try{
     if(sustainPedalMesh){
       sustainPedalMesh.rotation.x = 0;
     }
-  }catch(e){}
+  }catch{}
   sustainAnim.phase = 'idle';
   sustainAnim.startMs = 0;
   sustainAnim.fromAngle = 0;
   sustainAnim.targetAngle = 0;
-  try{ applySustainPedalGlow(false); }catch(e){}
+  try{ applySustainPedalGlow(false); }catch{}
   clearAllKeyGlow();
   resetKeys();
   trackDebugUntil = performance.now() + 1000;
@@ -7421,7 +6877,7 @@ function buildPendingNotes(){
   },
   undefined,
   (err) => {
-    console.error('GLTF LOAD FAILED:', `${assetUrl('../glb/toy-piano.glb')}?${MODEL_VERSION}`, err);
+    console.error('GLTF LOAD FAILED:', `${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`, err);
   });
   pendingNotes.sort((a,b)=>a.startSec - b.startSec);
 }
@@ -7559,7 +7015,7 @@ function advanceMIDI(elapsedMs){
         sustainAnim.fromAngle = sustainPedalMesh.rotation.x || 0;
         sustainAnim.targetAngle = PEDAL_MAX_ANGLE;
         applySustainPedalGlow(true);
-        try{ requestBackboardRedraw(); }catch(e){}
+        try{ requestBackboardRedraw(); }catch{}
       } else {
         sustainKeyDown = false;
         // Release logic with lookahead: if next press soon, use fast release
@@ -7577,7 +7033,7 @@ function advanceMIDI(elapsedMs){
         // Once pedal goes up, apply sustain release to voices
         applySustainState();
         applySustainPedalGlow(false);
-        try{ requestBackboardRedraw(); }catch(e){}
+        try{ requestBackboardRedraw(); }catch{}
       }
     }
   }
@@ -7728,13 +7184,12 @@ function rebuildFallingNotesAtElapsed(nowSec){
 }
 
 // --- Backboard overlay rendering (note bars) ---
-function renderBackboardOverlay(dt){
+function renderBackboardOverlay(){
   if(!backboardCanvas || !backboardCtx || !backboardTexture) return;
   const ctx = backboardCtx; const W = backboardCssW, H = backboardCssH; // logical CSS-pixel drawing units
   const debugGridEnabled = (typeof window !== 'undefined') ? !!window.backboardDebugGrid : false;
-  try{ ctx.imageSmoothingEnabled = true; }catch(e){}
+  try{ ctx.imageSmoothingEnabled = true; }catch{}
   // Use canvas-derived aspect (width/height) for visual compensation
-  try{ backboardSurfaceAspect = (W / Math.max(1, H)); }catch(e){}
   // Clear canvas and draw base background
   panelHitRects = [];
   ctx.clearRect(0,0,W,H);
@@ -7989,26 +7444,7 @@ function renderBackboardOverlay(dt){
         noteName: info && typeof info.name === 'string' ? info.name : undefined
       }));
     if(!sourceEntries.length) return null;
-    const fallbackBounds = (() => {
-      let min = Infinity;
-      let max = -Infinity;
-      sourceEntries.forEach(entry => {
-        const u0 = Number(entry.u0);
-        const u1 = Number(entry.u1);
-        if(Number.isFinite(u0)){
-          min = Math.min(min, u0);
-          max = Math.max(max, u0);
-        }
-        if(Number.isFinite(u1)){
-          min = Math.min(min, u1);
-          max = Math.max(max, u1);
-        }
-      });
-      if(min === Infinity || max === -Infinity){
-        return { uMin: 0, uSpan: 1 };
-      }
-      return { uMin: min, uSpan: Math.max(1e-6, max - min) };
-    })();
+
     const normX = (u) => {
       const uAbs = Number(u);
       if(!Number.isFinite(uAbs)) return 0;
@@ -8262,7 +7698,7 @@ function renderBackboardOverlay(dt){
     }
     const laneData = buildLaneData();
     if(laneData){
-      const { normX, sourceEntries, laneEntries, laneWhiteY, laneBlackY, laneUpperY } = laneData;
+      const { normX, laneEntries, laneWhiteY, laneBlackY } = laneData;
       updateQwertyZoneHover();
       const newWhites = computeQwertyWhiteKeyLanes(laneEntries, normX);
       const newSig = newWhites.length
@@ -8308,7 +7744,7 @@ function renderBackboardOverlay(dt){
         try{
           const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
           if(val && val.trim()) return val.trim();
-        }catch(e){}
+        }catch{}
         return fallback;
       };
       if(typeof CODE_TO_MIDI !== 'undefined'){
@@ -8570,11 +8006,11 @@ function renderBackboardOverlay(dt){
         try{
           const val = getComputedStyle(document.body || document.documentElement).getPropertyValue(name);
           if(val && val.trim()) return val.trim();
-        }catch(e){}
+        }catch{}
         return fallback;
       };
       const greenDark = getCssVar('--green-dark', '#00130d');
-      const darkColor = getCssVar('--dark-color', greenDark);
+
       const greenSecondary = getCssVar('--green-secondary', '#0d5023');
       const labelStyles = {
         white: { fill: '#ffffff', text: greenDark, line: greenDark },
@@ -8610,7 +8046,7 @@ function renderBackboardOverlay(dt){
           labelClampMaxX = Math.min(W, laneMaxX + pad);
         }
       }
-      const drawQwertyLabel = (entry, textBand, shapeBand, style, bandHeight) => {
+      const drawQwertyLabel = (entry, textBand, shapeBand, style) => {
         const keyW = Math.max(6, entry.w || 0);
         const maxW = entry.wide ? (cellW * 3.2) : (cellW * 1.6);
         const scaleW = entry.wide ? 1.6 : 0.9;
@@ -8721,8 +8157,8 @@ function renderBackboardOverlay(dt){
         const dividerLineW = 4;
         const dividerRect = { x: qwertyDividerX - dividerZoneW * 0.5, y: 0, w: dividerZoneW, h: H };
         panelHitRects.push({ panel: 'qwerty', type: 'divider', id: 'split', key: 'qwerty:divider', rect: dividerRect });
-        const dividerHover = qwertyZoneHover.divider || 0;
-        const suppressDividerGlow = panelHover && (panelHover === 'qwerty:group:left' || panelHover === 'qwerty:group:right' || panelHover === 'qwerty:handle:left' || panelHover === 'qwerty:handle:right');
+
+
         const lineX = qwertyDividerX - dividerLineW * 0.5;
         const midY = laneBlackY.y1;
         ctx.fillStyle = 'rgba(160, 70, 255, 0.8)';
@@ -9019,7 +8455,7 @@ function renderBackboardOverlay(dt){
         const centeredX = Math.max(0, (W - panelW) * 0.5);
         drawInstrumentGrid('left', LEFT_INSTRUMENT_LAYOUT, centeredX, buttonsY, panelW, buttonsH);
       }
-    }catch(e){ /* ignore draw panel errors */ }
+    }catch{ /* ignore draw panel errors */ }
   }
   if(debugGridEnabled){
     drawBackboardDebugGrid(ctx, W, H);
@@ -9086,24 +8522,7 @@ function generateRuntimeKeymap(screenMesh, keys){
   const screenBox = new THREE.Box3().setFromObject(screenMesh);
   const screenCenter = screenBox.getCenter(new THREE.Vector3());
   // compute a stable world-space normal from the mesh geometry
-  function computeWorldNormalFromFirstTriangle(mesh){
-    try{
-      const geom = mesh.geometry;
-      if(!geom || !geom.attributes || !geom.attributes.position) return null;
-      const pos = geom.attributes.position;
-      if(pos.count < 3) return null;
-      const a = new THREE.Vector3(); const b = new THREE.Vector3(); const c = new THREE.Vector3();
-      const aw = new THREE.Vector3(); const bw = new THREE.Vector3(); const cw = new THREE.Vector3();
-      a.fromBufferAttribute(pos, 0); b.fromBufferAttribute(pos, 1); c.fromBufferAttribute(pos, 2);
-      aw.copy(a).applyMatrix4(mesh.matrixWorld);
-      bw.copy(b).applyMatrix4(mesh.matrixWorld);
-      cw.copy(c).applyMatrix4(mesh.matrixWorld);
-      const n = new THREE.Vector3();
-      n.subVectors(bw, aw).cross(new THREE.Vector3().subVectors(cw, aw)).normalize();
-      if(n.length() === 0) return null;
-      return n;
-    }catch(e){ return null; }
-  }
+
   // Prefer a reliable screen normal computed from the mesh world quaternion.
   // Try common local axes in order: +Z, -Z, +Y, -Y transformed to world space.
   const q = new THREE.Quaternion(); screenMesh.getWorldQuaternion(q);
@@ -9122,7 +8541,7 @@ function generateRuntimeKeymap(screenMesh, keys){
     // choose a sample origin from sampleMesh bounds
     const bbTest = new THREE.Box3().setFromObject(sampleMesh);
     const midYt = (bbTest.min.y + bbTest.max.y) * 0.5; const midZt = (bbTest.min.z + bbTest.max.z) * 0.5;
-    const centerTest = bbTest.getCenter(new THREE.Vector3());
+
     const leftTest = new THREE.Vector3(bbTest.min.x, midYt, midZt).addScaledVector(dirTest, -0.01);
     ray.set(leftTest, dirTest);
     const hits = ray.intersectObject(screenMesh, true);
@@ -9154,7 +8573,7 @@ function generateRuntimeKeymap(screenMesh, keys){
       ray.set(originR, dir);
       let iR = ray.intersectObject(screenMesh, true);
       // Log hit counts for diagnostics
-      try{ console.log('NOTE', mesh.name, 'note?', midiNameToNumber(mesh.name), 'hitsL', (iL?iL.length:0), 'hitsR', (iR?iR.length:0), 'screenMesh.type', screenMesh.type); }catch(e){}
+      try{ console.log('NOTE', mesh.name, 'note?', midiNameToNumber(mesh.name), 'hitsL', (iL?iL.length:0), 'hitsR', (iR?iR.length:0), 'screenMesh.type', screenMesh.type); }catch{}
       let uL = null, uR = null;
       if(iL && iL.length && iL[0].uv) uL = iL[0].uv.x;
       if(iR && iR.length && iR[0].uv) uR = iR[0].uv.x;
@@ -9181,7 +8600,7 @@ function generateRuntimeKeymap(screenMesh, keys){
           const nu1 = (ub.uMin + ub.uMax) - u0;
           u0 = Math.min(nu0, nu1); u1 = Math.max(nu0, nu1);
         }
-      }catch(e){ /* ignore mirror failures */ }
+      }catch{ /* ignore mirror failures */ }
       if(Number.isInteger(note)){
           keyByNote.set(Number(note), { u0, u1, name: mesh.name });
       }
@@ -9207,7 +8626,7 @@ function generateRuntimeKeymap(screenMesh, keys){
   }catch(e){ console.warn('Keymap hardening check failed', e); }
   RAYCAST_KEYMAP_READY = keyByNote.size > 0;
   console.log('Runtime keymap generated, keys:', keyByNote.size, 'ready=', RAYCAST_KEYMAP_READY);
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 // Hook play button if exists
 const playBtn = document.getElementById('playPerformance');
@@ -9460,7 +8879,7 @@ function updatePlayButton(){
   }
 }
 function togglePlayPause(){
-  try{ ensureAudio(); }catch(e){}
+  try{ ensureAudio(); }catch{}
   if(!audioCtx || !audioReady || !midiLoaded){ return; }
   if(audioPlaying){
     // Pause: capture position, stop source, freeze MIDI index and clock origin
@@ -9655,7 +9074,7 @@ const pointer = new THREE.Vector2();
 // pointer tracking to distinguish click vs drag for playing notes
 let pointerDownInfo = null; // { startX, startY, moved, midiNum, mesh, played, playedAt, glowApplied, lastMidi, lastSwitchAt }
 let pendingPlayTimer = null;
-const MIN_USER_NOTE_MS = 250;
+
 const USER_HOLD_DURATION_SEC = 60; // allow long holds; noteOff will stop immediately
 function midiNameToNumber(name){ const m = name.match(/^(\d{3})_/); return m? parseInt(m[1],10) : null; }
 // Simple polyphonic piano-like synth with sustain support
@@ -9700,10 +9119,10 @@ function releaseHeldEntry(entry){
   const now = (audioCtx && audioCtx.currentTime) ? audioCtx.currentTime : 0;
   const releaseTime = (entry && typeof entry.releaseTime === 'number') ? entry.releaseTime : NOTE_RELEASE;
   if(entry.loopState && typeof entry.loopState.stop === 'function'){
-    try{ entry.loopState.stop(now, releaseTime); }catch(e){ /* ignore */ }
+    try{ entry.loopState.stop(now, releaseTime); }catch{ /* ignore */ }
   }
   if(entry.retriggerTimer){
-    try{ clearTimeout(entry.retriggerTimer); }catch(e){ /* ignore */ }
+    try{ clearTimeout(entry.retriggerTimer); }catch{ /* ignore */ }
     entry.retriggerTimer = null;
   }
   try{
@@ -9713,9 +9132,9 @@ function releaseHeldEntry(entry){
       entry.gain.gain.setValueAtTime(currentGain, now);
       entry.gain.gain.linearRampToValueAtTime(0.0, now + releaseTime);
     }
-  }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
   if(entry.src && entry.src.stop){
-    try{ entry.src.stop(now + releaseTime + 0.03); }catch(e){ /* ignore */ }
+    try{ entry.src.stop(now + releaseTime + 0.03); }catch{ /* ignore */ }
   }
 }
 
@@ -9778,10 +9197,10 @@ function startPadLoopPlayback(buffer, gainNode, startAt, settings){
           const cur = item.gain.gain.value || 1.0;
           item.gain.gain.setValueAtTime(cur, stopTime);
           item.gain.gain.linearRampToValueAtTime(0.0001, stopTime + rel);
-        }catch(e){ /* ignore */ }
+        }catch{ /* ignore */ }
       }
       if(item && item.src && item.src.stop){
-        try{ item.src.stop(stopTime + rel + 0.08); }catch(e){ /* ignore */ }
+        try{ item.src.stop(stopTime + rel + 0.08); }catch{ /* ignore */ }
       }
     });
   };
@@ -9826,10 +9245,10 @@ function startPadRetriggerPlayback(buffer, gainNode, startAt, settings){
           const cur = item.gain.gain.value || 1.0;
           item.gain.gain.setValueAtTime(cur, stopTime);
           item.gain.gain.linearRampToValueAtTime(0.0001, stopTime + rel);
-        }catch(e){ /* ignore */ }
+        }catch{ /* ignore */ }
       }
       if(item && item.src && item.src.stop){
-        try{ item.src.stop(stopTime + rel + 0.05); }catch(e){ /* ignore */ }
+        try{ item.src.stop(stopTime + rel + 0.05); }catch{ /* ignore */ }
       }
     });
   };
@@ -9870,10 +9289,10 @@ function startPadRetriggerInstrument(playFn, midi, gainNode, startAt, settings){
           const cur = item.gain.gain.value || 1.0;
           item.gain.gain.setValueAtTime(cur, stopTime);
           item.gain.gain.linearRampToValueAtTime(0.0001, stopTime + rel);
-        }catch(e){ /* ignore */ }
+        }catch{ /* ignore */ }
       }
       if(item && item.src && item.src.stop){
-        try{ item.src.stop(stopTime + rel + 0.05); }catch(e){ /* ignore */ }
+        try{ item.src.stop(stopTime + rel + 0.05); }catch{ /* ignore */ }
       }
     });
   };
@@ -9962,7 +9381,7 @@ function onGlobalPointerMove(e){
   if(pointerDownInfo && typeof e.buttons === 'number' && e.buttons === 0){
     const pid = pointerDownInfo.pointerId;
     onGlobalPointerUp();
-    try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+    try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch{}
     return;
   }
   if(topPadSyncDragging){
@@ -10036,13 +9455,13 @@ function onGlobalPointerMove(e){
           }
           pointerDownInfo.lastSwitchAt = now;
           if(!pointerDownInfo.played && pointerDownInfo.glowApplied && pointerDownInfo.midiNum !== res.midiNum){
-            try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
-            try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
-            try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+            try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch{}
+            try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch{}
+            try{ clearNoteActive(pointerDownInfo.midiNum); }catch{}
             pointerDownInfo.glowApplied = false;
           }
           if(prev != null){
-            try{ NoteEngine.noteOff(prev); }catch(e){}
+            try{ NoteEngine.noteOff(prev); }catch{}
           }
           pointerDownInfo.lastMidi = res.midiNum;
           pointerDownInfo.offKey = false;
@@ -10057,11 +9476,11 @@ function onGlobalPointerMove(e){
         const currentMidi = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi
           : (pointerDownInfo.played ? pointerDownInfo.midiNum : null);
         if(currentMidi != null){
-          try{ NoteEngine.noteOff(currentMidi); }catch(e){}
+          try{ NoteEngine.noteOff(currentMidi); }catch{}
         } else if(pointerDownInfo.glowApplied){
-          try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
-          try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
-          try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+          try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch{}
+          try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch{}
+          try{ clearNoteActive(pointerDownInfo.midiNum); }catch{}
         }
         pointerDownInfo.lastMidi = null;
         pointerDownInfo.offKey = true;
@@ -10070,11 +9489,11 @@ function onGlobalPointerMove(e){
       const currentMidi = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi
         : (pointerDownInfo.played ? pointerDownInfo.midiNum : null);
       if(currentMidi != null){
-        try{ NoteEngine.noteOff(currentMidi); }catch(e){}
+        try{ NoteEngine.noteOff(currentMidi); }catch{}
       } else if(pointerDownInfo.glowApplied){
-        try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch(e){}
-        try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch(e){}
-        try{ clearNoteActive(pointerDownInfo.midiNum); }catch(e){}
+        try{ applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false); }catch{}
+        try{ resetKeyVisuals(pointerDownInfo.midiNum); }catch{}
+        try{ clearNoteActive(pointerDownInfo.midiNum); }catch{}
       }
       pointerDownInfo.lastMidi = null;
       pointerDownInfo.offKey = true;
@@ -10166,8 +9585,8 @@ function releaseOscillatorVoice(midiNum){
     const currentGain = entry.gain.gain.value || 1.0;
     entry.gain.gain.setValueAtTime(currentGain, now);
     entry.gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseTime);
-  }catch(e){ /* ignore */ }
-  try{ entry.osc.stop(now + releaseTime + 0.02); }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
+  try{ entry.osc.stop(now + releaseTime + 0.02); }catch{ /* ignore */ }
   setTimeout(()=>{ activeVoices.delete(midiNum); }, Math.ceil((releaseTime + 0.05)*1000));
 }
 
@@ -10176,7 +9595,7 @@ function notifyInstrumentPicker(midiNum){
     const status = document.querySelector('#instrumentPicker > div');
     if(status) status.textContent = 'Playing: ' + (currentInstrumentName || '') + ' ' + midiNum;
     setTimeout(()=>{ if(status) status.textContent = 'Loaded: ' + (currentInstrumentName || ''); }, 120);
-  }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
 }
 
 function markNoteActive(midiNum){
@@ -10184,7 +9603,7 @@ function markNoteActive(midiNum){
   if(Number.isNaN(mn)) return;
   activeNotes.set(mn, { velocity: 1, tOn: performance.now() });
   activeNoteSet.add(mn);
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 
 function clearNoteActive(midiNum){
@@ -10192,7 +9611,7 @@ function clearNoteActive(midiNum){
   if(Number.isNaN(mn)) return;
   activeNotes.delete(mn);
   activeNoteSet.delete(mn);
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 
 function resetKeyVisuals(midiNum){
@@ -10200,7 +9619,7 @@ function resetKeyVisuals(midiNum){
   try{
     keyActiveCount.set(midiNum, 0);
     updateKeyGlowMaterial(mesh, midiNum);
-  }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
   try{
     const currentAngle = mesh ? mesh.rotation.x : 0;
     if(mesh) mesh.rotation.x = 0;
@@ -10211,7 +9630,7 @@ function resetKeyVisuals(midiNum){
       st.fromAngle = currentAngle;
       st.targetAngle = 0;
     }
-  }catch(e){ /* ignore */ }
+  }catch{ /* ignore */ }
 }
 
 const noteRoutingByInput = new Map(); // routeKey -> { inputMidi, playMidi, config, side }
@@ -10277,8 +9696,8 @@ function forceStopNote(inputMidi, side){
   if(noteRoutingByInput.has(routeKey)) noteRoutingByInput.delete(routeKey);
   if(heldNotes.has(inputMidi)) releaseHeldSample(inputMidi);
   if(activeVoices.has(inputMidi)) releaseOscillatorVoice(inputMidi);
-  try{ resetKeyVisuals(inputMidi); }catch(e){}
-  try{ clearNoteActive(inputMidi); }catch(e){}
+  try{ resetKeyVisuals(inputMidi); }catch{}
+  try{ clearNoteActive(inputMidi); }catch{}
 }
 function resolveNoteEngineMode(config){
   if(config && config.engine === 'osc') return 'osc';
@@ -10342,7 +9761,7 @@ const NoteEngine = {
     if(config && config.mono && side){
       const prev = monoStateBySide[side];
       if(prev && prev.instrumentId === config.id && prev.routeKey !== routeKey){
-        try{ forceStopNote(prev.inputMidi, side); }catch(e){}
+        try{ forceStopNote(prev.inputMidi, side); }catch{}
       }
       monoStateBySide[side] = route ? { inputMidi: midi, routeKey, instrumentId: config.id } : null;
     }
@@ -10457,9 +9876,9 @@ const NoteEngine = {
   }
 };
 
-function onGlobalPointerUp(e){
-  try{ topPadVideo.ui?.endPointerInteraction?.(); }catch(err){}
-  try{ trackVideo.ui?.endPointerInteraction?.(); }catch(err){}
+function onGlobalPointerUp(){
+  try{ topPadVideo.ui?.endPointerInteraction?.(); }catch{}
+  try{ trackVideo.ui?.endPointerInteraction?.(); }catch{}
   if(topPadSyncDragging){
     topPadSyncDragging = false;
     topPadSyncPointerId = null;
@@ -10475,17 +9894,17 @@ function onGlobalPointerUp(e){
 
   // If we haven't played yet (quick tap), play briefly then stop.
   if(!pointerDownInfo.moved && !playedAny){
-    try{ NoteEngine.noteOn(primaryMidi, primaryMesh); }catch(e){}
+    try{ NoteEngine.noteOn(primaryMidi, primaryMesh); }catch{}
   }
 
   // Always stop the currently-active note on release (works for both tap and glissando).
-  try{ if(currentMidi != null) NoteEngine.noteOff(currentMidi); }catch(e){}
+  try{ if(currentMidi != null) NoteEngine.noteOff(currentMidi); }catch{}
 
   // If a glow was applied but a note never started (tap-move-cancel), clear it.
   if(!playedAny && primaryMesh){
-    try{ applyKeyGlow(primaryMesh, primaryMidi, false); }catch(e){}
-    try{ resetKeyVisuals(primaryMidi); }catch(e){}
-    try{ clearNoteActive(primaryMidi); }catch(e){}
+    try{ applyKeyGlow(primaryMesh, primaryMidi, false); }catch{}
+    try{ resetKeyVisuals(primaryMidi); }catch{}
+    try{ clearNoteActive(primaryMidi); }catch{}
   }
   pointerDownInfo = null;
 }
@@ -10663,6 +10082,7 @@ function onPointerDown(e){
         if(!handled && trackVideo.active && trackVideo.ui && topPadVideo.controlsRect){
           const cr = topPadVideo.controlsRect;
           if(px >= cr.x && px <= cr.x + cr.w && py >= cr.y && py <= cr.y + cr.h){
+            trackVideo.keyboardFocused = true;
             trackVideo.ui.setViewportRectProvider(() => ({
               left: 0,
               top: 0,
@@ -10681,13 +10101,14 @@ function onPointerDown(e){
         }
         if(handled){
           updateTopPadHover(e.clientX, e.clientY);
-          try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+          try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
           e.preventDefault();
           return;
         }
       }
     }
-  }catch(err){ /* ignore top pad UI hit errors */ }
+  }catch{ /* ignore top pad UI hit errors */ }
+  trackVideo.keyboardFocused = false;
   // Check backboard instrument UI first
   const uiUv = raycastBackboardForUv(e.clientX, e.clientY);
   const uiHit = uiUv ? hitTestPanelUI(uiUv) : null;
@@ -10747,7 +10168,7 @@ function onPointerDown(e){
       backboardPointerDown = true;
       controls.enableRotate = false;
       suppressRotate = true;
-      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
       e.preventDefault();
       return;
     } else if(uiHit.type === 'group-handle'){
@@ -10763,7 +10184,7 @@ function onPointerDown(e){
       backboardPointerDown = true;
       controls.enableRotate = false;
       suppressRotate = true;
-      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
       e.preventDefault();
       return;
     } else if(uiHit.type === 'arrow-up'){
@@ -10781,7 +10202,7 @@ function onPointerDown(e){
     backboardPointerDown = true;
     controls.enableRotate = false;
     suppressRotate = true;
-    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
     e.preventDefault();
     return;
   }
@@ -10790,7 +10211,7 @@ function onPointerDown(e){
     backboardPointerDown = true;
     controls.enableRotate = false;
     suppressRotate = true;
-    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+    try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
     e.preventDefault();
     return;
   }
@@ -10806,7 +10227,7 @@ function onPointerDown(e){
       const playable = isNotePlayable(res.midiNum, getInstrumentSideForNote(res.midiNum));
       pointerDownInfo = { startX: e.clientX, startY: e.clientY, moved: false, midiNum: res.midiNum, mesh: res.mesh, played: false, playedAt: null, glowApplied: false, pointerId: e.pointerId, lastMidi: null, lastSwitchAt: 0, offKey: false };
       // capture the pointer so we reliably receive pointerup even if the cursor leaves the canvas
-      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch(err){}
+      try{ if(typeof e.pointerId !== 'undefined') canvas.setPointerCapture(e.pointerId); }catch{}
       // immediate visual feedback so quick taps show highlight
       if(playable){
         applyKeyGlow(res.mesh, res.midiNum, true);
@@ -10834,15 +10255,15 @@ function onPointerDown(e){
 }
 
 function onPointerUp(){
-  try{ topPadVideo.ui?.endPointerInteraction?.(); trackVideo.ui?.endPointerInteraction?.(); }catch(e){}
+  try{ topPadVideo.ui?.endPointerInteraction?.(); trackVideo.ui?.endPointerInteraction?.(); }catch{}
   const e = arguments[0];
   if(e && (e.button === 1 || e.button === 2)) return;
   // Release pointer capture if we had one
   const pid = pointerDownInfo && pointerDownInfo.pointerId;
   onGlobalPointerUp();
-  try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch(err){}
+  try{ if(pid !== undefined && pid !== null) canvas.releasePointerCapture(pid); }catch{}
   if(topPadSyncPointerId !== null && topPadSyncPointerId !== undefined){
-    try{ canvas.releasePointerCapture(topPadSyncPointerId); }catch(err){}
+    try{ canvas.releasePointerCapture(topPadSyncPointerId); }catch{}
     topPadSyncPointerId = null;
   }
   if(qwertyDividerDragging){
@@ -10877,19 +10298,19 @@ canvas.addEventListener('pointermove', (e)=>{
 });
 canvas.addEventListener('pointermove', (e)=>updateTopPadHover(e.clientX, e.clientY));
 // Keep pointer-down glissando active even if cursor leaves the canvas
-canvas.addEventListener('pointerleave', ()=>{ try{ topPadVideo.ui?.clearHoverPreview?.(); }catch(e){} try{ trackVideo.ui?.clearHoverPreview?.(); }catch(e){} if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
+canvas.addEventListener('pointerleave', ()=>{ try{ topPadVideo.ui?.clearHoverPreview?.(); }catch{} try{ trackVideo.ui?.clearHoverPreview?.(); }catch{} if(panelHover){ panelHover=null; requestBackboardRedraw(); } if(topPadHoverCell){ topPadHoverCell=null; renderTopPadGrid(); } if(topPadHoverUi){ topPadHoverUi=null; renderTopPadGrid(); } if(topPadVideo.hoverThumb){ topPadVideo.hoverThumb=false; stopTopPadPreview(); } if(canvas) canvas.style.cursor = ''; });
 // prevent context menu on canvas
 canvas.addEventListener('contextmenu', ev=>{ ev.preventDefault(); });
 
 function handleTopPadVideoKeys(ev){
   const topPadActive = topPadVideo.mode === 'playing' && !!topPadVideo.hqVideo;
-  const trackActive = !!(trackVideo.active && trackVideo.hqVideo);
+  const trackActive = !!(trackVideo.active && trackVideo.keyboardFocused && trackVideo.hqVideo);
   if(!topPadActive && !trackActive) return;
   const tag = (ev.target && ev.target.tagName) ? ev.target.tagName.toLowerCase() : '';
   if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
   const key = (ev.key || '').toLowerCase();
   const shift = !!ev.shiftKey;
-  const prevent = () => { try{ ev.preventDefault(); }catch(e){} };
+  const prevent = () => { try{ ev.preventDefault(); }catch{} };
   const video = topPadActive ? topPadVideo.hqVideo : trackVideo.hqVideo;
   const audio = topPadActive ? topPadVideo.audio : null;
   if(!video) return;
@@ -10906,12 +10327,12 @@ function handleTopPadVideoKeys(ev){
     } else if(video.paused){
       const syncMs = Number.isFinite(getSyncOffsetMs()) ? getSyncOffsetMs() : 0;
       const targetTime = Math.max(0, (video.currentTime || 0) - (syncMs / 1000));
-      try{ if(audio) audio.currentTime = targetTime; }catch(e){}
-      try{ if(audio) audio.play().catch(() => {}); }catch(e){}
-      try{ video.play().catch(() => {}); }catch(e){}
+      try{ if(audio) audio.currentTime = targetTime; }catch{}
+      try{ if(audio) audio.play().catch(() => {}); }catch{}
+      try{ video.play().catch(() => {}); }catch{}
     } else {
-      try{ video.pause(); }catch(e){}
-      try{ if(audio) audio.pause(); }catch(e){}
+      try{ video.pause(); }catch{}
+      try{ if(audio) audio.pause(); }catch{}
     }
     renderTopPadGrid();
     return;
@@ -10920,11 +10341,10 @@ function handleTopPadVideoKeys(ev){
     prevent();
     if(trackActive){
       const settings = getStoredAudioSettings();
-      setStoredAudioSettings(settings.volume, !settings.muted);
-      applyInstrumentMix();
+      requestMusicSiteAudio(settings.volume, !settings.muted, () => trackVideo.active);
     } else if(audio){
       if (audio.muted) unmuteMediaWithConsent(audio);
-      else audio.muted = true;
+      else muteTopPadAudio();
     }
     renderTopPadGrid();
     return;
@@ -10938,11 +10358,10 @@ function handleTopPadVideoKeys(ev){
     if(trackActive){
       const settings = getStoredAudioSettings();
       const next = Math.min(1, (settings.volume || 0) + 0.05);
-      setStoredAudioSettings(next, next <= 0.001);
-      applyInstrumentMix();
+      requestMusicSiteAudio(next, next <= 0.001, () => trackVideo.active);
     } else if(audio){
-      const next = Math.min(1, (audio.volume || 0) + 0.05);
-      if (next > 0.001) unmuteMediaWithConsent(audio, next);
+      const next = Math.min(1, (getStoredAudioSettings().volume || 0) + 0.05);
+      setTopPadAudioVolume(next);
     }
     renderTopPadGrid();
     return;
@@ -10952,11 +10371,10 @@ function handleTopPadVideoKeys(ev){
     if(trackActive){
       const settings = getStoredAudioSettings();
       const next = Math.max(0, (settings.volume || 0) - 0.05);
-      setStoredAudioSettings(next, next <= 0.001);
-      applyInstrumentMix();
+      requestMusicSiteAudio(next, next <= 0.001, () => trackVideo.active);
     } else if(audio){
-      audio.volume = Math.max(0, (audio.volume || 0) - 0.05);
-      if(audio.volume <= 0.001) audio.muted = true;
+      const next = Math.max(0, (getStoredAudioSettings().volume || 0) - 0.05);
+      setTopPadAudioVolume(next);
     }
     renderTopPadGrid();
     return;
@@ -11172,20 +10590,7 @@ function getGroupBoundsForSide(side){
   if(!isFinite(minX) || !isFinite(maxX)) return null;
   return { minX, maxX };
 }
-function getNearestWhiteIndexByX(xPx){
-  if(!qwertyWhiteKeyLanes.length || !Number.isFinite(xPx)) return null;
-  let best = null;
-  let bestDist = Infinity;
-  for(let i=0;i<qwertyWhiteKeyLanes.length;i++){
-    const c = qwertyWhiteKeyLanes[i].center;
-    const d = Math.abs(xPx - c);
-    if(d < bestDist){
-      bestDist = d;
-      best = i;
-    }
-  }
-  return best;
-}
+
 function getNearestWhiteIndexByEdgeX(side, xPx){
   if(!qwertyWhiteKeyLanes.length || !Number.isFinite(xPx)) return null;
   let best = null;
@@ -11245,7 +10650,7 @@ function syncQwertyLabelSprites(){
     }
     updated += 1;
   });
-  try{ window.rebuildQwertyLabels(window.qwertyLabelMode); }catch(e){}
+  try{ window.rebuildQwertyLabels(window.qwertyLabelMode); }catch{}
   return updated;
 }
 function mapBlackCodesSequential(whiteNotes, blackCodes, side){
@@ -11380,7 +10785,7 @@ function withInstrumentForSide(side, fn){
   currentInstrumentName = instrumentPlayersBySide[side].name || prevName;
   currentInstrumentConfig = instrumentPlayersBySide[side].config || prevConfig;
   if(prevMode != null){
-    try{ NoteEngine.mode = resolveNoteEngineMode(currentInstrumentConfig); }catch(e){}
+    try{ NoteEngine.mode = resolveNoteEngineMode(currentInstrumentConfig); }catch{}
   }
   try{
     return fn();
@@ -11389,7 +10794,7 @@ function withInstrumentForSide(side, fn){
     currentInstrumentName = prevName;
     currentInstrumentConfig = prevConfig;
     if(prevMode != null){
-      try{ NoteEngine.mode = prevMode; }catch(e){}
+      try{ NoteEngine.mode = prevMode; }catch{}
     }
   }
 }
@@ -11400,7 +10805,7 @@ function noteOn(midi){
     if(!isNotePlayable(midi, side)) return;
     const mesh = midiKeyMap.get(Number(midi));
     // Visual feedback: apply glow for keyboard-triggered notes
-    if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch(e){}
+    if(mesh) try{ applyKeyGlow(mesh, Number(midi), true); }catch{}
     withInstrumentForSide(side, ()=> NoteEngine.noteOn(Number(midi), mesh));
   }catch(e){ console.warn('noteOn failed', e); }
 }
@@ -11410,7 +10815,7 @@ function noteOff(midi){
 
 function sustainPedalDown(){
   // Use the same timebase as updateKeyAnimations() (audioCtx-relative ms).
-  try{ ensureAudio(); }catch(e){}
+  try{ ensureAudio(); }catch{}
   const elapsedMs = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0;
   if(sustainPedalMesh){
     if(sustainAnim.phase === 'release'){
@@ -11425,10 +10830,10 @@ function sustainPedalDown(){
   } else {
     sustainAnim.phase = 'held';
   }
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 function sustainPedalUp(){
-  try{ ensureAudio(); }catch(e){}
+  try{ ensureAudio(); }catch{}
   const elapsedMs = audioCtx ? (audioCtx.currentTime - midiStartCtxTime) * 1000 : 0;
   if(sustainPedalMesh){
     sustainAnim.phase = 'release';
@@ -11440,13 +10845,13 @@ function sustainPedalUp(){
     sustainAnim.phase = 'idle';
   }
   applySustainState();
-  try{ requestBackboardRedraw(); }catch(e){}
+  try{ requestBackboardRedraw(); }catch{}
 }
 
 function handleKeyDown(ev){
   // Video owns the keyboard while it is focused. In particular, frame-step
   // punctuation and YouTube-style shortcuts must never sound piano notes.
-  if(topPadVideo.mode !== 'idle' || trackVideo.active) return;
+  if(topPadVideo.mode !== 'idle' || trackVideo.keyboardFocused) return;
   // Allow modifier shortcuts to pass through
   if(ev.ctrlKey || ev.altKey || ev.metaKey) return;
   const code = ev.code;
@@ -11528,7 +10933,7 @@ function handleKeyUp(ev){
 
 function allNotesOff(){
   for(const m of Array.from(activeNoteSet)){
-    try{ noteOff(m); }catch(e){}
+    try{ noteOff(m); }catch{}
   }
   activeNoteSet.clear();
   downCodes.clear();
@@ -11537,20 +10942,20 @@ function allNotesOff(){
 
 // Panic: stop audio and visuals for all sources (keyboard, pointer, samples, oscillators)
 function panicAllNotes(){
-  try{ NoteEngine.panic(); }catch(e){}
-  try{ allNotesOff(); }catch(e){}
+  try{ NoteEngine.panic(); }catch{}
+  try{ allNotesOff(); }catch{}
   try{
     if(pointerDownInfo){
       try{
         const midiToStop = (pointerDownInfo.lastMidi != null) ? pointerDownInfo.lastMidi : pointerDownInfo.midiNum;
         if(midiToStop != null) NoteEngine.noteOff(midiToStop);
         if(pointerDownInfo.glowApplied) applyKeyGlow(pointerDownInfo.mesh, pointerDownInfo.midiNum, false);
-      }catch(e){}
+      }catch{}
     }
     pointerDownInfo = null;
-  }catch(e){}
-  try{ if(typeof pendingPlayTimer !== 'undefined' && pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; } }catch(e){}
-  try{ requestBackboardRedraw(); }catch(e){}
+  }catch{}
+  try{ if(typeof pendingPlayTimer !== 'undefined' && pendingPlayTimer){ clearTimeout(pendingPlayTimer); pendingPlayTimer = null; } }catch{}
+  try{ requestBackboardRedraw(); }catch{}
 }
 
 window.addEventListener('keydown', handleKeyDown, { capture:true, passive:false });

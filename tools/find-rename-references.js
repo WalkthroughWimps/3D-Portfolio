@@ -60,7 +60,7 @@ for (const m of mappings) {
         }
         entry.refs.push(...matches);
       }
-    } catch (e) {
+    } catch  {
       // ignore read errors
     }
   }

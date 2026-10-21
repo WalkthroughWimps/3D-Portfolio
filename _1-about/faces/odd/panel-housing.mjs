@@ -1,0 +1,11 @@
+import * as THREE from 'three';
+/** A spherical subtraction at the panel edge, lofted through its real thickness. */
+export function pocketedPanelGeometry(makeShape,{depth=.032,center=[.09,.184,.016],radius=.021,layers=20}={}){
+  const positions=[],normals=[],vertices=(a,b,c,na,nb,nc)=>{for(const[p,n]of[[a,na],[b,nb],[c,nc]]){positions.push(...p);normals.push(...n);}};
+  const shapes=Array.from({length:layers+1},(_,i)=>{const z=depth*i/layers,r=Math.sqrt(Math.max(0,radius*radius-(z-center[2])**2));return makeShape(r);});
+  for(const i of[0,layers]){const geometry=new THREE.ShapeGeometry(shapes[i],12),p=geometry.attributes.position,indices=geometry.index.array,z=i?depth:0,normal=[0,0,i?1:-1];for(let n=0;n<indices.length;n+=3){const order=i?[0,1,2]:[2,1,0],points=order.map(k=>[p.getX(indices[n+k]),p.getY(indices[n+k]),z]);vertices(...points,normal,normal,normal);}geometry.dispose();}
+  const rings=shapes.map(shape=>{const {shape:outer,holes}=shape.extractPoints(12);return [outer,...holes].map((ring,i)=>{if(ring[0].equals(ring.at(-1)))ring.pop();let area=0;for(let j=0;j<ring.length;j++){const a=ring[j],b=ring[(j+1)%ring.length];area+=a.x*b.y-b.x*a.y;}if((area<0)!==Boolean(i))ring.reverse();return ring;});});
+  const normalAt=(p,flat)=>{const v=p.map((n,i)=>n-center[i]),length=Math.hypot(...v);return Math.abs(length-radius)<.00001?v.map(n=>-n/length):flat;};
+  for(let layer=0;layer<layers;layer++)for(let hole=0;hole<rings[layer].length;hole++){const a=rings[layer][hole],b=rings[layer+1][hole];for(let i=0;i<a.length;i++){const j=(i+1)%a.length,p=[a[i].x,a[i].y,depth*layer/layers],q=[a[j].x,a[j].y,p[2]],r=[b[j].x,b[j].y,depth*(layer+1)/layers],s=[b[i].x,b[i].y,r[2]],flat=new THREE.Vector3().crossVectors(new THREE.Vector3(...q).sub(new THREE.Vector3(...p)),new THREE.Vector3(...r).sub(new THREE.Vector3(...p))).normalize().toArray();vertices(p,q,r,normalAt(p,flat),normalAt(q,flat),normalAt(r,flat));vertices(p,r,s,normalAt(p,flat),normalAt(r,flat),normalAt(s,flat));}}
+  const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));geometry.setAttribute('normal',new THREE.Float32BufferAttribute(normals,3));geometry.computeBoundingSphere();geometry.userData.sphericalPocket={center,radius};return geometry;
+}

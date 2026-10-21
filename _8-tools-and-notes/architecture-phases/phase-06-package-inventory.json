@@ -1,0 +1,560 @@
+{
+  "schemaVersion": 1,
+  "status": "audit-only; not connected to saving or preparation",
+  "diskBudgetBytes": 250000000,
+  "provisionalPreparationBudgetBytes": 134217728,
+  "selections": [
+    {
+      "instrumentId": "keys_acoustic_piano",
+      "label": "Grand Piano",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/acoustic_grand_piano-mp3.js",
+          "size": 2306794,
+          "sha256": "6055c90ffdb88bd14e61507176ad7b3ec3978e3fbe3e3d43e0ba8486475e9895"
+        }
+      ],
+      "payloadBytes": 2306794
+    },
+    {
+      "instrumentId": "keys_bright_piano",
+      "label": "Bright Piano",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/bright_acoustic_piano-mp3.js",
+          "size": 2684123,
+          "sha256": "c4f1447ac9ec8acd02b480f181a24360037c3a5bae9833319ae722955f2ed8c3"
+        }
+      ],
+      "payloadBytes": 2684123
+    },
+    {
+      "instrumentId": "keys_honky_tonk",
+      "label": "Honky-Tonk",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/honkytonk_piano-mp3.js",
+          "size": 2514729,
+          "sha256": "54139b4d71d855322248b0ac843af186c57e4db684ecf08d10326d7c9691fd28"
+        }
+      ],
+      "payloadBytes": 2514729
+    },
+    {
+      "instrumentId": "keys_harpsichord",
+      "label": "Harpsichord",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/harpsichord-mp3.js",
+          "size": 2580985,
+          "sha256": "cd3da86d2094661f8c4b4a99449d942e1ca37ededcd5f5414b339ee75236c0c4"
+        }
+      ],
+      "payloadBytes": 2580985
+    },
+    {
+      "instrumentId": "electric_piano",
+      "label": "Electric Piano 1",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/electric_piano_1-mp3.js",
+          "size": 1752162,
+          "sha256": "c649ac545c516f008d148790ebcd823b376a83fd2268cc20955e50b48d89a2dd"
+        }
+      ],
+      "payloadBytes": 1752162
+    },
+    {
+      "instrumentId": "electric_fm_piano",
+      "label": "Electric Piano 2",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/electric_piano_2-mp3.js",
+          "size": 2516286,
+          "sha256": "ee5ec10d76540b235fc03aed7729db05044e763a0e011d0de8d3bff62d41a8b6"
+        }
+      ],
+      "payloadBytes": 2516286
+    },
+    {
+      "instrumentId": "electric_vibraphone",
+      "label": "Vibraphone",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/vibraphone-mp3.js",
+          "size": 1891912,
+          "sha256": "2af85faa5b45058e21ebd81b6e4bdc62ca06cc668c20acba4e2fe01e46b75af5"
+        }
+      ],
+      "payloadBytes": 1891912
+    },
+    {
+      "instrumentId": "electric_clav",
+      "label": "Clav",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/clavinet-mp3.js",
+          "size": 2401818,
+          "sha256": "d5ea524568d914f3dd695bc22ae3249217b0ef0e786517380deb9e3c09e41510"
+        }
+      ],
+      "payloadBytes": 2401818
+    },
+    {
+      "instrumentId": "pad_string",
+      "label": "String Pad",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/string_ensemble_1-mp3.js",
+          "size": 3005071,
+          "sha256": "baef205b00843648451a137105d0a25bcbb26a7bef5ae0aa1d55a2e949deea8b"
+        }
+      ],
+      "payloadBytes": 3005071
+    },
+    {
+      "instrumentId": "pad_brass",
+      "label": "Brass Pad",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/brass_section-mp3.js",
+          "size": 2910643,
+          "sha256": "e88d7610a49eecbacd187fd8c28e526ffd2e29b4facec8123e6be676316fcd0c"
+        }
+      ],
+      "payloadBytes": 2910643
+    },
+    {
+      "instrumentId": "pad_choir",
+      "label": "Choir Pad",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/choir_aahs-mp3.js",
+          "size": 3005208,
+          "sha256": "8edb09a7011678409599a639a71d4c28a3d1e6c90425596c429d8e83b78e7d3c"
+        }
+      ],
+      "payloadBytes": 3005208
+    },
+    {
+      "instrumentId": "pad_synth",
+      "label": "Synth Pad",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/pad_1_new_age-mp3.js",
+          "size": 2997715,
+          "sha256": "543ab018db01a82c49d288d4a7b357146d46a9824d08c5f168a2cec26520df56"
+        }
+      ],
+      "payloadBytes": 2997715
+    },
+    {
+      "instrumentId": "solo_string",
+      "label": "Solo String",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/violin-mp3.js",
+          "size": 2828288,
+          "sha256": "dde7c75c43900e827ad255ab4973b37e7e76054a66ae47826fad78b25108a24b"
+        }
+      ],
+      "payloadBytes": 2828288
+    },
+    {
+      "instrumentId": "solo_brass",
+      "label": "Solo Brass",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/trumpet-mp3.js",
+          "size": 2890569,
+          "sha256": "9a066a84726264402b30d86f1f72af75e0b40a2cc395ffbc3ea28136859acb0a"
+        }
+      ],
+      "payloadBytes": 2890569
+    },
+    {
+      "instrumentId": "solo_wind",
+      "label": "Solo Wind",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/flute-mp3.js",
+          "size": 2793695,
+          "sha256": "ca18cce2be9787eef4ac674bc5342dd622fd3d48e93c1039e6d058bf5cce2027"
+        }
+      ],
+      "payloadBytes": 2793695
+    },
+    {
+      "instrumentId": "solo_lead",
+      "label": "Lead Synth",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/lead_1_square-mp3.js",
+          "size": 3005211,
+          "sha256": "28e999eeedf69dc592c03e86368720dec9659add00eed4005222b57ce6e98a99"
+        }
+      ],
+      "payloadBytes": 3005211
+    },
+    {
+      "instrumentId": "fx_drums",
+      "label": "Drums",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/salamander drums/36_C2_kick-1.wav",
+          "size": 136022,
+          "sha256": "03812d6ca9b9fc489392217c02ac4fdc2c46ebedbf22b890666775ffbbecff9d"
+        },
+        {
+          "path": "soundfonts/salamander drums/37_C#2_kick-2.wav",
+          "size": 136022,
+          "sha256": "f3c3272a7d0623b6d9b7cb028b08b5b3812c650fd22f4739e43e77e9faf69b28"
+        },
+        {
+          "path": "soundfonts/salamander drums/38_D2_snare2-1.wav",
+          "size": 486734,
+          "sha256": "c0214b067eb9001ebb1505f91ac39589c5c62acdb9e60fb59f89a43336897519"
+        },
+        {
+          "path": "soundfonts/salamander drums/39_D#2_snare2-2.wav",
+          "size": 499958,
+          "sha256": "21303083cff25aa5689c0c8f2a6a86e5e1c60f0455a6cb00a05cd9c54eb282e9"
+        },
+        {
+          "path": "soundfonts/salamander drums/40_E2_snare2-ghost-1.wav",
+          "size": 170216,
+          "sha256": "85c2613eaa813ab88f5c5893a3c8176f1324227a6640e4cd16026e8277e45fcd"
+        },
+        {
+          "path": "soundfonts/salamander drums/41_F2_snare2-ghost-10.wav",
+          "size": 173348,
+          "sha256": "8d3a540b7d8d809357fa13de8910481efa0bb741949fa886af37ad6579a46067"
+        },
+        {
+          "path": "soundfonts/salamander drums/42_F#2_snare2-ghost-2.wav",
+          "size": 171566,
+          "sha256": "fabb017de663c366af70c04c7bd25c3493b21eb89d903d2e7b53d1d282c55b47"
+        },
+        {
+          "path": "soundfonts/salamander drums/43_G2_snare2-ghost-3.wav",
+          "size": 171050,
+          "sha256": "3578a7f082dbe42bcf3ecc2c4d7f92b80bc1ceb3029a7b18a575ce5c472fab4e"
+        },
+        {
+          "path": "soundfonts/salamander drums/44_G#2_snare2-ghost-4.wav",
+          "size": 179306,
+          "sha256": "26965bd1067944c8591275ade302e71141b4426711d2965f61422842e709fd10"
+        },
+        {
+          "path": "soundfonts/salamander drums/45_A2_snare2-ghost-5.wav",
+          "size": 173534,
+          "sha256": "e5cc17fb10d6c76fe1fc4519e1b1002fac7c648d53c6f973a554d210e8ba6ae7"
+        },
+        {
+          "path": "soundfonts/salamander drums/46_A#2_snare2-ghost-6.wav",
+          "size": 170252,
+          "sha256": "27d18b543ac7ab31da0b9cbe7a641867d76712502f418a8fc41a0913f438ed7d"
+        },
+        {
+          "path": "soundfonts/salamander drums/47_B2_snare2-ghost-7.wav",
+          "size": 184694,
+          "sha256": "523c0375489161552e05045fa09e99a3cd23b8a3c0704573877e22ba260d8bf1"
+        },
+        {
+          "path": "soundfonts/salamander drums/48_C3_snare2-ghost-8.wav",
+          "size": 170330,
+          "sha256": "8885e8a1a95ee40fd923076a2c8f9b2e7871d1a81981cb99fba898a02d74d160"
+        },
+        {
+          "path": "soundfonts/salamander drums/49_C#3_snare2-ghost-9.wav",
+          "size": 171056,
+          "sha256": "1b4d5902a6f12d20a179c7edf923f05e212b6795e0d50d32e24e94d8ea35e063"
+        },
+        {
+          "path": "soundfonts/salamander drums/50_D3_snare-1.wav",
+          "size": 369062,
+          "sha256": "e6149123772bd25d72aaa1c85bd23d6dae693da954f1f53bf1455686db85cc18"
+        },
+        {
+          "path": "soundfonts/salamander drums/51_D#3_snarestick.wav",
+          "size": 200330,
+          "sha256": "cf1eb153fd033d822325071e7496f54a1f7610ae1702c2d700135ac98eaf5354"
+        },
+        {
+          "path": "soundfonts/salamander drums/52_E3_snare-2.wav",
+          "size": 526562,
+          "sha256": "4f30503ba0b27e702c75f027cfecdb49ec526ae31ea510f7bea71f98eaf9dc39"
+        },
+        {
+          "path": "soundfonts/salamander drums/53_F3_snare-ghost-1.wav",
+          "size": 133448,
+          "sha256": "b856339d674b8c92200cdb2aaace161c6b54001e029df7f1f7328c182fc59f0a"
+        },
+        {
+          "path": "soundfonts/salamander drums/54_F#3_snare-ghost-10.wav",
+          "size": 210716,
+          "sha256": "7db74bf07ed284771bb834c1b3d9ed128f65e328880c66a7ce10ae90be77e746"
+        },
+        {
+          "path": "soundfonts/salamander drums/55_G3_snare-ghost-2.wav",
+          "size": 132026,
+          "sha256": "abe51b8167caff1f9d2e9fafff7dcaf632647359e65293ef8bfdd0604423cb10"
+        },
+        {
+          "path": "soundfonts/salamander drums/56_G#3_snare-ghost-3.wav",
+          "size": 132980,
+          "sha256": "1829e6a8ab0e76a301f032f7b0b1a32307247d2aec77741bc25f69bf5997971c"
+        },
+        {
+          "path": "soundfonts/salamander drums/57_A3_snare-ghost-4.wav",
+          "size": 146204,
+          "sha256": "78eef3cdef7ab2faf8462b08b7af8d1c181b1f3a7ee577d90c7b2d58d6ef0009"
+        },
+        {
+          "path": "soundfonts/salamander drums/58_A#3_snare-ghost-5.wav",
+          "size": 133448,
+          "sha256": "cc7a5e92bc98e31f055801c1ed8275491b0a29ec6d7fcef05623710b7bc7b902"
+        },
+        {
+          "path": "soundfonts/salamander drums/59_B3_snare-ghost-6.wav",
+          "size": 132518,
+          "sha256": "316e74768d06f23a0b75e8bd64e2ff3596ee5fd2e1e7c5f391feb7af0a2f52e8"
+        },
+        {
+          "path": "soundfonts/salamander drums/60_C4_snare-ghost-7.wav",
+          "size": 132518,
+          "sha256": "0e2acbaa238e89b954f029b9f19dcac897aadf3fa100674c08f05ffd301fe5b8"
+        },
+        {
+          "path": "soundfonts/salamander drums/61_C#4_snare-ghost-8.wav",
+          "size": 130142,
+          "sha256": "058e37422ddeadb93587287ca1889276f9a6edf7240161b8ff49ec412e197fcd"
+        },
+        {
+          "path": "soundfonts/salamander drums/62_D4_snare-ghost-9.wav",
+          "size": 164636,
+          "sha256": "86197d857b4eb3ad8808872def03d7e6db2dd94b54c75a8a19c33cdf5745aa40"
+        },
+        {
+          "path": "soundfonts/salamander drums/63_D#4_hihatclosed.wav",
+          "size": 162758,
+          "sha256": "bd485de70450f68bb4692557a4ae909caaa965f5739693317365ebe85c986cbb"
+        },
+        {
+          "path": "soundfonts/salamander drums/64_E4_hihatfootstomp.wav",
+          "size": 2666018,
+          "sha256": "f76b78fc0d99af6622107bca797bf85d8c60f3c3e808d52f7ae220383b5ba37e"
+        },
+        {
+          "path": "soundfonts/salamander drums/65_F4_hihatfoot.wav",
+          "size": 382556,
+          "sha256": "2ad5e1bc38e5b9984d923b278b8ec5488540366082f4de9401d4702b9ba95e4c"
+        },
+        {
+          "path": "soundfonts/salamander drums/66_F#4_hihatopen.wav",
+          "size": 2897654,
+          "sha256": "ef88d66d0289de4befe583de11298d75bae788de9ea63f156b493689668a7d54"
+        },
+        {
+          "path": "soundfonts/salamander drums/67_G4_hihatsemiopen1.wav",
+          "size": 299732,
+          "sha256": "9c5c885e78da7c528771cfab9f2f54c142fc784af102a52e1509a57bf2a0594c"
+        },
+        {
+          "path": "soundfonts/salamander drums/68_G#4_hihatsemiopen1-p.wav",
+          "size": 302864,
+          "sha256": "0fa932b21bd781556751bf7492edaa953c83064ca42fc7af78bda9d5261f173c"
+        },
+        {
+          "path": "soundfonts/salamander drums/69_A4_hihatsemiopen2.wav",
+          "size": 533228,
+          "sha256": "506ccfeb0cef030d9d7e51be1035cf04a9edfc29f0ccb0cbbda1826c2daef75d"
+        },
+        {
+          "path": "soundfonts/salamander drums/70_A#4_hihatsemiopen3.wav",
+          "size": 539288,
+          "sha256": "eb887f7bdebf6e22325257c0aa7eb7c2ea72e9aa8f582b52d1b563b22c51b128"
+        },
+        {
+          "path": "soundfonts/salamander drums/71_B4_hihatsemiopen4.wav",
+          "size": 614966,
+          "sha256": "b748a7a0f9a3d9f03361e83ba5c65ff98642ee4376e7b7247c479227ed241739"
+        },
+        {
+          "path": "soundfonts/salamander drums/72_C5_hihatsemiopen5.wav",
+          "size": 874298,
+          "sha256": "3fc2156c57a2da4917b1f34a22a1bb399bab3e913ba6b622e36ee3d97360b93d"
+        },
+        {
+          "path": "soundfonts/salamander drums/73_C#5_hihatsemiopen6.wav",
+          "size": 1330676,
+          "sha256": "91da14f639c2ebe999baf0c187c5602b532d7f65efc8f46650ba66527131dbe2"
+        },
+        {
+          "path": "soundfonts/salamander drums/74_D5_hihatsemiopen7.wav",
+          "size": 1783250,
+          "sha256": "eb8bb733025e7f7fc6856794f3fcea415f3b81f20cbdca8c6aa3a5416e87e5e7"
+        },
+        {
+          "path": "soundfonts/salamander drums/75_D#5_hitom.wav",
+          "size": 871400,
+          "sha256": "25d6092617cc798ba488b2d4843f1ea789324a795007ba405884c981f63f079e"
+        },
+        {
+          "path": "soundfonts/salamander drums/76_E5_lotom.wav",
+          "size": 680900,
+          "sha256": "bfb74d255554c2965bf012452bc3717dee88a44aa04d120f2a1b86b9b6a7082d"
+        },
+        {
+          "path": "soundfonts/salamander drums/77_F5_ride1bell.wav",
+          "size": 2123384,
+          "sha256": "736bb2a58147359054df4b7c857b74c2d7b848efb9335b9e354661f025363e78"
+        },
+        {
+          "path": "soundfonts/salamander drums/78_F#5_ride-1.wav",
+          "size": 3094256,
+          "sha256": "5dbdf8cdecd62b83acfde4e268be6a52da0ca64ae145536004ffce3b1b7d6608"
+        },
+        {
+          "path": "soundfonts/salamander drums/79_G5_ride2bell.wav",
+          "size": 2094494,
+          "sha256": "b6062bf73ff312c893da144d8a89fa27335fadfb05ad297ff28f472f42083c24"
+        },
+        {
+          "path": "soundfonts/salamander drums/80_G#5_ride2crashchoke.wav",
+          "size": 623888,
+          "sha256": "78d5516875f31c681a194572d66ca80590842bb8d77aba777ee0dcecfe49a47c"
+        },
+        {
+          "path": "soundfonts/salamander drums/81_A5_ride2crash.wav",
+          "size": 3072092,
+          "sha256": "a906cde8af480ecc653861bb3e2b672f89d9bf9c12bd1d302078c8f9efb2b4e6"
+        },
+        {
+          "path": "soundfonts/salamander drums/82_A#5_ride-2.wav",
+          "size": 2964086,
+          "sha256": "957682815818559d262dc65808b35abb8798962d0897f7e622893d9050985f01"
+        },
+        {
+          "path": "soundfonts/salamander drums/83_B5_china1choke.wav",
+          "size": 543338,
+          "sha256": "025144f347d59ad2505ff36454bffd5c34ab9a1df4a91d7ce9cf9c94313a829b"
+        },
+        {
+          "path": "soundfonts/salamander drums/84_C6_china-1.wav",
+          "size": 2277566,
+          "sha256": "fd1ff6a1b422be899cadabf5106c597c28db6dc230bdf04794c4a330ab89569a"
+        },
+        {
+          "path": "soundfonts/salamander drums/85_C#6_china2choke.wav",
+          "size": 513434,
+          "sha256": "68c7b80951d303e1c222deff448f256eb73f9e5d73707d09c2b55601919153ab"
+        },
+        {
+          "path": "soundfonts/salamander drums/86_D6_china-2.wav",
+          "size": 2241872,
+          "sha256": "e29b9945e9f7ecbf89e78d591b1f194f633b8c5020c1a9f628cb0eb6d2e7249f"
+        },
+        {
+          "path": "soundfonts/salamander drums/87_D#6_crash1choke.wav",
+          "size": 565748,
+          "sha256": "47c6f51a921fe888c9bd05a033224ea17df1ea0aaa4005f42bf87b0a11c81fa8"
+        },
+        {
+          "path": "soundfonts/salamander drums/88_E6_crash-1.wav",
+          "size": 3312620,
+          "sha256": "da28a2e9446c0e0a124f37ccf727db796f0d8575f63fbc923d16ad0143f1310c"
+        },
+        {
+          "path": "soundfonts/salamander drums/89_F6_crash2choke.wav",
+          "size": 556850,
+          "sha256": "69de7e0bc589eca43cc78e153ec0c86b0700ee863d8078e6374afe9a491576ab"
+        },
+        {
+          "path": "soundfonts/salamander drums/90_F#6_crash-2.wav",
+          "size": 3088784,
+          "sha256": "a361cfd992cb33026b1174c82b97b7cf04c10f23af7c9c5c1d1f588dfabc2ff1"
+        },
+        {
+          "path": "soundfonts/salamander drums/91_G6_crash-3.wav",
+          "size": 1868828,
+          "sha256": "dda172bd50c1fe4fde5adcf473954e62d4f780c84881e142d8c46e7532c8dc84"
+        },
+        {
+          "path": "soundfonts/salamander drums/92_G#6_splash1.wav",
+          "size": 728912,
+          "sha256": "5da973992fd55f6de10a8d85ecba5209e82a1d7618fc36175418f29126373fb9"
+        },
+        {
+          "path": "soundfonts/salamander drums/93_A6_cowbell.wav",
+          "size": 327050,
+          "sha256": "8f224b9b39fca536b22f814bdae10cfc15622675403b4b6a62b80d2bcb1eda99"
+        },
+        {
+          "path": "soundfonts/salamander drums/94_A#6_bellchime.wav",
+          "size": 2622734,
+          "sha256": "606ede336137017ff9971ceffd02fdfcb67bc9d34cb205e2d8500f0c0f908a2f"
+        }
+      ],
+      "payloadBytes": 52098202
+    },
+    {
+      "instrumentId": "fx_dog",
+      "label": "Dog",
+      "backend": "js-synthesizer",
+      "files": [
+        {
+          "path": "soundfonts/hypersound/hypersound.sf2",
+          "size": 568430,
+          "sha256": "fbdc7d9cb8e52b3114eaf4e08efeb50ec3a5bf81ee9f78edcf17c56c4c107ca0"
+        }
+      ],
+      "payloadBytes": 568430,
+      "warning": "Requested DOGBW60 absent in Hypersound; inherited program-0 fallback. Do not silently substitute WappyDog."
+    },
+    {
+      "instrumentId": "fx_telephone",
+      "label": "Telephone",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/musyngkite/telephone_ring-mp3.js",
+          "size": 2658568,
+          "sha256": "2dc2b4b5557867a6a68f681fe1e07a5d74af7577dca76ca05d1bff9c859c4663"
+        }
+      ],
+      "payloadBytes": 2658568
+    },
+    {
+      "instrumentId": "fx_odd",
+      "label": "Odd FX",
+      "backend": "local-samples",
+      "files": [
+        {
+          "path": "soundfonts/fluidr3_gm/fx_8_scifi-mp3.js",
+          "size": 2588660,
+          "sha256": "0cccd7d899b0936dd941791e546ef7d113cbae2e517115aaa0ed19133afa5936"
+        }
+      ],
+      "payloadBytes": 2588660,
+      "warning": "Default patch only; mutable custom FX selections need stable package-specific IDs."
+    }
+  ]
+}

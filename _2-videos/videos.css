@@ -148,6 +148,21 @@ body {
 }
 .intro-skip:hover { transform: translateY(-1px); }
 .intro-skip.hidden { opacity: 0; pointer-events: none; }
+.captions-toggle {
+    position: fixed;
+    right: 56px;
+    bottom: 82px;
+    z-index: 1000;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 2px solid #ffbb62;
+    border-radius: 12px;
+    background: #11182b;
+    color: #fff;
+    font: 700 14px/1.2 system-ui, sans-serif;
+    cursor: pointer;
+}
+.captions-toggle:focus-visible { outline: 3px solid #ffbb62; outline-offset: 3px; }
 @media (max-width: 768px) {
     .intro-skip { top: 156px; left: 12px; min-height: 44px; }
 }

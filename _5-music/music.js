@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!headCircle) return;
     const assetUrl = window.assetUrl || ((path) => path);
     const safeDrawImage = window.safeDrawImage || ((ctx, img, ...args) => {
-        try { ctx.drawImage(img, ...args); return true; } catch (e) { return false; }
+        try { ctx.drawImage(img, ...args); return true; } catch  { return false; }
     });
 
     const cx = parseFloat(headCircle.getAttribute('cx'));

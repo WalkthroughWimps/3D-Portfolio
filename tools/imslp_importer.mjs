@@ -77,7 +77,7 @@ function loadAttributionsJson() {
   try {
     const raw = fs.readFileSync(JSON_PATH, "utf-8");
     return JSON.parse(raw);
-  } catch (err) {
+  } catch  {
     return {};
   }
 }
@@ -286,7 +286,7 @@ async function main() {
   let stats;
   try {
     stats = await fs.promises.stat(targetPath);
-  } catch (err) {
+  } catch  {
     await ensureDataDirectory();
     appendLog(`Provided path does not exist: ${targetPath}`, "ERROR");
     process.exitCode = 1;

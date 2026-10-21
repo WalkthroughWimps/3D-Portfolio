@@ -1,0 +1,383 @@
+{
+  "version": 9,
+  "description": "Approved fixed-center shrinking minute and rising seconds visual spirals",
+  "sourceBlend": "assets/about-cube/blend/clock-face-v9-spirals.blend",
+  "sourceLayout": "output/clock-smooth-spiral-study/placement.json",
+  "asset": "assets/about-cube/glb/spirals-v9.glb",
+  "coordinateBasis": "cube-local +X right, +Z up, -Y front",
+  "mountNode": "clock-fixed-mount",
+  "moduleBeforeScale": 0.004,
+  "globalXYScale": 0.94,
+  "pressureDegrees": 20,
+  "helixDegrees": 20,
+  "helixAxialSteps": 2,
+  "phaseAlignment": "External tooth phases account for opposing helix twist at the midpoint of each axial overlap.",
+  "gearThickness": 0.027,
+  "depthStep": 0.009,
+  "backClearanceTarget": 0.012,
+  "backProbeSamples": 3456,
+  "backProbeMisses": 0,
+  "ringBackMinimumSampledClearance": 0.01200000000000001,
+  "driveCenterDepth": -0.8057021656036377,
+  "inputPeriodSeconds": 3600,
+  "ringTargetPeriodSeconds": 60,
+  "ringTiming": "Independent wall-time drive required; simple gear topology cannot yield the requested 60-second ring from a one-hour input.",
+  "nodes": {
+    "clock-drive": {
+      "teeth": 180,
+      "pitchRadius": 0.3384,
+      "center": [
+        0.0,
+        -0.8057021656036377,
+        -0.0
+      ],
+      "basePhase": 0.0,
+      "inputFactor": 1.0,
+      "helixHand": "right"
+    },
+    "clock-minute-1": {
+      "teeth": 90,
+      "pitchRadius": 0.1692,
+      "center": [
+        0.5075994590745466,
+        -0.8237021656036377,
+        -0.0007410446867238571
+      ],
+      "basePhase": 0.005870135522547254,
+      "inputFactor": -2.0,
+      "helixHand": "left"
+    },
+    "clock-minute-2": {
+      "teeth": 82,
+      "pitchRadius": 0.15416,
+      "center": [
+        0.37315774835695076,
+        -0.8417021656036378,
+        -0.29482796384384363
+      ],
+      "basePhase": 0.048454717414901094,
+      "inputFactor": 2.1951219512195124,
+      "helixHand": "right"
+    },
+    "clock-minute-3": {
+      "teeth": 75,
+      "pitchRadius": 0.141,
+      "center": [
+        0.11311663767397957,
+        -0.8507021656036378,
+        -0.4344633689342674
+      ],
+      "basePhase": 0.06826541431168075,
+      "inputFactor": -2.4,
+      "helixHand": "left"
+    },
+    "clock-minute-4": {
+      "teeth": 68,
+      "pitchRadius": 0.12784,
+      "center": [
+        -0.14805858826917756,
+        -0.8597021656036377,
+        -0.37072604114637814
+      ],
+      "basePhase": 0.03438583156599,
+      "inputFactor": 2.6470588235294117,
+      "helixHand": "right"
+    },
+    "clock-minute-5": {
+      "teeth": 60,
+      "pitchRadius": 0.11279999999999998,
+      "center": [
+        -0.30250951360577655,
+        -0.8687021656036378,
+        -0.18619278868853972
+      ],
+      "basePhase": 0.020070368923619908,
+      "inputFactor": -3.0,
+      "helixHand": "left"
+    },
+    "clock-minute-6": {
+      "teeth": 52,
+      "pitchRadius": 0.09776,
+      "center": [
+        -0.3186710696366165,
+        -0.8777021656036377,
+        0.02374605408873675
+      ],
+      "basePhase": 0.08193921958347583,
+      "inputFactor": 3.4615384615384612,
+      "helixHand": "right"
+    },
+    "clock-minute-7": {
+      "teeth": 38,
+      "pitchRadius": 0.07143999999999999,
+      "center": [
+        -0.15711652275067584,
+        -0.8867021656036377,
+        0.07403291500168696
+      ],
+      "basePhase": 0.12568177252255847,
+      "inputFactor": -4.7368421052631575,
+      "helixHand": "left"
+    },
+    "clock-minute-8": {
+      "teeth": 25,
+      "pitchRadius": 0.047,
+      "center": [
+        -0.03991198174426962,
+        -0.8957021656036377,
+        0.05697040734666628
+      ],
+      "basePhase": 0.1077487079841365,
+      "inputFactor": 7.199999999999999,
+      "helixHand": "right"
+    },
+    "clock-minute-9": {
+      "teeth": 12,
+      "pitchRadius": 0.02256,
+      "center": [
+        0.0,
+        -0.9047021656036377,
+        -0.0
+      ],
+      "basePhase": 0.5148474919841278,
+      "inputFactor": -15.0,
+      "helixHand": "left"
+    },
+    "clock-second-1": {
+      "teeth": 52,
+      "pitchRadius": 0.09776,
+      "center": [
+        -0.29186569293884906,
+        -0.8867021656036377,
+        0.2174198576350367
+      ],
+      "basePhase": 0.043374528848424826,
+      "inputFactor": -3.4615384615384612,
+      "helixHand": "left"
+    },
+    "clock-second-2": {
+      "teeth": 48,
+      "pitchRadius": 0.09024,
+      "center": [
+        -0.22838873298567128,
+        -0.8957021656036377,
+        0.3943793884750078
+      ],
+      "basePhase": 0.04736540060600203,
+      "inputFactor": 3.7499999999999996,
+      "helixHand": "right"
+    },
+    "clock-second-3": {
+      "teeth": 44,
+      "pitchRadius": 0.08271999999999999,
+      "center": [
+        -0.11818658890701697,
+        -0.9047021656036377,
+        0.5276859863629876
+      ],
+      "basePhase": 0.07335593612227323,
+      "inputFactor": -4.09090909090909,
+      "helixHand": "left"
+    },
+    "clock-second-4": {
+      "teeth": 40,
+      "pitchRadius": 0.0752,
+      "center": [
+        0.002252155472845508,
+        -0.9137021656036377,
+        0.6298291958886441
+      ],
+      "basePhase": 0.050588023802695226,
+      "inputFactor": 4.499999999999999,
+      "helixHand": "right"
+    },
+    "clock-second-5": {
+      "teeth": 36,
+      "pitchRadius": 0.06768,
+      "center": [
+        0.125612844406612,
+        -0.9227021656036377,
+        0.7019182715227963
+      ],
+      "basePhase": 0.0072853172336094785,
+      "inputFactor": -4.999999999999999,
+      "helixHand": "left"
+    },
+    "clock-second-6": {
+      "teeth": 32,
+      "pitchRadius": 0.06016,
+      "center": [
+        0.24541389841684136,
+        -0.9317021656036377,
+        0.7465363514684653
+      ],
+      "basePhase": 0.06658901910066728,
+      "inputFactor": 5.624999999999999,
+      "helixHand": "right"
+    },
+    "clock-ring": {
+      "teeth": 450,
+      "pitchRadius": 0.846,
+      "center": [
+        0.0,
+        -0.9407021656036377,
+        -0.0
+      ],
+      "basePhase": 0.0,
+      "inputFactor": 0.3999999999999999,
+      "helixHand": "right"
+    }
+  },
+  "edges": [
+    {
+      "a": "drive",
+      "b": "minute-1",
+      "kind": "external",
+      "centerDistance": 0.54,
+      "pitchTarget": 0.54,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-1",
+      "b": "minute-2",
+      "kind": "external",
+      "centerDistance": 0.34400000000000003,
+      "pitchTarget": 0.34400000000000003,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-2",
+      "b": "minute-3",
+      "kind": "external",
+      "centerDistance": 0.31400000000000006,
+      "pitchTarget": 0.314,
+      "residual": 5.551115123125783e-17
+    },
+    {
+      "a": "minute-3",
+      "b": "minute-4",
+      "kind": "external",
+      "centerDistance": 0.28600000000000003,
+      "pitchTarget": 0.28600000000000003,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-4",
+      "b": "minute-5",
+      "kind": "external",
+      "centerDistance": 0.256,
+      "pitchTarget": 0.256,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-5",
+      "b": "minute-6",
+      "kind": "external",
+      "centerDistance": 0.22399999999999998,
+      "pitchTarget": 0.224,
+      "residual": -2.7755575615628914e-17
+    },
+    {
+      "a": "minute-6",
+      "b": "minute-7",
+      "kind": "external",
+      "centerDistance": 0.18,
+      "pitchTarget": 0.18,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-7",
+      "b": "minute-8",
+      "kind": "external",
+      "centerDistance": 0.126,
+      "pitchTarget": 0.126,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-8",
+      "b": "minute-9",
+      "kind": "external",
+      "centerDistance": 0.074,
+      "pitchTarget": 0.074,
+      "residual": 0.0
+    },
+    {
+      "a": "minute-6",
+      "b": "second-1",
+      "kind": "external",
+      "centerDistance": 0.20800000000000002,
+      "pitchTarget": 0.20800000000000002,
+      "residual": 0.0
+    },
+    {
+      "a": "second-1",
+      "b": "second-2",
+      "kind": "external",
+      "centerDistance": 0.20000000000000007,
+      "pitchTarget": 0.2,
+      "residual": 5.551115123125783e-17
+    },
+    {
+      "a": "second-2",
+      "b": "second-3",
+      "kind": "external",
+      "centerDistance": 0.18400000000000005,
+      "pitchTarget": 0.184,
+      "residual": 5.551115123125783e-17
+    },
+    {
+      "a": "second-3",
+      "b": "second-4",
+      "kind": "external",
+      "centerDistance": 0.16800000000000007,
+      "pitchTarget": 0.168,
+      "residual": 5.551115123125783e-17
+    },
+    {
+      "a": "second-4",
+      "b": "second-5",
+      "kind": "external",
+      "centerDistance": 0.15200000000000002,
+      "pitchTarget": 0.152,
+      "residual": 2.7755575615628914e-17
+    },
+    {
+      "a": "second-5",
+      "b": "second-6",
+      "kind": "external",
+      "centerDistance": 0.13600000000000004,
+      "pitchTarget": 0.136,
+      "residual": 2.7755575615628914e-17
+    },
+    {
+      "a": "second-6",
+      "b": "ring",
+      "kind": "internal",
+      "centerDistance": 0.8359999999999999,
+      "pitchTarget": 0.836,
+      "residual": -1.1102230246251565e-16
+    }
+  ],
+  "maxPitchResidual": 1.1102230246251565e-16,
+  "nonneighborRotatingDiskOverlaps": [],
+  "handAdapter": {
+    "ringNode": "clock-ring",
+    "grooveRadius": 0.86198,
+    "outerTailRadius": 0.87044,
+    "frontY": -0.9612021656036377,
+    "handY": -0.9662021656036377,
+    "mountNode": "clock-fixed-mount",
+    "axis": "cube-local Y",
+    "secondsPeriodSeconds": 60
+  },
+  "triangles": 100512,
+  "materialBatches": 18,
+  "meshCount": 18,
+  "assetBytes": 3231180,
+  "reference": "Original authored back.clock copied only into nonexport native review scene; no replacement backing in GLB.",
+  "limitations": [
+    "Static visual clearance sampling is not a fabrication or loaded-mesh proof.",
+    "Tooth pitch centers are solved; detailed helical flank contact at all phases remains unverified.",
+    "No supports, brackets, cage, dial, hands, crowns or runtime control are added."
+  ]
+}

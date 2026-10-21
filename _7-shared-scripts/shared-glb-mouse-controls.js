@@ -17,7 +17,7 @@ export function applyStartPageMouseControlMode(controls, {
     MIDDLE: THREE.MOUSE.PAN,
     RIGHT: THREE.MOUSE.ROTATE
   };
-  try { controls.update(); } catch (e) { /* ignore */ }
+  try { controls.update(); } catch  { /* ignore */ }
 }
 
 export function applyStandardGlbMouseControlMode(controls, {
@@ -35,7 +35,7 @@ export function applyStandardGlbMouseControlMode(controls, {
     MIDDLE: THREE.MOUSE.DOLLY,
     RIGHT: THREE.MOUSE.ROTATE
   };
-  try { controls.update(); } catch (e) { /* ignore */ }
+  try { controls.update(); } catch  { /* ignore */ }
 }
 
 export function installStandardGlbMouseControls({
@@ -78,11 +78,17 @@ export function installStartPageStyleMouseControls({
   getHitPoint = null,
   getDefaultFocusPoint = null,
   canInteract = null,
-  pivotOnRightDown = true
+  pivotOnRightDown = true,
+  handleRightButton = true,
+  interruptFocusOnMiddleDown = false,
+  onMiddleDown = null,
+  onFocusStart = null,
+  onFocusComplete = null
 } = {}) {
   if (!controls || !camera || !domElement) return null;
 
   let focusAnimId = null;
+  let restoreFocusControls = null;
   let middlePointerState = null;
   let lastMiddleClickTime = 0;
   let pendingMiddleSingleClick = null;
@@ -97,6 +103,8 @@ export function installStartPageStyleMouseControls({
       cancelAnimationFrame(focusAnimId);
       focusAnimId = null;
     }
+    restoreFocusControls?.();
+    restoreFocusControls = null;
     if (pendingMiddleSingleClick) {
       clearTimeout(pendingMiddleSingleClick.timerId);
       pendingMiddleSingleClick = null;
@@ -106,6 +114,7 @@ export function installStartPageStyleMouseControls({
   const startFocusAnimation = (target, { durationMs = focusDurationMs } = {}) => {
     if (!target || !controls || !camera) return;
     cancelFocusAnimation();
+    onFocusStart?.(target);
     const startTarget = controls.target.clone();
     const startPos = camera.position.clone();
     const startDistance = startPos.distanceTo(startTarget);
@@ -114,26 +123,34 @@ export function installStartPageStyleMouseControls({
     const wasRotate = controls.enableRotate;
     const wasZoom = controls.enableZoom;
     const wasPan = controls.enablePan;
+    restoreFocusControls = () => {
+      controls.enabled = wasEnabled;
+      controls.enableRotate = wasRotate;
+      controls.enableZoom = wasZoom;
+      controls.enablePan = wasPan;
+    };
     controls.enabled = false;
     controls.enablePan = false;
+    durationMs = typeof durationMs === 'function' ? durationMs() : durationMs;
     const startTime = performance.now();
     const tick = (now) => {
       const t = Math.max(0, Math.min(1, (now - startTime) / Math.max(1, durationMs)));
       const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      const nextTarget = startTarget.clone().lerp(target, eased);
+      const liveTarget = typeof target.resolve === 'function' ? target.resolve() : target;
+      if (!liveTarget) { cancelFocusAnimation(); return; }
+      const nextTarget = startTarget.clone().lerp(liveTarget, eased);
       controls.target.copy(nextTarget);
       camera.position.copy(nextTarget.clone().add(dir.clone().multiplyScalar(startDistance)));
-      try { camera.updateMatrixWorld(true); } catch (e) { /* ignore */ }
-      try { controls.update(); } catch (e) { /* ignore */ }
+      try { camera.updateMatrixWorld(true); } catch  { /* ignore */ }
+      try { controls.update(); } catch  { /* ignore */ }
       if (t < 1) {
         focusAnimId = requestAnimationFrame(tick);
       } else {
         focusAnimId = null;
-        controls.enabled = wasEnabled;
-        controls.enableRotate = wasRotate;
-        controls.enableZoom = wasZoom;
-        controls.enablePan = wasPan;
-        try { controls.update(); } catch (e) { /* ignore */ }
+        restoreFocusControls?.();
+        restoreFocusControls = null;
+        try { controls.update(); } catch  { /* ignore */ }
+        onFocusComplete?.(target);
       }
     };
     focusAnimId = requestAnimationFrame(tick);
@@ -141,16 +158,21 @@ export function installStartPageStyleMouseControls({
 
   const onPointerDown = (event) => {
     if (event.button !== 1 && event.button !== 2) return;
+    // Hosts with their own mouse-based rotation need the compatibility mousedown.
+    if (event.button === 2 && !handleRightButton) return;
+    if (event.button === 1 && interruptFocusOnMiddleDown && restoreFocusControls)
+      cancelFocusAnimation();
     if (!canUse()) return;
     if (event.button === 1) {
       event.preventDefault();
+      onMiddleDown?.();
       controls.enablePan = true;
       const hit = typeof getHitPoint === 'function' ? getHitPoint(event) : null;
       middlePointerState = {
         downAt: performance.now(),
         x: event.clientX,
         y: event.clientY,
-        point: hit ? hit.clone() : null
+        point: hit ? (typeof hit.resolve === 'function' ? hit : hit.clone()) : null
       };
       return;
     }
@@ -159,7 +181,7 @@ export function installStartPageStyleMouseControls({
         const hit = getHitPoint(event);
         if (hit) {
           controls.target.copy(hit);
-          try { controls.update(); } catch (e) { /* ignore */ }
+          try { controls.update(); } catch  { /* ignore */ }
         }
       }
       event.preventDefault();
@@ -184,15 +206,15 @@ export function installStartPageStyleMouseControls({
       return;
     }
     const isDouble = (now - lastMiddleClickTime) <= 320;
-    const clickPoint = middlePointerState.point ? middlePointerState.point.clone() : null;
+    const clickPoint = middlePointerState.point;
     if (isDouble) {
       cancelFocusAnimation();
       const defaultPoint = typeof getDefaultFocusPoint === 'function' ? getDefaultFocusPoint() : null;
-      if (defaultPoint) startFocusAnimation(defaultPoint.clone ? defaultPoint.clone() : defaultPoint, { durationMs: 320 });
+      if (defaultPoint) startFocusAnimation(defaultPoint.clone ? defaultPoint.clone() : defaultPoint);
     } else if (clickPoint) {
       pendingMiddleSingleClick = {
         timerId: setTimeout(() => {
-          startFocusAnimation(clickPoint, { durationMs: 320 });
+          startFocusAnimation(clickPoint);
           pendingMiddleSingleClick = null;
         }, 320)
       };

@@ -3,31 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome • Site Setup</title>
+    <title>Welcome and Site Setup | Matt Hall</title>
+    <meta name="description" content="Choose animation, audio, and visual preferences before exploring Matt Hall’s portfolio.">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="_7-shared-scripts/template.css">
     <link rel="stylesheet" href="_0-start/start-page.css">
     <script src="js/site-utils.js" defer></script>
     <script src="_0-start/a11y.js" defer></script>
+    <!-- runtime-importmap:generated:start -->
     <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
-            }
-        }
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.159.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.159.0/examples/jsm/"
+      }
+    }
     </script>
+<!-- runtime-importmap:generated:end -->
+<noscript><style>body .nav-wrap { display:block; position:fixed; inset:0 0 auto; z-index:100001; } body .navigation-bg { width:100%; height:auto; box-sizing:border-box; background:#10141d; padding:12px; } body .navigation { position:static; } body .navigation noscript { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; } body .navigation a { color:#fff; padding:8px; } </style></noscript>
 </head>
 <body>
     <div class="nav-wrap">
         <div class="navigation-bg">
-            <nav class="navigation">
+            <nav class="navigation" aria-label="Site">
+                <noscript>
+                    <a href="_1-about/about.html">About</a>
+                    <a href="_2-videos/videos.html">Videos</a>
+                    <a href="_3-graphics/graphics.html">Graphics</a>
+                    <a href="_4-games/games.html">Games</a>
+                    <a href="_5-music/music.html">Music</a>
+                    <a href="_6-docs/docs.html">Docs</a>
+                </noscript>
             </nav>
         </div>
     </div>
     <div class="ui-layout">
         <aside class="ui-left" id="uiLeftColumn"></aside>
-        <main class="ui-center" id="uiCenterColumn">
+        <main class="ui-center" id="uiCenterColumn" aria-label="Site setup">
             <div class="bg-overlay">
                 <div id="settingsControllerScene" class="settings-controller-scene settings-controller-scene--full" aria-live="polite" aria-label="3D settings controller">
                     <canvas id="settingsControllerCanvas" class="settings-controller-canvas" role="presentation"></canvas>
@@ -54,7 +66,7 @@
             <section class="ui-panel is-active" id="panel-start" role="tabpanel">
     <div id="startPageControls" class="start-page-controls" style="display:none;">
     <a href="#main" style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;">Skip to content</a>
-    <main id="main" class="wrap" aria-labelledby="title">
+    <section id="main" class="wrap" aria-labelledby="title">
         <header>
             <h1 id="title">Welcome</h1>
             <p class="lead" id="leadText">Let’s tune a few preferences so the site works best for you.</p>
@@ -338,8 +350,8 @@
                             <button class="arrow-btn" id="syncRight">&gt;</button>
                         </div>
                         <div class="mouse-legend" aria-hidden="true">
-                            <img class="mouse-icon" src="assets/SVG/mouse-LMB.svg" alt="Left mouse button">
-                            <img class="mouse-icon" src="assets/SVG/mouse_RMB.svg" alt="Right mouse button">
+                            <img class="mouse-icon" src="assets/svg/mouse-LMB.svg" alt="Left mouse button">
+                            <img class="mouse-icon" src="assets/svg/mouse_RMB.svg" alt="Right mouse button">
                         </div>
                         <div class="jump-actions">
                             <button id="returnGalleryBtn" class="secondary" type="button">Pause / Gallery</button>
@@ -360,7 +372,7 @@
         </div>
         </div>
 
-    </main>
+    </section>
 
     <!-- Settings modal (triggered by nav/settings button) -->
     <div id="settingsModal" class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
@@ -450,10 +462,10 @@
         </div>
     </aside>
     <!-- Shared accessible equivalent of the GLB sound/motion prompts. -->
-    <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
+    <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle" aria-describedby="permMessage">
         <div class="permission-box">
             <h3 id="permTitle">Allow sound?</h3>
-            <p>Allow the optional controller and camera introduction animation?</p>
+            <p id="permMessage">Allow the optional controller and camera introduction animation?</p>
             <div style="display:flex;gap:8px;margin-top:12px;">
                 <button id="permAllow" class="primary" type="button">Yes</button>
                 <button id="permDeny" class="secondary" type="button">No</button>

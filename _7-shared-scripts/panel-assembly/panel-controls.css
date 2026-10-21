@@ -1,0 +1,42 @@
+@import url('./ripple-review.css');
+@import url('./settings-sections.css');
+#review-panels .panel-controls { min-width: 0; }
+#review-panels .panel-controls-tabs { position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 4px; padding: 3px 0 9px; background: #17212d; }
+#review-panels .panel-controls-tabs .tab { min-width: 0; padding: 6px 2px; border: 1px solid #648199; border-radius: 6px; background: #273b50; color: #eef5ff; font-size: 11px; }
+#review-panels .panel-controls-tabs .tab[aria-selected="true"] { background: #46799a; }
+#review-panels .panel-controls-body .panel[hidden] { display: none; }
+#review-panels .panel-controls-body h2 { margin: 2px 0 8px; font-size: 15px; }
+#review-panels .panel-controls-body h3 { margin: 14px 0 6px; padding-bottom: 4px; border-bottom: 1px solid #526678; color: #c7e5ff; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+#review-panels .panel-controls-body p, #review-panels .panel-controls-body .hint, #review-panels .panel-controls-body .subtle { color: #c0d2e2; font-size: 11px; }
+#review-panels .panel-controls-body .control-row { display: grid; grid-template-columns: minmax(80px,1fr) minmax(70px,105px) 76px; gap: 7px; align-items: center; margin: 7px 0; }
+#review-panels .panel-controls-body .control-row label { font-size: 11px; }
+#review-panels .panel-controls-body :is(input,select,textarea,button) { min-height: 30px; color: #fff; background: #26394d; border: 1px solid #7190a9; border-radius: 6px; }
+#review-panels .panel-controls-body button { padding: 5px 8px; }
+#review-panels .panel-controls-body button:disabled { opacity: .5; }
+#review-panels .panel-controls-body input[type="range"] { min-width: 0; width: 100%; accent-color: #a7d6ff; }
+#review-panels .panel-controls-body input[type="number"] { width: 100%; padding: 4px; }
+#review-panels .panel-controls-body input[type="checkbox"] { min-height: 0; accent-color: #a7d6ff; }
+#review-panels .panel-controls-body input[type="color"] { width: 44px; padding: 2px; }
+#review-panels .panel-controls-body select { min-width: 0; width: 100%; }
+#review-panels .panel-controls-body textarea { display: block; width: 100%; min-height: 100px; font: 11px/1.4 monospace; }
+#review-panels .panel-controls-body .check-row { display: flex; gap: 8px; align-items: center; min-height: 28px; margin: 5px 0; }
+#review-panels .panel-controls-body .button-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+#review-panels .panel-controls-body .motion-compass { display: grid; grid-template-columns: repeat(3,44px); justify-content: center; gap: 5px; margin: 9px 0; }
+#review-panels .panel-controls-body .axis-wrap { display: grid; grid-template-columns: 90px 1fr; gap: 8px; }
+#review-panels .panel-controls-body .axis-star { display: grid; grid-template-columns: repeat(2,1fr); gap: 3px; }
+#review-panels .panel-controls-body .axis-tools { display: flex; gap: 6px; flex-wrap: wrap; }
+#review-panels .panel-controls-body .count-row { display: grid; grid-template-columns: 1fr repeat(3,52px); gap: 4px; align-items: center; }
+#review-panels .panel-controls-body .count-row input { width: 100%; }
+#review-panels .panel-controls-body details { margin: 8px 0; padding: 6px; border: 1px solid #586f83; border-radius: 6px; }
+#review-panels .panel-controls-body details summary { cursor: pointer; }
+#about-filament-inset { position: absolute; right: 14px; bottom: 72px; z-index: 3; width: 220px; height: 140px; pointer-events: none; border: 1px solid #7190a9; border-radius: 10px; overflow: hidden; background: transparent; color: white; }
+#about-filament-inset[hidden] { display: none; }
+#about-filament-inset-title { position: absolute; top: 6px; left: 8px; z-index: 1; font: 600 11px/1.2 system-ui,sans-serif; text-shadow: 0 1px 4px #000; }
+@media (max-width: 700px) { #about-filament-inset { right: 8px; bottom: 58px; width: 170px; height: 112px; } }
+.settings-transfer{padding:8px 12px;border-bottom:1px solid #506982;max-width:100%}.settings-transfer h3{margin:0 0 5px}.settings-section-tools{border-bottom:1px solid #506982;padding-bottom:8px;margin-bottom:10px}.settings-section-tools select,.settings-transfer select{max-width:100%}.is-precision-dragging{cursor:none!important}
+#review-panels .settings-transfer{padding:8px 0;font-size:11px}
+#review-panels .settings-transfer h3{font-size:11px;color:#c7e5ff;margin:0 0 6px}
+#review-panels .settings-transfer .button-row{display:flex;gap:6px;margin-bottom:6px}
+#review-panels .settings-transfer label{display:grid;grid-template-columns:90px minmax(0,1fr);gap:8px;align-items:center}
+#review-panels .settings-transfer :is(button,select){min-height:30px;padding:4px 8px;color:#eef5ff;background:#26394d;border:1px solid #7190a9;border-radius:6px;font:inherit}
+#review-panels .settings-transfer .hint:empty{display:none}

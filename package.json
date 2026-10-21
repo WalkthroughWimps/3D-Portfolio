@@ -12,19 +12,33 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "1.63.0",
     "cheerio": "^1.1.2",
     "eslint": "^9.39.1",
     "globals": "^16.5.0",
     "xlsx": "^0.18.5"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --test tools/*.test.mjs",
+    "lint": "eslint _0-start _1-about _2-videos _3-graphics _4-games _5-music _6-docs _7-shared-scripts debug js sw.js tools --ext .js,.mjs",
+    "prepare:site-html": "node tools/prepare-site-html.mjs write",
+    "check:site-html": "node tools/prepare-site-html.mjs check",
     "review": "node tools/review-server.mjs",
     "export:attributions": "node tools/export-attributions.mjs",
-    "imslp:import": "node tools/imslp_importer.mjs"
+    "imslp:import": "node tools/imslp_importer.mjs",
+    "check:artifact": "node tools/release-artifact.mjs check",
+    "build:artifact": "node tools/release-artifact.mjs build",
+    "hydrate:test-assets": "node tools/fetch-test-assets.mjs",
+    "test:browser": "node tools/phase-08-browser.mjs",
+    "preview:artifact": "node tools/phase-08-server.mjs",
+    "hydrate:assets": "node tools/hydrate-release-assets.mjs"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "engines": {
+    "node": ">=24.19.0",
+    "npm": ">=11"
+  }
 }

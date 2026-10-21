@@ -292,7 +292,7 @@ html:not(.is-local-review) .ui-right {
     padding-left: 0;
     font-size: .5em;
 }
-.settings-controller-scene.is-precision-adjusting { cursor: crosshair; }
+.settings-controller-scene.is-precision-adjusting { cursor: none; }
 
 .cam-anim-debug-panel {
     transition: transform 320ms var(--debug-panel-slide-ease), opacity 180ms ease;

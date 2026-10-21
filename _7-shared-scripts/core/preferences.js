@@ -6,7 +6,7 @@ export function createPreferences(getStorage = () => globalThis.localStorage) {
   function read(key) {
     key = String(key);
     if (overlay.has(key)) return overlay.get(key);
-    try { return getStorage().getItem(key); }
+    try { const value = getStorage().getItem(key); failed.delete(key); return value; }
     catch { failed.add(key); return null; }
   }
   function write(key, value) {
@@ -22,7 +22,14 @@ export function createPreferences(getStorage = () => globalThis.localStorage) {
   }
   return {
     getItem: read, setItem: write, removeItem: remove,
-    readPersisted(key) { try { return getStorage().getItem(key); } catch { failed.add(String(key)); return null; } },
+    readPersisted(key) {
+      key = String(key);
+      try {
+        const value = getStorage().getItem(key);
+        if (!overlay.has(key)) failed.delete(key);
+        return value;
+      } catch { failed.add(key); return null; }
+    },
     get failedKeys() { return [...failed]; },
     get pendingKeys() { return [...overlay.keys()]; },
     retry() {

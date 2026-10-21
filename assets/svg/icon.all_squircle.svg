@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_2" data-name="Layer 2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 905.87 560.58">
+  <g id="Layer_8" data-name="Layer 8">
+    <g>
+      <path d="M672.36,21.73c21.62,0,39.15,17.53,39.15,39.15v438.84c0,21.62-17.53,39.15-39.15,39.15H233.52c-21.62,0-39.15-17.53-39.15-39.15V60.87c0-21.62,17.53-39.15,39.15-39.15h438.84ZM672.36,0H233.52c-33.57,0-60.87,27.31-60.87,60.87v438.84c0,33.57,27.31,60.87,60.87,60.87h438.84c33.57,0,60.87-27.31,60.87-60.87V60.87c0-33.57-27.31-60.87-60.87-60.87h0Z" fill="#fff"/>
+      <rect x="194.37" y="21.73" width="517.13" height="517.13" rx="39.15" ry="39.15" fill="#ff99d6"/>
+    </g>
+    <text transform="translate(256.5 400.14)" font-family="BernardMT-Condensed, &apos;Bernard MT Condensed&apos;" font-size="304.19"><tspan x="0" y="0">ALL</tspan></text>
+  </g>
+</svg>

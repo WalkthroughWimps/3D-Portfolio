@@ -1,56 +1,45 @@
-﻿import js from "@eslint/js";
-import globals from "globals";
-import { defineConfig } from "eslint/config";
+import js from '@eslint/js';
+import globals from 'globals';
 
-export default defineConfig([
+const browserFiles = [
+  '_0-start/**/*.js', '_1-about/**/*.js', '_2-videos/**/*.js',
+  '_3-graphics/**/*.js', '_4-games/**/*.js', '_5-music/**/*.js',
+  '_6-docs/**/*.js', '_7-shared-scripts/**/*.js',
+  'debug/**/*.js', 'js/**/*.js', 'tools/local-admin/**/*.mjs'
+];
+
+export default [
   {
+    // Scope lint to maintained site code. Generated games, vendored libraries,
+    // experiments, and old piano copies are not part of the seven routes.
     ignores: [
-      "**/node_modules/**",
-      "**/backups/**",
-      "**/videos_files/**",
-      "**/videos-files/**",
-      "**/garbage/**",
-      "eslint.config.mjs",
-      // Legacy duplicate files created during earlier iterations — ignore to
-      // focus linting on canonical modules.
-      // "videos2.js", // will be linted next
-      "videos3.js",
-      // "videos copy.js",
-      // "videos-copy.js",
-      "videos.js.bak",
-      "videos.original.moved.js",
-      "stupid.js",
-    ],
+      '**/node_modules/**', 'assets/vendor/**', 'games/**', 'labs/**',
+      'unused/**', 'backups/**', 'output/**', 'tmp/**',
+      '_0-start/stupid.js',
+      '_5-music/music-piano-controls.js',
+      '_5-music/music-piano-controls.v2(1).js'
+    ]
   },
   {
-    files: ["*.{js,cjs}"],
-    plugins: { js },
-    extends: ["js/recommended"],
+    files: browserFiles,
+    ...js.configs.recommended,
     languageOptions: {
-      sourceType: "module",
-      globals: { ...globals.browser, gsap: "readonly", KUTE: "readonly" },
+      sourceType: 'module',
+      globals: { ...globals.browser, gsap: 'readonly', KUTE: 'readonly' }
     },
     rules: {
-      // Many legacy catch blocks intentionally ignore the error binding;
-      // treat an unused `e` in catch as intentional to reduce noise.
-      // Also allow unused vars that start with `_` so we can mark
-      // intentionally-unused variables during refactor iterations.
-      'no-unused-vars': ['error', { 'varsIgnorePattern': '^(_|e)$' }],
-      // Allow empty catch blocks — we prefer an explicit ignore or
-      // `void e;` pattern, but tolerate existing empty catches.
-      'no-empty': ['error', { 'allowEmptyCatch': true }]
-    },
+      'no-unused-vars': ['error', { varsIgnorePattern: '^(_|e)$' }],
+      'no-empty': ['error', { allowEmptyCatch: true }]
+    }
   },
   {
-    files: [
-      "global-sync.js",
-      "music-piano-controls.v2.js",
-      "tablet_animation_test.js",
-      "site-modelviewer.js",
-      "videos.js",
-      "videos-tablet.js",
-      "video-lane-carousel.js",
-    ],
-    languageOptions: { sourceType: "module" },
+    files: ['sw.js'],
+    ...js.configs.recommended,
+    languageOptions: { sourceType: 'script', globals: globals.serviceworker }
   },
-]);
+  {
+    files: ['tools/*.js', 'tools/*.mjs'],
+    ...js.configs.recommended,
+    languageOptions: { sourceType: 'module', globals: globals.node }
+  }
+];

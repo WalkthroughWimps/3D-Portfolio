@@ -5,14 +5,9 @@ import { computeScreenUvBounds } from '../_7-shared-scripts/scene/screen-surface
 export { computeScreenUvBounds, createMaskTextureForPlane, createTabletRaycaster, applyScreenCanvasTexture, createScreenOverlay, createScreenOverlayPlane, createPlanarOverlay } from '../_7-shared-scripts/scene/screen-surface.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { assetUrl, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
+import { assetUrl } from '../_7-shared-scripts/assets-config.js';
 import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
-const DEBUG_PINK_RECT = false; // draw a diagnostic 16:9 plane in front of the screen
-const SCREEN_W = 5.1520628;
-const SCREEN_H_TARGET = 2.898035369653893; // 16:9 height derived from screen width
-const NORMALIZE_SCREEN_UV = true;
-let didLogScreenUv = false;
 THREE.DefaultLoadingManager.setURLModifier((url) => assetUrl(url));
 
 /* eslint-disable no-unused-vars */
