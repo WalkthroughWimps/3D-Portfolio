@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const A11Y_KEY = 'site.a11y.settings';
 export const SCHEMA_KEY = 'site.settings.schemaVersion';
 // Declare new faces here so their persistent fields and common controls agree.
@@ -32,7 +32,7 @@ export const SETTINGS_FIELDS = Object.freeze({
   'cube.showShell': { key: 'site.cube.showShell', default: true, parse: bool },
   ...Object.fromEntries(Object.keys(ABOUT_FACES).flatMap(face => [
     [`about.${face}.enabled`, {key: `site.about.${face}.enabled`, default: true, parse: bool}],
-    [`about.${face}.showBacking`, {key: `site.about.${face}.showBacking`, default: face !== 'notes', parse: bool}]
+    [`about.${face}.showBacking`, {key: `site.about.${face}.showBacking`, default: true, parse: bool}]
   ])),
   'about.odd.armSpeed': {key: 'site.about.odd.armSpeed', default: 1, parse: numeric(.25, 3)},
   'about.odd.sewingAnimations': {key:'site.about.odd.sewing-animations',default:true,parse:bool},

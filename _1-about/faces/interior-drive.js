@@ -10,11 +10,11 @@ export function createInteriorDrive(faces) {
   let host = null, root = null, lattice = null, rotor = null, output = null, shaft = null;
   let armature = null, gimbalX = null, gimbalZ = null, gyroscope = null;
   let magnetMount = null, magnetRotor = null;
-  let suspended = false, reduced = false, elapsed = 0, motorPhase = 0, signature = '', options = {};
+  let suspended = false, reduced = false, elapsed = 0, motorPhase = 0, contrastGain = 1, signature = '', options = {};
   let clockRoot = null, profile = [];
   let projector = null, faceSettings = {};
   const resources = new Set(), pulses = [];
-  const view = new THREE.Vector3(), clockTip = new THREE.Vector3(), spindleAxis = new THREE.Vector3(0, 1, 0), spin = new THREE.Quaternion();
+  const clockTip = new THREE.Vector3(), spindleAxis = new THREE.Vector3(0, 1, 0), spin = new THREE.Quaternion();
   const inverseWorld = new THREE.Quaternion(), stabilization = new THREE.Quaternion(), gimbalAngles = new THREE.Euler(0, 0, 0, 'XZY');
   const own = resource => { resources.add(resource); return resource; };
   const metal = (color, metalness = .7) => own(new THREE.MeshStandardMaterial({color, metalness, roughness: .32, emissive: color, emissiveIntensity: .035}));
@@ -151,10 +151,11 @@ export function createInteriorDrive(faces) {
     for (const direction of directions) {
       const material = energyMaterial(colors[direction === 1 ? 0 : 1], direction < 0, true);
       const count = Math.round(options.strands ?? 9), turns = options.turns ?? 1.35;
+      const frameRadius = Math.max(.055, (profile.at(-1)?.r ?? .88) - .005);
       for (let strand = 0; strand < count; strand++) {
         const points = [];
         for (let i = 0; i <= 96; i++) {
-          const t = i / 96, radius = .055 + .77 * t, angle = strand / count * TAU + direction * turns * TAU * t;
+          const t = i / 96, radius = THREE.MathUtils.lerp(.055, frameRadius, t), angle = strand / count * TAU + direction * turns * TAU * t;
           points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, bowlDepth(radius)));
         }
         followSpeaker(tube(lattice, points, material, `${direction > 0 ? 'Ascending' : 'Descending'} spheroid strand ${strand + 1}`, .0024));
@@ -260,7 +261,7 @@ export function createInteriorDrive(faces) {
       if (!reduced && !faces.get('skills')?.assembly?.userReducedMotion && !clockState?.paused) elapsed += Math.min(.05, Math.max(0, dt)) * (options.speed ?? .24);
       for (const material of pulses) {
         material.uniforms.phase.value = elapsed;
-        material.uniforms.glow.value = options.glow ?? .65;
+        material.uniforms.glow.value = (options.glow ?? .65) * contrastGain;
       }
       const input = clock?.magneticDriveTarget;
       if (clock?.root && input && clock.root !== clockRoot) {
@@ -278,15 +279,15 @@ export function createInteriorDrive(faces) {
       const magneticPhase = clock?.magneticInput?.phase;
       if (!paused) magnetRotor.rotation.y = magneticPhase ?? motorPhase * 3600;
       magnetMount.visible = shaft.visible = output.visible = faceSettings.clock?.enabled !== false;
-      // Independent of the backing node: removing Skills does not remove its field.
-      // With the backing on, only the inner view is exposed. With it off, both
-      // sides show the field; its geometry still stays behind the measured skin.
-      host.camera.getWorldPosition(view); host.cube.worldToLocal(view);
-      if (lattice) lattice.visible = faceSettings.skills?.enabled !== false && options.enabled !== false && (!faces.get('skills').backing?.visible || view.z < .5);
+      // Keep the field present through cube turns. The opaque backing occludes it
+      // from outside; its paths stay inset from the measured skin on the inside.
+      if (lattice) lattice.visible = faceSettings.skills?.enabled !== false && options.enabled !== false;
     },
     applySettings(snapshot) {
       faceSettings = snapshot.about || {}; projector?.applySettings(snapshot);
       options = snapshot.about?.spheroid || {}; reduced = Boolean(snapshot.accessibility?.reducedMotion);
+      const contrast = THREE.MathUtils.clamp(snapshot.start?.contrast ?? .5, 0, 1);
+      contrastGain = .08 + (2.4 - .08) * contrast * contrast * (3 - 2 * contrast);
       rebuildLattice();
     },
     suspend() { suspended = true; }, resume() { suspended = false; },

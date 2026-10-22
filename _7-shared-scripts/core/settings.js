@@ -63,13 +63,16 @@ export function createSettingsStore({ preferences = createPreferences(), target 
     futureVersion = Number.isFinite(version) && version > SCHEMA_VERSION ? version : null;
     if (migrate && !futureVersion) {
       const a11y = readObject(raw.get(A11Y_KEY));
+      const notesBacking = SETTINGS_FIELDS['about.notes.showBacking'];
+      if ((Number.isFinite(version) ? version : 0) < 2 && raw.get(notesBacking.key) === 'false')
+        preferences.setItem(notesBacking.key, 'true');
       for (const [path, field] of Object.entries(SETTINGS_FIELDS)) {
         if (field.prop) continue;
         const canonical = field.parse(raw.get(field.key));
         const chosen = choose(field, raw, a11y);
         if (canonical === undefined && chosen !== null && !(path === 'scene.lighting')) preferences.setItem(field.key, String(chosen));
       }
-      if (raw.get(SCHEMA_KEY) === null) preferences.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
+      if (raw.get(SCHEMA_KEY) !== String(SCHEMA_VERSION)) preferences.setItem(SCHEMA_KEY, String(SCHEMA_VERSION));
     }
     emit(build(rawRead()), source);
     return snapshot;

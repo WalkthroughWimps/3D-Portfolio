@@ -16,7 +16,7 @@ export function createBackingControls(faces) {
   }
   function sync() {
     if (!snapshot) return;
-    for (const [node, {id}] of nodes) node.visible = snapshot.about?.[id]?.enabled !== false && (snapshot.about?.[id]?.showBacking ?? id !== 'notes');
+    for (const [node, {id}] of nodes) node.visible = snapshot.about?.[id]?.enabled !== false && (snapshot.about?.[id]?.showBacking ?? true);
     for (const control of controls) {
       const value = control.dataset.setting.split('.').reduce((item, key) => item?.[key], snapshot);
       if (control.type === 'checkbox') control.checked = Boolean(value);
