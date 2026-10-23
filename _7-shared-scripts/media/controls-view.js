@@ -1,5 +1,6 @@
 import { snapSyncMs } from '../global-sync.js';
 import { createControlsInput } from './controls-input.js';
+import { createVideoShortcutGuide } from '../core/page-shortcuts.js';
 
 const syncDragPreferenceKey = 'video-sync-unlimited-drag';
 let syncDragPreference = null;
@@ -180,7 +181,8 @@ export function createVideoControlsUI(options = {}) {
     const target = ev.target || document.querySelector('canvas');
     if (!target) return false;
     endSyncDrag?.();
-    if (!['enabled', 'disabled'].includes(syncDragPreference)) {
+    const dragPreference = options.unlimitedSyncDrag === false ? 'disabled' : syncDragPreference;
+    if (!['enabled', 'disabled'].includes(dragPreference)) {
       sliderDrag = null; syncDrag = null;
       showSyncDragPreference();
       return false;
@@ -214,7 +216,7 @@ export function createVideoControlsUI(options = {}) {
     for (const type of ['mouseup','pointerup','pointercancel']) window.addEventListener(type,finish,{signal:abort.signal,capture:true});
     window.addEventListener('blur',finish,{signal:abort.signal});
     document.addEventListener('pointerlockchange',()=>{ if (!document.pointerLockElement) finish(); },{signal:abort.signal});
-    if (syncDragPreference === 'enabled') {
+    if (dragPreference === 'enabled') {
       try { const request=target.requestPointerLock?.(); request?.then?.(()=>{if(abort.signal.aborted && document.pointerLockElement===target)document.exitPointerLock?.();}).catch(()=>{}); } catch {}
     }
     return true;
@@ -861,35 +863,35 @@ export function createVideoControlsUI(options = {}) {
   };
 }
 
-// Shared, intentionally compact version of YouTube's shortcut reference.
-// Pages call this only while a player is active, so piano/menu controls remain
-// discoverable in their normal contexts.
+// Pages call this while a player is active, so piano and menu controls remain
+// discoverable in their own contexts.
 export function showVideoKeyboardShortcuts() {
   const existing = document.getElementById('shared-video-shortcuts');
-  if (existing) { existing.remove(); return; }
-  const dialog = document.createElement('section');
-  dialog.id = 'shared-video-shortcuts';
-  dialog.setAttribute('role', 'dialog');
-  dialog.setAttribute('aria-modal', 'true');
-  dialog.setAttribute('aria-label', 'Video keyboard shortcuts');
-  dialog.style.cssText = 'position:fixed;z-index:2147483647;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(560px,calc(100vw - 32px));background:#18181b;color:#f4f4f5;border:1px solid #52525b;border-radius:12px;box-shadow:0 24px 70px rgba(0,0,0,.6);padding:22px;font:16px/1.45 "Segoe UI",sans-serif;';
-  dialog.innerHTML = '<button aria-label="Close shortcut help" style="position:absolute;right:12px;top:8px;border:0;background:none;color:inherit;font-size:28px;cursor:pointer">×</button><h2 style="margin:0 0 14px;font-size:24px">Keyboard shortcuts</h2><div style="display:grid;grid-template-columns:1fr auto;gap:8px 20px"><span>Play / pause</span><kbd>Space or K</kbd><span>Back / forward 10 seconds</span><kbd>J / L</kbd><span>Back / forward 5 seconds</span><kbd>← / →</kbd><span>Volume</span><kbd>↑ / ↓</kbd><span>Mute</span><kbd>M</kbd><span>Toggle tablet view</span><kbd>F</kbd><span>Playback speed</span><kbd>Shift + , / .</kbd><span>Previous / next frame (paused)</span><kbd>, / .</kbd><span>Seek to a percentage</span><kbd>0–9</kbd><span>Exit player</span><kbd>Esc</kbd><span>Show / hide this help</span><kbd>Shift + /</kbd></div>';
-  const close = () => dialog.remove();
+  if (existing) { existing.close(); return; }
+  const invokingElement = document.activeElement;
+  let openingSyncPreference = false;
+  const guide = createVideoShortcutGuide({
+    id: 'shared-video-shortcuts',
+    onClose: () => {
+      guide.remove();
+      if (!openingSyncPreference && invokingElement?.isConnected) invokingElement.focus();
+    }
+  });
+  const { dialog, body } = guide;
   const theme = getControlsTheme();
   dialog.style.background = theme.bg;
   dialog.style.color = theme.fg;
   dialog.style.borderColor = theme.fg;
-  dialog.addEventListener('keydown', event => {
-    event.stopPropagation();
-    if (event.key === 'Escape') close();
-  });
-  dialog.querySelector('button')?.addEventListener('click', close);
+  dialog.querySelector('.site-shortcuts-header').style.background = theme.bg;
   const dragSettings = document.createElement('button');
   dragSettings.textContent = 'Sync dragging preference…';
-  dragSettings.style.cssText = 'margin-top:18px;padding:8px;border:1px solid currentColor;background:transparent;color:inherit;border-radius:6px;cursor:pointer';
-  dragSettings.addEventListener('click', () => { close(); showSyncDragPreference(); });
-  dialog.appendChild(dragSettings);
-  dialog.addEventListener('click', (event) => { if (event.target === dialog) close(); });
-  document.body.appendChild(dialog);
-  dialog.querySelector('button')?.focus();
+  dragSettings.className = 'site-shortcuts-preference';
+  dragSettings.addEventListener('click', () => {
+    openingSyncPreference = true;
+    guide.close();
+    showSyncDragPreference();
+  });
+  body.appendChild(dragSettings);
+  dialog.addEventListener('click', event => { if (event.target === dialog) guide.close(); });
+  if (!guide.open()) guide.remove();
 }

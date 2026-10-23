@@ -1,4 +1,5 @@
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { getEffectiveAudioSettings, patchAudioSettings } from '../_7-shared-scripts/audio-settings.js';
 import * as THREE from 'three';
@@ -12,7 +13,7 @@ import { createGamesVideoAdapter } from './games-video-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
 import { assetUrl, safeDrawImage, markBroken, isBroken, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
 import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
-import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
+import { applyStandardGlbMouseControlMode, installStandardGlbMouseControls, createPanAwareCenterProjection } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 
 const STAGE_ID = 'model-stage';
 const GLB_URL = assetUrl('../assets/glb/Arcade-Console.glb');
@@ -273,6 +274,9 @@ let renderer;
 let sceneFrameId = null;
 let sceneSuspended = false;
 let sceneDisposed = false;
+const setVideoPresentation = active => window.dispatchEvent(new CustomEvent('site:video-presentation-change', {
+  detail: { source: 'games', active }
+}));
 let sceneAbortSignal = null;
 let stageResizeObserver = null;
 let originalScreenMaterial = null;
@@ -282,8 +286,12 @@ let scene;
 let activeCamera;
 let fallbackCamera;
 let controls;
+let centerProjection = null;
+let centerProjectionCamera = null;
 let defaultOrbitTarget = new THREE.Vector3(0, 1.1, 0);
 let cabinetRoot = null;
+let centerOnViewport = false;
+const cabinetLocalCenter = new THREE.Vector3();
 let screenMesh = null;
 let screenCenter = new THREE.Vector3();
 let screenSizeLocal = null;
@@ -401,6 +409,7 @@ if (!stage) throw new Error(`Missing #${STAGE_ID} container`);
 void bootstrapPage({
   pageId: 'games',
   async mount({ scope }) {
+    setVideoPresentation(false);
     sceneAbortSignal = scope.signal;
     let exitedBeforeMount = false;
     scope.listen(window, 'pagehide', event => {
@@ -438,6 +447,7 @@ void bootstrapPage({
     return {
       suspend() {
         sceneSuspended = true;
+        setVideoPresentation(false);
         if (sceneFrameId !== null) cancelAnimationFrame(sceneFrameId);
         sceneFrameId = null;
         if (cameraAnimId !== null) cancelAnimationFrame(cameraAnimId);
@@ -455,6 +465,7 @@ void bootstrapPage({
       resume() {
         if (sceneDisposed || !sceneSuspended) return;
         sceneSuspended = false;
+        setVideoPresentation(contentMode === 'video' && !!reelVideo);
         const { muted, volume } = getStoredAudioSettings();
         gameAudioBridge.setVolume01(volume);
         gameAudioBridge.setMuted(muted);
@@ -468,6 +479,10 @@ void bootstrapPage({
 
 function init(scope) {
   scene = new THREE.Scene();
+  centerOnViewport = Boolean(getSharedSettings().get().games?.centerOnViewport);
+  scope.defer(getSharedSettings().subscribe(snapshot => {
+    centerOnViewport = Boolean(snapshot.games?.centerOnViewport);
+  }));
 
   try {
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -604,7 +619,7 @@ function bindSharedMouseControls() {
   renderer.domElement.__gamesSharedMouse = installStandardGlbMouseControls({
     controls,
     domElement: renderer.domElement,
-    canInteract: () => !!(controls && controls.enabled && !isGameActive())
+    canInteract: () => !!(controls && controls.enabled && contentMode !== 'video' && !isGameActive())
   });
 }
 
@@ -643,6 +658,8 @@ function loadCabinet() {
       const box = new THREE.Box3().setFromObject(cabinetRoot);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+      cabinetRoot.updateMatrixWorld(true);
+      cabinetLocalCenter.copy(cabinetRoot.worldToLocal(center.clone()));
 
       controls.target.copy(center);
 
@@ -770,12 +787,13 @@ function setupScreenCanvas(mesh) {
     cyclePlaybackRate: () => cycleSpeed(),
     getPreservePitch: () => getStoredPreservePitch(),
     togglePitch: () => toggleStoredPreservePitch(),
+    getSyncMs: getStoredSyncMs,
     setSyncMs: (value) => setStoredSyncMs(value),
     isFullscreen: () => !!cameraZoomAlt,
     toggleFullscreen: () => toggleCameraZoom(),
     exit: exitSharedControls
   });
-  sharedControlsUi = createVideoControlsUI();
+  sharedControlsUi = createVideoControlsUI({ unlimitedSyncDrag: false });
   sharedControlsUi.setViewportRectProvider(sharedControlsAdapter.getViewportRect);
   sharedControlsUi.onAction = (action) => sharedControlsAdapter.dispatch(action);
   console.log('%c[games] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
@@ -893,6 +911,7 @@ function applyCameraMode(altView, opts = {}) {
 function startIntroAnimation() {
   // Start immediately at the default transform (intro animation disabled).
   applyDefaultCameraTransform();
+  renderer.domElement.__gamesSharedMouse?.captureDefaultPose?.();
 }
 
 function captureCameraSnapshot() {
@@ -1607,6 +1626,7 @@ function startVideoReel(entry) {
   stopVideoReel();
   setHoveredVideo(null);
   contentMode = 'video';
+  setVideoPresentation(true);
   loggedReelRect = false;
   console.log(`[games-reel] canvas=${screenCanvas.width}x${screenCanvas.height} screenAR=${(screenCanvas.width / screenCanvas.height).toFixed(3)} targetAR=${TARGET_SCREEN_AR.toFixed(3)}`);
   reelSource = entry && entry.src ? entry.src : '';
@@ -1627,9 +1647,12 @@ function startVideoReel(entry) {
   reelVideo.loop = false;
   reelVideo.setAttribute('playsinline', '');
   forceHideVideoElement(reelVideo);
+  const openedVideo = reelVideo;
   reelVideo.addEventListener('error', () => {
-    const err = reelVideo.error;
-    console.warn('VIDEO ERROR:', reelVideo.src, err ? { code: err.code, message: err.message } : err);
+    if (reelVideo !== openedVideo) return;
+    const err = openedVideo.error;
+    console.warn('VIDEO ERROR:', openedVideo.src, err ? { code: err.code, message: err.message } : err);
+    stopVideoReel();
   });
   if (audioSrc) {
     reelAudio = createAudioElement(audioSrc);
@@ -1660,6 +1683,7 @@ function startVideoReel(entry) {
 
 function stopVideoReel() {
   if (!reelVideo) return;
+  setVideoPresentation(false);
   const video = reelVideo;
   const audio = reelAudio;
   reelVideo = null;
@@ -1705,6 +1729,17 @@ function animate() {
     drawScreen();
   }
 
+  if (centerProjectionCamera !== activeCamera) {
+    centerProjectionCamera = activeCamera;
+    centerProjection = createPanAwareCenterProjection(activeCamera);
+  }
+  centerProjection.update({ enabled: centerOnViewport && !!cabinetRoot,
+    panned: !!renderer.domElement.__gamesSharedMouse?.isPanned?.(),
+    width: stage.clientWidth, height: stage.clientHeight,
+    getCenter: () => {
+      cabinetRoot.updateWorldMatrix(true, false);
+      return cabinetRoot.localToWorld(cabinetLocalCenter.clone());
+    } });
   renderer.render(scene, activeCamera);
   updateCssGameObject();
   updateOverlayPosition();
@@ -1744,6 +1779,7 @@ function disposeCabinetResources(root) {
 function disposeScene() {
   if (sceneDisposed) return;
   sceneDisposed = true;
+  setVideoPresentation(false);
   sceneSuspended = true;
   sceneAbortSignal = null;
   if (sceneFrameId !== null) cancelAnimationFrame(sceneFrameId);
@@ -2369,23 +2405,30 @@ function handlePointerMove(ev) {
 function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
-  if (ev.button !== 0 && !isGameActive()) return;
+  if (ev.button !== 0 && !isGameActive() && contentMode !== 'video') return;
   if (sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
     lastVideoControlsActivityTs = performance.now();
     renderer.domElement.style.cursor = '';
     const screenPt = mapPointerToScreenPixels(ev);
     if (screenPt) {
-      const handled = sharedControlsUi.handlePointerEvent({
+      const controlEvent = {
         canvasX: screenPt.x,
         canvasY: screenPt.y,
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        target: renderer.domElement,
         type: ev.type || 'pointerdown',
         button: ev.button,
         buttons: ev.buttons,
         pointerId: ev.pointerId
-      }, {
+      };
+      const controlMeta = {
         canvasWidth: screenCanvas.width,
         canvasHeight: screenCanvas.height
-      });
+      };
+      // Right-click gives the shared sync arrows their larger step only.
+      if (ev.button !== 0 && (ev.button !== 2 || sharedControlsUi.inspectPointerEvent(controlEvent, controlMeta).control !== 'sync-step')) return;
+      const handled = sharedControlsUi.handlePointerEvent(controlEvent, controlMeta);
       if (handled) {
         console.log('[games] shared-controls click px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', true);
         ev.preventDefault();
@@ -2403,7 +2446,7 @@ function handlePointerDown(ev) {
   }
   const hit = raycastScreen(ev);
   if (!hit) {
-    controls.enabled = true;
+    controls.enabled = (contentMode === 'menu');
     return;
   }
   lastScreenHit = hit;
@@ -2696,7 +2739,7 @@ function restoreViewAfterContent() {
 
 function updateControlsForContent(mode) {
   if (!controls) return;
-  const allowTransform = !cameraZoomAlt;
+  const allowTransform = !cameraZoomAlt && contentMode !== 'video';
   applyStandardGlbMouseControlMode(controls, { enabled: allowTransform, allowRotate: allowTransform, allowZoom: allowTransform });
   setGameAudioControlsVisible(mode === 'game');
 }
@@ -3205,3 +3248,9 @@ function getCssVar(name, fallback) {
   } catch  { /* ignore */ }
   return fallback;
 }
+
+// Board-game stand artwork shares one Games settings panel with the graphics shelf.
+Promise.all([import('../debug/panel-shell.js'),import('../_3-graphics/shelf/token-settings.mjs')]).then(([{initPanelShell},{createTokenSettingsPanel}])=>{
+ const panel=initPanelShell();const unregister=panel.registerContext('games-tabletop','Tabletop',createTokenSettingsPanel());
+ addEventListener('pagehide',event=>{if(!event.persisted)unregister();},{once:true});
+}).catch(error=>console.warn('Character stand settings unavailable',error));

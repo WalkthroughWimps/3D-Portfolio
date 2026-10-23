@@ -104,7 +104,7 @@ body {
          uses a CSS variable set from JS to match the actual header height. */
     position: fixed;
     /* Align directly under the header's measured height to avoid clipping */
-    top: var(--header-height, 10rem);
+    top: var(--music-scene-top, 0px);
     left: 0;
     right: 0;
     bottom: 0;
@@ -241,6 +241,10 @@ body {
     border-radius: 8px;
     backdrop-filter: blur(6px);
 }
+
+/* The backboard model owns instrument selection; these fallback lists stay in the DOM for its controller. */
+#instrumentPicker,
+#instrumentBackendPicker { display: none !important; }
 
 .music-webgl-unavailable #pianoCanvas,
 .music-webgl-unavailable #instrumentPicker,

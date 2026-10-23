@@ -9,6 +9,7 @@ import {createClockHands} from './hands.js';
 import {createClockControls} from './controls.js';
 import {createClockGesture} from './gesture.js';
 import {offsetForWinding, handAngles, TAU} from './winding.js';
+import {createGearAppearance} from './gear-appearance.js';
 
 export const CLOCK_MOUNT = Object.freeze({normal: [0, -1, 0], right: [1, 0, 0], up: [0, 0, 1]});
 const selected = new URLSearchParams(location.search).get('clock');
@@ -21,8 +22,10 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
   const binding = createModelFace({id: 'clock', backingName: 'back.clock'});
   let host = null, root = null, rotors = [], returnRotors = [], carrier = null, request = null;
   let magnetic = null;
+  let appearance = null, contrast = .5, visualSeconds = null, lastVisualAt = null;
   let spiralPivots = null, spiralManifest = null, handPreview = null, dragBaseMinutes = 0, dragBaseAngle = 0;
   let hands = null, gesture = null, controls = null, clockSettings = getSharedSettings().get().about.clock;
+  visualSeconds = Date.now() / 1000 * clockSettings.gearSpeed;
   let previewDelta = 0, animation = null, heldDate = null, shownOffset = clockSettings.timeOffsetSeconds;
   let launcher = null, pauseButton = null, toolbar = null, stylesheet = null;
   let suspended = false, disposed = false, reduced = false, enabled = true, generation = 0;
@@ -49,7 +52,11 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     if (!root) return;
     if (v9) {
       const browserDate = new Date(), handDate = new Date(browserDate.getTime() + clockSettings.timeOffsetSeconds * 1000);
-      const motion = spiralMotion(browserDate, spiralManifest);
+      const now = performance.now();
+      if (lastVisualAt !== null && !state.paused && !reduced && !suspended && enabled)
+        visualSeconds += Math.max(0, (now - lastVisualAt) / 1000) * clockSettings.gearSpeed;
+      lastVisualAt = now;
+      const motion = spiralMotion(browserDate, spiralManifest, visualSeconds);
       for (const name of V9_NAMES) spiralPivots.get(name).rotation.y = motion.angles[name];
       state.angles = V9_NAMES.map(name => motion.angles[name]);
       state.carrierAngle = motion.ring; state.motorAngle = motion.input;
@@ -89,6 +96,8 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
       if (Object.keys(correction).length) {getSharedSettings().patch(correction); return;}
     }
     clockSettings = settings;
+    appearance?.apply(settings.gearFinishes, contrast);
+    controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${settings.gearSpeed}×`);
     hands?.configure(settings);
     if (!animation && !previewDelta) sync();
   }
@@ -141,13 +150,14 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     launcher.setAttribute('aria-description', v9 ? 'Fixed spiral gear train with browser-synchronized seconds ring.' : legacy ? 'Rear hour gear: one turn in twelve hours. Front minute gear: one turn per hour.' : 'Tilted clock movement. The backing orbits once per minute. Pause motion is available beside this button.');
     launcher.addEventListener('click', () => { if (!suspended && state.ready) focusFace(CLOCK_MOUNT); }, {signal: events.signal});
     pauseButton = document.createElement('button'); pauseButton.type = 'button'; pauseButton.className = 'clock-launcher';
-    pauseButton.textContent = 'Pause motion'; pauseButton.setAttribute('aria-pressed', 'false'); pauseButton.disabled = true;
+    pauseButton.textContent = v9 ? 'Pause gears' : 'Pause motion'; pauseButton.setAttribute('aria-pressed', 'false'); pauseButton.disabled = true;
     pauseButton.addEventListener('click', () => {
       state.paused = !state.paused;
       if (state.paused) animation = null;
-      pauseButton.textContent = state.paused ? 'Resume motion' : 'Pause motion';
+      pauseButton.textContent = state.paused ? (v9 ? 'Resume gears' : 'Resume motion') : (v9 ? 'Pause gears' : 'Pause motion');
       pauseButton.setAttribute('aria-pressed', String(state.paused));
-      if (!state.paused && !reduced && !suspended) sync();
+      controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${clockSettings.gearSpeed}×`);
+      lastVisualAt = performance.now(); sync();
     }, {signal: events.signal});
     toolbar = document.createElement('div'); toolbar.className = 'clock-toolbar'; toolbar.setAttribute('role', 'group');
     toolbar.setAttribute('aria-label', 'Clock preview'); toolbar.append(launcher, pauseButton);
@@ -155,14 +165,19 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     controls = createClockControls({onChange: changeSettings, secondsLocked: v9,
       onWind: v9 ? windByMinutes : windBySeconds, onResetTime: resetTime,
       onFocus: () => {if (!suspended && enabled && state.ready) focusFace(CLOCK_MOUNT);}});
+    const strength = .08 + 2.32 * contrast * contrast * (3 - 2 * contrast);
+    toolbar.style.setProperty('--clock-contrast-strength', String(strength));
+    controls.setContrast(strength);
   }
   function detach() {
     generation += 1; request?.abort(); request = null;
     gesture?.dispose(); gesture = null; hands?.dispose(); hands = null;
+    appearance?.dispose(); appearance = null;
     if (toolbar) { toolbar.hidden = true; launcher.disabled = true; pauseButton.disabled = true; }
     release(root); root = null; rotors = []; returnRotors = []; carrier = null; magnetic = null; host = null;
     previewDelta = 0; animation = null; heldDate = null; handPreview = null;
     spiralPivots = null; spiralManifest = null;
+    lastVisualAt = null;
     state.ready = false; state.angles = []; state.returnAngles = []; state.updatedAt = null;
     binding.detach();
   }
@@ -195,6 +210,7 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
         if (!legacy && (!moving || returning.some(node => !node))) throw new Error('Clock asset is missing its ring or return train');
         root = loaded; rotors = axes; returnRotors = returning; carrier = moving;
         spiralPivots = pivots; spiralManifest = manifest;
+        if (v9) {appearance = createGearAppearance(pivots, V9_NAMES); appearance.apply(clockSettings.gearFinishes, contrast);}
         if (v9) {
           state.teeth = V9_NAMES.map(name => manifest.nodes[name].teeth);
           state.speedFactors = V9_NAMES.map(name => manifest.nodes[name].inputFactor);
@@ -228,7 +244,7 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
         if (new URLSearchParams(location.search).get('face') === 'clock' && !suspended && enabled) focusFace(CLOCK_MOUNT);
       } catch (error) {
         if (generation !== version || disposed || error.name === 'AbortError') return;
-        gesture?.dispose(); gesture = null; hands?.dispose(); hands = null;
+        gesture?.dispose(); gesture = null; hands?.dispose(); hands = null; appearance?.dispose(); appearance = null;
         release(loaded); root = null; rotors = []; returnRotors = []; carrier = null; magnetic = null; spiralPivots = null; spiralManifest = null;
         state.error = error.message; launcher.textContent = 'Clock unavailable'; launcher.disabled = true;
         console.warn('[clock] Mechanism could not load; original backing retained.', error);
@@ -243,16 +259,22 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     get gestureActive() { return Boolean(gesture?.active); },
     endGesture() { gesture?.cancel(); },
     attach, detach,
-    update() { if (!suspended && !disposed && ((!reduced && !state.paused) || animation)) sync(); },
+    update() { if (!suspended && !disposed && enabled && (v9 || (!reduced && !state.paused) || animation)) sync(); },
     applySettings(snapshot) {
       enabled = snapshot.about?.clock?.enabled !== false;
       if (!enabled) gesture?.cancel();
       if (root) root.visible = enabled; if (toolbar) toolbar.hidden = !enabled;
       const next = Boolean(snapshot?.accessibility?.reducedMotion);
-      if (next !== reduced) { reduced = next; if (next) animation = null; if (!suspended && !state.paused) sync(); }
+      if (next !== reduced) { reduced = next; if (next) animation = null; lastVisualAt = performance.now(); }
+      const nextContrast = Number(snapshot?.start?.contrast ?? .5);
+      if (nextContrast !== contrast) { contrast = nextContrast; appearance?.apply(clockSettings.gearFinishes, contrast); }
+      const strength = .08 + 2.32 * contrast * contrast * (3 - 2 * contrast);
+      toolbar?.style.setProperty('--clock-contrast-strength', String(strength));
+      controls?.setContrast(strength);
+      controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${clockSettings.gearSpeed}×`);
     },
-    suspend() { gesture?.cancel(); suspended = true; if (launcher) { launcher.disabled = true; pauseButton.disabled = true; } },
-    resume() { if (disposed) return; suspended = false; if (!state.paused && !reduced) sync(); if (launcher) { launcher.disabled = !state.ready; pauseButton.disabled = !state.ready; } },
+    suspend() { gesture?.cancel(); suspended = true; lastVisualAt = null; if (launcher) { launcher.disabled = true; pauseButton.disabled = true; } },
+    resume() { if (disposed) return; suspended = false; lastVisualAt = performance.now(); sync(); if (launcher) { launcher.disabled = !state.ready; pauseButton.disabled = !state.ready; } },
     dispose() { if (disposed) return; detach(); disposed = true; events.abort(); controls?.dispose(); controls = null; toolbar?.remove(); stylesheet?.remove(); binding.dispose(); }
   };
 }

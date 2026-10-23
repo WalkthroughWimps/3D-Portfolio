@@ -3,6 +3,14 @@ export const A11Y_KEY = 'site.a11y.settings';
 export const SCHEMA_KEY = 'site.settings.schemaVersion';
 // Declare new faces here so their persistent fields and common controls agree.
 export const ABOUT_FACES = Object.freeze({about: 'About', skills: 'Skills', notes: 'Notes', clock: 'Clock', refs: 'Refs', odd: 'Oddio'});
+export const VIDEO_EXPLAINER_DEFAULTS = Object.freeze({
+  'online-classes': { title: 'Online Classes', text: 'Remote learning cuts and overlays.' },
+  'a-list-videos': { title: 'A-List Videos', text: 'Promo edits and highlights.' },
+  'news-broadcast': { title: 'News Broadcast', text: 'Broadcast-style segments.' },
+  'neotube-studios': { title: 'NeoTube Studios', text: 'Studio-branded content.' },
+  'music-videos': { title: 'Music Videos', text: 'Music-driven visuals and edits.' },
+  'random-vids': { title: 'Random Vids', text: 'Favorite mixes and experiments.' }
+});
 const numeric = (min, max, snap = false) => value => {
   if (value === null || value === undefined || value === '' || (typeof value === 'string' && !value.trim())) return undefined;
   if (typeof value !== 'string' && typeof value !== 'number') return undefined;
@@ -13,7 +21,20 @@ const numeric = (min, max, snap = false) => value => {
 };
 const bool = value => value === true || value === 'true' ? true : value === false || value === 'false' ? false : undefined;
 const choice = (...values) => value => values.includes(value) ? value : undefined;
+const explainerText = value => typeof value === 'string' && value.length <= 1200 ? value.replace(/\r\n?/g, '\n') : undefined;
 const color = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value.toLowerCase() : undefined;
+const clockFinishes = value => {
+  if (typeof value !== 'string' || value.length > 6000) return undefined;
+  try {
+    const data = JSON.parse(value);
+    const names = ['all', 'clock-drive', ...Array.from({length: 9}, (_, i) => `clock-minute-${i + 1}`), ...Array.from({length: 6}, (_, i) => `clock-second-${i + 1}`), 'clock-ring'];
+    if (!data || typeof data !== 'object' || Array.isArray(data) || Object.keys(data).some(name => !names.includes(name))) return undefined;
+    if (Object.values(data).some(item => !item || typeof item !== 'object' || !['brass', 'steel', 'copper', 'antique', 'custom'].includes(item.preset) ||
+      (item.color !== undefined && !color(item.color)) || (item.metalness !== undefined && numeric(0, 1)(item.metalness) === undefined) ||
+      (item.roughness !== undefined && numeric(0, 1)(item.roughness) === undefined))) return undefined;
+    return value;
+  } catch { return undefined; }
+};
 const podConfig = value => {
   if (typeof value !== 'string' || value.length > 180000) return undefined;
   if (!value) return '';
@@ -27,6 +48,24 @@ const podConfig = value => {
   } catch { return undefined; }
 };
 export const SETTINGS_FIELDS = Object.freeze({
+  'header.useLegacy': { key: 'site.header.useLegacy', default: false, parse: bool },
+  'about.centerOnViewport': { key: 'site.about.centerOnViewport', default: false, parse: bool },
+  'music.centerOnViewport': { key: 'site.music.centerOnViewport', default: false, parse: bool },
+  'graphics.centerOnViewport': { key: 'site.graphics.centerOnViewport', default: false, parse: bool },
+  'graphics.shelfRotation': { key: 'site.graphics.shelfRotation', default: false, parse: bool },
+  'graphics.videoRotation': { key: 'site.graphics.videoRotation', default: false, parse: bool },
+  'graphics.videoZoom': { key: 'site.graphics.videoZoom', default: false, parse: bool },
+  'games.centerOnViewport': { key: 'site.games.centerOnViewport', default: false, parse: bool },
+  'videos.centerOnViewport': { key: 'site.videos.centerOnViewport', default: false, parse: bool },
+  ...Object.fromEntries(Object.entries(VIDEO_EXPLAINER_DEFAULTS).map(([id, item]) => [
+    `videos.explainer.${id}`, { key: `site.videos.explainer.${id}`, default: item.text, parse: explainerText }
+  ])),
+  'videos.explainerSize': { key: 'site.videos.explainerSize', default: 46, parse: numeric(18, 72) },
+  'videos.explainerFont': { key: 'site.videos.explainerFont', default: 'sans', parse: choice('sans', 'serif', 'mono') },
+  'videos.explainerStyle': { key: 'site.videos.explainerStyle', default: 'normal', parse: choice('normal', 'bold', 'italic', 'bold italic') },
+  'videos.explainerAlign': { key: 'site.videos.explainerAlign', default: 'center', parse: choice('left', 'center', 'right') },
+  'videos.explainerPlacement': { key: 'site.videos.explainerPlacement', default: 'center', parse: choice('center', 'follow', ...Object.keys(VIDEO_EXPLAINER_DEFAULTS)) },
+  'docs.centerOnViewport': { key: 'site.docs.centerOnViewport', default: false, parse: bool },
   'cube.faceSnap': { key: 'site.cube.faceSnap', default: false, parse: bool },
   'cube.uprightFaces': { key: 'site.cube.uprightFaces', default: true, parse: bool },
   'cube.showShell': { key: 'site.cube.showShell', default: true, parse: bool },
@@ -83,6 +122,11 @@ export const SETTINGS_FIELDS = Object.freeze({
   'about.clock.markerPhase': {key: 'site.about.clock.markerPhase', default: 0, parse: numeric(-1000000, 1000000)},
   'about.clock.showGroove': {key: 'site.about.clock.showGroove', default: true, parse: bool},
   'about.clock.grooveColor': {key: 'site.about.clock.grooveColor', default: '#a98b55', parse: color},
+  'about.clock.gearSpeed': {key: 'site.about.clock.gearSpeed', default: 150, parse: value => {
+    const speed = Number(value);
+    return value !== null && value !== undefined && value !== '' && [1, 30, 60, 120, 150].includes(speed) ? speed : undefined;
+  }},
+  'about.clock.gearFinishes': {key: 'site.about.clock.gearFinishes', default: '', parse: value => value === '' ? '' : clockFinishes(value)},
   ...Object.fromEntries(['hour', 'minute', 'second'].flatMap((hand, i) => [
     [`about.clock.${hand}Visible`, {key: `site.about.clock.${hand}Visible`, default: true, parse: bool}],
     [`about.clock.${hand}Style`, {key: `site.about.clock.${hand}Style`, default: hand === 'second' ? 'baton' : 'tapered', parse: choice('baton', 'tapered', 'skeleton', 'slim-arrow', 'chevron', 'art-deco', 'spade', 'breguet', 'rocket')}],
@@ -97,6 +141,20 @@ export const SETTINGS_FIELDS = Object.freeze({
   'about.spheroid.glow': { key: 'site.about.spheroid.glow', default: .65, parse: numeric(0, 1) },
   'about.spheroid.speed': { key: 'site.about.spheroid.speed', default: .24, parse: numeric(0, 1) },
   'about.spheroid.color': { key: 'site.about.spheroid.color', default: 'cyan', parse: choice('cyan', 'amber', 'violet') },
+  'about.spheroid.rotationMode': {key: 'site.about.spheroid.rotation-mode', default: 'together', parse: choice('together', 'independent')},
+  'about.spheroid.rotationDirection': {key: 'site.about.spheroid.rotation-direction', default: 'counterclockwise', parse: choice('clockwise', 'counterclockwise')},
+  'about.spheroid.rotationSpeed': {key: 'site.about.spheroid.rotation-speed', default: .015, parse: numeric(0, .25)},
+  'about.spheroid.ascendingRotationDirection': {key: 'site.about.spheroid.ascending-rotation-direction', default: 'counterclockwise', parse: choice('clockwise', 'counterclockwise')},
+  'about.spheroid.ascendingRotationSpeed': {key: 'site.about.spheroid.ascending-rotation-speed', default: .015, parse: numeric(0, .25)},
+  'about.spheroid.descendingRotationDirection': {key: 'site.about.spheroid.descending-rotation-direction', default: 'clockwise', parse: choice('clockwise', 'counterclockwise')},
+  'about.spheroid.descendingRotationSpeed': {key: 'site.about.spheroid.descending-rotation-speed', default: .015, parse: numeric(0, .25)},
+  'about.spheroid.bridgeEnabled': {key: 'site.about.spheroid.bridge-enabled', default: true, parse: bool},
+  'about.spheroid.bridgeCount': {key: 'site.about.spheroid.bridge-count', default: 4, parse: numeric(1, 36)},
+  'about.spheroid.bridgeGlow': {key: 'site.about.spheroid.bridge-glow', default: .8, parse: numeric(0, 1.5)},
+  'about.spheroid.bridgeSpeed': {key: 'site.about.spheroid.bridge-speed', default: .8, parse: numeric(0, 3)},
+  'about.spheroid.rearPull': {key: 'site.about.spheroid.rear-pull', default: .025, parse: numeric(0, .08)},
+  'about.spheroid.rearPullEnabled': {key: 'site.about.spheroid.rear-pull-enabled', default: true, parse: bool},
+  'about.spheroid.rearPullInfluence': {key: 'site.about.spheroid.rear-pull-influence', default: .22, parse: numeric(.10, .85)},
   'audio.volume': { key: 'site.audio.volume', legacy: ['a11y:masterVolume'], default: 0.25, parse: numeric(0, 1) },
   'audio.muted': { key: 'site.audio.muted', legacy: ['a11y:mute'], default: false, parse: bool },
   'audio.syncMs': { key: 'site.audio.sync', legacy: ['globalAudioMidiOffsetMs', 'a11y:audioSyncMs'], default: -270, parse: numeric(-3000, 3000, true) },
@@ -107,6 +165,7 @@ export const SETTINGS_FIELDS = Object.freeze({
   'accessibility.focusOutline': { key: A11Y_KEY, prop: 'focusOutline', default: 'auto', parse: choice('auto', 'always') },
   'scene.lighting': { key: 'site.scene.lighting', default: null, parse: numeric(0, 1) },
   'start.animationAllowed': { key: 'site.start.animation.allowed', default: null, parse: bool },
+  'start.centerOnViewport': { key: 'site.start.centerOnViewport', default: false, parse: bool },
   'media.syncDrag': { key: 'video-sync-unlimited-drag', default: null, parse: choice('enabled', 'disabled') },
   'media.tabletFocus': { key: 'video.tablet.focus', default: false, parse: bool },
   'start.contrast': { key: 'site.contrast.value', default: 0.5, parse: numeric(0, 1) },

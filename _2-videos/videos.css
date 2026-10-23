@@ -130,8 +130,8 @@ body {
 }
 .intro-skip {
     position: fixed;
-    top: 92px;
-    left: 24px;
+      top: 32px;
+      left: 424px;
     z-index: 12;
     font-family: var(--videos-info-font);
     font-size: 0.95rem;
@@ -141,13 +141,20 @@ body {
     border: 2px solid color-mix(in oklab, var(--hl-secondary-color) 70%, transparent);
     border-radius: 999px;
     padding: 6px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      line-height: 1.15;
+      min-width: 112px;
+      width: max-content;
+      box-sizing: border-box;
     cursor: pointer;
     letter-spacing: 0.02em;
     box-shadow: 0 6px 18px rgba(0,0,0,0.35);
     transition: opacity 240ms ease, transform 240ms ease;
 }
 .intro-skip:hover { transform: translateY(-1px); }
-.intro-skip.hidden { opacity: 0; pointer-events: none; }
+.intro-skip.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
 .captions-toggle {
     position: fixed;
     right: 56px;
@@ -163,8 +170,8 @@ body {
     cursor: pointer;
 }
 .captions-toggle:focus-visible { outline: 3px solid #ffbb62; outline-offset: 3px; }
-@media (max-width: 768px) {
-    .intro-skip { top: 156px; left: 12px; min-height: 44px; }
+  @media (max-width: 600px) {
+    .intro-skip { top: 136px; left: auto; right: 12px; min-height: 44px; }
 }
 
 .intro-gate {

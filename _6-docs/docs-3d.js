@@ -1,8 +1,10 @@
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createPanAwareCenterProjection } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { assetUrl, corsProbe, isLocalDev } from "../_7-shared-scripts/assets-config.js";
 
@@ -76,6 +78,14 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
   defaultCamera.position.set(0, 1.2, 3);
 
   let activeCamera = defaultCamera;
+  let centerProjection = null;
+  let centerProjectionCamera = null;
+  let centerOnViewport = false;
+  const stopCenterSetting = getSharedSettings().subscribe(snapshot => {
+    centerOnViewport = Boolean(snapshot?.docs?.centerOnViewport);
+    if (mount.isConnected) resize();
+  }, { immediate: true });
+  scope.defer(stopCenterSetting);
 
   // Default light rig (simple + robust)
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.1);
@@ -129,6 +139,12 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
   scope.defer(disposeDocs);
   let spinX = 0;
   let spinY = 0;
+  let defaultTarget = null;
+  let defaultDirection = null;
+  let middlePointer = null;
+  let rightPointer = null;
+  let lastMiddleClick = 0;
+  let lastRightClick = 0;
   const maxSideTilt = Math.PI / 6;
   const rotationTweens = new Map();
   const quarterTurn = Math.PI / 2;
@@ -672,9 +688,9 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
 
   function resize() {
     const header = document.getElementById("patterned-background");
-    const headerH = header ? header.getBoundingClientRect().height : 0;
-    const desiredH = Math.max(240, Math.round(window.innerHeight - headerH));
-    mount.style.setProperty("--glb-viewer-top", `${Math.max(0, Math.round(headerH))}px`);
+    const headerH = document.body.dataset.headerLayout === 'legacy' && !centerOnViewport && header ? Math.max(0, header.getBoundingClientRect().bottom) : 0;
+    const desiredH = Math.max(1, Math.round(window.innerHeight - headerH));
+    mount.style.setProperty("--glb-viewer-top", `${Math.round(headerH)}px`);
     mount.style.height = `${desiredH}px`;
     const w = mount.clientWidth;
     const h = mount.clientHeight;
@@ -687,6 +703,7 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
     }
   }
   scope.listen(window, "resize", resize);
+  scope.listen(window, 'site:header-layout-change', resize);
 
   // IMPORTANT: set this path to your real GLB path
   const GLB_PATH = assetUrl("../assets/glb/about-cube.glb");
@@ -799,6 +816,8 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
       spinX = 0;
       controls.target.copy(centerWorld);
       controls.update();
+      defaultTarget = controls.target.clone();
+      defaultDirection = activeCamera.position.clone().sub(defaultTarget).normalize();
       cubeParagraph = findObjectByNames(modelRoot, ["cube-paragraph"]);
       cubeFace = findObjectByNames(modelRoot, ["cube-face"]);
       faceRightBtnMesh = findObjectByNames(modelRoot, ["face-rightbtn"]);
@@ -982,6 +1001,17 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
         }
       }
     });
+    if (centerProjectionCamera !== activeCamera) {
+      centerProjectionCamera = activeCamera;
+      centerProjection = createPanAwareCenterProjection(activeCamera);
+    }
+    centerProjection.update({ enabled: centerOnViewport && !!modelPivot,
+      panned: !!defaultTarget && controls.target.distanceToSquared(defaultTarget) >= 1e-8,
+      width: mount.clientWidth, height: mount.clientHeight,
+      getCenter: () => {
+        modelPivot.updateWorldMatrix(true, false);
+        return modelPivot.getWorldPosition(new THREE.Vector3());
+      } });
     renderer.render(scene, activeCamera);
   }
 
@@ -1264,7 +1294,13 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
   }
 
   scope.listen(renderer.domElement, "pointerdown", (event) => {
+    if (event.button === 1 && modelPivot && defaultTarget) {
+      event.preventDefault();
+      middlePointer = { x: event.clientX, y: event.clientY, at: performance.now(), moved: 0 };
+      return;
+    }
     if (event.button === 2) {
+      rightPointer = { x: event.clientX, y: event.clientY, at: performance.now(), moved: 0 };
       startModelDrag(event);
       return;
     }
@@ -1286,6 +1322,36 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
     }
   });
   function finishPointerInteraction(event) {
+    if (event.type === 'pointercancel') {
+      middlePointer = rightPointer = null;
+      lastMiddleClick = lastRightClick = 0;
+    }
+    const now = performance.now();
+    if (event.button === 1 && middlePointer) {
+      const moved = Math.max(middlePointer.moved, Math.hypot(event.clientX - middlePointer.x, event.clientY - middlePointer.y));
+      if (now - middlePointer.at <= 240 && moved <= 6) {
+        if (now - lastMiddleClick <= 320 && defaultTarget) {
+          activeCamera.position.add(defaultTarget.clone().sub(controls.target));
+          controls.target.copy(defaultTarget);
+          controls.update();
+          lastMiddleClick = 0;
+        } else lastMiddleClick = now;
+      } else lastMiddleClick = 0;
+      middlePointer = null;
+    }
+    if (event.button === 2 && rightPointer) {
+      const moved = rightPointer.moved + Math.hypot(event.clientX - rightPointer.x, event.clientY - rightPointer.y);
+      if (now - rightPointer.at <= 240 && moved <= 6) {
+        if (now - lastRightClick <= 320 && defaultDirection) {
+          spinX = spinY = crankAngle = crankTargetAngle = 0;
+          const distance = activeCamera.position.distanceTo(controls.target);
+          activeCamera.position.copy(controls.target).addScaledVector(defaultDirection, distance);
+          controls.update();
+          lastRightClick = 0;
+        } else lastRightClick = now;
+      } else lastRightClick = 0;
+      rightPointer = null;
+    }
     if (isDraggingCrank && (crankPointerId == null || event.pointerId === crankPointerId)) {
       isDraggingCrank = false;
       lastCrankPoint = null;
@@ -1307,6 +1373,26 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
   scope.listen(window, "pointerup", finishPointerInteraction);
   scope.listen(window, "pointercancel", finishPointerInteraction);
   scope.listen(window, "pointermove", (event) => {
+    if (middlePointer && modelPivot) {
+      const dx = event.clientX - middlePointer.x;
+      const dy = event.clientY - middlePointer.y;
+      middlePointer.moved += Math.hypot(dx, dy);
+      middlePointer.x = event.clientX;
+      middlePointer.y = event.clientY;
+      const height = Math.max(1, renderer.domElement.clientHeight);
+      const distance = activeCamera.position.distanceTo(controls.target);
+      const scale = activeCamera.isPerspectiveCamera
+        ? 2 * distance * Math.tan(THREE.MathUtils.degToRad(activeCamera.fov * 0.5)) / height
+        : (activeCamera.top - activeCamera.bottom) / (height * activeCamera.zoom);
+      const right = new THREE.Vector3(1, 0, 0).applyQuaternion(activeCamera.quaternion);
+      const up = new THREE.Vector3(0, 1, 0).applyQuaternion(activeCamera.quaternion);
+      const offset = right.multiplyScalar(-dx * scale).addScaledVector(up, dy * scale);
+      activeCamera.position.add(offset);
+      controls.target.add(offset);
+      controls.update();
+      event.preventDefault();
+      return;
+    }
     if (isDraggingCrank && crankshaft) {
       const center = crankDragCenter;
       if (!center) return;
@@ -1347,6 +1433,11 @@ void bootstrapPage({ pageId: 'docs', mount({ scope }) {
     if (isDraggingModel && lastModelPointer) {
       const dx = event.clientX - lastModelPointer.x;
       const dy = event.clientY - lastModelPointer.y;
+      if (rightPointer) {
+        rightPointer.moved += Math.hypot(dx, dy);
+        rightPointer.x = event.clientX;
+        rightPointer.y = event.clientY;
+      }
       modelDragDistance += Math.hypot(dx, dy);
       lastModelPointer = { x: event.clientX, y: event.clientY };
       if (modelDragDistance >= 3) {

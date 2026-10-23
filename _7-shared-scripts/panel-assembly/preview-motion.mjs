@@ -37,6 +37,7 @@ export class PanelMotion {
     this.combinedPoseLimitM=.006;
     this.rippleGraph = null;
     this.displayBaseline='icon';
+    this.clickedSide=null;
     this.onDisplayChange=null;
     this._tiltNormal = new THREE.Vector3();
     this._tiltIdentity = new THREE.Quaternion();
@@ -54,7 +55,7 @@ export class PanelMotion {
       this.panels.set(record.panelId, {record, pivot, body, meshes, morphs, center, radius,
         restQuaternion: pivot.quaternion.clone(), restPosition: pivot.position.clone(),
         baseQuaternion: pivot.quaternion.clone(), tiltQuaternion: new THREE.Quaternion(),
-        turn: null, clicked: false, displayFlipped: false, clickFrom: 0, clickTo: 0, clickProgress: 1, ripple: 0});
+        turn: null, clicked: false, displayFlipped: false, visibleArtworkSide: null, clickFrom: 0, clickTo: 0, clickProgress: 1, ripple: 0});
     }
     if (this.panels.size !== 37) throw new Error(`Expected 37 v9 panels, got ${this.panels.size}`);
     this.previousOptionGuard = rig.canApplyOptions;
@@ -217,21 +218,31 @@ export class PanelMotion {
       if(turn.hover){turn.hovered=true;turn.reentryDirection=direction;}
       return true;
     }
-    this.queue.set(panelId,{direction,target:HALF_TURN,hover:true,hovered:true});this._changed();return true;
+    this.queue.set(panelId,{direction,target:HALF_TURN,hover:true,hovered:true,sourceSide:panel.visibleArtworkSide||this.getLogicalSide(panelId)});this._changed();return true;
   }
   hoverExit(panelId,direction){
     const panel=this.panels.get(panelId);
     const turn=this.active.get(panelId);
     if(turn?.hover){
       turn.hovered=false;
+      turn.exitCommitted=true;
       if(!turn.surprise&&!turn.impact&&panel.record.axes&&COMPASS[direction]&&turn.angle<=HALF_TURN){
         turn.exitAxis.copy(this._axis(panel,direction)).negate();turn.exitDirection=direction;
       }
-      this._setTurnTarget(turn,FULL_TURN);return true;
+      this._setTurnTarget(turn,this._hoverRestTarget(turn));return true;
     }
     const pending=this.queue.get(panelId);
-    if(pending?.hover){pending.hovered=false;pending.target=FULL_TURN;pending.exitDirection=direction;return true;}
+    if(pending?.hover){pending.hovered=false;pending.exitCommitted=true;pending.target=this._pendingHoverRestTarget(panelId,pending);pending.exitDirection=direction;return true;}
     return false;
+  }
+  _pendingHoverRestTarget(panelId,pending){
+    return pending.sourceSide===this.getLogicalSide(panelId)?FULL_TURN:HALF_TURN;
+  }
+  _hoverRestTarget(turn){
+    const wantedParity=turn.startSide===this.getLogicalSide(turn.panel.record.panelId)?0:1;
+    let boundary=Math.max(1,Math.ceil((turn.angle- EPS)/HALF_TURN));
+    if(boundary%2!==wantedParity)boundary++;
+    return boundary*HALF_TURN;
   }
   toggleClicked(panelId,options) {
     const panel = this.panels.get(panelId);
@@ -242,21 +253,27 @@ export class PanelMotion {
     const panel=this.panels.get(panelId);
     if(!panel?.record.axes)return false;
     const turn=this.active.get(panelId),pending=this.queue.get(panelId);
-    // Surprise art is never a saved face. Let its committed cycle hide it;
-    // clicking still changes the card's mass without interrupting that turn.
-    if(turn?.surprise||pending?.surprise)return this.toggleClicked(panelId,{preserveVisible:true});
-    if(turn?.hover){
-      // Commit the side already facing the viewer, even for a quick click
-      // before the hover turn has reached its opposite face.
-      const displayFlipped=panel.displayFlipped!==(Math.cos(turn.angle)<0);
-      turn.hover=false;turn.hovered=false;
-      this._setTurnTarget(turn,Math.round(turn.angle/HALF_TURN)*HALF_TURN);
-      this.setDisplayFlipped(panelId,displayFlipped,{preserveVisible:true});
-    }else if(pending?.hover){
-      // Nothing has turned yet: keep the current face and cancel that hover.
-      this.queue.delete(panelId);
-    }
-    return this.toggleClicked(panelId,{preserveVisible:Boolean(turn)});
+    // Surprise art is never a saved face. Its committed cycle keeps running.
+    const clickedSide=this._clickedSideMapping(),nextClicked=!panel.clicked;
+    const targetSide=nextClicked?clickedSide:(clickedSide==='icon'?'name':'icon');
+    this.setClicked(panelId,nextClicked,{preserveVisible:true});
+    this.setDisplayFlipped(panelId,targetSide!==this.displayBaseline,{preserveVisible:true});
+    // A click changes mass and the resting-side intent only. The visible print
+    // and any pointer-enter turn are left alone. Once exit has begun, extend
+    // that same forward turn to the parity selected by the latest click.
+    if(turn?.surprise)turn.afterAlignment=targetSide;
+    else if(turn?.hover&&!turn.hovered)this._setTurnTarget(turn,this._hoverRestTarget(turn));
+    if(pending?.surprise)pending.afterAlignment=targetSide;
+    else if(pending?.hover&&!pending.hovered)pending.target=this._pendingHoverRestTarget(panelId,pending);
+    this._changed();
+    return true;
+  }
+  _clickedSideMapping(){
+    if(this.clickedSide)return this.clickedSide;
+    const cards=[...this.panels.values()].filter(panel=>panel.record.axes);
+    const iconVotes=cards.filter(panel=>(this.getLogicalSide(panel.record.panelId)==='icon')===panel.clicked).length;
+    this.clickedSide=iconVotes>cards.length/2?'icon':'name';
+    return this.clickedSide;
   }
   setDisplayFlipped(panelId,value,{preserveVisible=false}={}){
     const panel=this.panels.get(panelId);if(!panel?.record.axes)return false;
@@ -287,22 +304,39 @@ export class PanelMotion {
     this.queue.set(panelId,{direction,target:FULL_TURN,hover:true,hovered:false,impact:true});this._changed();return true;
   }
   alignCard(panelId,side){
-    const turn=this.active.get(panelId);
-    if(turn){turn.afterAlignment=side;if(turn.hover){turn.hovered=false;this._setTurnTarget(turn,FULL_TURN);}return;}
-    this.queue.delete(panelId);
-    if(this.getLogicalSide(panelId)!==side)this.queue.set(panelId,{direction:'N',target:HALF_TURN,landingSide:side});
+    const panel=this.panels.get(panelId);if(!panel?.record.axes)return;
+    this.setDisplayFlipped(panelId,side!==this.displayBaseline,{preserveVisible:true});
+    const turn=this.active.get(panelId),pending=this.queue.get(panelId);
+    if(turn){
+      if(turn.surprise||turn.impact){turn.afterAlignment=side;return;}
+      if(turn.hover){turn.hovered=false;turn.exitCommitted=true;}
+      this._setTurnTarget(turn,this._hoverRestTarget(turn));
+    }else if(pending){
+      if(pending.surprise||pending.impact){pending.afterAlignment=side;return;}
+      pending.sourceSide??=panel.visibleArtworkSide||this.getLogicalSide(panelId);
+      pending.hovered=false;pending.exitCommitted=true;
+      pending.target=this._pendingHoverRestTarget(panelId,pending);
+    }else if(panel.visibleArtworkSide!==side){
+      this.queue.set(panelId,{direction:'N',target:HALF_TURN,landingSide:side,sourceSide:panel.visibleArtworkSide||this.getLogicalSide(panelId)});
+    }
   }
   normalizeAllClicked(value){
-    if(!this.focused||!this._safeOptions(this.rig.options)||[...this.active.values(),...this.queue.values()].some(turn=>turn.surprise))return false;
+    if(!this.focused||!this._safeOptions(this.rig.options))return false;
     const cards=[...this.panels.values()].filter(panel=>panel.record.axes);
-    // Vote on the mapping between mass and artwork, so the two ALL buttons
-    // select opposite sides even when the current saved display is mixed.
-    const iconVotes=cards.filter(panel=>(this.getLogicalSide(panel.record.panelId)==='icon')===panel.clicked).length;
-    const clickedSide=iconVotes>cards.length/2?'icon':'name',side=value?clickedSide:clickedSide==='icon'?'name':'icon';
+    // Capture the legacy majority mapping once, then keep that global
+    // clicked-side assignment stable through bulk and rapid input.
+    const clickedSide=this._clickedSideMapping(),side=value?clickedSide:clickedSide==='icon'?'name':'icon';
     for(const panel of cards){this.setClicked(panel.record.panelId,value,{preserveVisible:true});this.alignCard(panel.record.panelId,side);}
     this._changed();return true;
   }
-  invertClicked(){for(const panel of this.panels.values())if(panel.record.axes)this.toggleClicked(panel.record.panelId);return true;}
+  invertClicked(){
+    const clickedSide=this._clickedSideMapping();
+    for(const panel of this.panels.values())if(panel.record.axes){
+      const next=!panel.clicked;this.setClicked(panel.record.panelId,next,{preserveVisible:true});
+      this.alignCard(panel.record.panelId,next?clickedSide:clickedSide==='icon'?'name':'icon');
+    }
+    return true;
+  }
   toggleDisplayBaseline(){this.displayBaseline=this.displayBaseline==='icon'?'name':'icon';for(const panel of this.panels.values())if(panel.record.axes)this.onDisplayChange?.(panel.record.panelId,this.getLogicalSide(panel.record.panelId));this._changed();return this.displayBaseline;}
   setAllClickedAnimated(value){
     if(!this.focused||!this._safeOptions(this.rig.options))return false;
@@ -319,11 +353,10 @@ export class PanelMotion {
   }
   toggleDisplayBaselineAnimated(){
     if(!this.focused||!this._safeOptions(this.rig.options))return false;
-    if([...this.active.values(),...this.queue.values()].some(turn=>turn.surprise))return false;
     const ids=[...this.panels].filter(([,panel])=>panel.record.axes).map(([id])=>id);
-    for(const id of ids)if(!this.flip(id,'N'))return false;
+    this.clickedSide=this._clickedSideMapping()==='icon'?'name':'icon';
     this.displayBaseline=this.displayBaseline==='icon'?'name':'icon';
-    for(const id of ids)this.onDisplayChange?.(id,{preserveVisible:true});
+    for(const id of ids)this.alignCard(id,this.panels.get(id).clicked?this.clickedSide:this.clickedSide==='icon'?'name':'icon');
     this._changed();return this.displayBaseline;
   }
   getLogicalSide(panelId){const panel=this.panels.get(panelId);if(!panel?.record.axes)return null;return panel.displayFlipped?(this.displayBaseline==='icon'?'name':'icon'):this.displayBaseline;}
@@ -371,13 +404,14 @@ export class PanelMotion {
     if(turn.exitAxis&&angle>HALF_TURN)return result.setFromAxisAngle(turn.exitAxis,angle-HALF_TURN).multiply(turn.mid);
     return result.setFromAxisAngle(turn.axis,angle).multiply(turn.start);
   }
-  _start(panel, direction, target=HALF_TURN, hover=false, hovered=false, exitDirection) {
+  _start(panel, direction, target=HALF_TURN, hover=false, hovered=false, exitDirection, sourceSide, exitCommitted=hover&&!hovered) {
     const axis = this._axis(panel, direction);
     panel.lastFlipAxis=axis.clone();
     const start = panel.baseQuaternion.clone();
     const mid = new THREE.Quaternion().setFromAxisAngle(axis, HALF_TURN).multiply(start);
     const exitAxis=hover?(panel.record.axes&&COMPASS[exitDirection]?this._axis(panel,exitDirection).negate():axis.clone()):null;
-    const turn = {panel, direction, axis, start, mid, exitAxis, exitDirection, end:new THREE.Quaternion(), angle:0, target, hover, hovered, angularVelocity:0};
+    const turn = {panel, direction, axis, start, mid, exitAxis, exitDirection, end:new THREE.Quaternion(), angle:0, target, hover, hovered, exitCommitted, angularVelocity:0,
+      startSide:panel.record.axes?(sourceSide||panel.visibleArtworkSide||this.getLogicalSide(panel.record.panelId)):null};
     this._setTurnTarget(turn,target);
     panel.turn = turn;
     this.active.set(panel.record.panelId, turn);
@@ -412,7 +446,7 @@ export class PanelMotion {
       for (const [id, request] of [...this.queue]) {
         const panel = this.panels.get(id);
         if (!this._safeOptions(this.rig.options) || !this.rig.isPanelVisible(id)) {this.queue.delete(id);changed = true;continue;}
-        if (!this._conflicts(panel)) {if(request.landingSide)this.setDisplayFlipped(id,request.landingSide!==this.displayBaseline,{preserveVisible:true});const turn=this._start(panel, request.direction, request.target, request.hover, request.hovered, request.exitDirection);turn.surprise=Boolean(request.surprise);turn.impact=Boolean(request.impact);turn.reentryDirection=request.reentryDirection;changed = true;pivotChanged = true;}
+        if (!this._conflicts(panel)) {if(request.landingSide)this.setDisplayFlipped(id,request.landingSide!==this.displayBaseline,{preserveVisible:true});const turn=this._start(panel, request.direction, request.target, request.hover, request.hovered, request.exitDirection, request.sourceSide, request.exitCommitted);turn.surprise=Boolean(request.surprise);turn.impact=Boolean(request.impact);turn.afterAlignment=request.afterAlignment;turn.reentryDirection=request.reentryDirection;changed = true;pivotChanged = true;}
       }
     }
     for (const [id, turn] of [...this.active]) {
@@ -428,9 +462,10 @@ export class PanelMotion {
       const axis=turn.exitAxis&&turn.angle>HALF_TURN?turn.exitAxis:turn.axis;
       turn.panel.lastFlipAxis.copy(axis);
       this.onFlipProgress?.({panelId:id,axis,angle:turn.angle,previousAngle});
-      if (turn.angle===turn.target&&turn.angularVelocity===0&&(!turn.hover||turn.target===FULL_TURN)) {
+      if (turn.angle===turn.target&&turn.angularVelocity===0&&(!turn.hover||turn.exitCommitted)) {
         turn.panel.baseQuaternion.copy(turn.end);turn.panel.turn = null;this.active.delete(id);
-        this.onFlipEnd?.({panelId:id,direction:turn.exitDirection||turn.direction,axis:axis.clone()});this.onDisplayChange?.(id,this.getLogicalSide(id));
+        if(turn.panel.record.axes)turn.panel.visibleArtworkSide=this.getLogicalSide(id);
+        this.onFlipEnd?.({panelId:id,direction:turn.exitDirection||turn.direction,axis:axis.clone()});this.onDisplayChange?.(id,{preserveVisible:true});
         if(turn.afterAlignment){this.alignCard(id,turn.afterAlignment);if(!this.queue.has(id)&&turn.panel.pendingImpact){const direction=turn.panel.pendingImpact;turn.panel.pendingImpact=null;this.impactSpin(id,direction);}}
         else if(turn.panel.pendingImpact){const direction=turn.panel.pendingImpact;turn.panel.pendingImpact=null;this.impactSpin(id,direction);}
         else if(turn.hover&&turn.hovered)this.queue.set(id,{direction:turn.reentryDirection||turn.direction,target:HALF_TURN,hover:true,hovered:true});
@@ -448,12 +483,13 @@ export class PanelMotion {
     this.target = this.manifest.deploy.defaultPreview;
     this.manualTarget = this.target;
     this.displayBaseline='icon';
+    this.clickedSide=null;
     this.focused = true;this.autoFocus = false;this.paused = false;this.reducedMotion = false;
     for (const panel of this.panels.values()) {
       panel.pivot.quaternion.copy(panel.restQuaternion);
       panel.pivot.position.copy(panel.restPosition);
       panel.baseQuaternion.copy(panel.restQuaternion);panel.tiltQuaternion.identity();
-      panel.turn = null;panel.pendingImpact=null;panel.lastFlipAxis=null;panel.clicked = false;panel.displayFlipped=false;panel.clickFrom = panel.clickTo = 0;panel.clickProgress = 1;panel.ripple = 0;panel.appliedMorph=0;
+      panel.turn = null;panel.pendingImpact=null;panel.lastFlipAxis=null;panel.clicked = false;panel.displayFlipped=false;panel.visibleArtworkSide=null;panel.clickFrom = panel.clickTo = 0;panel.clickProgress = 1;panel.ripple = 0;panel.appliedMorph=0;
       this._applyMorph(panel);
     }
     this.rig.setDeployment(this.target);

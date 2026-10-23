@@ -279,7 +279,7 @@ export function mountStartPage({ scope }) {
             const next = clamp01Value(value);
             if(next === null) return getBackgroundBrightness();
             lightingState.overlay = next;
-            try{ localPreferences.setItem(BRIGHTNESS_VALUE_KEY, String(next)); }catch{}
+            getSharedSettings().patch({ start: { brightness: next } });
             return next;
         };
 
@@ -295,8 +295,8 @@ export function mountStartPage({ scope }) {
         const setBackgroundContrast = (value) => {
             const next = clamp01Value(value);
             if(next === null) return getBackgroundContrast();
-            try{ localPreferences.setItem(BACKGROUND_CONTRAST_KEY, String(next)); }catch{}
-            const contrastFactor = 0.45 + (1.9 * next);
+            getSharedSettings().patch({ start: { backgroundContrast: next } });
+            const contrastFactor = 0.5 + next;
             document.documentElement.style.setProperty('--start-overlay-contrast', contrastFactor.toFixed(3));
             if(bgOverlay) bgOverlay.style.setProperty('--start-overlay-contrast', contrastFactor.toFixed(3));
             return next;
@@ -402,6 +402,7 @@ export function mountStartPage({ scope }) {
         if(next === null) return;
         lookTuning[name] = next;
         try{ localPreferences.setItem(storageKey, String(next)); }catch{}
+        getSharedSettings().patch({ start: { look: { [name]: next } } });
         settingsControllerBridge.applyReviewLook?.();
         syncOverlayInputs();
     }
@@ -597,11 +598,13 @@ export function mountStartPage({ scope }) {
             settingsControllerBridge.updateKnobTransformsFromState();
         }
         updateLightingDebugLine(source || 'lux', 'sync');
+        syncAccessibleControllerUI();
         return next;
     }
 
     function applyEmiFromSource(value, source){
         const next = setEmiValue(value);
+        getSharedSettings().patch({ start: { contrast: next } });
         settingsControllerBridge.applyEmissionControls?.();
         syncEmiInputs();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
@@ -809,6 +812,12 @@ export function mountStartPage({ scope }) {
         const fallbackCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
         fallbackCamera.position.set(0, 1.6, 4);
         let activeCamera = fallbackCamera;
+        let centerOnViewport = Boolean(getSharedSettings().get().start?.centerOnViewport);
+        const modelLocalCenter = new THREE.Vector3();
+        const stopCenterSetting = getSharedSettings().subscribe(snapshot => {
+            centerOnViewport = Boolean(snapshot.start?.centerOnViewport);
+        });
+        scope.defer(stopCenterSetting);
 
         const ambient = new THREE.HemisphereLight(0xffffff, 0x0f1115, 0.6);
         // This ground-only hemisphere is a separate underside fill: brightness
@@ -1626,6 +1635,7 @@ export function mountStartPage({ scope }) {
                 settingsControllerBridge.updateKnobTransformsFromState();
             }
             updateLightingDebugLine('sceneLightingChanged', knobDragState?.type || '-');
+            syncAccessibleControllerUI();
         });
 
         const FORCE_CAMERA_UNLOCKED = false;
@@ -1778,106 +1788,86 @@ export function mountStartPage({ scope }) {
         const COLOR_TRANSITION_DARK = new THREE.Color(0x260817);
         const momentaryButtonPulses = new Map();
 
-        function createMeterFeatherTexture(){
-            const featherCanvas = document.createElement('canvas');
-            featherCanvas.width = 64;
-            featherCanvas.height = 256;
-            const featherCtx = featherCanvas.getContext('2d');
-            const image = featherCtx.createImageData(featherCanvas.width, featherCanvas.height);
-            const smoothstep = (value) => {
-                const x = Math.max(0, Math.min(1, value));
-                return x * x * (3 - 2 * x);
-            };
-            for(let y = 0; y < featherCanvas.height; y++){
-                for(let x = 0; x < featherCanvas.width; x++){
-                    const edgeX = Math.min(x, featherCanvas.width - 1 - x) / (featherCanvas.width * 0.22);
-                    const edgeY = Math.min(y, featherCanvas.height - 1 - y) / (featherCanvas.height * 0.055);
-                    const alpha = Math.round(255 * smoothstep(Math.min(edgeX, edgeY)));
-                    const offset = (y * featherCanvas.width + x) * 4;
-                    image.data[offset] = alpha;
-                    image.data[offset + 1] = alpha;
-                    image.data[offset + 2] = alpha;
-                    image.data[offset + 3] = 255;
-                }
-            }
-            featherCtx.putImageData(image, 0, 0);
-            const texture = new THREE.CanvasTexture(featherCanvas);
-            texture.needsUpdate = true;
-            return texture;
-        }
-
         function prepareAudioMeter(node){
-            if(!node?.isMesh || !node.geometry || !node.parent) return;
+            if(!node?.isMesh || !node.geometry) return;
             node.geometry.computeBoundingBox();
             const bounds = node.geometry.boundingBox;
             if(!bounds || bounds.isEmpty()) return;
-            const featherTexture = createMeterFeatherTexture();
-            const materials = (Array.isArray(node.material) ? node.material : [node.material]).map((source) => {
-                const material = source.clone();
-                material.userData = { ...(source.userData || {}), controllerOwned: true, contrastLocked: true };
-                material.map = null;
-                material.alphaMap = featherTexture;
-                material.transparent = true;
-                material.opacity = 0.88;
-                material.depthWrite = false;
-                material.color?.set(0x123b29);
-                material.emissive?.set(0x082317);
-                if('emissiveIntensity' in material) material.emissiveIntensity = 0.42;
-                material.needsUpdate = true;
-                return material;
+            // Give the whole scale a dark face and unlit white lettering,
+            // so neither scene lighting nor signal color can wash it out.
+            node.parent?.traverse(mesh => {
+                if(!mesh.isMesh || mesh === node) return;
+                const scaleText = /^(txt-vol-meter|vol-meter-lines)/.test(mesh.name || '');
+                const materials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).map(material => {
+                    if(!scaleText && material?.name !== 'switch-mat') return material;
+                    const owned = new THREE.MeshBasicMaterial({
+                        color: scaleText ? 0xf4f7fa : 0x111820,
+                        side: THREE.DoubleSide, toneMapped: false
+                    });
+                    owned.userData = { controllerOwned: true, contrastLocked: true };
+                    return owned;
+                });
+                mesh.material = Array.isArray(mesh.material) ? materials : materials[0];
             });
-            node.material = Array.isArray(node.material) ? materials : materials[0];
-            const basePosition = node.position.clone();
-            const baseScale = node.scale.clone();
-            const length = Math.max(0.0001, bounds.max.z - bounds.min.z);
-            const width = Math.max(0.0001, bounds.max.x - bounds.min.x);
-            const peakMaterial = new THREE.MeshBasicMaterial({
-                color: 0x28a85b,
-                toneMapped: false,
-                depthTest: true,
-                depthWrite: false
-            });
-            peakMaterial.userData = { controllerOwned: true, contrastLocked: true };
-            const peakLine = new THREE.Mesh(
-                new THREE.BoxGeometry(width * baseScale.x, 0.008, Math.max(0.012, length * baseScale.z * 0.014)),
-                peakMaterial
-            );
-            peakLine.name = 'runtime-volume-peak-line';
-            peakLine.position.set(
-                basePosition.x + ((bounds.min.x + bounds.max.x) * 0.5 * baseScale.x),
-                basePosition.y - 0.006,
-                basePosition.z
-            );
-            peakLine.visible = false;
-            node.parent.add(peakLine);
-            audioMeterState = { node, materials, peakLine, bounds: bounds.clone(), basePosition, baseScale, length };
-            settingsControllerBridge.updateAudioMeter?.({ level: 0, peak: 0, clipped: false, peakClipped: false });
+            // Project the instrument onto its authored face. Keeping its paint
+            // in SVG prevents the flipping GLB shell from obscuring the meter.
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('aria-hidden', 'true');
+            Object.assign(svg.style, { position: 'absolute', pointerEvents: 'none', zIndex: '2', overflow: 'hidden' });
+            const well = document.createElementNS(svgNS, 'polygon');
+            well.setAttribute('fill', '#626c76');
+            well.setAttribute('stroke', '#cbd5df');
+            well.setAttribute('stroke-width', '0.7');
+            const signal = document.createElementNS(svgNS, 'polygon');
+            const peakLine = document.createElementNS(svgNS, 'polyline');
+            peakLine.setAttribute('stroke-width', '2');
+            peakLine.setAttribute('fill', 'none');
+            svg.append(well, signal, peakLine);
+            settingsControllerScene.appendChild(svg);
+            scope.defer(() => svg.remove());
+            node.visible = false;
+            audioMeterState = { node, bounds: bounds.clone(), svg, well, signal, peakLine,
+                fill: 0, peakFill: 0, clipped: false, peakClipped: false };
         }
 
         settingsControllerBridge.updateAudioMeter = ({ level = 0, peak = 0, clipped = false, peakClipped = false } = {}) => {
             if(!audioMeterState) return;
-            const { node, materials, peakLine, bounds, basePosition, baseScale, length } = audioMeterState;
-            const fill = Math.max(0, Math.min(1, level));
-            const peakFill = Math.max(0, Math.min(1, peak));
-            const visibleFill = Math.max(0.001, fill);
-            node.scale.set(baseScale.x, baseScale.y, baseScale.z * visibleFill);
-            node.position.copy(basePosition);
-            // The authored meter's positive-Z end is the physical bottom.
-            // Keep that end fixed so the signal rises upward from the base.
-            node.position.z = basePosition.z + (bounds.max.z * baseScale.z * (1 - visibleFill));
-            node.visible = fill > 0.001;
-            const fillColor = clipped ? 0xc91f2d : 0x123b29;
-            const fillEmissive = clipped ? 0x7d0711 : 0x082317;
-            materials.forEach((material) => {
-                material.color?.set(fillColor);
-                material.emissive?.set(fillEmissive);
-                if('emissiveIntensity' in material) material.emissiveIntensity = clipped ? 0.8 : 0.42;
+            Object.assign(audioMeterState, {
+                fill: Math.max(0, Math.min(1, level)),
+                peakFill: Math.max(0, Math.min(1, peak)), clipped, peakClipped
             });
-            peakLine.visible = peakFill > 0.001;
-            peakLine.position.z = basePosition.z
-                + ((bounds.max.z - length * peakFill) * baseScale.z);
-            peakLine.material.color.set(peakClipped ? 0xff293f : 0x28a85b);
         };
+
+        function renderAudioMeter(){
+            if(!audioMeterState) return;
+            const { node, bounds, svg, well, signal, peakLine, fill, peakFill, clipped, peakClipped } = audioMeterState;
+            const visible = activeSettingsView === 'audio' && settingsControllerBridge.model?.visible;
+            svg.style.display = visible ? 'block' : 'none';
+            if(!visible) return;
+            const canvasRect = settingsControllerCanvas.getBoundingClientRect();
+            const hostRect = settingsControllerScene.getBoundingClientRect();
+            Object.assign(svg.style, { left: (canvasRect.left - hostRect.left) + 'px',
+                top: (canvasRect.top - hostRect.top) + 'px', width: canvasRect.width + 'px', height: canvasRect.height + 'px' });
+            svg.setAttribute('viewBox', '0 0 ' + canvasRect.width + ' ' + canvasRect.height);
+            const point = new THREE.Vector3();
+            const project = (x, z) => {
+                point.set(x, bounds.min.y, z);
+                node.localToWorld(point).project(activeCamera);
+                return [(point.x + 1) * canvasRect.width / 2, (1 - point.y) * canvasRect.height / 2].join(',');
+            };
+            const quad = top => [project(bounds.min.x, bounds.max.z), project(bounds.max.x, bounds.max.z),
+                project(bounds.max.x, top), project(bounds.min.x, top)].join(' ');
+            const length = bounds.max.z - bounds.min.z;
+            well.setAttribute('points', quad(bounds.min.z));
+            signal.setAttribute('points', quad(bounds.max.z - length * fill));
+            signal.setAttribute('fill', clipped ? '#e3293f' : '#269f60');
+            signal.style.display = fill > 0.001 ? 'block' : 'none';
+            const peakZ = bounds.max.z - length * peakFill;
+            peakLine.setAttribute('points', [project(bounds.min.x, peakZ), project(bounds.max.x, peakZ)].join(' '));
+            peakLine.setAttribute('stroke', peakClipped ? '#ff293f' : '#b6f5cf');
+            peakLine.style.display = peakFill > 0.001 ? 'block' : 'none';
+        }
 
         function setOwnedNodeAppearance(node, color, emissive, intensity){
             if(!node) return;
@@ -2076,9 +2066,23 @@ export function mountStartPage({ scope }) {
         let customCameraAnim = null;
         let middlePointerState = null;
         let lastMiddleClickTime = 0;
+        let rightPointerState = null;
+        let lastRightClickTime = 0;
+        let settledDefaultTarget = null;
+        let settledDefaultDirection = null;
+        let settledModelQuaternion = null;
         let pendingMiddleSingleClick = null;
         let knobDragState = null;
         let arrowPointerState = null;
+        function captureSettledDefault(){
+            if(!controls || !activeCamera) return;
+            settledDefaultTarget = controls.target.clone();
+            settledDefaultDirection = activeCamera.position.clone().sub(controls.target).normalize();
+            const model = settingsControllerBridge.model;
+            settledModelQuaternion = controllerEntrance && model === controllerEntrance.model
+                ? new THREE.Quaternion().setFromEuler(controllerEntrance.homeRotation)
+                : model?.quaternion.clone() || null;
+        }
         const CAMERA_ANIM_POS = [
             [-0.005232, 4.233088, 1.427375],
             [-0.005232, 4.233088, 1.427375],
@@ -2396,6 +2400,7 @@ export function mountStartPage({ scope }) {
                 activeCamera.quaternion.copy(finalQuat);
                 controls.update();
                 settingsControllerBridge.controls = controls;
+                captureSettledDefault();
                 lastControlsEnabled = controls.enabled;
                 if(pendingAudioAllowed !== null){
                     applyAudioPermission(pendingAudioAllowed);
@@ -2548,6 +2553,7 @@ export function mountStartPage({ scope }) {
                 activeCamera.quaternion.copy(finalQuat);
                 controls.update();
                 settingsControllerBridge.controls = controls;
+                captureSettledDefault();
             }
         };
 
@@ -2661,14 +2667,8 @@ export function mountStartPage({ scope }) {
                 if(controllerFlow.stage === 'sound' || controllerFlow.stage === 'motion'){
                     const soundStep = controllerFlow.stage === 'sound';
                     ctx.fillStyle = '#e5cafc';
-                    ctx.font = '32px "Press Start 2P", "Segoe UI", sans-serif';
-                    ctx.fillText(soundStep ? 'ALLOW SOUND?' : 'ALLOW ANIMATION?', size * 0.5, height * 0.25);
-                    if(soundStep){
-                        ctx.fillStyle = '#c9dcf4';
-                        ctx.font = '14px "Press Start 2P", "Segoe UI", sans-serif';
-                        ctx.fillText('SOME MEDIA MAY PLAY SOUND', size * 0.5, height * 0.37);
-                        ctx.fillText('AUTOMATICALLY AFTER YOU ALLOW IT.', size * 0.5, height * 0.44);
-                    }
+                    ctx.font = 'bold 38px "Segoe UI", sans-serif';
+                    ctx.fillText(soundStep ? 'Allow audio on this site?' : 'Allow animations on this site?', size * 0.5, height * 0.30);
                     const yes = { x: 0.22, y: 0.60, w: 0.24, h: 0.20 };
                     const no = { x: 0.54, y: 0.60, w: 0.24, h: 0.20 };
                     [[yes, '#8cd8ff', 'YES', true], [no, '#f5b7d9', 'NO', false]].forEach(([rect, fill, label, value]) => {
@@ -2695,16 +2695,16 @@ export function mountStartPage({ scope }) {
                         controllerFlow.hitRegions.push({ kind: 'save-confirm', value, polygon: [[rect.x,rect.y],[rect.x+rect.w,rect.y],[rect.x+rect.w,rect.y+rect.h],[rect.x,rect.y+rect.h]] });
                     });
                 }else if(controllerFlow.stage === 'gallery'){
-                    ctx.fillStyle = '#0b2a58';
-                    ctx.font = '18px "Press Start 2P", "Segoe UI", sans-serif';
-                    ctx.fillText('PRESS THE BUTTON IN TIME TO SYNC AUDIO.', size * 0.5, height * 0.20);
+                    ctx.fillStyle = '#fff4ff';
+                    ctx.font = 'bold 32px "Segoe UI", sans-serif';
+                    ctx.fillText('PRESS SYNC, THEN TAP EACH CUE.', size * 0.5, height * 0.20);
                     ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.29);
                     const button = { x: 0.30, y: 0.48, w: 0.40, h: 0.30 };
                     ctx.fillStyle = '#a94710';
                     ctx.beginPath();
                     ctx.roundRect(button.x * size, button.y * height, button.w * size, button.h * height, 24);
                     ctx.fill();
-                    ctx.fillStyle = '#f3a449';
+                    ctx.fillStyle = '#fff4df';
                     ctx.font = '64px "Press Start 2P", "Segoe UI", sans-serif';
                     ctx.fillText('SYNC', size * 0.5, height * 0.63);
                     controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[button.x,button.y],[button.x+button.w,button.y],[button.x+button.w,button.y+button.h],[button.x,button.y+button.h]] });
@@ -2713,8 +2713,8 @@ export function mountStartPage({ scope }) {
                     ctx.fillStyle = '#8cd8ff';
                     ctx.fillRect(size * 0.035, height * 0.08, size * 0.93, height * 0.25);
                     ctx.fillStyle = '#0b2a58';
-                    ctx.font = '17px "Press Start 2P", "Segoe UI", sans-serif';
-                    ctx.fillText('PRESS THE BUTTON IN TIME TO SYNC AUDIO.', size * 0.5, height * 0.16);
+                    ctx.font = 'bold 30px "Segoe UI", sans-serif';
+                    ctx.fillText('TAP EACH WORD WHEN YOU HEAR IT.', size * 0.5, height * 0.16);
                     ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.25);
                     const centers = [0.10, 0.285, 0.47, 0.655, 0.875];
                     const lineY = height * 0.61;
@@ -2729,13 +2729,13 @@ export function mountStartPage({ scope }) {
                         ctx.stroke();
                     }
                     SYNC_WORDS.forEach((word, index) => {
-                        ctx.fillStyle = index < exercise.litCount ? '#8cd8ff' : '#d56519';
+                        ctx.fillStyle = index < exercise.litCount ? '#8cd8ff' : '#fff4df';
                         ctx.font = '54px "Press Start 2P", "Segoe UI", sans-serif';
                         ctx.fillText(word, centers[index] * size, lineY);
                     });
                     if(exercise.result){
-                        ctx.fillStyle = '#0b2a58';
-                        ctx.font = '18px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillStyle = '#fff4ff';
+                        ctx.font = 'bold 27px "Segoe UI", sans-serif';
                         ctx.fillText(exercise.result, size * 0.5, height * 0.82);
                         const again = { x: 0.37, y: 0.87, w: 0.26, h: 0.09 };
                         ctx.fillStyle = '#a94710';
@@ -2745,8 +2745,8 @@ export function mountStartPage({ scope }) {
                         ctx.fillText('TRY AGAIN', size * 0.5, height * 0.915);
                         controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[again.x,again.y],[again.x+again.w,again.y],[again.x+again.w,again.y+again.h],[again.x,again.y+again.h]] });
                     }else{
-                        ctx.fillStyle = '#f3a449';
-                        ctx.font = '16px "Press Start 2P", "Segoe UI", sans-serif';
+                        ctx.fillStyle = '#fff4df';
+                        ctx.font = 'bold 28px "Segoe UI", sans-serif';
                         ctx.fillText('TAP EACH WORD WHEN YOU HEAR IT', size * 0.5, height * 0.83);
                         controllerFlow.hitRegions.push({ kind: 'sync-tap', value: true, polygon: [[0,0.34],[1,0.34],[1,1],[0,1]] });
                     }
@@ -2975,9 +2975,23 @@ enabled: ${!!cameraAction?.enabled}`;
 
         function renderScene(){
             if(lastWidth < 2 || lastHeight < 2) return;
+            if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
+            if(centerOnViewport && settingsControllerBridge.model){
+                const rect = settingsControllerCanvas.getBoundingClientRect();
+                const modelCenter = settingsControllerBridge.model.localToWorld(modelLocalCenter.clone());
+                activeCamera.updateMatrixWorld(true);
+                const ndc = modelCenter.project(activeCamera);
+                const desiredX = THREE.MathUtils.clamp((window.innerWidth * 0.5 - rect.left) / Math.max(1, rect.width), 0.1, 0.9) * 2 - 1;
+                const desiredY = 1 - THREE.MathUtils.clamp((window.innerHeight * 0.5 - rect.top) / Math.max(1, rect.height), 0.1, 0.9) * 2;
+                if(Number.isFinite(ndc.x) && Number.isFinite(ndc.y))
+                    activeCamera.setViewOffset(lastWidth, lastHeight,
+                        (ndc.x - desiredX) * lastWidth / 2, -(ndc.y - desiredY) * lastHeight / 2,
+                        lastWidth, lastHeight);
+            }
             renderer.setViewport(0, 0, lastWidth, lastHeight);
             renderer.setScissor(0, 0, lastWidth, lastHeight);
             renderer.render(scene, activeCamera);
+            renderAudioMeter();
         }
 
         resizeScene();
@@ -3002,6 +3016,8 @@ enabled: ${!!cameraAction?.enabled}`;
             const model = gltf.scene;
             if(!model) return;
             scene.add(model);
+            model.updateMatrixWorld(true);
+            model.worldToLocal(new THREE.Box3().setFromObject(model).getCenter(modelLocalCenter));
             // The first question is intentionally outside the controller. The
             // controller itself appears only after that choice.
             model.visible = false;
@@ -3825,6 +3841,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 return ignoredHitNames.has(name);
             };
             const firstHit = hits.find((hit) => !shouldIgnoreHit(hit.object)) || null;
+            if(event.button === 2 && !introActive && controls?.enabled && targetTime === null){
+                rightPointerState = { at: performance.now(), x: event.clientX, y: event.clientY, moved: 0 };
+            }
             if(event.button === 1){
                 if(introActive || targetTime !== null || !controls || !controls.enabled) return;
                 event.preventDefault();
@@ -3952,6 +3971,9 @@ enabled: ${!!cameraAction?.enabled}`;
                     knobDragState = {
                         type: knobType,
                         pointerId: event.pointerId,
+                        startX: event.clientX,
+                        startY: event.clientY,
+                        startSync: storedSync,
                         grabOffset: getActiveKnobT(knobType) - getKnobTFromClient({ pMin, pMax }, event.clientX, event.clientY),
                         pMin,
                         pMax
@@ -3984,6 +4006,11 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function handlePointerMove(event){
+            if(rightPointerState){
+                rightPointerState.moved += Math.hypot(event.clientX-rightPointerState.x, event.clientY-rightPointerState.y);
+                rightPointerState.x = event.clientX;
+                rightPointerState.y = event.clientY;
+            }
             if(arrowPointerState && event.pointerId === arrowPointerState.pointerId){
                 arrowPointerState.moved = Math.max(
                     arrowPointerState.moved,
@@ -4015,7 +4042,15 @@ enabled: ${!!cameraAction?.enabled}`;
             if(event.pointerId !== knobDragState.pointerId) return;
             if(!(event.buttons & 1)) { handlePointerCancel(event); return; }
             const rawT = getKnobTFromClient(knobDragState, event.clientX, event.clientY);
-            const t = Math.max(0, Math.min(1, rawT + knobDragState.grabOffset));
+            let t = Math.max(0, Math.min(1, rawT + knobDragState.grabOffset));
+            if(knobDragState.type === 'sync' && activeSettingsView === 'audio'){
+                // Relative travel gives every CSS pixel a reachable 5 ms step,
+                // independent of the controller's current zoom and track length.
+                const axis = knobDragState.pMax.clone().sub(knobDragState.pMin).normalize();
+                const pixels = (event.clientX - knobDragState.startX) * axis.x
+                    + (event.clientY - knobDragState.startY) * axis.y;
+                t = (snapSyncMs(knobDragState.startSync + Math.round(pixels) * 5) + 3000) / 6000;
+            }
             applyKnobStateFromT(knobDragState.type, t);
             window.dispatchEvent(new CustomEvent('syncDragDebug', { detail: {
                 control: knobDragState.type, mode: activeSettingsView, rawT: rawT.toFixed(4),
@@ -4036,7 +4071,29 @@ enabled: ${!!cameraAction?.enabled}`;
                 if(controls) setUserCameraControlsEnabled(true);
                 event.preventDefault();
                 event.stopPropagation();
+                rightPointerState = null;
                 return;
+            }
+            if(event.button === 2 && rightPointerState){
+                const now = performance.now();
+                const state = rightPointerState;
+                rightPointerState = null;
+                if(now - state.at <= 240 && state.moved + Math.hypot(event.clientX-state.x, event.clientY-state.y) <= 6){
+                    if(now - lastRightClickTime <= 320 && settledDefaultDirection && controls?.enabled){
+                        const damping = controls.enableDamping;
+                        controls.enableDamping = false;
+                        controls.update();
+                        const distance = activeCamera.position.distanceTo(controls.target);
+                        activeCamera.position.copy(controls.target).addScaledVector(settledDefaultDirection, distance);
+                        if(settledModelQuaternion && settingsControllerBridge.model){
+                            settingsControllerBridge.model.quaternion.copy(settledModelQuaternion);
+                        }
+                        controls.update();
+                        controls.enableDamping = damping;
+                        lastRightClickTime = 0;
+                        event.preventDefault();
+                    }else lastRightClickTime = now;
+                }else lastRightClickTime = 0;
             }
             if(event.button === 0 && knobDragState && event.pointerId === knobDragState.pointerId){
                 knobDragState = null;
@@ -4074,9 +4131,7 @@ enabled: ${!!cameraAction?.enabled}`;
                     clearTimeout(pendingMiddleSingleClick.timerId);
                     pendingMiddleSingleClick = null;
                 }
-                const bounds = new THREE.Box3().setFromObject(model);
-                const centerPoint = bounds.getCenter(new THREE.Vector3());
-                startFocusAnimation(centerPoint, { zoomToMin: false, durationMs: 320 });
+                if(settledDefaultTarget) startFocusAnimation(settledDefaultTarget, { zoomToMin: false, durationMs: 320 });
             }else if(clickPoint){
                 pendingMiddleSingleClick = {
                     timerId: scope.timeout(() => {
@@ -4091,6 +4146,8 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function handlePointerCancel(event){
+            rightPointerState = null;
+            lastRightClickTime = 0;
             const capturedId = knobDragState?.pointerId ?? arrowPointerState?.pointerId;
             if(arrowPointerState?.pointerId === event.pointerId){
                 arrowPointerState = null;
@@ -4228,20 +4285,45 @@ enabled: ${!!cameraAction?.enabled}`;
     if(jumpPlaybackRateIndex < 0) jumpPlaybackRateIndex = 0;
     let jumpPreservePitch = getStoredPreservePitch();
 
+    getSharedSettings().subscribe((snapshot, change) => {
+        const changed = change.changed;
+        if(changed.includes('start.contrast')){
+            lightingState.emi = snapshot.start.contrast;
+            settingsControllerBridge.applyEmissionControls?.();
+            syncEmiInputs();
+            settingsControllerBridge.updateKnobTransformsFromState?.();
+            settingsControllerBridge.updateSyncPercentLabel?.();
+        }
+        if(changed.includes('start.brightness')){
+            lightingState.overlay = snapshot.start.brightness;
+            settingsControllerBridge.applyBackgroundBrightness?.(snapshot.start.brightness);
+        }
+        if(changed.includes('start.backgroundContrast')) setBackgroundContrast(snapshot.start.backgroundContrast);
+        if(changed.some(path => path.startsWith('start.look.'))){
+            Object.assign(lookTuning, snapshot.start.look);
+            settingsControllerBridge.applyReviewLook?.();
+        }
+        if(changed.some(path => path === 'audio.volume' || path === 'audio.muted')){
+            storedVolume = snapshot.audio.volume;
+            storedMuted = snapshot.audio.muted;
+            applyVolumeAndMuted();
+        }
+        syncOverlayInputs();
+        syncAccessibleControllerUI();
+    }, { signal: scope.signal });
+
     // Initialize UI values
     syncSlider.value = storedSync;
     if(accessibleSync) accessibleSync.value = String(storedSync);
     if(modalSync) modalSync.value = storedSync;
     syncDisplay.textContent = `Sync: ${storedSync} ms`;
 
-    function askControllerPermission(stage, title, message){
+    function askControllerPermission(stage, title){
         const previousFocus = document.activeElement;
         controllerFlow.stage = stage;
         settingsControllerBridge.renderScreen?.();
         const titleEl = document.getElementById('permTitle');
-        const messageEl = permModal?.querySelector('p');
         if(titleEl) titleEl.textContent = title;
-        if(messageEl) messageEl.textContent = message;
         if(permAllow) permAllow.textContent = 'Yes';
         if(permDeny) permDeny.textContent = 'No';
         permModal.classList.remove('hidden');
@@ -4282,8 +4364,7 @@ enabled: ${!!cameraAction?.enabled}`;
     function askControllerScreenPermission(stage){
         // Keep the canvas choice mirrored by the existing keyboard-accessible
         // dialog so screen-reader and keyboard users can finish onboarding.
-        return askControllerPermission(stage, 'Allow sound?',
-            'Allow optional sound while using the controller?');
+        return askControllerPermission(stage, 'Allow audio on this site?');
     }
 
     let onboardingPromise = null;
@@ -4340,13 +4421,9 @@ enabled: ${!!cameraAction?.enabled}`;
             // Both choices are per-visit gates and are mirrored on the GLB
             // screen. Ask about motion first, but do not start it until sound has
             // also been explicitly accepted or rejected.
-            const reduced = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
             const animationAllowed = await askControllerPermission(
                 'motion',
-                'Allow animation?',
-                reduced
-                    ? 'Your device prefers reduced motion. Allow the optional controller and camera animation anyway?'
-                    : 'Allow the optional controller and camera introduction animation?'
+                'Allow animations on this site?'
             );
             if(scope.signal.aborted) return null;
             localPreferences.setItem(ANIMATION_ALLOWED_KEY, String(animationAllowed));
@@ -4360,8 +4437,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
             const soundAllowed = settingsControllerBridge.model
                 ? await askControllerScreenPermission('sound')
-                : await askControllerPermission('sound', 'Allow sound?',
-                    'Allow optional sound while using the accessible controller?');
+                : await askControllerPermission('sound', 'Allow audio on this site?');
             if(scope.signal.aborted) return null;
             controllerFlow.soundAllowed = soundAllowed;
             applyAudioPermission(soundAllowed);
@@ -4888,8 +4964,35 @@ enabled: ${!!cameraAction?.enabled}`;
     });
 
     listen(resetBtn, 'click', ()=>{
+        // Stop an in-flight estimate before restoring the shared defaults, so
+        // a late cue cannot replace the freshly reset audio offset.
+        resetSyncExercise();
+        const owner = getSharedSettings();
+        owner.reset([
+            'audio.volume', 'audio.muted', 'audio.syncMs', 'audio.preservePitch',
+            'scene.lighting', 'start.contrast', 'start.brightness',
+            'start.backgroundContrast', 'start.look.underlight', 'start.look.speakerPurple',
+            'start.centerOnViewport'
+        ]);
         window.SiteA11y.resetAccessibility();
+        const defaults = owner.get();
+        storedVolume = defaults.audio.volume;
+        storedMuted = defaults.audio.muted;
+        jumpPreservePitch = defaults.audio.preservePitch;
+        applySyncValue(defaults.audio.syncMs);
+        applyVolumeAndMuted();
+        applyJumpPlaybackSettings();
+        applyLuxFromSource(defaults.scene.lighting ?? DEFAULT_SLIDER_VALUE, 'reset');
+        applyEmiFromSource(defaults.start.contrast, 'reset');
+        applyOverlayFromSource(defaults.start.brightness, 'reset');
+        setBackgroundContrast(defaults.start.backgroundContrast);
+        lookTuning.underlight = defaults.start.look.underlight;
+        lookTuning.speakerPurple = defaults.start.look.speakerPurple;
+        settingsControllerBridge.applyReviewLook?.();
+        syncOverlayInputs();
+        resetPeakHold();
         hydrate();
+        syncAccessibleControllerUI();
         updateA11yDebugFlags();
     });
 

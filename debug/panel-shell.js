@@ -1,4 +1,5 @@
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
+import { VIDEO_EXPLAINER_DEFAULTS } from '../_7-shared-scripts/core/settings-schema.js';
 import {mountSettingsPortability} from '../_7-shared-scripts/core/settings-portability.js';
 import { getPageDebugState, DEBUG_VISIBILITY_EVENT } from './debug-loader.js';
 import {mountCollapsibleSections} from '../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
@@ -16,9 +17,10 @@ export function initPanelShell({ scope } = {}) {
   document.head.append(link);
   const shell = document.createElement('div');
   shell.id = 'review-panels';
-  shell.classList.toggle('has-debug', review);
+  shell.classList.add('has-debug');
   const aboutPage = document.body.dataset.page === 'about' || location.pathname.includes('/_1-about/');
-  shell.innerHTML = `<aside class="review-panel review-panel--left is-closed" aria-label="Debug"><button type="button" class="review-panel-toggle" aria-expanded="false" aria-controls="review-debug-body">Debug</button><div id="review-debug-body" class="review-panel-body" inert><div class="review-panel-head"><strong>Debug</strong><button type="button" class="review-panel-close">Close</button></div><div class="review-panel-scroll" tabindex="0"></div></div></aside><aside class="review-panel review-panel--right is-closed" aria-label="General Settings"><button type="button" class="review-panel-toggle" aria-expanded="false" aria-controls="review-settings-body">General Settings</button><div id="review-settings-body" class="review-panel-body" inert><div class="review-panel-head"><div class="review-settings-tabs" role="tablist" aria-label="Settings sections"></div>${aboutPage ? '' : '<button type="button" class="review-panel-close">Close</button>'}</div><div class="review-panel-scroll" tabindex="0"></div></div></aside>`;
+  const closeGear = label => `<button type="button" class="review-panel-close" aria-label="Close ${label}" title="Close ${label}"><span class="review-panel-close-icon" aria-hidden="true"></span></button>`;
+  shell.innerHTML = `<aside class="review-panel review-panel--left is-closed" aria-label="Debug"><button type="button" class="review-panel-toggle" aria-expanded="false" aria-controls="review-debug-body">Debug</button><div id="review-debug-body" class="review-panel-body" inert><div class="review-panel-head"><strong>Debug</strong>${closeGear('Debug')}</div><div class="review-panel-scroll" tabindex="0"></div></div></aside><aside class="review-panel review-panel--right is-closed" aria-label="General Settings"><button type="button" class="review-panel-toggle" aria-expanded="false" aria-controls="review-settings-body">General Settings</button><div id="review-settings-body" class="review-panel-body" inert><div class="review-panel-head"><div class="review-settings-tabs" role="tablist" aria-label="Settings sections"></div>${closeGear('General Settings')}</div><div class="review-panel-scroll" tabindex="0"></div></div></aside>`;
   document.body.append(shell);
   const left = shell.querySelector('.review-panel--left');
   const right = shell.querySelector('.review-panel--right');
@@ -37,6 +39,13 @@ export function initPanelShell({ scope } = {}) {
     constructorFooter.innerHTML = '<button type="button" data-constructor-enter>Constructor mode <span>Experimental · edit cautiously; unexpected results are possible.</span></button><button type="button" data-constructor-exit hidden>Return to normal Settings</button>';
     body.after(constructorFooter);
   }
+  const debugOpener = document.createElement('button');
+  debugOpener.type = 'button';
+  debugOpener.className = 'review-debug-opener';
+  debugOpener.textContent = 'Open Debug';
+  debugOpener.setAttribute('aria-controls', 'review-debug-body');
+  debugOpener.setAttribute('aria-expanded', 'false');
+  body.after(debugOpener);
   const originalLocations = new Map();
   const originalHidden = new Map();
   const ownedContexts = new Map();
@@ -49,6 +58,7 @@ export function initPanelShell({ scope } = {}) {
   const generations = new Map([[left, 0], [right, 0]]);
   const pending = new Set(), restoreTimers = new Map();
   const sideOf = panel => panel === left ? 'left' : 'right';
+  const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.documentElement.classList.contains('a11y-motion-reduced');
   const settingsIconStates = aboutPage ? [...document.querySelectorAll('.settings-icon')].map(icon => ({ icon, expanded: icon.getAttribute('aria-expanded'), controls: icon.getAttribute('aria-controls'), haspopup: icon.getAttribute('aria-haspopup') })) : [];
   function syncAboutSettingsIcon() {
     const expanded = String(!right.classList.contains('is-closed') || pending.has(right));
@@ -61,8 +71,14 @@ export function initPanelShell({ scope } = {}) {
   }
   function applyClosed(panel, closed) {
     panel.classList.toggle('is-closed', closed);
-    panel.querySelector('.review-panel-toggle').setAttribute('aria-expanded', String(!closed));
+    const toggle = panel.querySelector('.review-panel-toggle');
+    toggle.setAttribute('aria-expanded', String(!closed));
+    toggle.setAttribute('aria-label', closed ? `Open ${panel === left ? 'Debug' : 'General Settings'}` : `Close ${panel === left ? 'Debug' : 'General Settings'}`);
     panel.querySelector('.review-panel-body').inert = closed;
+    if (panel === left) {
+      debugOpener.setAttribute('aria-expanded', String(!closed));
+      debugOpener.textContent = closed ? 'Open Debug' : 'Close Debug';
+    }
     if (panel === right && aboutPage) syncAboutSettingsIcon();
     if (panel === left) performanceStats.refresh();
   }
@@ -75,11 +91,17 @@ export function initPanelShell({ scope } = {}) {
     if (closed) {
       pending.delete(panel);
       const wasOpen = !panel.classList.contains('is-closed');
+      const heldFocus = panel.contains(document.activeElement);
       applyClosed(panel, true);
+      if (heldFocus) {
+        const target = panel === left && !right.classList.contains('is-closed') && !debugOpener.hidden
+          ? debugOpener : document.querySelector('.settings-icon');
+        target?.focus({ preventScroll: true });
+      }
       if (wasOpen) restoreTimers.set(panel, setTimeout(() => {
         if (generations.get(panel) === generation) sideInterlock?.onChange?.(side, false);
         restoreTimers.delete(panel);
-      }, matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260));
+      }, reducedMotion() ? 0 : 260));
       else sideInterlock?.onChange?.(side, false);
       return;
     }
@@ -89,8 +111,11 @@ export function initPanelShell({ scope } = {}) {
     Promise.resolve().then(() => sideInterlock?.beforeOpen?.(side)).catch(error => console.error('Panel interlock failed', error)).then(() => {
       if (generations.get(panel) !== generation || !pending.has(panel)) return;
       pending.delete(panel);
-      if (innerWidth < 900) close(panel === left ? right : left, true);
+      const other = panel === left ? right : left;
+      const focusWasInOther = innerWidth < 900 && other.contains(document.activeElement);
+      if (innerWidth < 900) close(other, true);
       applyClosed(panel, false);
+      if (focusWasInOther) panel.querySelector('.review-panel-close').focus({ preventScroll: true });
       sideInterlock?.onChange?.(side, true);
     });
   }
@@ -105,6 +130,7 @@ export function initPanelShell({ scope } = {}) {
     panel.addEventListener('keydown', event => event.stopPropagation());
     panel.querySelector('.review-panel-close')?.addEventListener('click', () => close(panel, true));
   }
+  debugOpener.addEventListener('click', () => close(left, !left.classList.contains('is-closed') || pending.has(left)));
   function measureHeader() {
     const header = document.querySelector('.header, header.site-header, body > header');
     const margin = parseFloat(getComputedStyle(shell).getPropertyValue('--panel-margin')) || 12;
@@ -121,11 +147,14 @@ export function initPanelShell({ scope } = {}) {
 <label><input data-setting="accessibility.highContrast" type="checkbox"> High contrast</label>
 <label><input data-setting="accessibility.focusOutline" type="checkbox"> Always show focus outlines</label>
 <label>Text size <select data-setting="accessibility.textScale"><option value="1">Standard</option><option value="1.1">Large</option><option value="1.25">Larger</option></select></label>
+<h3>Header</h3><label><input data-setting="header.useLegacy" type="checkbox"> Use legacy header</label>
 <h3>Scene appearance</h3><label>Contrast <input data-setting="start.contrast" type="range" min="0" max="1" step="0.01"></label>
-<label>Brightness <input data-setting="start.brightness" type="range" min="0" max="1" step="0.01"></label>
+<label>Brightness <input data-setting="${document.getElementById('settingsControllerScene') ? 'scene.lighting' : 'start.brightness'}" type="range" min="0" max="1" step="0.01"></label>
 <h3>Cube interaction</h3><label><input data-setting="cube.faceSnap" type="checkbox"> Snap cube to faces after rotating</label>
 <label><input data-setting="cube.uprightFaces" type="checkbox"> Keep raised cube face upright</label>
 ${aboutPage ? '<label><input data-setting="cube.showShell" type="checkbox"> Show cube shell</label>' : ''}
+${aboutPage ? '<label><input data-setting="about.centerOnViewport" type="checkbox"> Center on viewport</label>' : ''}
+${document.getElementById('settingsControllerScene') ? '<label><input data-setting="start.centerOnViewport" type="checkbox"> Center on viewport</label>' : ''}
 <h3>Audio</h3><label>Volume <input data-setting="audio.volume" type="range" min="0" max="1" step="0.01"></label>
 <label><input data-setting="audio.muted" type="checkbox"> Mute audio</label>
 <label>Audio sync (ms) <input data-setting="audio.syncMs" type="number" min="-3000" max="3000" step="5"></label>
@@ -145,32 +174,66 @@ ${aboutPage ? '<label><input data-setting="cube.showShell" type="checkbox"> Show
   left.dataset.debugSecondary=shell.dataset.settingsPrimary;
   const stopPortability=mountSettingsPortability(general,{page:route,contextRoot:shell});
   const routeFields = {
-    start: '<h2>Start page</h2><label><input data-setting="start.animationAllowed" type="checkbox"> Allow intro animation</label><label>Contrast <input data-setting="start.contrast" type="range" min="0" max="1" step="0.01"></label><label>Brightness <input data-setting="start.brightness" type="range" min="0" max="1" step="0.01"></label><label>Background contrast <input data-setting="start.backgroundContrast" type="range" min="0" max="1" step="0.01"></label><label>Underlight <input data-setting="start.look.underlight" type="range" min="0" max="3" step="0.01"></label><label>Speaker purple <input data-setting="start.look.speakerPurple" type="range" min="0" max="3" step="0.01"></label>',
-    videos: '<h2>Videos</h2><label>Drag sync <select data-setting="media.syncDrag"><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label><label><input data-setting="media.tabletFocus" type="checkbox"> Focus tablet</label>',
-    music: '<h2>Music</h2><label>Master gain <input data-setting="music.masterGain" type="range" min="0.2" max="3" step="0.01"></label>'
+    start: '<h2>Start page</h2><label><input data-setting="start.animationAllowed" type="checkbox"> Allow intro animation</label><label>Contrast <input data-setting="start.contrast" type="range" min="0" max="1" step="0.01"></label><label>Brightness <input data-setting="scene.lighting" type="range" min="0" max="1" step="0.01"></label><label>Background brightness <input data-setting="start.brightness" type="range" min="0" max="1" step="0.01"></label><label>Background contrast <input data-setting="start.backgroundContrast" type="range" min="0" max="1" step="0.01"></label><label>Underlight <input data-setting="start.look.underlight" type="range" min="0" max="3" step="0.01"></label><label>Speaker purple <input data-setting="start.look.speakerPurple" type="range" min="0" max="3" step="0.01"></label>',
+    videos: '<h2>Videos</h2><label><input data-setting="videos.centerOnViewport" type="checkbox"> Center on viewport</label><label>Drag sync <select data-setting="media.syncDrag"><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label><label><input data-setting="media.tabletFocus" type="checkbox"> Focus tablet</label>',
+    music: '<h2>Music</h2><label><input data-setting="music.centerOnViewport" type="checkbox"> Center on viewport</label><label>Master gain <input data-setting="music.masterGain" type="range" min="0.2" max="3" step="0.01"></label>',
+    graphics: '<h2>Graphics</h2><label><input data-setting="graphics.centerOnViewport" type="checkbox"> Center on viewport</label><label><input data-setting="graphics.shelfRotation" type="checkbox"> Allow gentle shelf rotation</label><h3>Easel video</h3><label><input data-setting="graphics.videoRotation" type="checkbox"> Allow rotation while viewing video</label><label><input data-setting="graphics.videoZoom" type="checkbox"> Allow zoom while viewing video</label><p>The video view stays aligned to the easel when these are off.</p>',
+    games: '<h2>Games</h2><label><input data-setting="games.centerOnViewport" type="checkbox"> Center on viewport</label>',
+    docs: '<h2>Docs</h2><label><input data-setting="docs.centerOnViewport" type="checkbox"> Center on viewport</label>'
   };
   const pageContext = routeFields[route] && !(route === 'start' && document.getElementById('uiRightColumn')) ? document.createElement('section') : null;
   if (pageContext) pageContext.innerHTML = routeFields[route];
+  if (pageContext && route === 'videos') {
+    const explainer = document.createElement('div');
+    explainer.innerHTML = `<h3>Thumbnail explainer text</h3>
+<p>Edit each video's text below. Line alignment arranges lines inside the measured text block; block placement moves that block in the band. “Use code default” clears a saved edit and restores the source text.</p>
+<label>Text size <input data-setting="videos.explainerSize" type="number" min="18" max="72" step="1"></label>
+<label>Font <select data-setting="videos.explainerFont"><option value="sans">Sans serif</option><option value="serif">Serif</option><option value="mono">Monospace</option></select></label>
+<label>Style <select data-setting="videos.explainerStyle"><option value="normal">Normal</option><option value="bold">Bold</option><option value="italic">Italic</option><option value="bold italic">Bold italic</option></select></label>
+<label>Line alignment <select data-setting="videos.explainerAlign"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select></label>
+<label>Block placement <select data-setting="videos.explainerPlacement"><option value="center">Center</option><option value="follow">Follow hovered video</option></select></label>`;
+    const placement = explainer.querySelector('[data-setting="videos.explainerPlacement"]');
+    for (const [id, item] of Object.entries(VIDEO_EXPLAINER_DEFAULTS)) {
+      placement.add(new Option(`Anchor to ${item.title}`, id));
+      const label = document.createElement('label');
+      label.textContent = `${item.title} text`;
+      const textarea = document.createElement('textarea');
+      textarea.dataset.setting = `videos.explainer.${id}`;
+      textarea.rows = 2;
+      textarea.maxLength = 1200;
+      textarea.style.width = '100%';
+      textarea.style.boxSizing = 'border-box';
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.textContent = 'Use code default';
+      reset.addEventListener('click', () => store.reset([textarea.dataset.setting]));
+      label.append(textarea, reset);
+      explainer.append(label);
+    }
+    pageContext.append(explainer);
+  }
   const read = (path, object) => path.split('.').reduce((v, key) => v?.[key], object);
   const unsubscribe = store.subscribe(snapshot => {
+    const contrast = Math.max(0, Math.min(1, Number(snapshot.start?.contrast) || 0));
+    const eased = contrast * contrast * (3 - 2 * contrast);
+    const gain = (.08 + 2.32 * eased) / (.08 + 2.32 * .5);
+    shell.style.setProperty('--review-gear-glow-percent', `${Math.round(Math.max(12, Math.min(85, 35 * gain)))}%`);
+    shell.style.setProperty('--review-gear-accent-percent', `${Math.round(Math.max(25, Math.min(100, 70 * gain)))}%`);
     if (constructorFooter) {
-      const contrast = Math.max(0, Math.min(1, Number(snapshot.start?.contrast) || 0));
-      const eased = contrast * contrast * (3 - 2 * contrast);
-      const gain = (.08 + 2.32 * eased) / (.08 + 2.32 * .5);
       right.style.setProperty('--constructor-accent-alpha', String(Math.max(.25, Math.min(1, .7 * gain))));
       right.style.setProperty('--constructor-accent-percent', `${Math.round(Math.max(25, Math.min(100, 70 * gain)))}%`);
     }
     for (const control of [general, pageContext].filter(Boolean).flatMap(node => [...node.querySelectorAll('[data-setting]')])) {
       const value = read(control.dataset.setting, snapshot);
       if (control.type === 'checkbox') control.checked = control.dataset.setting.endsWith('focusOutline') ? value === 'always' : Boolean(value);
-      else control.value = String(value);
+      else if (control.value !== String(value)) control.value = String(value);
     }
   }, { immediate: true });
   function changeSetting(event) {
     const control = event.target.closest('[data-setting]');
-    if (!control || (event.type === 'input' && control.type !== 'range')) return;
+    if (!control || (event.type === 'input' && control.type !== 'range' && control.tagName !== 'TEXTAREA')) return;
     const path = control.dataset.setting;
-    const value = control.type === 'checkbox' ? (path.endsWith('focusOutline') ? (control.checked ? 'always' : 'auto') : control.checked) : control.type === 'range' || path.endsWith('textScale') ? Number(control.value) : control.value;
+    const value = control.type === 'checkbox' ? (path.endsWith('focusOutline') ? (control.checked ? 'always' : 'auto') : control.checked) : control.type === 'range' || control.type === 'number' || path.endsWith('textScale') ? Number(control.value) : control.value;
     store.patch({ [path]: value });
   }
   general.addEventListener('change', changeSetting);
@@ -297,7 +360,7 @@ ${aboutPage ? '<label><input data-setting="cube.showShell" type="checkbox"> Show
   for (const icon of document.querySelectorAll('.settings-icon')) {
     icon.addEventListener('click', event => {
       event.preventDefault();
-      if (aboutPage && (!right.classList.contains('is-closed') || pending.has(right))) close(right, true);
+      if (!right.classList.contains('is-closed') || pending.has(right)) close(right, true);
       else if (constructorMode) close(right, false);
       else openSettings();
     }, { signal: iconListeners.signal });

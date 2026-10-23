@@ -1,3 +1,5 @@
+import {layoutCaption} from './caption-layout.mjs';
+
 export const ART_SAMPLES = Object.freeze({
   gardenFloral: 'Garden · Floral',
   gardenSeasons: 'Garden · Seasons',
@@ -56,20 +58,20 @@ export function paintSample(canvas, sample, photo) {
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.lineJoin = 'round';
   const scale = size / 2048;
-  lines.forEach((line, index) => {
-    if (!line) return;
-    const y = [1455, 1630, 1805][index] * scale, maxWidth = [1550, 1450, 1210][index] * scale;
-    let fontSize = 118 * scale; ctx.font = `900 ${fontSize}px Arial, sans-serif`;
-    while (ctx.measureText(line).width > maxWidth && fontSize > 50 * scale) {
-      fontSize -= 2 * scale; ctx.font = `900 ${fontSize}px Arial, sans-serif`;
-    }
-    const textWidth = Math.min(maxWidth, ctx.measureText(line).width), pad = 34 * scale;
+  const layout = layoutCaption(lines, (text, fontSize) => {
+    ctx.font = `900 ${fontSize * scale}px Arial, sans-serif`;
+    return ctx.measureText(text).width / scale;
+  });
+  for (const line of layout.lines) {
+    const fontSize = layout.fontSize * scale;
+    ctx.font = `900 ${fontSize}px Arial, sans-serif`;
+    const y = line.baseline * scale, textWidth = line.textWidth * scale, pad = 34 * scale;
     ctx.fillStyle = '#142b46b8'; ctx.beginPath();
     ctx.roundRect(center - textWidth / 2 - pad, y - fontSize - 13 * scale,
       textWidth + pad * 2, fontSize + 38 * scale, 30 * scale); ctx.fill();
-    ctx.strokeStyle = '#142840'; ctx.lineWidth = 12 * scale; ctx.strokeText(line, center, y, maxWidth);
-    ctx.fillStyle = '#fff9e9'; ctx.fillText(line, center, y, maxWidth);
-  });
+    ctx.strokeStyle = '#142840'; ctx.lineWidth = 12 * scale; ctx.strokeText(line.text, center, y);
+    ctx.fillStyle = '#fff9e9'; ctx.fillText(line.text, center, y);
+  }
 }
 
 /** The reverse is deliberately stable abstract color, with no readable front content. */

@@ -8,7 +8,7 @@ const range = (name, label, min, max, step) => `<label>${label} <output data-sph
 
 /** Adds controls to existing face tabs, leaving their own controls and listeners intact. */
 export function createBackingControls(faces) {
-  let events = null, snapshot = null, clockRoot = null;
+  let events = null, snapshot = null, clockRoot = null, spheroidSection = null;
   const nodes = new Map(), controls = [], added = [], unregister = [];
   const store = getSharedSettings();
   function remember(node, id) {
@@ -16,13 +16,24 @@ export function createBackingControls(faces) {
   }
   function sync() {
     if (!snapshot) return;
-    for (const [node, {id}] of nodes) node.visible = snapshot.about?.[id]?.enabled !== false && (snapshot.about?.[id]?.showBacking ?? true);
+    for (const [node, {id, visible}] of nodes) node.visible = visible && snapshot.about?.[id]?.showBacking !== false;
     for (const control of controls) {
       const value = control.dataset.setting.split('.').reduce((item, key) => item?.[key], snapshot);
       if (control.type === 'checkbox') control.checked = Boolean(value);
-      else control.value = String(value);
+      else if (control.dataset.setting === field('bridgeCount')) {
+        const spheroid = snapshot.about?.spheroid || {};
+        const directions = spheroid.pattern === 'crossed' ? 2 : 1;
+        const maximum = Math.round(spheroid.strands ?? 9) * directions;
+        control.max = String(maximum);
+        control.value = String(Math.min(value ?? 4, maximum));
+      } else control.value = String(value);
       const output = control.parentElement.querySelector('output');
-      if (output) output.value = String(value);
+      if (output) output.value = control.dataset.setting === field('bridgeCount') ? `${control.value} of ${control.max} possible` : String(value);
+    }
+    if (spheroidSection) {
+      const independent = snapshot.about?.spheroid?.rotationMode === 'independent';
+      spheroidSection.querySelector('[data-independent-rotation]').hidden = !independent;
+      spheroidSection.querySelector('[data-shared-rotation]').hidden = independent;
     }
   }
   function bind(root) {
@@ -45,7 +56,7 @@ export function createBackingControls(faces) {
   function detach() {
     events?.abort(); events = null;
     for (const [node, {visible}] of nodes) node.visible = visible;
-    nodes.clear(); controls.length = 0; clockRoot = null;
+    nodes.clear(); controls.length = 0; clockRoot = null; spheroidSection = null;
     added.splice(0).forEach(node => node.remove());
     unregister.splice(0).reverse().forEach(remove => remove());
   }
@@ -81,12 +92,18 @@ export function createBackingControls(faces) {
       const lattice = document.querySelector('#review-settings-context-skills [data-panel="Lattice"]');
       if (lattice) {
         const section = document.createElement('details'); section.open = true;
-        section.className = 'spheroid-lattice-controls';
+        section.className = 'spheroid-lattice-controls'; spheroidSection = section;
         section.innerHTML = `<summary>Spheroid lattice</summary><p>Energy woven behind the Skills bowl. Hide its backing to see the lattice from the Skills face as well as from inside the cube.</p>
           <label><input type="checkbox" data-setting="${field('enabled')}"> Show spheroid lattice</label>
           <label>Spiral pattern <select data-setting="${field('pattern')}" aria-label="Spiral pattern"><option value="crossed">Crossed spirals</option><option value="ascending">Ascending spiral</option><option value="descending">Descending spiral</option></select></label>
           <label>Energy color <select data-setting="${field('color')}" aria-label="Energy color"><option value="cyan">Ice blue &amp; copper</option><option value="amber">Amber &amp; ivory</option><option value="violet">Violet &amp; rose</option></select></label>
-          ${range('strands', 'Strands per direction', 4, 18, 1)}${range('turns', 'Spiral turns', .5, 3, .05)}${range('glow', 'Lattice glow', 0, 1, .05)}${range('speed', 'Energy speed', 0, 1, .02)}<p>Energy speed controls the traveling light. Vibration follows the speaker backing exactly, including when hidden. Reduced motion stops both.</p>`;
+          ${range('strands', 'Strands per direction', 4, 18, 1)}${range('turns', 'Spiral turns', .5, 3, .05)}${range('glow', 'Lattice glow', 0, 1, .05)}${range('speed', 'Energy speed', 0, 1, .02)}
+          <h3>Spiral rotation</h3><label>Rotation mode <select data-setting="${field('rotationMode')}" aria-label="Spiral rotation mode"><option value="together">Together</option><option value="independent">Independently</option></select></label>
+          <div data-shared-rotation><label>Direction <select data-setting="${field('rotationDirection')}" aria-label="Shared spiral rotation direction"><option value="counterclockwise">Counterclockwise</option><option value="clockwise">Clockwise</option></select></label>${range('rotationSpeed', 'Speed (turns/s)', 0, .25, .005)}</div>
+          <div data-independent-rotation hidden><h4>Ascending spiral</h4><label>Direction <select data-setting="${field('ascendingRotationDirection')}" aria-label="Ascending spiral direction"><option value="counterclockwise">Counterclockwise</option><option value="clockwise">Clockwise</option></select></label>${range('ascendingRotationSpeed', 'Speed (turns/s)', 0, .25, .005)}
+          <h4>Descending spiral</h4><label>Direction <select data-setting="${field('descendingRotationDirection')}" aria-label="Descending spiral direction"><option value="counterclockwise">Counterclockwise</option><option value="clockwise">Clockwise</option></select></label>${range('descendingRotationSpeed', 'Speed (turns/s)', 0, .25, .005)}</div>
+          <h3>Control-arm energy bridge</h3><label><input type="checkbox" data-setting="${field('bridgeEnabled')}"> Show zap bridges to spiral origins</label>${range('bridgeCount', 'Total zap beams', 1, 36, 1)}${range('bridgeGlow', 'Bridge glow', 0, 1.5, .05)}${range('bridgeSpeed', 'Zap speed', 0, 3, .05)}
+          <h3>Rear projection shape</h3><label><input type="checkbox" data-setting="${field('rearPullEnabled')}"> Bend rear spiral rings toward Skills arm</label>${range('rearPull', 'Pull spiral backs toward arm (m)', 0, .08, .002)}${range('rearPullInfluence', 'Pull influence radius (m)', .10, .85, .01)}<p>The influence radius controls how far from the rear crown the bend extends; the pull controls its strength. Rotation pauses with reduced motion. The origin bridges follow the rotating spirals; speaker vibration follows the backing surface.</p>`;
         lattice.prepend(section); added.push(section); bind(section);
       }
       sync();

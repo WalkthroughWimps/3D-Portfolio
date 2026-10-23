@@ -70,20 +70,19 @@ export class PanelGraphicOrientation{
   syncDisplay(panelId,options){
     const entry=this.artwork.get(panelId),panel=this.motion.panels.get(panelId);
     if(!entry||!panel)return false;
-    // Click turns preserve the outgoing print. Hover keeps the paired artwork
-    // tied to its starting pose throughout the full out-and-back rotation.
+    // A click only changes the next resting-side intent. Keep both currently
+    // viewable artwork and the committed hover-entry image attached to their
+    // surfaces; prepare the hidden return surface after the midpoint.
     const preserveVisible=options?.preserveVisible===true||Boolean(panel.turn);
     const frontVisible=FRONT.clone().applyQuaternion(panel.baseQuaternion).z>=0;
     const desired=this.motion.getLogicalSide(panelId);
-    if(preserveVisible&&!panel.turn?.hover){
-      // A committed hover keeps the visible artwork while settling onto that
-      // face; explicit flips may prepare a different hidden landing face.
-      const landingFront=panel.turn?FRONT.clone().applyQuaternion(panel.turn.end).z>=0:!frontVisible;
-      if(landingFront!==frontVisible){
-        const material=landingFront?entry.front:entry.back;
-        const map=desired==='icon'?(landingFront?entry.iconFront:entry.iconBack):(landingFront?entry.nameFront:entry.nameBack);
-        if(material.map!==map){material.map=map;material.needsUpdate=true;}
-      }
+    if(preserveVisible){
+      if(panel.turn?.hover&&panel.turn.angle<=Math.PI)return true;
+      const hiddenFront=!frontVisible;
+      const material=hiddenFront?entry.front:entry.back;
+      const hiddenSide=panel.turn?desired:(desired==='icon'?'name':'icon');
+      const map=hiddenSide==='icon'?(hiddenFront?entry.iconFront:entry.iconBack):(hiddenFront?entry.nameFront:entry.nameBack);
+      if(material.map!==map){material.map=map;material.needsUpdate=true;}
       return true;
     }
     const baselineFront=panel.turn?.hover?FRONT.clone().applyQuaternion(panel.turn.start).z>=0:frontVisible;
@@ -91,6 +90,7 @@ export class PanelGraphicOrientation{
     const backMap=(baselineFront?desired==='icon':desired==='name')?entry.nameBack:entry.iconBack;
     if(entry.front.map!==frontMap){entry.front.map=frontMap;entry.front.needsUpdate=true;}
     if(entry.back.map!==backMap){entry.back.map=backMap;entry.back.needsUpdate=true;}
+    panel.visibleArtworkSide=desired;
     return true;
   }
   /** Predict the landing side and turn its UVs before that side becomes visible. */
@@ -106,8 +106,7 @@ export class PanelGraphicOrientation{
     const artwork=this.artwork.get(panelId);
     if(artwork){
       if(desired===undefined){
-        desired=this.motion.getLogicalSide(panelId);
-        if(hoverEntry)desired=desired==='icon'?'name':'icon';
+        desired=hoverEntry?(panel.turn.startSide==='icon'?'name':'icon'):this.motion.getLogicalSide(panelId);
       }
       const target=desired==='icon'?(frontVisible?artwork.iconBack:artwork.iconFront):(frontVisible?artwork.nameBack:artwork.nameFront);
       const material=frontVisible?artwork.back:artwork.front;

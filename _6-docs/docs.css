@@ -22,6 +22,7 @@ body {
 }
 
 .glb-viewer {
+    box-sizing: border-box;
     width: 100%;
     height: calc(100vh - var(--glb-viewer-top, 0px));
     margin: 0;

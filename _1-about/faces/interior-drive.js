@@ -10,9 +10,10 @@ export function createInteriorDrive(faces) {
   let host = null, root = null, lattice = null, rotor = null, output = null, shaft = null;
   let armature = null, gimbalX = null, gimbalZ = null, gyroscope = null;
   let magnetMount = null, magnetRotor = null;
-  let suspended = false, reduced = false, elapsed = 0, motorPhase = 0, contrastGain = 1, signature = '', options = {};
-  let clockRoot = null, profile = [];
-  let projector = null, faceSettings = {};
+  let suspended = false, reduced = false, elapsed = 0, rotationElapsed = 0, motorPhase = 0, contrastGain = 1, signature = '', options = {};
+  let clockRoot = null, profile = [], skillsTerminal = null;
+  let projector = null, faceSettings = {}, bridgeRoot = null;
+  const spiralRotors = [], bridgeTracks = [], bridgeMaterials = [], skillsFeedMaterials = [];
   const resources = new Set(), pulses = [];
   const clockTip = new THREE.Vector3(), spindleAxis = new THREE.Vector3(0, 1, 0), spin = new THREE.Quaternion();
   const inverseWorld = new THREE.Quaternion(), stabilization = new THREE.Quaternion(), gimbalAngles = new THREE.Euler(0, 0, 0, 'XZY');
@@ -54,6 +55,24 @@ export function createInteriorDrive(faces) {
   function tube(parent, points, material, name, radius = .0035) {
     return mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), Math.max(24, points.length * 2), radius, 5, false), material, parent, name);
   }
+  function taperedTube(parent, points, material, name) {
+    const node = tube(parent, points, material, name, .0024);
+    const curve = new THREE.CatmullRomCurve3(points), position = node.geometry.attributes.position;
+    const center = new THREE.Vector3(), vertex = new THREE.Vector3();
+    const segments = Math.max(24, points.length * 2);
+    for (let row = 0; row <= segments; row++) {
+      const t = row / segments, scale = .3 + .7 * THREE.MathUtils.smoothstep(t, 0, .55);
+      center.copy(curve.getPointAt(t));
+      for (let side = 0; side <= 5; side++) {
+        const index = row * 6 + side;
+        vertex.fromBufferAttribute(position, index).sub(center).multiplyScalar(scale).add(center);
+        position.setXYZ(index, vertex.x, vertex.y, vertex.z);
+      }
+    }
+    position.needsUpdate = true;
+    node.geometry.computeBoundingSphere();
+    return node;
+  }
   function group(parent, name) {
     const node = new THREE.Group(); node.name = name; parent.add(node); return node;
   }
@@ -91,7 +110,9 @@ export function createInteriorDrive(faces) {
       for (let i = 0; i < position.count; i++) {
         point.fromBufferAttribute(position, i).applyMatrix4(transform);
         const r = Math.hypot(point.x, point.y);
-        if (r < .88 && point.z > .45) samples.push({r, z: point.z});
+        // Include the authored outer FRAME ring. Its last vertex circle is the
+        // actual contact boundary, beyond the bowl's former .88 cutoff.
+        if (r < 1.01 && point.z > .45) samples.push({r, z: point.z});
       }
     });
     samples.sort((a, b) => a.r - b.r);
@@ -109,6 +130,26 @@ export function createInteriorDrive(faces) {
     const a = profile[upper - 1], b = profile[upper], t = (radius - a.r) / (b.r - a.r);
     return THREE.MathUtils.lerp(a.z, b.z, t) - .016;
   }
+  function latticePoint(radius, angle, rearPull = options.rearPull ?? .025) {
+    const edge = profile.at(-1) ?? {r: .88, z: .88};
+    const frameBlend = THREE.MathUtils.smoothstep(radius, Math.max(.055, edge.r - .06), edge.r);
+    const surfaceZ = bowlDepth(radius) + .012 * frameBlend;
+    const point = new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, surfaceZ);
+    if (options.rearPullEnabled !== false) {
+      const crown = new THREE.Vector3(0, 0, bowlDepth(.055));
+      const towardArm = skillsSource().sub(crown).normalize();
+      const extent = options.rearPullInfluence ?? .22;
+      const backWeight = 1 - THREE.MathUtils.smoothstep(radius, .055, extent);
+      point.addScaledVector(towardArm, rearPull * backWeight);
+    }
+    return point;
+  }
+  function skillsSource() {
+    if (!skillsTerminal || !root) return new THREE.Vector3(0, 0, .43);
+    skillsTerminal.updateWorldMatrix(true, false);
+    root.updateWorldMatrix(true, false);
+    return root.worldToLocal(skillsTerminal.getWorldPosition(new THREE.Vector3()));
+  }
   function clearLattice() {
     if (!lattice) return;
     const materials = new Set();
@@ -120,7 +161,8 @@ export function createInteriorDrive(faces) {
       material.dispose(); resources.delete(material);
       const index = pulses.indexOf(material); if (index >= 0) pulses.splice(index, 1);
     }
-    lattice.removeFromParent(); lattice = null;
+    lattice.removeFromParent(); lattice = bridgeRoot = null;
+    spiralRotors.length = 0; bridgeTracks.length = 0; bridgeMaterials.length = 0;
   }
   function followSpeaker(node) {
     const surface = getSpeakerSurface(faces.get('skills').backing);
@@ -142,24 +184,90 @@ export function createInteriorDrive(faces) {
   }
   function rebuildLattice() {
     if (!root) return;
-    const next = JSON.stringify([options.pattern, options.strands, options.turns, options.color]);
+    const next = JSON.stringify([options.pattern, options.strands, options.turns, options.color, options.bridgeCount, options.rearPull, options.rearPullEnabled, options.rearPullInfluence, options.rotationMode]);
     if (next === signature) return;
     signature = next; clearLattice();
     lattice = new THREE.Group(); lattice.name = 'Skills inward spheroid energy lattice'; root.add(lattice);
     const colors = palettes[options.color] || palettes.cyan;
     const directions = options.pattern === 'ascending' ? [1] : options.pattern === 'descending' ? [-1] : [1, -1];
+    const count = Math.round(options.strands ?? 9), turns = options.turns ?? 1.35;
+    const beamCount = THREE.MathUtils.clamp(Math.round(options.bridgeCount ?? 4), 1, count * directions.length);
+    const beamOrigins = new Map(directions.map(direction => [direction, new Set()]));
+    for (let beam = 0; beam < beamCount; beam++) {
+      const direction = directions[beam % directions.length];
+      const ordinal = Math.floor(beam / directions.length);
+      const allocated = Math.floor(beamCount / directions.length) + (beam % directions.length < beamCount % directions.length ? 1 : 0);
+      beamOrigins.get(direction).add(Math.floor((ordinal + .5) * count / allocated));
+    }
+    const edge = profile.at(-1) ?? {r: .88, z: .88};
+    const frameRadius = Math.max(.055, edge.r - .002);
+    const source = skillsSource();
+    bridgeRoot = group(lattice, 'Skills control-arm energy bridges');
     for (const direction of directions) {
-      const material = energyMaterial(colors[direction === 1 ? 0 : 1], direction < 0, true);
-      const count = Math.round(options.strands ?? 9), turns = options.turns ?? 1.35;
-      const frameRadius = Math.max(.055, (profile.at(-1)?.r ?? .88) - .005);
+      const color = colors[direction === 1 ? 0 : 1];
+      const material = energyMaterial(color, direction < 0, true);
+      const bridgeMaterial = energyMaterial(color, direction < 0, true);
+      bridgeMaterials.push(bridgeMaterial);
+      const strands = group(lattice, direction > 0 ? 'Ascending spiral rotation' : 'Descending spiral rotation');
+      const rotorState = {group: strands, direction}; spiralRotors.push(rotorState);
       for (let strand = 0; strand < count; strand++) {
-        const points = [];
+        const points = [], originAngle = strand / count * TAU;
         for (let i = 0; i <= 96; i++) {
-          const t = i / 96, radius = THREE.MathUtils.lerp(.055, frameRadius, t), angle = strand / count * TAU + direction * turns * TAU * t;
-          points.push(new THREE.Vector3(Math.cos(angle) * radius, Math.sin(angle) * radius, bowlDepth(radius)));
+          const t = i / 96, radius = THREE.MathUtils.lerp(.055, frameRadius, t), angle = originAngle + direction * turns * TAU * t;
+          points.push(latticePoint(radius, angle, options.rearPull ?? .025));
         }
-        followSpeaker(tube(lattice, points, material, `${direction > 0 ? 'Ascending' : 'Descending'} spheroid strand ${strand + 1}`, .0024));
+        followSpeaker(tube(strands, points, material, `${direction > 0 ? 'Ascending' : 'Descending'} spheroid strand ${strand + 1}`, .0024));
+        if (!beamOrigins.get(direction).has(strand)) continue;
+        const origin = points[0];
+        const tangent = points[1].clone().sub(origin).normalize();
+        const approach = origin.clone().addScaledVector(tangent, -.028);
+        const control = source.clone().lerp(origin, .42);
+        const bridge = taperedTube(bridgeRoot, [source, control, approach, origin], bridgeMaterial, `Control-arm zap to ${direction > 0 ? 'ascending' : 'descending'} origin ${strand + 1}`);
+        followSpeaker(bridge);
+        const weights = bridge.geometry.attributes.speakerWeight, bridgeUV = bridge.geometry.attributes.uv;
+        if (weights) {
+          for (let i = 0; i < weights.count; i++) weights.setX(i, weights.getX(i) * THREE.MathUtils.smoothstep(bridgeUV.getX(i), 0, 1));
+          weights.needsUpdate = true;
+        }
+        bridge.frustumCulled = false;
+        const geometry = bridge.geometry, position = geometry.attributes.position;
+        bridgeTracks.push({geometry, rest: position.array.slice(), uv: geometry.attributes.uv, rotorState, restSource: source.clone()});
       }
+    }
+    bridgeRoot.visible = options.bridgeEnabled !== false;
+    for (const track of bridgeTracks) {
+      if (!track.geometry.boundingSphere) track.geometry.computeBoundingSphere();
+      track.geometry.boundingSphere.radius += .06;
+    }
+    updateLatticeEffects();
+  }
+  function rotationFor(rotorState) {
+    const prefix = rotorState.direction > 0 ? 'ascending' : 'descending';
+    const independent = options.rotationMode === 'independent';
+    const direction = independent ? options[`${prefix}RotationDirection`] : options.rotationDirection;
+    const speed = independent ? options[`${prefix}RotationSpeed`] : options.rotationSpeed;
+    return rotationElapsed * TAU * (Number.isFinite(speed) ? speed : .015) * (direction === 'clockwise' ? -1 : 1);
+  }
+  function updateLatticeEffects() {
+    for (const rotorState of spiralRotors) rotorState.group.rotation.z = rotationFor(rotorState);
+    if (bridgeRoot) bridgeRoot.visible = options.bridgeEnabled !== false;
+    for (const bridgeMaterial of bridgeMaterials) {
+      bridgeMaterial.uniforms.phase.value = elapsed * (options.bridgeSpeed ?? .8);
+      bridgeMaterial.uniforms.glow.value = (options.bridgeGlow ?? .8) * contrastGain;
+    }
+    for (const track of bridgeTracks) {
+      const sourceDelta = skillsSource().sub(track.restSource);
+      const position = track.geometry.attributes.position.array, uv = track.uv.array;
+      for (let i = 0; i < uv.length; i += 2) {
+        const weight = THREE.MathUtils.smoothstep(uv[i], 0, 1);
+        const angle = track.rotorState.group.rotation.z * weight;
+        const c = Math.cos(angle), s = Math.sin(angle), offset = i / 2 * 3;
+        const x = track.rest[offset], y = track.rest[offset + 1], sourceWeight = 1 - weight;
+        position[offset] = x * c - y * s + sourceDelta.x * sourceWeight;
+        position[offset + 1] = x * s + y * c + sourceDelta.y * sourceWeight;
+        position[offset + 2] = track.rest[offset + 2] + sourceDelta.z * sourceWeight;
+      }
+      track.geometry.attributes.position.needsUpdate = true;
     }
   }
   function detach() {
@@ -167,10 +275,10 @@ export function createInteriorDrive(faces) {
     root?.removeFromParent();
     for (const resource of resources) resource.dispose();
     resources.clear(); pulses.length = 0;
-    host = root = lattice = rotor = output = shaft = clockRoot = null;
+    host = root = lattice = rotor = output = shaft = clockRoot = skillsTerminal = null;
     armature = gimbalX = gimbalZ = gyroscope = null;
     magnetMount = magnetRotor = null;
-    profile = []; signature = ''; elapsed = 0; motorPhase = 0;
+    profile = []; signature = ''; elapsed = rotationElapsed = 0; motorPhase = 0; skillsFeedMaterials.length = 0;
   }
   return {
     attach(context) {
@@ -225,6 +333,8 @@ export function createInteriorDrive(faces) {
         magnet.position.set(pole ? .025 : -.025, -.006, 0);
       }
       const bus = energyMaterial(0x62dcff);
+      const feedColors = palettes[options.color] || palettes.cyan;
+      skillsFeedMaterials.push(energyMaterial(feedColors[0]), energyMaterial(feedColors[1]));
       for (const [name, points] of [
         ['Skills energy feed', [[0, 0, .343], [.015, 0, .375], [.01, 0, .405], [0, 0, .43]]],
         ['About speaker signal', [[.343, 0, 0], [.375, .015, 0], [.405, .01, 0], [.43, 0, 0]]],
@@ -232,12 +342,16 @@ export function createInteriorDrive(faces) {
       ]) {
         const path = points.map(point => new THREE.Vector3(...point));
         tube(armature, path, dark, `${name} insulated conduit`, .012);
-        tube(armature, path.map(point => point.clone().add(new THREE.Vector3(0, .013, 0))), bus, name, .0035);
+        if (name === 'Skills energy feed') {
+          for (let color = 0; color < 2; color++)
+            tube(armature, path.map(point => point.clone().add(new THREE.Vector3(.015, color ? -.005 : .005, 0))), skillsFeedMaterials[color], `${name} ${color ? 'secondary' : 'primary'} spiral color`, .0035);
+        } else tube(armature, path.map(point => point.clone().add(new THREE.Vector3(0, .013, 0))), bus, name, .0035);
         const socket = mesh(new THREE.SphereGeometry(.024, 16, 12), silver, armature, `${name} rotary socket`); socket.position.copy(path[0]);
         const union = ring(armature, .026, .005, brass, `${name} swivel union`); union.position.copy(path[0]);
         union.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), path[0].clone().normalize());
         const terminal = mesh(new THREE.SphereGeometry(.022, 16, 12), brass, armature, `${name} terminal`); terminal.position.copy(path.at(-1));
         terminal.userData.powerTerminal = true;
+        if (name === 'Skills energy feed') skillsTerminal = terminal;
         const pickup = ring(armature, .033, .0035, brass, `${name} contactless pickup`); pickup.position.copy(path.at(-1)); pickup.quaternion.copy(union.quaternion);
       }
       rod(armature, [0, .343, 0], [0, .40, 0], .016, silver, 'Odd rotary power control arm');
@@ -258,11 +372,14 @@ export function createInteriorDrive(faces) {
         rotor.rotation.y = phase * 3600;
         motorPhase = phase;
       }
-      if (!reduced && !faces.get('skills')?.assembly?.userReducedMotion && !clockState?.paused) elapsed += Math.min(.05, Math.max(0, dt)) * (options.speed ?? .24);
+      if (!reduced && !faces.get('skills')?.assembly?.userReducedMotion && !clockState?.paused) {
+        const step = Math.min(.05, Math.max(0, dt)); elapsed += step * (options.speed ?? .24); rotationElapsed += step;
+      }
       for (const material of pulses) {
         material.uniforms.phase.value = elapsed;
         material.uniforms.glow.value = (options.glow ?? .65) * contrastGain;
       }
+      updateLatticeEffects();
       const input = clock?.magneticDriveTarget;
       if (clock?.root && input && clock.root !== clockRoot) {
         clockRoot = clock.root;
@@ -286,9 +403,12 @@ export function createInteriorDrive(faces) {
     applySettings(snapshot) {
       faceSettings = snapshot.about || {}; projector?.applySettings(snapshot);
       options = snapshot.about?.spheroid || {}; reduced = Boolean(snapshot.accessibility?.reducedMotion);
+      const colors = palettes[options.color] || palettes.cyan;
+      skillsFeedMaterials.forEach((material, index) => material.uniforms.tint.value.setHex(colors[index]));
       const contrast = THREE.MathUtils.clamp(snapshot.start?.contrast ?? .5, 0, 1);
       contrastGain = .08 + (2.4 - .08) * contrast * contrast * (3 - 2 * contrast);
       rebuildLattice();
+      updateLatticeEffects();
     },
     suspend() { suspended = true; }, resume() { suspended = false; },
     detach, dispose: detach,

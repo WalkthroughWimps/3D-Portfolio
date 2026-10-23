@@ -13,7 +13,11 @@ import { installShortcutLabels, handleEditorShortcut } from './drawing-shortcuts
 import { rotationTargets, nearestRotationTarget, rotateShapesAround, angleStep, rotationPaths } from './drawing-rotation.js';
 import { ALIGNMENTS, alignedObjects, moveSnapIndex, snappedMove, moveSnapPaths, repeatedTransform } from './drawing-transforms.js';
 import {getSharedSettings} from '../../_7-shared-scripts/core/settings.js';
+import { createDrawingLibrary, createDownloadManager, drawingFile, parseDrawingFile, fileName } from './drawing-library.js';
+import { renderDrawingPng } from './drawing-export.js';
 const STORAGE_KEY = 'site.about.notes.v2';
+const STORAGE_TIME_KEY = 'site.about.notes.v2.updatedAt';
+const SELECTED_KEY = 'site.about.notes.selectedDrawing';
 const slider = (field, label, min, max, step, value) => `<label class="notes-range" data-range="${field}"><span>${label}</span><output data-output="${field}">${value}</output><input data-field="${field}" aria-label="${label}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
 
 export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () => false, layersInitiallyOpen = false } = {}) {
@@ -21,6 +25,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   canvas.setAttribute('aria-label', 'Drawing glass'); const context = canvas.getContext('2d');
   const panel = document.createElement('section'); panel.className = 'notes-tools'; panel.hidden = true; panel.setAttribute('aria-label', 'Drawing tools');
   panel.innerHTML = `<header class="notes-context-heading"><div><strong data-context-title>Drawing</strong><span data-context-detail>Pencil</span></div></header>
+    <section class="notes-library" aria-label="Saved drawings"><strong>Saved drawings</strong><label>Choose drawing<select data-library="saved" aria-label="Saved drawings"><option value="">Choose saved drawing…</option></select></label><label>Name<input data-library="name" type="text" maxlength="80" aria-label="Drawing name" placeholder="Untitled drawing"></label><div class="notes-library-actions"><button type="button" data-library-action="save" disabled title="Update the selected saved drawing">Save</button><button type="button" data-library-action="save-as" title="Create a separate saved drawing">Save as new</button><button type="button" data-library-action="reload" disabled title="Reload the selected saved drawing, keeping a recovery copy of canvas changes">Reload saved</button><button type="button" data-library-action="import">Load drawing file</button><button type="button" data-library-action="backup">Download editable file</button><button type="button" data-library-action="png">Export PNG</button></div><input data-library="file" type="file" accept=".notes.json,application/json" hidden><output data-library="status" role="status" aria-live="polite">Checking saved drawings…</output></section>
     <label class="notes-clipped-toggle"><input type="checkbox" data-field="clipped" checked aria-keyshortcuts="Shift+C"><span>Show clipped art</span><kbd aria-hidden="true">Shift+C</kbd></label>
     <div class="notes-top-row"><label class="notes-scale"><input type="checkbox" data-field="scale" checked>Scale strokes</label><div class="notes-align" role="group" aria-label="Align selection">${ALIGNMENTS.map(([id, label, path]) => `<button type="button" data-action="align-${id}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg></button>`).join('')}</div></div>
     <fieldset class="notes-snaps"><legend><label><input type="checkbox" data-snap="enabled" checked aria-keyshortcuts="Shift+Q">Snaps</label></legend><div>${[['pane', 'Pane'], ['anchors', 'Anchors'], ['centers', 'Centers'], ['intersects', 'Intersects']].map(([id, label]) => `<label><input type="checkbox" data-snap="${id}" checked>${label}</label>`).join('')}</div></fieldset>
@@ -37,10 +42,92 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     <div class="notes-mode-actions"><button type="button" data-action="shape-edit" title="Shape edit mode (A). Double-click an edge to add an anchor; double-click an anchor to toggle its curve handles." aria-keyshortcuts="A" aria-pressed="false">Shape edit mode</button><button type="button" data-action="layers" title="Layers (F7)" aria-keyshortcuts="F7" aria-pressed="false">Layers</button></div>
     <button type="button" class="notes-gear-toggle" data-action="gears" aria-pressed="false">Gear art<kbd>G</kbd></button><button type="button" class="notes-repeat" data-action="repeat" aria-keyshortcuts="Control+D Meta+D Shift+F4" title="Repeat action (Ctrl/Cmd+D or Shift+F4)">Repeat action<kbd>Ctrl+D</kbd></button><div class="notes-edit-actions"><button type="button" data-action="undo" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button><button type="button" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button><button type="button" data-action="duplicate" title="Duplicate (Shift+D or Ctrl/Cmd+J)">Duplicate</button><button type="button" data-action="delete" title="Delete selection">Delete</button></div>
 <output class="notes-status" role="status" aria-live="polite"></output>`;
+  const toolStrip = document.createElement('div'); toolStrip.className = 'notes-tool-strip'; toolStrip.setAttribute('aria-label', 'Select and draw tools');
+  const properties = document.createElement('div'); properties.className = 'notes-tool-properties';
+  toolStrip.append(panel.querySelector('.notes-select-row'), panel.querySelector('.notes-tools-disclosure'), panel.querySelector('.notes-tool-grid'));
+  properties.append(...panel.children);
+  panel.append(toolStrip, properties);
   installShortcutLabels(panel);
-  let doc, storageFailed = false;
+  let doc, storageFailed = false, localUpdatedAt = 0, latestUpdatedAt = 0;
   try { doc = restoreDocument(JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('site.about.notes.v1'))); }
   catch { doc = restoreDocument(null); storageFailed = true; }
+  try { localUpdatedAt = Number(localStorage.getItem(STORAGE_TIME_KEY)) || 0; } catch { /* IndexedDB may still be available. */ }
+  latestUpdatedAt = localUpdatedAt;
+  const library = createDrawingLibrary();
+  const downloads = createDownloadManager();
+  const librarySelect = panel.querySelector('[data-library="saved"]');
+  const libraryName = panel.querySelector('[data-library="name"]');
+  const libraryStatus = panel.querySelector('[data-library="status"]');
+  let selectedDrawingId = null, libraryReady = false, libraryBusy = false, savedBaseline = JSON.stringify(doc);
+  let draftRevision = 0, savedDraftRevision = 0, draftTimer = 0, draftWrite = null, workingSaved = false;
+  function libraryMessage(message, error = false) { libraryStatus.textContent = message; libraryStatus.dataset.error = String(error); }
+  function libraryControls() {
+    panel.querySelectorAll('[data-library-action]').forEach(button => {
+      button.disabled = libraryBusy || ['save', 'reload', 'save-as', 'import'].includes(button.dataset.libraryAction) && !libraryReady ||
+        ['save', 'reload'].includes(button.dataset.libraryAction) && !selectedDrawingId;
+    });
+    librarySelect.disabled = libraryBusy || !libraryReady;
+    libraryName.disabled = libraryBusy;
+  }
+  async function refreshLibrary() {
+    const entries = await library.list();
+    if (disposed) return entries;
+    librarySelect.replaceChildren(new Option('Choose saved drawing…', ''));
+    entries.forEach(entry => librarySelect.add(new Option(entry.name, entry.id)));
+    librarySelect.value = selectedDrawingId || '';
+    libraryControls();
+    return entries;
+  }
+  const workingInitialization = (async () => {
+    let working = null, workingError = null;
+    try { working = await library.getWorking(); }
+    catch (error) { workingError = error; }
+    let previous = null;
+    if (!disposed) {
+      latestUpdatedAt = Math.max(latestUpdatedAt, Number(working?.updatedAt) || 0);
+      try { previous = localStorage.getItem(SELECTED_KEY); } catch { /* Working storage can retain the identity. */ }
+      previous ||= working?.selectedDrawingId || null;
+      if (!draftRevision && working?.document && working.updatedAt >= localUpdatedAt) {
+        try {
+          doc = restoreDocument(working.document);
+          lastDrawn = doc.objects.at(-1)?.id;
+          artwork.clear();
+          workingSaved = true;
+          previous = working.selectedDrawingId || null;
+          libraryName.value = working.name || '';
+          changed();
+        } catch (error) { workingError = error; }
+      }
+      selectedDrawingId = previous;
+      if (workingSaved && selectedDrawingId) {
+        librarySelect.replaceChildren(new Option(working.name || 'Working drawing', selectedDrawingId));
+        librarySelect.value = selectedDrawingId;
+        libraryControls();
+        libraryMessage('Working canvas restored; checking saved drawings…');
+      }
+    }
+    return { previous, workingError };
+  })();
+  const libraryInitialization = (async () => {
+    const { previous, workingError } = await workingInitialization;
+    let entries = [], namedError = null;
+    try { entries = await refreshLibrary(); libraryReady = true; }
+    catch (error) { namedError = error; }
+    if (!disposed) {
+      try {
+      const entry = entries.find(item => item.id === previous);
+      if (entry) {
+        const saved = await library.get(entry.id);
+        if (disposed) return;
+        if (saved) { selectedDrawingId = entry.id; libraryName.value ||= entry.name; savedBaseline = JSON.stringify(saved.document); librarySelect.value = entry.id; }
+      }
+      libraryControls();
+      if (namedError || workingError) libraryMessage(namedError?.message || workingError?.message || 'Drawing storage is unavailable.', true);
+      else libraryMessage(`${entries.length} saved drawing${entries.length === 1 ? '' : 's'} on this browser.`);
+      } catch (error) { libraryMessage(error.message || 'Could not restore the working canvas.', true); }
+    }
+    if (draftRevision) scheduleDraftWrite();
+  })();
   let isolation = null;
   let smart = null, lastDrawn = doc.objects.at(-1)?.id;
   const snaps = { enabled: true, pane: true, centers: true, anchors: true, intersects: true };
@@ -58,9 +145,10 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   let defaults = { stroke: PALETTE[2][1], fill: null, strokeWidth: 6, sides: 3, depth: .5, smoothing: .45 };
   let polygonSides = 3, starSides = 5;
   let gesture = null, fieldEdit = null, penDraft = null, lastPenEnd = null, hover = null;
-  let repeatAction = null, notice = '', toolsPickerOpen = false;
+  let repeatAction = null, notice = '', toolsPickerOpen = true;
   let undoStack = [], redoStack = [], unit = 18, contrast = .5, brightness = .5, disposed = false, layersOpen = layersInitiallyOpen;
   const input = new AbortController(), listeners = new Set();
+  window.addEventListener('pagehide', () => { if (draftRevision > savedDraftRevision) void flushAutosave(); }, { signal: input.signal });
   const artwork = createArtworkCache(), clippedPaths = new WeakMap();
   let lastFlushMs = null, lastOutlineSegments = 0;
   const stopBudget = trackPerformanceBudget('Notes drawing budget', () => {
@@ -98,14 +186,129 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   const rootFor = s => isolationRoot(doc,s,isolation);
   const chosen = () => doc.objects.filter(s => selection.has(s.id) && editable(s));
   const single = () => chosen().length === 1 ? chosen()[0] : null;
-  const snapshot = () => ({ doc: clone(doc), selection: [...selection], repeatAction: clone(repeatAction) });
+  const snapshot = () => ({ doc: clone(doc), selection: [...selection], repeatAction: clone(repeatAction), selectedDrawingId, savedBaseline, drawingName: libraryName.value });
   const comparable = state => JSON.stringify(state.doc);
   function remember(before = snapshot()) {
     undoStack.push(before); redoStack = [];
     let count = undoStack.reduce((n, state) => n + state.doc.objects.reduce((m, s) => m + (s.points?.length || s.anchors?.length || 4), 0), 0);
     while (undoStack.length > 40 || count > 180000 && undoStack.length > 1) count -= undoStack.shift().doc.objects.reduce((n, s) => n + (s.points?.length || s.anchors?.length || 4), 0);
   }
-  function save() { if (smart) smart.targets = null; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(doc)); storageFailed = false; } catch { storageFailed = true; } }
+  function save() {
+    if (smart) smart.targets = null;
+    const updatedAt = latestUpdatedAt = Math.max(Date.now(), latestUpdatedAt + 1);
+    try {
+      const serialized = JSON.stringify(doc);
+      if (serialized.length > 3_000_000) throw new Error('Working drawing exceeds localStorage capacity.');
+      localStorage.setItem(STORAGE_KEY, serialized);
+      localStorage.setItem(STORAGE_TIME_KEY, String(updatedAt));
+      localUpdatedAt = updatedAt; storageFailed = false;
+    } catch { storageFailed = true; }
+    draftRevision++;
+    workingSaved = false;
+    scheduleDraftWrite();
+  }
+  function scheduleDraftWrite() {
+    if (draftTimer || disposed) return;
+    draftTimer = setTimeout(() => { draftTimer = 0; void flushAutosave(); }, 120);
+  }
+  async function flushAutosave() {
+    clearTimeout(draftTimer); draftTimer = 0;
+    await workingInitialization;
+    if (draftWrite) { await draftWrite; if (savedDraftRevision >= draftRevision) return true; }
+    draftWrite = (async () => {
+      while (savedDraftRevision < draftRevision) {
+        const revision = draftRevision;
+        const snapshot = { document: clone(doc), selectedDrawingId, name: libraryName.value,
+          updatedAt: latestUpdatedAt };
+        try {
+          await library.putWorking(snapshot);
+          savedDraftRevision = revision;
+          workingSaved = savedDraftRevision === draftRevision;
+        } catch (error) {
+          workingSaved = false;
+          if (!disposed) libraryMessage(error.message || 'Working canvas could not be saved on this device.', true);
+          break;
+        }
+      }
+    })();
+    try { await draftWrite; } finally { draftWrite = null; if (!disposed) changed(); }
+    return savedDraftRevision >= draftRevision;
+  }
+  function drawingName() { return libraryName.value.trim().slice(0, 80) || 'Untitled drawing'; }
+  function persistDrawingIdentity() {
+    draftRevision++; latestUpdatedAt = Math.max(Date.now(), latestUpdatedAt + 1); workingSaved = false; scheduleDraftWrite();
+    try { if (selectedDrawingId) localStorage.setItem(SELECTED_KEY, selectedDrawingId); else localStorage.removeItem(SELECTED_KEY); return true; }
+    catch { return false; }
+  }
+  async function saveDrawing(asNew = false) {
+    await libraryInitialization;
+    if (disposed) throw new Error('The drawing editor is closed.');
+    if (!libraryReady) throw new Error('Saved drawing storage is unavailable. Download an editable file instead.');
+    finishGesture(); finishPath();
+    if (!asNew && !selectedDrawingId) throw new Error('Choose a saved drawing or use Save as new.');
+    const record = await library.put({ id: asNew ? undefined : selectedDrawingId, name: drawingName(), document: clone(doc) });
+    if (disposed) throw new Error('The drawing editor is closed.');
+    selectedDrawingId = record.id; savedBaseline = JSON.stringify(record.document); libraryName.value = record.name;
+    const identityPersisted = persistDrawingIdentity(); await refreshLibrary();
+    if (disposed) throw new Error('The drawing editor is closed.');
+    libraryMessage(`${asNew ? 'Saved new drawing' : 'Updated saved drawing'}: ${record.name}.${identityPersisted ? '' : ' Saving selection with the working canvas.'}`);
+    return record;
+  }
+  async function loadDrawing(id) {
+    await libraryInitialization;
+    if (disposed) throw new Error('The drawing editor is closed.');
+    if (!libraryReady) throw new Error('Saved drawing storage is unavailable.');
+    if (!id) { librarySelect.value = selectedDrawingId || ''; return; }
+    finishGesture(); finishPath();
+    const before = JSON.stringify(doc);
+    const record = await library.get(id);
+    if (disposed) throw new Error('The drawing editor is closed.');
+    if (JSON.stringify(doc) !== before) throw new Error('The canvas changed while loading. Choose the drawing again.');
+    if (!record) throw new Error('That saved drawing is no longer available.');
+    const next = restoreDocument(record.document);
+    const needsRecovery = JSON.stringify(restoreDocument(doc)) !== savedBaseline || !selectedDrawingId && doc.objects.length > 0;
+    if (needsRecovery) {
+      const recoveryName = `${libraryName.value.trim() || 'Working canvas'} recovery`.slice(0, 80);
+      await library.put({ name: recoveryName, document: clone(doc) });
+      if (disposed) throw new Error('The drawing editor is closed.');
+      if (JSON.stringify(doc) !== before) throw new Error('The canvas changed while loading. A recovery copy was saved; choose the drawing again.');
+    }
+    remember(); doc = next; selection.clear(); isolation = null; smart = null; gesture = null; fieldEdit = null;
+    penDraft = null; lastPenEnd = null; selectedAnchor = null; hover = null; repeatAction = null;
+    shapeEdit = false; tool = 'select'; gears.reset(); gears.close();
+    lastDrawn = doc.objects.at(-1)?.id; artwork.clear();
+    selectedDrawingId = record.id; savedBaseline = JSON.stringify(doc); libraryName.value = record.name;
+    const identityPersisted = persistDrawingIdentity(); changed(true); await refreshLibrary();
+    if (disposed) throw new Error('The drawing editor is closed.');
+    libraryMessage(`Loaded ${record.name}.${needsRecovery ? ' Previous canvas saved as a recovery drawing.' : ' Previous canvas is available with Undo.'}${identityPersisted ? '' : ' Saving selection with the working canvas.'}`);
+    return record;
+  }
+  async function importDrawing(file) {
+    const parsed = await parseDrawingFile(file);
+    await libraryInitialization;
+    if (disposed) throw new Error('The drawing editor is closed.');
+    if (!libraryReady) throw new Error('Saved drawing storage is unavailable.');
+    const record = await library.put(parsed);
+    if (disposed) throw new Error('The drawing editor is closed.');
+    await refreshLibrary();
+    if (disposed) throw new Error('The drawing editor is closed.');
+    await loadDrawing(record.id);
+    libraryMessage(`Imported and loaded ${record.name}.`);
+    return record;
+  }
+  async function exportPngBlob() { finishGesture(); finishPath(); return renderDrawingPng(doc, artwork, contrast, brightness); }
+  function downloadEditable() {
+    finishGesture(); finishPath();
+    const name = drawingName();
+    downloads.download(new Blob([JSON.stringify(drawingFile(name, doc), null, 2)], { type: 'application/json' }), fileName(name, 'notes.json'));
+    libraryMessage(`Downloaded editable drawing: ${name}.`);
+  }
+  async function runLibraryTask(task) {
+    if (libraryBusy || disposed) return;
+    libraryBusy = true; libraryControls();
+    try { await task(); } catch (error) { if (!disposed) { librarySelect.value = selectedDrawingId || ''; libraryMessage(error.message || 'Drawing action failed.', true); } }
+    finally { libraryBusy = false; if (!disposed) libraryControls(); }
+  }
   function flush() {
     if (!paintFrame || disposed) return;
     cancelAnimationFrame(paintFrame); paintFrame = 0;
@@ -126,10 +329,10 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   function selectIds(ids, toggle = false) {
     if (!toggle) selection = new Set(ids); else ids.forEach(id => selection.has(id) ? selection.delete(id) : selection.add(id));
-    toolsPickerOpen=false;selectedAnchor = null; const s = single(); if (s) defaults = { ...defaults, stroke: s.stroke, fill: s.fill, strokeWidth: s.strokeWidth };
+    selectedAnchor = null; const s = single(); if (s) defaults = { ...defaults, stroke: s.stroke, fill: s.fill, strokeWidth: s.strokeWidth };
   }
   function selectFromLayers(ids, toggle) { if(isolation && ids.some(id=>!inIsolation(doc,doc.objects.find(s=>s.id===id),isolation))) { isolation=null; } finishGesture(); finishPath(); gears.close(); smart = null; const layer = doc.objects.find(s => ids.includes(s.id))?.layerId; if (layer && !toggle) doc.activeLayer = layer; tool = 'select'; selectIds(ids, toggle); changed(true); }
-  function setTool(value) { finishGesture(); finishPath(); smart = null; toolsPickerOpen=false;tool = value; gears.close(); if (value !== 'select') selectIds([]); shapeEdit = false; selectedAnchor = null; changed(); }
+  function setTool(value) { finishGesture(); finishPath(); smart = null; tool = value; gears.close(); if (value !== 'select') selectIds([]); shapeEdit = false; selectedAnchor = null; changed(); }
   function commitField(cancel = false) {
     if (!fieldEdit) return; const before = fieldEdit; fieldEdit = null;
     if (cancel) { doc = before.doc; selection = new Set(before.selection); }
@@ -334,7 +537,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       control.title=`${field==='opening'?'Opening':'Filled slice'} angle, in degrees`;
     }
     panel.querySelectorAll('[data-slice]').forEach(button=>{button.disabled=!pacman;button.setAttribute('aria-pressed',String(pacman&&Math.abs((1-depth)*360-Number(button.dataset.slice))<.1));});
-    panel.querySelector('.notes-status').textContent = `${shapes.length} selected. ${doc.objects.length} objects. ${storageFailed ? 'Session only. Device storage unavailable.' : 'Saved locally.'}${isolation ? ` Editing ${doc.groups.find(g=>g.id===isolation)?.name}. Double-click empty glass or press Escape to leave.` : ''}${notice ? ` ${notice}` : ''}`;
+    panel.querySelector('.notes-status').textContent = `${shapes.length} selected. ${doc.objects.length} objects. ${!storageFailed || workingSaved ? 'Saved locally.' : draftRevision > savedDraftRevision && libraryReady ? 'Saving locally…' : 'Session only. Device storage unavailable.'}${isolation ? ` Editing ${doc.groups.find(g=>g.id===isolation)?.name}. Double-click empty glass or press Escape to leave.` : ''}${notice ? ` ${notice}` : ''}`;
     const smartButton = panel.querySelector('[data-action="smart-rotate"]'); smartButton.disabled = !shapes.length && !lastTarget(); smartButton.setAttribute('aria-pressed', String(Boolean(smart)));
     panel.querySelectorAll('[data-snap]').forEach(el => { el.checked = snaps[el.dataset.snap]; el.disabled = el.dataset.snap !== 'enabled' && !snaps.enabled; });
     canvas.style.cursor = cursor();
@@ -366,7 +569,8 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (name === 'shape-edit') { smart = null; if (single()?.type !== 'pencil' && single()) { tool = 'select'; shapeEdit = !shapeEdit; selectedAnchor = null; changed(); } return; }
     if (name === 'undo' || name === 'redo') {
       penDraft = null; gears.reset(); const from = name === 'undo' ? undoStack : redoStack, to = name === 'undo' ? redoStack : undoStack;
-      if (!from.length) return; to.push(snapshot()); const state = from.pop(); doc = state.doc; repeatAction = state.repeatAction || null; selection = new Set(tool === 'select' && !gears.open ? state.selection : []); selectedAnchor = null; changed(true); return;
+      if (!from.length) return; to.push(snapshot()); const state = from.pop(); doc = state.doc; repeatAction = state.repeatAction || null; selection = new Set(tool === 'select' && !gears.open ? state.selection : []); selectedAnchor = null;
+      selectedDrawingId = state.selectedDrawingId || null; savedBaseline = state.savedBaseline || JSON.stringify(doc); libraryName.value = state.drawingName || ''; librarySelect.value = selectedDrawingId || ''; persistDrawingIdentity(); changed(true); return;
     }
     if (name === 'group' || name === 'ungroup') { layerAction(name); return; }
     if (name === 'delete' && shapeEdit && single() && selectedAnchor !== null && single().type !== 'line') {
@@ -418,7 +622,18 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   panel.addEventListener('click', event => {
     const b = event.target.closest('button'); if (!b) return;
-    if (b.dataset.tool) setTool(b.dataset.tool);
+    if (b.dataset.libraryAction) {
+      const choice = b.dataset.libraryAction;
+      if (choice === 'import') panel.querySelector('[data-library="file"]').click();
+      else runLibraryTask(async () => {
+        if (choice === 'save') await saveDrawing();
+        else if (choice === 'save-as') await saveDrawing(true);
+        else if (choice === 'backup') downloadEditable();
+        else if (choice === 'reload') await loadDrawing(selectedDrawingId);
+        else if (choice === 'png') { const blob = await exportPngBlob(); if (disposed) return; downloads.download(blob, fileName(drawingName(), 'png')); libraryMessage(`Exported PNG: ${drawingName()}.`); }
+      });
+    }
+    else if (b.dataset.tool) setTool(b.dataset.tool);
     else if(b.dataset.slice){if(!b.disabled){finishGesture();fieldEdit={...snapshot(),field:'slice'};applyProperty('slice',Number(b.dataset.slice));commitField();changed();}}
     else if (b.dataset.colorTarget) { colorTarget = b.dataset.colorTarget; changed(); }
     else if (b.dataset.color) colorTo(b.dataset.color === 'none' ? null : b.dataset.color);
@@ -431,7 +646,16 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if(['opening','slice'].includes(field)){value=clamp(value,0,360);if(Number(event.target.value)!==value)event.target.value=value;}
     applyProperty(field, value); changed();
   }, { signal: input.signal });
-  panel.addEventListener('change', event => { if (event.target.dataset.snap) toggleSnap(event.target.dataset.snap, event.target.checked); else if (event.target.dataset.field === 'scale') scaleStrokes = event.target.checked; else if (event.target.dataset.field === 'clipped') toggleClipped(event.target.checked); else { commitField(); changed(); } }, { signal: input.signal });
+  panel.addEventListener('change', event => {
+    if (event.target.dataset.library === 'saved') { runLibraryTask(() => loadDrawing(event.target.value)); return; }
+    if (event.target.dataset.library === 'file') {
+      const file = event.target.files?.[0]; event.target.value = '';
+      if (file) runLibraryTask(() => importDrawing(file));
+      return;
+    }
+    if (event.target.dataset.library === 'name') return;
+    if (event.target.dataset.snap) toggleSnap(event.target.dataset.snap, event.target.checked); else if (event.target.dataset.field === 'scale') scaleStrokes = event.target.checked; else if (event.target.dataset.field === 'clipped') toggleClipped(event.target.checked); else { commitField(); changed(); }
+  }, { signal: input.signal });
   panel.addEventListener('focusout', () => commitField(), { signal: input.signal });
   function hitTest(point) {
     for (const shape of orderedObjects(doc).reverse()) {
@@ -714,6 +938,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   changed();
   return { canvas, panel, layersPanel: layers.panel, gearsPanel: gears.panel, dropGear: gears.drop, tick: gears.tick, pointerDown, pointerMove, pointerLeave() { hover = null; gears.setHover(null); if (smart) changed(false, { panel: false, layers: false }); }, doubleClick, finishGesture, finishPath, keydown, action, flush,
+    libraryReady: libraryInitialization, saveDrawing, loadDrawing, importDrawing, exportPngBlob, flushAutosave,
     get isolation() { return isolation; }, get drawing() { return clone(doc.objects); }, get document() { return clone(doc); }, get tool() { return tool; }, get cursor() { return cursor(); },
     setClippedArt(value) { if (showClippedArt !== value) { showClippedArt = value; panel.querySelector('[data-field="clipped"]').checked = value; changed(); } },
     get overflow() {
@@ -731,6 +956,6 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     setHandleUnit(value) { const next = clamp(value, 7, 35); if (Math.abs(next - unit) > 1) { unit = next; if (selection.size || penDraft || smart || gears.active) changed(false, { panel: false, layers: false }); } },
     setAppearance(next) { const c = clamp(next.contrast ?? .5, 0, 1), b = clamp(next.brightness ?? .5, 0, 1); if (contrast !== c || brightness !== b) { contrast = c; brightness = b; artwork.clear(); changed(); } },
-    dispose() { finishGesture(); finishPath(); disposed = true; cancelAnimationFrame(paintFrame); paintFrame = 0; stopBudget(); artwork.dispose(); gears.dispose(); input.abort(); layers.dispose(); listeners.clear(); }
+    dispose() { finishGesture(); finishPath(); disposed = true; cancelAnimationFrame(paintFrame); paintFrame = 0; stopBudget(); artwork.dispose(); gears.dispose(); input.abort(); layers.dispose(); downloads.dispose(); listeners.clear(); void flushAutosave().finally(() => library.dispose()); }
   };
 }

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Graphics | Matt Hall</title>
-    <meta name="description" content="Preview Matt Hall’s graphic design work and explore an illustrated game card.">
+    <meta name="description" content="Explore illustrated coursebooks and board games by Matt Hall.">
     <link rel="stylesheet" href="../_7-shared-scripts/colors.css">
     <link rel="stylesheet" href="../_7-shared-scripts/template.css">
     <link rel="stylesheet" href="graphics.css">
@@ -91,7 +91,6 @@
 <!-- site-header:generated:start -->
 <a class="skip-link" href="#page-main">Skip to content</a>
 <div class="nav-wrap">
-  <div class="page-note page-note--nav" aria-hidden="true">Right Mouse Button<br>Rotate</div>
   <div class="navigation-bg">
     <nav class="navigation" aria-label="Site">
       <a href="../_1-about/about.html" class="nav-icon about-icon" title="About Me" aria-label="About Me">
@@ -236,28 +235,20 @@
 </div>
     </div>
 
-    <div class="content" id="page-main" role="main" tabindex="-1" aria-label="Graphics">
-        <div class="main-text coming-soon">COMING SOON</div>
-    </div>
+<main id="page-main" tabindex="-1" aria-label="Interactive graphics shelf"><div id="shelf-preview" tabindex="0" aria-label="Click a coursebook or board game to take it off the shelf. Escape returns it. Middle-click focuses, middle drag pans, double middle-click centers." role="region"></div><div id="loading" role="status">Preparing the shelf…</div></main>
 
-    <div id="info-panel" class="info-panel" aria-live="polite">
-        <strong>Camera</strong>
-        <div id="camera-info">pos 0,0,0 target 0,0,0 dist 0</div>
-    </div>
-    <div id="manual-controls" class="manual-controls" aria-label="Manual camera controls">
-        <button data-action="left" data-step="0.45" data-precision-step="0.15" title="Move left" aria-label="Move left">&#8592;</button>
-        <button data-action="right" data-step="0.45" data-precision-step="0.15" title="Move right" aria-label="Move right">&#8594;</button>
-        <button data-action="up" data-step="0.35" data-precision-step="0.12" title="Move up" aria-label="Move up">&#8593;</button>
-        <button data-action="down" data-step="0.35" data-precision-step="0.12" title="Move down" aria-label="Move down">&#8595;</button>
-        <button data-action="scale-in" data-step="0.5" data-precision-step="0.18" title="Zoom in" aria-label="Zoom in">&#65291;</button>
-        <button data-action="scale-out" data-step="0.5" data-precision-step="0.18" title="Zoom out" aria-label="Zoom out">&#65293;</button>
-    </div>
+<div class="preview-hint" id="status" role="status">Choose a coursebook or board game.</div>
+<details class="temporary-controls" id="actions" aria-label="Book and shelf controls" hidden><summary>Book &amp; shelf controls</summary><span class="review-label">Middle mouse: click focus · drag pan · double-click center</span><div><button id="return">Put away</button><button id="spread" hidden>Back to spread</button><button id="layout" hidden>Show grid</button><button id="open-game" hidden>Open box</button><button id="close-game" hidden>Close box</button><button id="play-game" hidden>Tabletop</button><button id="open-book" hidden>Read</button><button id="previous-page" hidden>Previous page</button><button id="next-page" hidden>Next page</button></div><label id="page-controls" hidden><span id="page-label">Cover to cover</span> <input id="page" type="range" min="-1" max="10" step=".01" value="-1"></label></details>
+<details class="accessible-items"><summary>Choose an item</summary><div><button disabled data-item="book-1">Grade 1</button><button disabled data-item="book-2">Grade 2</button><button disabled data-item="book-3">Grade 3</button><button disabled data-item="book-4">Grade 4</button><button disabled data-item="book-5">Grade 5</button><button disabled data-item="book-6">Grade 6</button><button disabled data-item="game-0">Global Conquest</button><button disabled data-item="game-1">Manor Mayhem</button><button disabled data-item="easel">The Great Race video</button></div></details>
+<section id="easel-controls" aria-label="The Great Race video controls" hidden><button type="button" data-video-play>Play</button><button type="button" data-video-mute aria-pressed="false">Sound off</button><label>Video position <input data-video-seek type="range" min="0" max="1" step="0.1" value="0"></label><output data-video-time>0:00 / 0:00</output></section><video id="easel-video" playsinline preload="none" hidden></video>
+<dialog id="tabletop-dialog" aria-label="Global Conquest tabletop"><button id="leave-tabletop">Return to game box</button><iframe id="tabletop-frame" title="Global Conquest tabletop" ></iframe></dialog>
 
-
+<button id="skip-animation" type="button" aria-keyshortcuts="S" hidden>Skip animation <kbd>S</kbd></button>
+<script id="graphics-diagnostics" type="application/json">{}</script>
     <script type="module" src="graphics.js"></script>
     <script type="module">import { loadDebugIfEnabled } from "../debug/debug-loader.js"; loadDebugIfEnabled();</script>
     <script type="module" src="../debug/debug-nav-toggle.js"></script>
-    <details class="scene-alternative"><summary>Graphics: text and links</summary><div class="scene-alternative-content"><p>The illustrated game card shows a bicycle with the instruction “Move 1 space.” More graphics are coming soon.</p><p>Use the labeled camera buttons to move and zoom the 3D preview.</p></div></details>
+    <details class="scene-alternative"><summary>Graphics: text and controls</summary><div class="scene-alternative-content"><p>Explore six Just Speak coursebooks, Global Conquest and Manor Mayhem. Choose an item above to take it from the shelf. Click or drag a book page to turn it; Shift + wheel turns pages and wheel zooms. Middle-click focuses, middle drag pans; double middle-click centers and double right-click resets rotation. Escape puts the item away. Each game has a freeform tabletop, card controls and player hands.</p></div></details>
 </body>
 
 </html>

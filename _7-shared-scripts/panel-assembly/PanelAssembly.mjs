@@ -53,8 +53,12 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
   motion.onFlipEnd=({panelId})=>nameFrames.clearPlaceholder(panelId);
   motion.onFlipProgress=({panelId,axis,angle,previousAngle})=>{
     const p=motion.panels.get(panelId);
-    if(p?.turn?.hover&&previousAngle<=Math.PI&&angle>Math.PI){
-      graphics.prepareFlip(panelId,axis,{start:p.turn.mid,desired:motion.getLogicalSide(panelId)});
+    // Each further half-turn exposes the other print. Prepare it while it is
+    // hidden, including when a corner action extends an existing turn.
+    if(p?.turn)for(let boundary=Math.floor(previousAngle/Math.PI)+1;boundary*Math.PI<angle;boundary++){
+      if(boundary<1)continue;
+      const start=motion._turnQuaternion(p.turn,boundary*Math.PI,new THREE.Quaternion());
+      graphics.prepareFlip(panelId,axis,{start,desired:motion.getLogicalSide(panelId)});
     }
     if(!p || !ripple.index.has(panelId))return;
     const morph=p.morphs[0],w=morph?.morphTargetInfluences?.[morph.morphTargetDictionary.Clicked]||0;
@@ -122,7 +126,8 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
     if(cornerAction.starting)return true;
     for(const id of cornerAction.panelIds){
       const panel=motion.panels.get(id),pending=motion.queue.get(id),turn=motion.active.get(id);
-      const flipping=cornerAction.flips&&(pending&&!pending.hover||turn&&(!turn.hover||turn.afterAlignment));
+      const flipping=cornerAction.flips&&((pending&&(!pending.hover||pending.exitCommitted||pending.afterAlignment))||
+        (turn&&(!turn.hover||turn.exitCommitted||turn.afterAlignment)));
       if(panel.clickProgress<1||flipping)return true;
     }
     cornerAction=null;return false;
@@ -130,7 +135,7 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
   function requestCornerAction(id){
     const action=getCornerActions()[id];
     if(disposed||!action||isCornerActionBusy()||!motion.focused||motion.paused||!rig.isPanelVisible(id))return false;
-    cornerAction={starting:true,flips:action!=='toggle-clicked',panelIds:manifest.squarePanels.map(panel=>panel.panelId)};
+    cornerAction={starting:true,flips:true,panelIds:manifest.squarePanels.map(panel=>panel.panelId)};
     try{
       if(cornerActions[action]()===false){cornerAction=null;return false;}
       cornerAction.starting=false;assembly.requestRender?.();return true;

@@ -1,0 +1,222 @@
+{
+  "cards": {
+    "landmarks:001": {
+      "atlas": 0,
+      "tile": 0,
+      "source": "001.png"
+    },
+    "landmarks:002": {
+      "atlas": 0,
+      "tile": 1,
+      "source": "002.png"
+    },
+    "landmarks:003": {
+      "atlas": 0,
+      "tile": 2,
+      "source": "003.png"
+    },
+    "landmarks:004": {
+      "atlas": 0,
+      "tile": 3,
+      "source": "004.png"
+    },
+    "landmarks:005": {
+      "atlas": 0,
+      "tile": 4,
+      "source": "005.png"
+    },
+    "landmarks:006": {
+      "atlas": 0,
+      "tile": 5,
+      "source": "006.png"
+    },
+    "landmarks:007": {
+      "atlas": 0,
+      "tile": 6,
+      "source": "007.png"
+    },
+    "landmarks:008": {
+      "atlas": 0,
+      "tile": 7,
+      "source": "008.png"
+    },
+    "landmarks:009": {
+      "atlas": 0,
+      "tile": 8,
+      "source": "009.png"
+    },
+    "landmarks:010": {
+      "atlas": 0,
+      "tile": 9,
+      "source": "010.png"
+    },
+    "landmarks:011": {
+      "atlas": 0,
+      "tile": 10,
+      "source": "011.png"
+    },
+    "landmarks:012": {
+      "atlas": 0,
+      "tile": 11,
+      "source": "012.png"
+    },
+    "landmarks:013": {
+      "atlas": 0,
+      "tile": 12,
+      "source": "013.png"
+    },
+    "landmarks:014": {
+      "atlas": 0,
+      "tile": 13,
+      "source": "014.png"
+    },
+    "landmarks:015": {
+      "atlas": 0,
+      "tile": 14,
+      "source": "015.png"
+    },
+    "landmarks:016": {
+      "atlas": 0,
+      "tile": 15,
+      "source": "016.png"
+    },
+    "landmarks:017": {
+      "atlas": 1,
+      "tile": 0,
+      "source": "017.png"
+    },
+    "landmarks:018": {
+      "atlas": 1,
+      "tile": 1,
+      "source": "018.png"
+    },
+    "landmarks:019": {
+      "atlas": 1,
+      "tile": 2,
+      "source": "019.png"
+    },
+    "landmarks:020": {
+      "atlas": 1,
+      "tile": 3,
+      "source": "020.png"
+    },
+    "landmarks:021": {
+      "atlas": 1,
+      "tile": 4,
+      "source": "021.png"
+    },
+    "landmarks:022": {
+      "atlas": 1,
+      "tile": 5,
+      "source": "022.png"
+    },
+    "landmarks:023": {
+      "atlas": 1,
+      "tile": 6,
+      "source": "023.png"
+    },
+    "landmarks:024": {
+      "atlas": 1,
+      "tile": 7,
+      "source": "024.png"
+    },
+    "landmarks:025": {
+      "atlas": 1,
+      "tile": 8,
+      "source": "025.png"
+    },
+    "landmarks:026": {
+      "atlas": 1,
+      "tile": 9,
+      "source": "026.png"
+    },
+    "landmarks:027": {
+      "atlas": 1,
+      "tile": 10,
+      "source": "027.png"
+    },
+    "landmarks:028": {
+      "atlas": 1,
+      "tile": 11,
+      "source": "028.png"
+    },
+    "landmarks:029": {
+      "atlas": 1,
+      "tile": 12,
+      "source": "029.png"
+    },
+    "vehicles:001": {
+      "atlas": 1,
+      "tile": 14,
+      "source": "001.png"
+    },
+    "vehicles:002": {
+      "atlas": 1,
+      "tile": 15,
+      "source": "002.png"
+    },
+    "vehicles:003": {
+      "atlas": 2,
+      "tile": 0,
+      "source": "003.png"
+    },
+    "vehicles:004": {
+      "atlas": 2,
+      "tile": 1,
+      "source": "004.png"
+    },
+    "vehicles:005": {
+      "atlas": 2,
+      "tile": 2,
+      "source": "005.png"
+    },
+    "vehicles:006": {
+      "atlas": 2,
+      "tile": 3,
+      "source": "006.png"
+    },
+    "vehicles:007": {
+      "atlas": 2,
+      "tile": 4,
+      "source": "007.png"
+    },
+    "vehicles:008": {
+      "atlas": 2,
+      "tile": 5,
+      "source": "008.png"
+    },
+    "vehicles:009": {
+      "atlas": 2,
+      "tile": 6,
+      "source": "009.png"
+    },
+    "vehicles:010": {
+      "atlas": 2,
+      "tile": 7,
+      "source": "010.png"
+    },
+    "vehicles:011": {
+      "atlas": 2,
+      "tile": 8,
+      "source": "011.png"
+    },
+    "vehicles:012": {
+      "atlas": 2,
+      "tile": 9,
+      "source": "012.png"
+    }
+  },
+  "backs": {
+    "landmarks": {
+      "atlas": 1,
+      "tile": 13,
+      "source": "back.png"
+    },
+    "vehicles": {
+      "atlas": 2,
+      "tile": 10,
+      "source": "backs.png"
+    }
+  },
+  "failures": []
+}

@@ -10,7 +10,7 @@ export const NOTES_MOUNT = Object.freeze({ source: 'back.art', center: [-.966, 0
 const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const outlineOpacity = contrast => { const eased = contrast * contrast * (3 - 2 * contrast); return .12 + .22 * eased; };
 
-export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate = () => {}, onInputOwnership = () => {} }) {
+export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => {}, onInputOwnership = () => {} }) {
   const input = new AbortController(), resources = [], captures = new Set(), hiddenBacking = [];
   let canvasInput = null;
   let host = null, group = null, carrier = null, texture = null, glass = null, ring = null, editor = null, overflow = null, dynamicOverflow = null, rearArt = null, contrast = .5;
@@ -22,14 +22,14 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
   const adminSides = {left:false,right:false};
   const previousOverflows = new WeakMap();
   const rearPanes = [];
-  const dock = document.createElement('nav'); dock.className = 'notes-dock'; dock.setAttribute('aria-label', 'Notes views');
+  const dock = document.createElement('nav'); dock.className = 'notes-dock'; dock.hidden = true; dock.setAttribute('aria-label', 'Notes views');
   dock.innerHTML = '<button type="button" data-notes-view="face" aria-label="Notes face" aria-keyshortcuts="Z" title="Notes face (Z)" disabled>Notes face<kbd aria-hidden="true">Z</kbd></button><button type="button" data-notes-view="turn" aria-label="Turn cube" aria-keyshortcuts="C" title="Turn cube (C)" aria-pressed="false" disabled>Turn cube<kbd aria-hidden="true">C</kbd></button>';
   const ui = document.createElement('div'); ui.className = 'notes-ui notes-2d-mode'; ui.hidden = true;
   const artTablet = document.createElement('div'); artTablet.className = 'notes-side-panel notes-art-tablet'; artTablet.setAttribute('aria-label', 'Drawing tools tablet'); artTablet.setAttribute('role', 'region');
   const gearTablet = document.createElement('div'); gearTablet.className = 'notes-side-panel notes-gear-tablet'; gearTablet.setAttribute('aria-label', 'Gear art and Layers tablet'); gearTablet.setAttribute('role', 'region');
   editor = createDrawingEditor({ layersInitiallyOpen: true,
     onChange: () => { if (texture) texture.needsUpdate = true; if (editor) { syncLayers(); syncOverflow(); } } });
-  editor.panel.inert = true; artTablet.append(editor.panel); gearTablet.append(editor.gearsPanel, editor.layersPanel); ui.append(artTablet, gearTablet); stage.append(ui, dock);
+  editor.panel.inert = true; artTablet.append(editor.panel); gearTablet.append(editor.gearsPanel, editor.layersPanel); ui.append(artTablet, gearTablet); document.body.append(ui, dock);
   for (const panel of [artTablet, gearTablet]) {
     for (const type of ['pointerdown','pointermove','pointerup','click','wheel'])
       panel.addEventListener(type, event => event.stopPropagation(), {signal:input.signal});
@@ -60,15 +60,33 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
   const rimPoints = Array.from({ length: 32 }, (_, i) => new THREE.Vector3(Math.cos(i * Math.PI / 16) * .9, Math.sin(i * Math.PI / 16) * .9, 0));
   const projectedRim = new THREE.Vector3();
   const rimCache = {camera:new THREE.Matrix4(),projection:new THREE.Matrix4(),carrier:new THREE.Matrix4()};
-  let safeTop = 110;
+  let safeTop = 110, safeLeft = 0;
   function readPanelMargin() {
-    safeTop = Math.max((document.querySelector('.head-pic-container')?.getBoundingClientRect().bottom || 0) + 12,
-      (document.querySelector('.about-header')?.getBoundingClientRect().bottom || 90) + 18);
-    ui.style.setProperty('--notes-safe-top', `${safeTop}px`);
+    const gear = document.querySelector('.header-gear') || document.querySelector('.head-pic-container');
+    const portrait = document.querySelector('.head-pic-container');
+    const title = document.querySelector('.about-header .title');
+    const header = document.querySelector('.about-header');
+    const gearBottom = gear?.getClientRects().length ? gear.getBoundingClientRect().bottom : 0;
+    const headerBottom = header?.getClientRects().length ? header.getBoundingClientRect().bottom : 0;
+    safeTop = Math.max(12, (gearBottom || headerBottom || 90) + 12);
+    const leftTop = Math.max(safeTop,
+      portrait?.getClientRects().length ? portrait.getBoundingClientRect().bottom + 12 : 0,
+      title?.getClientRects().length ? title.getBoundingClientRect().bottom + 12 : 0);
+    const navigation = document.querySelector('.header .navigation-bg') || document.querySelector('.header .navigation');
+    safeLeft = navigation?.getClientRects().length ? Math.max(0, navigation.getBoundingClientRect().right) : 0;
+    layoutStyle(ui, '--notes-safe-top', safeTop);
+    layoutStyle(ui, '--notes-left-top', leftTop);
+    layoutStyle(ui, '--notes-safe-left', safeLeft);
   }
   readPanelMargin(); window.addEventListener('resize', readPanelMargin, { signal: input.signal });
+  window.addEventListener('site:header-layout-change', readPanelMargin, { signal: input.signal });
   const headerLayoutObserver = new ResizeObserver(readPanelMargin);
   const header = document.querySelector('.about-header'); if (header) headerLayoutObserver.observe(header);
+  const gear = document.querySelector('.head-pic-container'); if (gear) headerLayoutObserver.observe(gear);
+  const cornerGear = document.querySelector('.header-gear'); if (cornerGear) headerLayoutObserver.observe(cornerGear);
+  const title = document.querySelector('.about-header .title'); if (title) headerLayoutObserver.observe(title);
+  const navigation = document.querySelector('.header .navigation-bg') || document.querySelector('.header .navigation');
+  if (navigation) headerLayoutObserver.observe(navigation);
   function layoutStyle(node, property, value) {
     const pixels = `${Math.round(value * 100) / 100}px`;
     if (node.style.getPropertyValue(property) !== pixels) node.style.setProperty(property, pixels);
@@ -76,6 +94,7 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
   function data(node, key, value) { const text = String(value); if (node.dataset[key] !== text) node.dataset[key] = text; }
   function frameLayout({ bounds, availableRight }) {
     if (!enabled || !focused || suspended || !carrier || !tabletFocused || !panelState.visible) return null;
+    readPanelMargin();
     const width = bounds.width, oldOffset = host.camera.view?.enabled ? host.camera.view.offsetX : 0;
     let left = 0, right = width;
     if(rimCache.width!==width || rimCache.height!==bounds.height || rimCache.offset!==oldOffset || !rimCache.camera.equals(host.camera.matrixWorld) || !rimCache.projection.equals(host.camera.projectionMatrix) || !rimCache.carrier.equals(carrier.matrixWorld)) {
@@ -91,7 +110,10 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
     }
     left=rimCache.left;right=rimCache.right;
     const margin = matchMedia('(max-width: 520px)').matches ? 10 : 12;
-    const layout = drawingLayout({width, left, right, availableRight, layersOpen:false, margin, fitInterior: !showBacking && fitInterior});
+    const compactAt = 1050, compactPanels = width <= compactAt;
+    const layout = drawingLayout({width, left, right, availableLeft:safeLeft, availableRight,
+      leftPanelWidth:compactPanels ? 0 : editor.layersOpen ? 520 : 264, compactAt,
+      layersOpen:false, margin, fitInterior: !showBacking && fitInterior});
     data(ui,'layout',layout.compact?'compact':'rim'); data(ui,'narrow',width<680);
     data(ui,'layers',editor.layersOpen); occluded = width < 300;
     data(ui,'occluded',occluded); ui.inert = occluded || ui.hidden;
@@ -111,7 +133,7 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
     settings.querySelector('[data-setting="about.notes.fitInterior"]').disabled = showBacking;
     settings.querySelector('[data-interior-hint]').hidden = !showBacking;
     editor.setClippedArt(notes.showClippedArt !== false);
-    if (group) group.visible = enabled; dock.hidden = !enabled;
+    if (group) group.visible = enabled; dock.hidden = !enabled || !focused || suspended;
     if (rearArt) rearArt.visible = rearArtwork;
     if (wasEnabled && !enabled) {
       releaseDrawing(); editor.tick(0, false); editor.finishPath(); focused = false;
@@ -161,7 +183,7 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
   }
   function showTools(value, interactive = value) {
     const show = value && enabled && !suspended;
-    if (!interactive && ui.contains(document.activeElement)) (enabled ? dock.querySelector('[data-notes-view="face"]') : host?.canvas)?.focus({ preventScroll: true });
+    if (!interactive && ui.contains(document.activeElement)) (enabled && focused ? dock.querySelector('[data-notes-view="face"]') : host?.canvas)?.focus({ preventScroll: true });
     ui.hidden = !show; ui.inert = !interactive || occluded; editor.panel.hidden = !show; editor.panel.inert = !interactive || adminSides.right;
     gearTablet.inert = !interactive || occluded || adminSides.left; artTablet.inert = !interactive || occluded || adminSides.right; syncLayers();
     if (show && interactive && !adminSides.left && !adminSides.right) {
@@ -293,9 +315,11 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
     updateRoll(dt); const local = host.cube.worldToLocal(host.camera.getWorldPosition(new THREE.Vector3())), dominant = -local.x > Math.max(Math.abs(local.y), Math.abs(local.z)) * (focused ? .9 : 1.02);
     const gainedFocus = !focused && dominant;
     if (focused !== dominant) {
-      focused = dominant; if (!focused && !turnPointer) { releaseDrawing(); editor.finishPath(); }
+      focused = dominant; if (!focused && !turnPointer) { releaseDrawing(); editor.finishPath(); setTurnMode(false); }
       host.canvas.setAttribute('aria-label', focused ? 'Notes drawing glass. V Select, N Pencil, P Pen, L Line, R Rectangle, E Ellipse, O Polygon, D Diamond, H Heart, S Star, U Arc, I Torus, J Pacman.' : host.baseLabel);
     }
+    if (!focused && !turnPointer && turnMode) setTurnMode(false);
+    dock.hidden = !focused;
     // UI dwell and CSS timing use elapsed time even when the host caps physics steps.
     const now = performance.now(), elapsed = presenceTime === null ? 0 : (now - presenceTime) / 1000; presenceTime = now;
     const facing=-local.x/local.length();
@@ -319,7 +343,7 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
     if (host) { host.canvas.style.cursor = ''; if (host.baseLabel) host.canvas.setAttribute('aria-label', host.baseLabel); }
     releaseDrawing(); editor.finishPath(); group?.removeFromParent(); hiddenBacking.splice(0).forEach(([node, visible]) => { node.visible = visible; });
     resources.splice(0).forEach(r => r.dispose()); rearPanes.length = 0; host = group = carrier = texture = glass = ring = overflow = dynamicOverflow = rearArt = null; focused = tabletFocused = false; panelState = presence.reset(); presenceTime = null; showTools(false);
-    dock.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    dock.hidden = true; dock.querySelectorAll('button').forEach(b => { b.disabled = true; });
   }
   return { attach, update, frameLayout, afterRender, editor, detach,
     get projectionSource() { return texture && carrier ? {texture,carrier,radius:NOTES_MOUNT.radius} : null; },
@@ -327,7 +351,7 @@ export function createNotesWorkspace({ stage, onFocusFace = () => {}, onRotate =
     get focused() { return focused; }, get blockingPanel() { return ui.hidden ? null : ui; },
     get gestureActive() { return activePointer !== null; }, get rotating() { return Boolean(turnPointer); },
     get rollState() { return { angle: roll, target: rollTarget, enabled: upright }; },
-    suspend() { suspended = true; editor.tick(0, false); releaseDrawing(); focused = tabletFocused = false; panelState = presence.reset(); presenceTime = null; showTools(false); if (host) { host.canvas.style.cursor = ''; host.canvas.setAttribute('aria-label', host.baseLabel); } }, resume() { suspended = false; },
+    suspend() { suspended = true; editor.tick(0, false); releaseDrawing(); focused = tabletFocused = false; dock.hidden = true; setTurnMode(false); panelState = presence.reset(); presenceTime = null; showTools(false); if (host) { host.canvas.style.cursor = ''; host.canvas.setAttribute('aria-label', host.baseLabel); } }, resume() { suspended = false; },
     dispose() { if (disposed) return; detach(); disposed = true; input.abort(); headerLayoutObserver.disconnect(); stopSettings(); unregisterAdminInterlock(); unregisterSettings(); editor.dispose(); ui.remove(); dock.remove(); }
   };
 }

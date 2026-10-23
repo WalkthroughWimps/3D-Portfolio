@@ -1,0 +1,1233 @@
+{
+  "maximumDimensions": [
+    128,
+    192
+  ],
+  "grades": [
+    {
+      "grade": 1,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 2665,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 5227,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12580,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 767,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3049,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6769,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7057,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7113,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6545,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8984,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9542,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8870,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8567,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8744,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7945,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9545,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9397,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8623,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7564,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8437,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7232,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    },
+    {
+      "grade": 2,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 2881,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 5562,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12584,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 770,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3060,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9747,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9790,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9316,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9148,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6320,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9109,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6008,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 11311,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10267,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10103,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9613,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8786,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9415,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10041,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10823,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9402,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    },
+    {
+      "grade": 3,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 2937,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 5262,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12571,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 743,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3061,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8821,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9001,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9433,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10324,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10327,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9952,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9740,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9793,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10357,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10078,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9551,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9585,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7978,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9663,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7412,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7159,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    },
+    {
+      "grade": 4,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 3828,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 5710,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12567,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 747,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3062,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9442,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9793,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10571,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10539,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 11007,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8605,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9224,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8571,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10442,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10759,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 5384,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10828,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 11013,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10327,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10174,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9805,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    },
+    {
+      "grade": 5,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 3748,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 6112,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12575,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 751,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3063,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9058,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9801,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8372,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8039,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8516,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8439,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10928,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10421,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9840,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9557,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9654,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9984,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9480,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6762,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7711,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8017,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    },
+    {
+      "grade": 6,
+      "items": [
+        {
+          "file": "back.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 3113,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "front.jpg",
+          "size": [
+            128,
+            187
+          ],
+          "bytes": 6144,
+          "rgbaMipBytes": 127658.66666666667
+        },
+        {
+          "file": "inside-back.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 12576,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "inside-front.jpg",
+          "size": [
+            128,
+            191
+          ],
+          "bytes": 770,
+          "rgbaMipBytes": 130389.33333333333
+        },
+        {
+          "file": "page-01.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 3057,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-02.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10831,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-03.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10926,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-04.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7161,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-05.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6780,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-06.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9375,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-07.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9533,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-08.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8304,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-09.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8860,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-10.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9076,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-11.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 8508,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-12.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10528,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-13.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10539,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-14.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9473,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-15.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 9960,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-16.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 6523,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-17.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 7336,
+          "rgbaMipBytes": 123562.66666666667
+        },
+        {
+          "file": "page-18.jpg",
+          "size": [
+            128,
+            181
+          ],
+          "bytes": 10254,
+          "rgbaMipBytes": 123562.66666666667
+        }
+      ],
+      "rgbaMipBytes": 2740224.0
+    }
+  ],
+  "bytes": 1087149
+}

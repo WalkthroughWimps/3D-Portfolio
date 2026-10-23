@@ -7,7 +7,7 @@ import {mountSettingsContextMenu} from '../panel-assembly/SettingsContextMenu.mj
 export function mountSettingsPortability(parent,{page='start',contextRoot=parent}={}){
   const archive=getSettingsArchive(),store=getSharedSettings(),stops=[];
   const sharedAppearance=['start.contrast','start.brightness'];
-  const ownerFor=path=>sharedAppearance.includes(path)?'general':path.startsWith('start.')?'start':path.startsWith('music.')?'music':path.startsWith('media.')?'videos':path.startsWith('about.')?'about':'general';
+  const ownerFor=path=>sharedAppearance.includes(path)?'general':path.startsWith('start.')?'start':path.startsWith('music.')?'music':path.startsWith('media.')||path.startsWith('videos.')?'videos':path.startsWith('about.')?'about':path.startsWith('graphics.')?'graphics':path.startsWith('games.')?'games':path.startsWith('docs.')?'docs':'general';
   const read=(path,object)=>path.split('.').reduce((value,key)=>value?.[key],object);
   for(const group of new Set(Object.keys(SETTINGS_FIELDS).map(ownerFor))){
     const keys=Object.keys(SETTINGS_FIELDS).filter(path=>ownerFor(path)===group),id=`preferences.${group}`;

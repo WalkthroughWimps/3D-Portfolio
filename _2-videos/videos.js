@@ -4,6 +4,7 @@ import { getEffectiveAudioSettings } from '../_7-shared-scripts/audio-settings.j
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { getSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { createTabletFocus } from './tablet-focus.js';
+import { createPanAwareCenterProjection } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 ﻿// videos.js — minimal orchestrator for the Videos page (clean, minimal debug panel)
 /* eslint-disable no-unused-vars */
 import * as THREE from 'three';
@@ -134,10 +135,16 @@ function tryStartDrop() {
   dropAnim.start = performance.now();
 }
 
+function updateIntroSkipVisibility() {
+  const video = introState.videoEl;
+  introState.skipBtn?.classList.toggle('hidden', introState.done || introState.phase !== 'playing' || !video || video.paused || video.ended);
+}
+
 function markIntroDone(reason = 'skip') {
   if (introState.done) return;
   introState.done = true;
   introState.phase = reason === 'ended' ? 'completed' : 'skipped';
+  updateIntroSkipVisibility();
   introState.completionReason = reason;
   try { document.body.dataset.introDone = 'true'; } catch (e) { /* ignore */ }
   try { document.body.dataset.introCompletionReason = reason; } catch (e) { /* ignore */ }
@@ -337,6 +344,7 @@ function setupIntroVideo() {
     if (introState.done || introState.startPending) return;
     if (videoEl.error) { try { videoEl.load(); } catch (e) {} }
     introState.startPending = true; introState.phase = 'starting';
+    updateIntroSkipVisibility();
     if (introState.playBtn) introState.playBtn.disabled = true;
     try {
       const result = videoEl.play();
@@ -344,14 +352,17 @@ function setupIntroVideo() {
         introState.startPending = false;
         if (introState.done) { videoEl.pause(); return; }
         introState.phase = 'playing';
+        updateIntroSkipVisibility();
         introState.gateEl?.classList.add('is-hidden');
       }).catch(() => {
         introState.startPending = false; introState.phase = 'blocked';
+        updateIntroSkipVisibility();
         stopIntroAudio();
         showMessage('Playback could not start. Retry when the video is ready, or Skip.', { recoverable: true });
       });
     } catch (error) {
       introState.startPending = false; introState.phase = 'blocked';
+      updateIntroSkipVisibility();
       stopIntroAudio();
       showMessage('Playback could not start. Retry when the video is ready, or Skip.', { recoverable: true });
     }
@@ -367,13 +378,14 @@ function setupIntroVideo() {
     if (introState.done) return;
     introState.startPending = false;
     introState.phase = 'playing';
+    updateIntroSkipVisibility();
     introState.gateEl?.classList.add('is-hidden');
     if (introState.audioRequested && isAudioAllowed()) { alignAudio(); requestAudioPlayback(introState.audioEl); }
   });
-  listen(videoEl, 'waiting', () => { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); });
-  listen(videoEl, 'stalled', () => { if (!videoEl.paused) { introState.phase = 'buffering'; stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); } });
-  listen(videoEl, 'error', () => { introState.phase = 'error'; stopIntroAudio(); showMessage('The intro video could not load. Retry or Skip.', { recoverable: true }); });
-  listen(videoEl, 'pause', () => { if (!introState.done && !videoEl.ended && !introState.startPending && !introState.audioBlocked) { introState.phase = 'paused'; stopIntroAudio({ clearRequest: false }); showMessage('Paused. Select Play to resume.'); } });
+  listen(videoEl, 'waiting', () => { introState.phase = 'buffering'; updateIntroSkipVisibility(); stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); });
+  listen(videoEl, 'stalled', () => { if (!videoEl.paused) { introState.phase = 'buffering'; updateIntroSkipVisibility(); stopIntroAudio({ clearRequest: false }); showMessage('Buffering… Playback will continue when the video is ready.'); } });
+  listen(videoEl, 'error', () => { introState.phase = 'error'; updateIntroSkipVisibility(); stopIntroAudio(); showMessage('The intro video could not load. Retry or Skip.', { recoverable: true }); });
+  listen(videoEl, 'pause', () => { updateIntroSkipVisibility(); if (!introState.done && !videoEl.ended && !introState.startPending && !introState.audioBlocked) { introState.phase = 'paused'; stopIntroAudio({ clearRequest: false }); showMessage('Paused. Select Play to resume.'); } });
   listen(videoEl, 'timeupdate', alignAudio);
   listen(videoEl, 'ratechange', () => { if (introState.audioEl) introState.audioEl.playbackRate = videoEl.playbackRate || 1; alignAudio(); });
   listen(document, 'visibilitychange', () => { if (document.hidden && !introState.done && !videoEl.paused) { videoEl.pause(); introState.audioEl?.pause(); showMessage('Paused while this tab was hidden. Select Play to resume.'); } });
@@ -423,34 +435,36 @@ function setupIntroSkip() {
   const btn = document.getElementById('introSkip');
   introState.skipBtn = btn || null;
   if (!btn) return;
+  updateIntroSkipVisibility();
   if (!introState.enabled) {
     btn.classList.add('hidden');
     return;
   }
   const listen = (target, type, fn) => { target.addEventListener(type, fn); introState.listeners.push([target, type, fn]); };
   listen(btn, 'click', () => markIntroDone('skip'));
-  const placeNearNav = () => {
-    if (window.innerWidth <= 768) {
-      // Narrow navigation fills its own row; CSS places Skip below it.
+  const placeByTitle = () => {
+    if (window.innerWidth <= 600) {
       introState.skipBtn.style.removeProperty('left');
       introState.skipBtn.style.removeProperty('top');
       return true;
     }
-    const navBg = document.querySelector('.navigation-bg');
-    if (!navBg || !introState.skipBtn) return false;
-    const rect = navBg.getBoundingClientRect();
-    const btnRect = introState.skipBtn.getBoundingClientRect();
-    const gap = Math.max(10, Math.round(rect.height * 0.12));
-    const left = Math.max(8, Math.round(rect.left - btnRect.width - gap));
-    const top = Math.round(rect.top + (rect.height - btnRect.height) / 2);
-    introState.skipBtn.style.left = `${left}px`;
-    introState.skipBtn.style.top = `${Math.max(8, top)}px`;
+    const title = document.querySelector('.header .title');
+    const cap = document.querySelector('.header');
+    if (!title || !cap || !introState.skipBtn) return false;
+    const titleRect = title.getBoundingClientRect();
+    const modern = document.body.dataset.headerLayout === 'modern';
+    const capRight = modern ? parseFloat(getComputedStyle(cap, '::before').width) || 0 : 0;
+    const left = Math.max(titleRect.right + 16, capRight + 16);
+    const fitsBesideCap = left + introState.skipBtn.offsetWidth <= window.innerWidth - 8;
+    introState.skipBtn.style.left = `${fitsBesideCap ? left : Math.max(8, window.innerWidth - introState.skipBtn.offsetWidth - 12)}px`;
+    const top = modern && fitsBesideCap ? titleRect.top + (titleRect.height - introState.skipBtn.offsetHeight) / 2 : modern ? parseFloat(getComputedStyle(cap, '::before').height) + 12 : cap.getBoundingClientRect().bottom + 12;
+    introState.skipBtn.style.top = `${Math.max(8, Math.round(top))}px`;
     return true;
   };
   const startPlacement = () => {
-    if (!placeNearNav()) {
+    if (!placeByTitle()) {
       const timer = setInterval(() => {
-        if (placeNearNav()) { clearInterval(timer); }
+        if (placeByTitle()) { clearInterval(timer); }
       }, 250);
       introState.cleanups.push(() => clearInterval(timer));
       const timeout = setTimeout(() => clearInterval(timer), 6000);
@@ -458,7 +472,8 @@ function setupIntroSkip() {
     }
   };
   startPlacement();
-  listen(window, 'resize', () => placeNearNav());
+  listen(window, 'resize', () => placeByTitle());
+  listen(window, 'site:header-layout-change', () => placeByTitle());
   listen(window, 'keydown', (e) => {
     if (introState.done) return;
     if (e.key === 's' || e.key === 'S') {
@@ -525,6 +540,22 @@ function disposeModel(root) {
 }
 
 export function mountVideosPage({ scope }) {
+  let videoPresentationActive = false;
+  const setVideoPresentation = active => {
+    videoPresentationActive = !!active;
+    if (controls) {
+      controls.userData = controls.userData || {};
+      controls.userData.videoPresentationActive = videoPresentationActive;
+      if (videoPresentationActive) controls.enabled = false;
+      else Promise.resolve().then(() => {
+        if (!disposed && !suspended && !videoPresentationActive && controls && !tabletFocus?.isTransitioning?.())
+          controls.enabled = true;
+      });
+    }
+    window.dispatchEvent(new CustomEvent('site:video-presentation-change', {
+      detail: { source: 'videos', active: videoPresentationActive }
+    }));
+  };
   introState.done = !introState.enabled;
   introState.phase = 'loading';
   introState.completionReason = null;
@@ -541,6 +572,12 @@ export function mountVideosPage({ scope }) {
   let startupFrame = 0, startupTimer = 0, resumeStartup = null, glbFallbackTimer = 0, glbObserver = null, pendingGlbStart = null;
   let renderer = null, scene = null, canvas = null, createdCanvas = false;
   let camera = null, controls = null, animId = 0, animatePage = null, tabletFocus = null, gridApi = null, modelRoot = null;
+  let centerProjection = null, centerProjectionCamera = null;
+  setVideoPresentation(false);
+  let centerOnViewport = Boolean(getSharedSettings().get().videos?.centerOnViewport);
+  const stopCenterSetting = getSharedSettings().subscribe(snapshot => {
+    centerOnViewport = Boolean(snapshot.videos?.centerOnViewport);
+  });
   const captionsToggle = document.getElementById('captionsToggle');
   const updateCaptionsToggle = enabled => {
     if (!captionsToggle) return;
@@ -656,7 +693,22 @@ export function mountVideosPage({ scope }) {
       }
       pendingRenderSize = null;
     }
-    try { if (controls?.enabled && typeof controls.update === 'function') controls.update(); if (camera) renderer.render(scene, camera); }
+    try {
+      if (controls?.enabled && typeof controls.update === 'function') controls.update();
+      if (camera) {
+        if (centerProjectionCamera !== camera) {
+          centerProjectionCamera = camera;
+          centerProjection = createPanAwareCenterProjection(camera, {
+            onClear: () => tabletFocus?.refreshProjection?.()
+          });
+        }
+        centerProjection.update({ enabled: centerOnViewport && !!refsOwned?.tabletGroup,
+          panned: !!controls?.userData?.sharedMouse?.isPanned?.(),
+          width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight),
+          getCenter: () => new THREE.Box3().setFromObject(refsOwned.tabletGroup).getCenter(new THREE.Vector3()) });
+        renderer.render(scene, camera);
+      }
+    }
     catch (e) { /* ignore */ }
     if (dropAnim.active && dropAnim.group) {
       const t = Math.min(1, (performance.now() - dropAnim.start) / dropAnim.durationMs);
@@ -756,7 +808,7 @@ export function mountVideosPage({ scope }) {
 
             if (VideoPlayer && typeof VideoPlayer.createGrid === 'function') {
               const setTabletFocus = tabletFocus = createTabletFocus({ camera: refs.camera, controls: refs.controls, tabletGroup: refs.tabletGroup, screenMesh: refs.screenMesh, renderer });
-              gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus, deferPreloadUntilIntro: introState.enabled, onCaptionsChange: updateCaptionsToggle });
+              gridApi = VideoPlayer.createGrid(refs.screenMesh, renderer, refs.camera, refs.tabletGroup, videosPageConfig, { allowSound, replaceScreenMaterial: true, previewSegments, setTabletFocus, deferPreloadUntilIntro: introState.enabled, onCaptionsChange: updateCaptionsToggle, onPresentationChange: setVideoPresentation });
               if (USE_SHARED_CONTROLS && gridApi) {
                 const adapter = createVideosVideoAdapter({
                   getActiveVideo: () => gridApi.getActiveVideo?.(),
@@ -820,6 +872,7 @@ export function mountVideosPage({ scope }) {
 
         try { applyBlenderAlignment({ tabletGroupRef: refs.tabletGroup, camera: refs.camera, controls, renderer, videosPageConfig }); } catch (e) { /* ignore */ }
         tabletFocus?.initialize();
+        refs.controls?.userData?.sharedMouse?.captureDefaultPose?.();
         try {
           if (introState.enabled && refs && refs.tabletGroup) {
             const box = new THREE.Box3().setFromObject(refs.tabletGroup);
@@ -855,6 +908,7 @@ export function mountVideosPage({ scope }) {
       } catch (e) {
         console.warn('loadTabletGlb init failed', e);
         gridApi?.destroy?.(); gridApi = null;
+        setVideoPresentation(false);
         if (captionsToggle) captionsToggle.hidden = true;
         tabletFocus?.dispose?.(); tabletFocus = null;
         controls?.dispose?.(); controls = null;
@@ -905,6 +959,7 @@ export function mountVideosPage({ scope }) {
     suspend() {
       if (disposed || suspended) return;
       suspended = true;
+      setVideoPresentation(false);
       cancelAnimationFrame(animId); animId = 0;
       introState.videoEl?.pause();
       introState.audioEl?.pause();
@@ -915,6 +970,7 @@ export function mountVideosPage({ scope }) {
     resume() {
       if (disposed || !suspended) return;
       suspended = false;
+      setVideoPresentation(!!gridApi?.isPlayingFull?.());
       if (resumeStartup) { const resume = resumeStartup; resumeStartup = null; startupFrame = requestAnimationFrame(resume); }
       if (pendingGlbStart && !modelRoot) {
         const container = document.querySelector('.tablet-stage') || document.querySelector('.viewer-wrap');
@@ -925,6 +981,8 @@ export function mountVideosPage({ scope }) {
     dispose() {
       if (disposed) return;
       disposed = true;
+      setVideoPresentation(false);
+      stopCenterSetting();
       cancelAnimationFrame(startupFrame);
       clearTimeout(startupTimer);
       resumeStartup = null;

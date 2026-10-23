@@ -23,7 +23,7 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
       controls.maxDistance = destinationLimits.max;
       destinationLimits = null;
     }
-    controls.enabled = true;
+    controls.enabled = !controls.userData?.videoPresentationActive;
   };
   const fit = (pose, safe, square = false) => {
     tabletGroup.updateMatrixWorld(true);
@@ -129,6 +129,8 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     controls.minDistance = pose.min; controls.maxDistance = pose.max;
     camera.lookAt(controls.target); controls.update();
   };
+  setFocus.refreshProjection = project;
+  setFocus.isTransitioning = () => !!animation;
   setFocus.dispose = () => {
     if (disposed) return;
     disposed = true;

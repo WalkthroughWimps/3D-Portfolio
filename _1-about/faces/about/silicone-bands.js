@@ -80,10 +80,35 @@ function sideGeometry(inner, outer) {
 export function createSiliconeBands(frontCanvases, rearCanvas, shape) {
   const frontTextures = frontCanvases.map(canvasTexture), rearTexture = canvasTexture(rearCanvas);
   const group = new THREE.Group(); group.name = 'About rigid picture rings';
-  const rotor = new THREE.Group(); rotor.name = 'Centered ring carrier'; group.add(rotor);
+  const carrier = new THREE.Group(); carrier.name = 'Upright About display'; group.add(carrier);
+  const rotor = new THREE.Group(); rotor.name = 'Centered ring carrier'; carrier.add(rotor);
   const rings = [], geometries = [], materials = [];
   const wallMaterial = new THREE.MeshStandardMaterial({color: '#304450', roughness: .8, side: THREE.DoubleSide});
   materials.push(wallMaterial);
+  // The glass is an annulus outside the moving silhouette. Its inner edge and
+  // the bezel follow the edited disc radius; no glass crosses behind a disc.
+  const glassOuter = .9, bezelInner = shape.outerRadius + .002;
+  const bezelOuter = Math.min(glassOuter - .001, shape.outerRadius + .014);
+  const paneInner = Math.min(glassOuter - .0005, bezelOuter - .001);
+  const paneGeometry = new THREE.RingGeometry(paneInner, glassOuter, 256);
+  const frameGeometry = new THREE.RingGeometry(.888, .909, 256);
+  const bezelGeometry = new THREE.RingGeometry(bezelInner, bezelOuter, 256);
+  const bezelWallGeometry = new THREE.CylinderGeometry(bezelOuter, bezelOuter, 1, 256, 1, true);
+  bezelWallGeometry.rotateX(Math.PI / 2);
+  geometries.push(paneGeometry, frameGeometry, bezelGeometry, bezelWallGeometry);
+  const paneMaterial = new THREE.MeshPhysicalMaterial({color: '#8ca7ab', metalness: .05,
+    roughness: .2, transparent: true, opacity: .26, side: THREE.DoubleSide,
+    depthWrite: false, emissive: '#558897', emissiveIntensity: .04});
+  const bezelMaterial = new THREE.MeshStandardMaterial({color: '#304e59', metalness: .5,
+    roughness: .34, side: THREE.DoubleSide, emissive: '#4a8290', emissiveIntensity: .1});
+  const frameMaterial = new THREE.MeshStandardMaterial({color: '#536c73', metalness: .55,
+    roughness: .3, side: THREE.DoubleSide, emissive: '#6e9ca4', emissiveIntensity: .08});
+  materials.push(paneMaterial, bezelMaterial, frameMaterial);
+  const pane = new THREE.Mesh(paneGeometry, paneMaterial); pane.name = 'Frame-held annular glass';
+  const frame = new THREE.Mesh(frameGeometry, frameMaterial); frame.name = 'Outer glass retaining frame';
+  const bezel = new THREE.Mesh(bezelGeometry, bezelMaterial); bezel.name = 'Glass-to-disc bezel';
+  const bezelWall = new THREE.Mesh(bezelWallGeometry, bezelMaterial); bezelWall.name = 'Bezel depth wall';
+  carrier.add(pane, frame, bezel, bezelWall);
   for (let index = 0; index < shape.count; index++) {
     const {inner, outer, midRadius} = ringBounds(shape, index);
     const geometry = discUvs(new THREE.RingGeometry(inner, outer, 256), shape.outerRadius);
@@ -137,7 +162,22 @@ export function createSiliconeBands(frontCanvases, rearCanvas, shape) {
     for (const side of piece.sides) side.material.userData.motionBlur
       .set(orbitSpan, flipSpan, axis.x, axis.y);
   }
-  return {group, rotor, rings, center, shape, centerFront, centerBack, frontTextures, rearTexture,
+  return {group, carrier, rotor, pane, frame, bezel, bezelWall, rings, center, shape, centerFront, centerBack, frontTextures, rearTexture,
+    setMountDepth(restDepth) {
+      pane.position.z = -.075;
+      frame.position.z = -.066;
+      bezel.position.z = restDepth + THICKNESS / 2 + .001;
+      const span = pane.position.z - bezel.position.z;
+      bezelWall.position.z = (pane.position.z + bezel.position.z) / 2;
+      bezelWall.scale.z = Math.max(.001, Math.abs(span));
+    },
+    setContrast(gain) {
+      const value = Math.max(0, Math.min(4.8, Number.isFinite(gain) ? gain : 1));
+      paneMaterial.opacity = Math.min(.65, .09 + .17 * value);
+      paneMaterial.emissiveIntensity = .04 * value;
+      bezelMaterial.emissiveIntensity = .1 * value;
+      frameMaterial.emissiveIntensity = .08 * value;
+    },
     setSide, setMotionBlur,
     setFront(slot) {
       for (const piece of [...rings, center]) {

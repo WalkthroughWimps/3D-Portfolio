@@ -14,7 +14,8 @@ export const ABOUT_MOUNT = Object.freeze({normal: [1, 0, 0], right: [0, 0, -1], 
 const SAMPLE_KEY = 'site.about.display.sample.v2';
 const MOTION_KEY = 'site.about.display.motion.v1';
 const TAU = Math.PI * 2;
-const RECESSED = -.09;
+const REST_MARGIN = .012;
+const FOCUS_LIFT = .01;
 const MAX_ORBIT_STEP = .12;
 const BLUR_SHUTTER = .012;
 const DEFAULT_MOTION = Object.freeze({mode: 'sets', setSize: 6, setMin: 3, setMax: 9,
@@ -119,7 +120,8 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   let activeSnapshot = library.snapshot(saved), stagedSnapshot = null;
   const state = {bands: shape.count, sample: saved, sampleRevision: activeSnapshot.revision,
     target: saved, targetRevision: activeSnapshot.revision, phase: 'idle', angle: 0,
-    deployment: RECESSED, maxDeployment: 0, backingBarrier: null, committed: true, photoReady: false,
+    deployment: 0, restDeployment: 0, focusedDeployment: 0, maxDeployment: 0,
+    backingBarrier: null, committed: true, photoReady: false,
     photoError: null, focused: false, elapsed: 0, plan: null, commits: [], waiting: false, posesFlat: true};
   const section = document.createElement('section');
   section.innerHTML = `<h3>Ring geometry</h3>
@@ -129,7 +131,7 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     <label>Outer diameter (cube units) <input data-motion="outerDiameter" type="number" min=".6" max="1.7" step=".01"></label>
     <label>Inner circle diameter (cube units) <input data-motion="innerDiameter" type="number" min=".08" max="1.3" step=".01"></label>
     <label>Gap between rings (cube units) <input data-motion="gap" type="number" min="0" max=".03" step=".001"></label>
-    <p>Larger diameters need more outward room to flip clear of the backing.</p>
+    <p>The glass and bezel fit the disc diameter. Rings move out for a picture turn, then seat back in the opening.</p>
     <h3>Ring motion</h3>
     <label>Sequence <select data-motion="mode"><option value="together">All at once</option><option value="outside-in">Outside in</option><option value="inside-out">Inside out</option><option value="random">Random ring order</option><option value="sets">Sets</option></select></label>
     <label>Set sizing <select data-motion="setSizing"><option value="fixed">Fixed size</option><option value="range">Random range</option></select></label>
@@ -152,7 +154,7 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     <div class="about-picture-actions"><button type="button" data-about-next>Next picture</button>
       <button type="button" data-picture-add>Add picture / ring set</button></div>
     <label>Name <input data-picture-name type="text" maxlength="80"></label>
-    <label>Caption, up to three lines <textarea data-picture-caption rows="3" maxlength="302"></textarea></label>
+    <label>Caption (wraps automatically into up to three lines; Enter sets a manual break) <textarea data-picture-caption rows="3" maxlength="302"></textarea></label>
     <label>Import or replace image <input data-picture-file type="file" accept="image/png,image/jpeg,image/webp,image/avif,image/gif"></label>
     <canvas data-picture-preview width="360" height="360" role="img" aria-label="Selected picture preview"></canvas>
     <div class="about-picture-actions"><button type="button" data-picture-save>Save and show</button>
@@ -331,23 +333,24 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   }, {signal: events.signal});
   let host = null, bands = null, input = null, generation = 0;
   let activeSlot = 0, stagedSlot = 1, stagingVersion = 0, staged = false, queued = null;
-  let enabled = true, reduced = false, suspended = false, disposed = false, rotating = false;
+  let enabled = true, upright = true, reduced = false, suspended = false, disposed = false, rotating = false;
+  let roll = 0, rollTarget = 0, lastRaw = null, contrastGain = 1, clearanceProfile = null;
   let wantsFocus = new URLSearchParams(location.search).get('face') === 'about';
   const tempNormal = new THREE.Vector3(), tempCenter = new THREE.Vector3(), tempCamera = new THREE.Vector3();
   const hinge = new THREE.Vector3(1, 0, 0), orbitAxis = new THREE.Vector3(0, 0, 1);
   const orbitQuaternion = new THREE.Quaternion(), flipQuaternion = new THREE.Quaternion();
+  const screenRight = new THREE.Vector3(), cameraNormal = new THREE.Vector3(), faceInverse = new THREE.Matrix4();
   const clearanceNodes = /cubemain|inner_lip|Concealed_Stationary_Bearing_Stator/i;
 
-  function measureBackingBarrier(context) {
-    // An all-vertex Z envelope is conservative even where a source triangle
-    // crosses the display disc between vertices. It includes corrected GLB
-    // backing, chassis and lip, without altering borrowed source meshes.
+  function measureBackingProfile(context) {
+    // Profile source triangles in the fixed face frame. A triangle's minimum
+    // projected radius is taken from its three edges, so vertices outside a
+    // disc cannot hide a surface that crosses into its swept footprint.
     context.cube.updateWorldMatrix(true, true);
     const faceWorld = context.cube.matrixWorld.clone().multiply(mountMatrix());
     const inverse = faceWorld.invert();
     const point = new THREE.Vector3();
-    let barrier = -Infinity;
-    const sources = [];
+    const triangles = [], sources = [];
     context.gltf.scene.traverse(node => {
       if (node === binding.backing || clearanceNodes.test(node.name)) sources.push(node);
     });
@@ -356,17 +359,59 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       const position = node.geometry?.getAttribute('position');
       if (!position) return;
       const matrix = inverse.clone().multiply(node.matrixWorld);
-      for (let i = 0; i < position.count; i++) {
-        point.fromBufferAttribute(position, i).applyMatrix4(matrix);
-        barrier = Math.max(barrier, point.z);
+      const index = node.geometry.index;
+      const count = index ? index.count : position.count;
+      for (let i = 0; i + 2 < count; i += 3) {
+        const vertices = [0, 1, 2].map(offset => point
+          .fromBufferAttribute(position, index ? index.getX(i + offset) : i + offset)
+          .applyMatrix4(matrix).clone());
+        const [a, b, c] = vertices;
+        const cross = (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        const inside = Math.abs(cross) > 1e-10 && [
+          (b.x * c.y - b.y * c.x) / cross,
+          (c.x * a.y - c.y * a.x) / cross,
+          (a.x * b.y - a.y * b.x) / cross
+        ].every(weight => weight >= -1e-8);
+        let radius = inside ? 0 : Infinity;
+        for (let edge = 0; edge < 3; edge++) {
+          const start = vertices[edge], end = vertices[(edge + 1) % 3];
+          const dx = end.x - start.x, dy = end.y - start.y;
+          const t = Math.max(0, Math.min(1, -(start.x * dx + start.y * dy) / (dx * dx + dy * dy || 1)));
+          radius = Math.min(radius, Math.hypot(start.x + t * dx, start.y + t * dy));
+        }
+        triangles.push({radius, z: Math.max(a.z, b.z, c.z)});
       }
     });
-    if (!Number.isFinite(barrier)) throw new Error('About backing clearance could not be measured');
-    return barrier;
+    if (!triangles.length) throw new Error('About backing clearance could not be measured');
+    triangles.sort((a, b) => a.radius - b.radius);
+    let maximum = -Infinity;
+    for (const entry of triangles) {maximum = Math.max(maximum, entry.z); entry.z = maximum;}
+    return triangles;
+  }
+
+  function barrierAt(radius) {
+    const profile = clearanceProfile;
+    let lo = 0, hi = profile.length;
+    while (lo < hi) {const mid = (lo + hi) >> 1; if (profile[mid].radius <= radius) lo = mid + 1; else hi = mid;}
+    if (lo === 0) throw new Error('No source surface beneath About disc');
+    return profile[lo - 1].z;
   }
 
   function refreshClearance() {
-    state.maxDeployment = state.backingBarrier + shape.outerRadius + THICKNESS / 2 + CLEARANCE_MARGIN;
+    state.backingBarrier = barrierAt(shape.outerRadius + .004);
+    state.restDeployment = state.backingBarrier + THICKNESS / 2 + REST_MARGIN;
+    state.focusedDeployment = state.restDeployment + FOCUS_LIFT;
+    // A rotating disc is contained by its radius-R sphere. A source triangle
+    // at projected radius r needs only sqrt(R²-r²) of turning room, rather
+    // than a full R at the most forward vertex of the outer frame.
+    const sweptRadius = Math.hypot(shape.outerRadius, THICKNESS / 2);
+    let turnBarrier = -Infinity;
+    for (const entry of clearanceProfile) {
+      if (entry.radius > sweptRadius) break;
+      turnBarrier = Math.max(turnBarrier, entry.z
+        + Math.sqrt(Math.max(0, sweptRadius ** 2 - entry.radius ** 2)));
+    }
+    state.maxDeployment = Math.max(state.focusedDeployment, turnBarrier + CLEARANCE_MARGIN);
   }
 
   function clearMotionBlur() {
@@ -379,9 +424,14 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     if (['count', 'outerDiameter', 'innerDiameter', 'gap'].every(key => shape[key] === next[key])) return;
     const old = bands;
     shape = next; state.bands = shape.count; refreshClearance();
+    // A larger edited disc must clear its new source footprint before its
+    // replacement meshes enter the scene; inward settling may stay smooth.
+    state.deployment = Math.max(state.deployment, state.restDeployment);
     bands = createSiliconeBands(frontCanvases, rearCanvas, shape);
     bands.group.applyMatrix4(mountMatrix()); host.cube.add(bands.group);
+    bands.carrier.rotation.z = roll;
     bands.rotor.position.z = state.deployment;
+    bands.setMountDepth(state.restDeployment); bands.setContrast(contrastGain);
     bands.setFront(activeSlot);
     old?.dispose();
   }
@@ -431,14 +481,32 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   function updateFocus(dt) {
     const dot = focusDot();
     state.focused = state.focused ? dot > .77 : dot > .88;
-    // A tilted ring must remain outside the complete backing envelope. An
-    // unfinished map swap can wait at its flat endpoint and retract safely.
+    // Predeploy only for an actual turn; the settled disc stays just clear of
+    // the measured local backing. A tilted turn holds its full safe envelope.
     const tiltedTurn = state.phase === 'turn' && !state.posesFlat;
-    const target = state.focused || tiltedTurn ? state.maxDeployment : RECESSED;
+    const target = tiltedTurn ? state.maxDeployment
+      : state.focused ? state.focusedDeployment : state.restDeployment;
     const delta = reduced ? 1 : Math.min(1, Math.max(0, dt) * 2.5);
     state.deployment += (target - state.deployment) * delta;
     if (Math.abs(target - state.deployment) < .0005) state.deployment = target;
     if (bands) bands.rotor.position.z = state.deployment;
+  }
+  function updateUpright(dt) {
+    if (!host || !bands) return;
+    if (!upright) {roll = rollTarget = 0; lastRaw = null; bands.carrier.rotation.z = 0; return;}
+    bands.group.updateWorldMatrix(true, false); host.camera.updateWorldMatrix(true, false);
+    faceInverse.copy(bands.group.matrixWorld).invert();
+    screenRight.setFromMatrixColumn(host.camera.matrixWorld, 0).transformDirection(faceInverse);
+    cameraNormal.setFromMatrixColumn(host.camera.matrixWorld, 2).transformDirection(faceInverse);
+    if (cameraNormal.z > .08 && screenRight.x ** 2 + screenRight.y ** 2 > .0064) {
+      const raw = Math.atan2(screenRight.y, screenRight.x);
+      const wrap = value => Math.atan2(Math.sin(value), Math.cos(value));
+      rollTarget = lastRaw === null ? roll + wrap(raw - roll) : rollTarget + wrap(raw - lastRaw);
+      lastRaw = raw;
+      const delta = rollTarget - roll, step = Math.max(0, Math.min(.05, dt));
+      roll += reduced ? delta : Math.max(-2.6 * step, Math.min(2.6 * step, delta * (1 - Math.exp(-7 * step))));
+    } else lastRaw = null;
+    bands.carrier.rotation.z = roll;
   }
   function frameLayout({bounds, availableRight}) {
     if (!host || !bands || !enabled || !state.focused) return null;
@@ -526,7 +594,7 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       select.value = sample; sync(); return;
     }
     if (!reduced) updateFocus(0);
-    if (!reduced && (!state.focused || state.deployment < state.maxDeployment - .0005)) {
+    if (!reduced && (!state.focused || state.deployment < state.focusedDeployment - .0005)) {
       queued = snapshot; state.target = sample; state.targetRevision = snapshot.revision;
       select.value = sample; sync(); return;
     }
@@ -537,7 +605,7 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       const photo = await library.imageFor(snapshot);
       if (version !== stagingVersion || faceGeneration !== generation || disposed || !host) return;
       if (!enabled || suspended) { state.phase = 'idle'; queued = snapshot; sync(); return; }
-      if (!reduced && (!state.focused || state.deployment < state.maxDeployment - .0005)) {
+      if (!reduced && (!state.focused || state.deployment < state.focusedDeployment - .0005)) {
         state.phase = 'idle'; state.committed = true; queued = snapshot; sync(); return;
       }
       stagedSlot = 1 - activeSlot; paintSlot(stagedSlot, snapshot, photo);
@@ -547,10 +615,10 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       state.waiting = false; state.posesFlat = false;
       // Choose a viewer-aware base hinge; each ring derives its own carried
       // hinge and orbit destination from this one planned reference.
-      host.camera.updateMatrixWorld(); bands.group.updateWorldMatrix(true, false);
-      bands.group.getWorldPosition(tempCenter);
+      host.camera.updateMatrixWorld(); bands.carrier.updateWorldMatrix(true, false);
+      bands.carrier.getWorldPosition(tempCenter);
       host.camera.getWorldPosition(tempCamera);
-      bands.group.worldToLocal(tempCamera);
+      bands.carrier.worldToLocal(tempCamera);
       // With a grazing viewer the in-plane orbit carries this axis through
       // both visible hemispheres before the 180° flip is complete.
       hinge.set(tempCamera.x, tempCamera.y, 0);
@@ -631,9 +699,10 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     clearMotionBlur();
     input?.dispose(); input = null; bands?.dispose(); bands = null; binding.detach(); host = null;
     staged = false; stagedSnapshot = null; queued = null;
-    state.phase = 'idle'; state.angle = state.elapsed = 0; state.deployment = RECESSED; state.waiting = false;
+    state.phase = 'idle'; state.angle = state.elapsed = 0; state.deployment = 0; state.waiting = false;
     state.posesFlat = true;
-    state.backingBarrier = null; state.maxDeployment = 0;
+    state.backingBarrier = null; state.restDeployment = state.focusedDeployment = state.maxDeployment = 0;
+    clearanceProfile = null; roll = rollTarget = 0; lastRaw = null;
     state.photoReady = state.focused = false; state.plan = null; state.commits = []; sync();
   }
   function attach(context) {
@@ -644,10 +713,12 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     state.sample = state.target = activeSnapshot.id;
     state.sampleRevision = state.targetRevision = activeSnapshot.revision; state.committed = true;
     shape = normalizeGeometry(motion); state.bands = shape.count;
-    state.backingBarrier = measureBackingBarrier(context); refreshClearance();
+    clearanceProfile = measureBackingProfile(context); refreshClearance();
     paintSlot(0, activeSnapshot, null); bands = createSiliconeBands(frontCanvases, rearCanvas, shape);
     bands.group.applyMatrix4(mountMatrix()); context.cube.add(bands.group);
-    bands.rotor.position.z = RECESSED;
+    state.deployment = state.restDeployment;
+    bands.rotor.position.z = state.deployment;
+    bands.setMountDepth(state.restDeployment); bands.setContrast(contrastGain);
     const faceGeneration = generation;
     const loadingSnapshot = activeSnapshot;
     void library.imageFor(loadingSnapshot).then(photo => {
@@ -716,17 +787,24 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       rotating = Boolean(frame.rotating);
       if (disposed || suspended || !enabled) return;
       if (wantsFocus && host) { wantsFocus = false; focusFace(ABOUT_MOUNT); }
+      updateUpright(dt);
       updateFocus(dt);
       if (state.phase === 'idle') rebuildGeometry();
-      if (state.phase === 'idle' && queued && (reduced || (state.focused && state.deployment >= state.maxDeployment - .0005))) {
+      if (state.phase === 'idle' && queued && (reduced || (state.focused && state.deployment >= state.focusedDeployment - .0005))) {
         const next = queued; queued = null; void stageSample(next);
       }
       if (state.phase !== 'turn') return;
       if (reduced) { snapToStaged(); return; }
+      if (state.deployment < state.maxDeployment - .0005) return;
       updateTurn(dt);
     },
     applySettings(snapshot) {
       enabled = snapshot.about?.about?.enabled !== false;
+      upright = snapshot.cube?.uprightFaces !== false;
+      const contrast = Math.max(0, Math.min(1, snapshot.start?.contrast ?? .5));
+      const eased = contrast * contrast * (3 - 2 * contrast);
+      contrastGain = (.08 + (2.4 - .08) * eased) / (.08 + (2.4 - .08) * .5);
+      bands?.setContrast(contrastGain);
       const wasReduced = reduced; reduced = Boolean(snapshot.accessibility?.reducedMotion);
       if (reduced && !wasReduced && staged && bands) snapToStaged();
       if (reduced || !enabled) clearMotionBlur();

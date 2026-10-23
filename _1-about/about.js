@@ -133,6 +133,7 @@ function collectCubeShellMeshes(model) {
   applyCubeShellVisibility();
 }
 let reducedMotion = false;
+let centerOnViewport = false;
 let unsubscribeSettings = null;
 let lastFrameTime = performance.now();
 let frameDeltaSeconds = 0;
@@ -176,6 +177,7 @@ if (location.hostname === '127.0.0.1' && new URLSearchParams(location.search).ha
     }, suspend, resume, dispose };
 function focusFace(mount) {
   if (!cube || disposed || suspended) return;
+  faces.endGestures();
   stopCubeRotation();
   mouseControls.startFocusAnimation(getDefaultFocusPoint());
   const normal = camera.getWorldPosition(new THREE.Vector3()).sub(controls.target).normalize();
@@ -191,6 +193,8 @@ unsubscribeSettings = getSharedSettings().subscribe(snapshot => {
   const nextSnap=Boolean(snapshot?.cube?.faceSnap);
   if(faceSnap!==nextSnap){faceSnap=nextSnap;alignAt=nextSnap?performance.now()+ALIGN_DELAY_MS:null;if(!nextSnap)aligning=false;}
   reducedMotion = Boolean(snapshot?.accessibility?.reducedMotion);
+  centerOnViewport = Boolean(snapshot?.about?.centerOnViewport);
+  if (canvas.parentElement) resize();
   showCubeShell = snapshot?.cube?.showShell !== false;
   applyCubeShellVisibility();
   faces.applySettings(snapshot);
@@ -286,16 +290,21 @@ function alignVisibleArrows() {
   });
 }
 
+// The cube owns right-button gestures. Keep OrbitControls from trying to
+// capture the same pointer, especially during a rapid double-click.
+canvas.addEventListener('pointerdown', event => {
+  if (event.button === 2) event.stopImmediatePropagation();
+}, { capture: true, signal: input.signal });
 canvas.addEventListener('mousedown', (event) => {
   if (event.button !== 2 || !cube) return;
   mouseControls.cancelFocusAnimation();
-  faces.endGestures();
+  faces.endGestures({preserveModes:true});
   event.preventDefault();
   // A new drag interrupts settling immediately without jumping to its destination.
   targetCubeQuaternion.copy(cube.quaternion);
   alignAt = null;
   aligning = false;
-  rotatePointer = { x: event.clientX, y: event.clientY };
+  rotatePointer = { x: event.clientX, y: event.clientY, moved: false };
   // Native pointer lock supplies unlimited relative motion, hides the cursor,
   // and restores its pre-lock position when released. Fall back to capture if denied.
   try {
@@ -314,7 +323,7 @@ function rotateBy(dx, dy) {
   targetCubeQuaternion.premultiply(yaw).premultiply(pitch).normalize();
 }
 canvas.tabIndex = 0;
-canvas.setAttribute('aria-label', 'About cube. Drag the right mouse button to rotate. Click the middle mouse button to focus, drag it to pan, or double-click it to return to the default focus; scroll to zoom. Press L or R to turn left or right, U or D to turn up or down.');
+canvas.setAttribute('aria-label', 'About cube. Drag the right mouse button to rotate, or double-click it to true the nearest face. Click the middle mouse button to focus, drag it to pan, or double-click it to return to the default focus; scroll to zoom. Press L or R to turn left or right, U or D to turn up or down.');
 canvas.setAttribute('aria-keyshortcuts', 'L R U D');
 window.addEventListener('keydown', event => {
   if (event.defaultPrevented) return;
@@ -324,6 +333,7 @@ window.addEventListener('keydown', event => {
   const movement = { l: [-22, 0], r: [22, 0], u: [0, -22], d: [0, 22] }[event.key.toLowerCase()];
   if (!movement) return;
   event.preventDefault();
+  faces.endGestures({preserveModes:true});
   rotateBy(...movement);
   alignAt = faceSnap?performance.now() + ALIGN_DELAY_MS:null;
 }, { signal: input.signal });
@@ -337,6 +347,7 @@ window.addEventListener('mousemove', (event) => {
   if (!locked && !pointerLockPending && !(event.buttons & 2)) { stopCubeRotation(); return; }
   const dx = locked ? event.movementX : event.clientX - rotatePointer.x;
   const dy = locked ? event.movementY : event.clientY - rotatePointer.y;
+  if(Math.abs(dx)+Math.abs(dy)>2)rotatePointer.moved=true;
   rotatePointer.x = event.clientX;
   rotatePointer.y = event.clientY;
   rotateBy(dx, dy);
@@ -347,8 +358,21 @@ function stopCubeRotation() {
   alignAt = faceSnap?performance.now() + ALIGN_DELAY_MS:null;
   if (document.pointerLockElement === canvas) document.exitPointerLock();
 }
-window.addEventListener('mouseup', event => { if (event.button === 2) stopCubeRotation(); }, { capture: true, signal: input.signal });
-window.addEventListener('pointerup', event => { if (event.button === 2) stopCubeRotation(); }, { capture: true, signal: input.signal });
+let lastRightClick=0;
+function finishRightClick(event){
+  if(event.button!==2)return;
+  const wasClick=Boolean(rotatePointer&&!rotatePointer.moved);
+  stopCubeRotation();
+  if(!wasClick)return;
+  const now=performance.now();
+  if(now-lastRightClick<420&&cube){
+    lastRightClick=0;alignAt=null;aligning=true;
+    targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion,camera.getWorldQuaternion(new THREE.Quaternion())));
+    event.preventDefault();
+  }else lastRightClick=now;
+}
+window.addEventListener('mouseup', finishRightClick, { capture: true, signal: input.signal });
+window.addEventListener('pointerup', finishRightClick, { capture: true, signal: input.signal });
 window.addEventListener('blur', stopCubeRotation, { signal: input.signal });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { stopCubeRotation(); faces.suspend(); if (frameId) cancelAnimationFrame(frameId); frameId = 0; }
@@ -365,6 +389,7 @@ document.addEventListener('pointerlockerror', () => { pointerLockPending = false
 function resize() {
   const headerBottom = Math.max(0, Math.ceil(document.querySelector('.about-header')?.getBoundingClientRect().bottom || 0));
   canvas.parentElement.style.setProperty('--about-viewport-top', `${headerBottom}px`);
+  canvas.parentElement.style.setProperty('--about-scene-top', `${document.body.dataset.headerLayout === 'legacy' && !centerOnViewport ? headerBottom : 0}px`);
   const width = canvas.clientWidth || window.innerWidth, height = canvas.clientHeight || window.innerHeight;
   renderer.setSize(width, height, false);
   camera.aspect = width / height;
@@ -391,7 +416,7 @@ function frameBesideSettings(deltaSeconds, drawer) {
   const notesLayout = faces.get('notes').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
   const aboutLayout = faces.get('about').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
   const skillsLayout = faces.get('skills').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
-  const viewOffset = notesLayout?.offset ?? settingsViewOffset, zoom = notesLayout?.zoom ?? skillsLayout?.zoom ?? aboutLayout?.zoom ?? 1;
+  const viewOffset = centerOnViewport ? 0 : skillsLayout?.offset ?? notesLayout?.offset ?? settingsViewOffset, zoom = notesLayout?.zoom ?? skillsLayout?.zoom ?? aboutLayout?.zoom ?? 1;
   const nextClearance = skillsLayout?.launchClearance ?? 0;
   const zoomChanged = Math.abs(camera.zoom - zoom) > .00001;
   if (zoomChanged) { camera.zoom = zoom; camera.updateProjectionMatrix(); }
@@ -505,7 +530,7 @@ async function loadCube() {
     scene.add(cube);
     appearance=bindAboutAppearance(cube,[ambient,key,fill]);
     frameModel(cube);
-    faces.attach({cube, gltf, manifest, renderer, camera, canvas});
+    faces.attach({cube, gltf, manifest, renderer, camera, controls, canvas});
     const assembly = faces.get('skills').assembly;
     // Include each skill card's orientation, Clicked morph, ripple and configured juts.
     for (const panel of assembly.motion.panels.values()) {
@@ -526,6 +551,7 @@ async function loadCube() {
 }
 void loadCube();
 window.addEventListener('resize', resize, { signal: input.signal });
+window.addEventListener('site:header-layout-change', resize, { signal: input.signal });
 const headerObserver = new ResizeObserver(resize);
 headerObserver.observe(document.querySelector('.about-header'));
 renderer.domElement.addEventListener('contextmenu', (event) => event.preventDefault(), { signal: input.signal });

@@ -1,0 +1,1194 @@
+{
+  "maxSide": 512,
+  "jpegQuality": 88,
+  "items": [
+    {
+      "file": "assets/grade-1/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 23047,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-1/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 36051,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-1/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72338,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-1/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2686,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-1/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17452,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 39144,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 42580,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 39279,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 36778,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 57528,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 60975,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 56204,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 54523,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 53366,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 51152,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 61643,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 60420,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 52485,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 47430,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 45422,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 37263,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-1/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 31969,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-2/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 43735,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-2/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72378,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-2/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2814,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-2/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17704,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 60543,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 63116,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 55627,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 57402,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 37023,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 58466,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 35820,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 84950,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 68924,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67728,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62637,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 55097,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 59363,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 65543,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 73003,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 60141,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-2/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 37710,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-3/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 46373,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-3/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72303,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-3/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2744,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-3/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17750,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 54589,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 52341,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62890,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 70373,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 66575,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62382,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 57773,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 71069,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 66925,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 63309,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62517,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 58969,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 49762,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 66758,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 46791,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 46986,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-3/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 37582,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-4/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 45221,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-4/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72275,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-4/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2663,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-4/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17681,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 64278,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 63958,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 72209,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 70149,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 89249,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 55414,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 57532,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 56182,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 66144,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 69560,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 30375,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 69794,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 73199,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 68825,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 68935,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 64631,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-4/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 30608,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-5/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 42238,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-5/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72358,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-5/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2696,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-5/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17727,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 53256,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 60716,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 53175,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 51142,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 59436,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 53307,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 72460,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 68411,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 68169,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 66010,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62110,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 64122,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 63160,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 45202,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 52463,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 51670,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-5/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 27122,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-6/grid/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 42465,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-6/grid/inside-back.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 72221,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-6/grid/inside-front.jpg",
+      "size": [
+        343,
+        512
+      ],
+      "bytes": 2546,
+      "rgbaMipBytes": 936618.6666666666
+    },
+    {
+      "file": "assets/grade-6/grid/page-01.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 17746,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-02.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 73253,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-03.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 73891,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-04.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 46078,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-05.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 43257,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-06.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 61762,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-07.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 62479,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-08.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 51289,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-09.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 55883,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-10.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 59413,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-11.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 55944,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-12.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 74531,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-13.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 70579,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-14.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 59592,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-15.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 63795,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-16.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 39934,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-17.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 45603,
+      "rgbaMipBytes": 988501.3333333334
+    },
+    {
+      "file": "assets/grade-6/grid/page-18.jpg",
+      "size": [
+        362,
+        512
+      ],
+      "bytes": 67846,
+      "rgbaMipBytes": 988501.3333333334
+    }
+  ]
+}

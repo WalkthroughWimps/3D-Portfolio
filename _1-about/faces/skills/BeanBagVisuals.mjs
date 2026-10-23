@@ -30,7 +30,7 @@ export function createBeanBagVisuals() {
   let disposed = false;
   return {
     create(index) {
-      if (disposed || !Number.isInteger(index) || index < 0 || index >= 8) throw new RangeError('Invalid bean bag identity');
+      if (disposed || !Number.isSafeInteger(index) || index < 0) throw new RangeError('Invalid bean bag identity');
       const bag = new THREE.Group(); bag.name = `Bean bag ${index + 1}`; bag.userData.beanBagId = index;
       bag.add(new THREE.Mesh(geometry, materials[index % BEAN_BAG_COLORS.length]), new THREE.LineLoop(seamGeometry, seamMaterial)); return bag;
     },

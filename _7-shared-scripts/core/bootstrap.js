@@ -33,7 +33,7 @@ export function bootstrapPage({ pageId, root = document, mount = () => {}, diagn
           globalThis.siteConfig.audioSyncMs = snapshot.audio.syncMs;
         }
       }, { signal: scope.signal, immediate: true });
-      enhanceHeader(root);
+      scope.defer(enhanceHeader(root, settings, { signal: scope.signal }));
       mountPageShortcuts({ pageId, root, scope });
       initPanelShell({ scope });
       if (diagnostics) await import('../../debug/debug-loader.js').then(module => module.loadDebugIfEnabled?.());
@@ -43,7 +43,7 @@ export function bootstrapPage({ pageId, root = document, mount = () => {}, diagn
       let suspended = false;
       const api = {
         suspend() { if (suspended) return; suspended = true; mounted?.suspend?.(); },
-        resume() { if (!suspended) return; suspended = false; settings.refresh({ source: 'system' }); mounted?.resume?.(); enhanceHeader(root); },
+        resume() { if (!suspended) return; suspended = false; settings.refresh({ source: 'system' }); mounted?.resume?.(); },
         async dispose() { await scope.dispose(); instances.get(root)?.delete(pageId); }
       };
       scope.listen(globalThis, 'pagehide', event => event.persisted ? api.suspend() : void api.dispose());

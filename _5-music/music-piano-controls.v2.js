@@ -1,14 +1,17 @@
 import { disposeMusicVideoControls } from './ui/video-controls-lifetime.js';
+import { getMidiStateAtElapsed } from './midi-seek-state.mjs';
 import { loadMusicDiagnostics } from '../debug/debug-loader.js';
 import { normalizeSf2Name, extractSf2PresetList, computeSampleRangeFromMap, findNearestSoundfontKey, loadMusyngKiteSoundfont, decodeDataUriToArrayBuffer } from './instruments/loader.js';
 import { createInstrumentCatalog } from './instruments/catalog.js';
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { getEffectiveAudioSettings, patchAudioSettings } from '../_7-shared-scripts/audio-settings.js';
 import { bindMusicHighlights } from './music-highlights.js?v=20261021-glow-1';
 let musicPageSignal = null;
 let musicHighlights = null;
 let musicPageDisposed = false;
 let musicPageSuspended = false;
+let stopMusicCenterSetting = null;
 let musicAudioRequestGeneration = 0;
 void bootstrapPage({ pageId: 'music', mount: ({ scope }) => {
   musicPageDisposed = false;
@@ -17,7 +20,18 @@ void bootstrapPage({ pageId: 'music', mount: ({ scope }) => {
   scope.defer(() => { ++musicAudioRequestGeneration; musicPageDisposed = true; musicPageSuspended = true; musicPageSignal = null; });
   scope.defer(() => disposeMusicVideoControls(topPadVideo));
   scope.defer(() => disposeMusicVideoControls(trackVideo));
+  scope.defer(() => {
+    if(!musicVideoPresentationActive) return;
+    musicVideoPresentationActive = false;
+    window.dispatchEvent(new CustomEvent('site:video-presentation-change', { detail: { source: 'music', active: false } }));
+  });
   scope.defer(() => { musicHighlights?.dispose(); musicHighlights = null; });
+  scope.defer(() => stopMusicCenterSetting?.());
+  scope.defer(() => {
+    window.removeEventListener('resize', resizePianoScene);
+    window.removeEventListener('site:header-layout-change', resizePianoScene);
+    window.removeEventListener('site:music-center-change', resizePianoScene);
+  });
   scope.defer(onAudioConsentChange(allowed => {
     if (allowed || musicPageDisposed) return;
     ++musicAudioRequestGeneration;
@@ -192,6 +206,12 @@ window.rebuildQwertyLabels = function(mode){
 };
 const canvas = document.getElementById('pianoCanvas');
 if (!canvas) { console.error('Canvas #pianoCanvas not found'); }
+let centerOnViewport = false;
+stopMusicCenterSetting = getSharedSettings().subscribe(snapshot => {
+  centerOnViewport = Boolean(snapshot?.music?.centerOnViewport);
+  document.documentElement.dataset.musicCenterViewport = String(centerOnViewport);
+  window.dispatchEvent(new Event('site:music-center-change'));
+}, { immediate: true });
 const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
 renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
@@ -533,6 +553,15 @@ const trackVideo = {
   uiCtx: null
 };
 const trackVideoElements = new Map();
+let musicVideoPresentationActive = false;
+function updateMusicVideoPresentation(){
+  // Track playback uses the ordinary piano screen. Only the top-pad camera
+  // focus expands a video for viewing.
+  const active = topPadVideo.focused && (topPadVideo.mode === 'zooming' || topPadVideo.mode === 'playing');
+  if(active === musicVideoPresentationActive) return;
+  musicVideoPresentationActive = active;
+  window.dispatchEvent(new CustomEvent('site:video-presentation-change', { detail: { source: 'music', active } }));
+}
 
 
 const TOPPAD_ZOOM_MS = 700;
@@ -1232,6 +1261,7 @@ function startTopPadVideoPlayback(){
   };
   topPadVideo.mode = 'zooming';
   topPadVideo.focused = true;
+  updateMusicVideoPresentation();
   try{ topPadVideo.audio.pause(); }catch{}
   try{ topPadVideo.hqVideo.pause(); }catch{}
   try{ topPadVideo.audio.currentTime = 0; }catch{}
@@ -1282,6 +1312,7 @@ function stopTopPadVideoPlayback(){
   try{ topPadVideo.audio.pause(); }catch{}
   topPadVideo.mode = 'idle';
   topPadVideo.focused = false;
+  updateMusicVideoPresentation();
   if(topPadVideo.cameraRestore){
     const restore = topPadVideo.cameraRestore;
     startTopPadZoom({
@@ -1361,6 +1392,7 @@ function toggleTopPadVideoFocus(){
       onComplete: () => applyStandardGlbMouseControlMode(controls, { enabled: false, allowRotate: false, allowZoom: false })
     });
   }
+  updateMusicVideoPresentation();
   renderTopPadGrid();
 }
 
@@ -5842,7 +5874,7 @@ function animate(){
       const headerEl = document.getElementById('patterned-background');
       if(headerEl && typeof window !== 'undefined'){
         const rect = headerEl.getBoundingClientRect();
-        const safeTop = Math.max(0, rect.bottom || 0);
+        const safeTop = document.body.dataset.headerLayout === 'legacy' && !centerOnViewport ? Math.max(0, rect.bottom || 0) : 0;
         const viewportH = Math.max(1, window.innerHeight || canvas.clientHeight || 1);
         const targetScreenY = (safeTop + viewportH) * 0.5;
         const boxCenter = new THREE.Vector3();
@@ -6335,6 +6367,7 @@ loader.load(`${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`,
     // Recompute box after recenter to ensure framing updates for new geometry (e.g., pedals)
     const box2 = new THREE.Box3().setFromObject(root);
     fit(box2);
+    renderer.domElement.__musicSharedMouse?.captureDefaultPose?.();
     // Refresh world-derived lanes after recenter so backboard mapping aligns
     computeKeyLanesFromWorld();
     console.log('GLB loaded. Final box size:', size, 'post-recenter size:', box2.getSize(new THREE.Vector3()));
@@ -6371,10 +6404,14 @@ loader.load(`${assetUrl('../assets/glb/toy-piano.glb')}?${MODEL_VERSION}`,
   }
 );
 // Resize listener
-window.addEventListener('resize', ()=>{
-  const w = canvas.parentElement.clientWidth; const h = Math.max(420, Math.floor(window.innerHeight*0.65));
+function resizePianoScene(){
+  const w = canvas.parentElement.clientWidth; const h = canvas.parentElement.clientHeight || window.innerHeight;
   renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix();
-});
+}
+window.addEventListener('resize', resizePianoScene);
+window.addEventListener('site:header-layout-change', resizePianoScene);
+window.addEventListener('site:music-center-change', resizePianoScene);
+resizePianoScene();
 // ---- MIDI Parsing & Playback ----
 function readVLQ(data, offset){
   let value=0; let i=offset; let byte;
@@ -6670,10 +6707,16 @@ function seekTrackToRatio(ratio){
   if(!Number.isFinite(dur) || dur <= 0) return;
   const targetSec = Math.max(0, Math.min(dur, dur * Math.max(0, Math.min(1, ratio || 0))));
   const wasPlaying = !!(audioPlaying || playingMIDI);
-  ignoreAudioEndedOnce = true;
+  // A stopped source may deliver `ended` after the new source starts. Its
+  // callback must not reset the replacement transport or close its video.
+  if(audioSource) audioSource.onended = null;
+  ignoreAudioEndedOnce = false;
   disposeAudioSource('seekTrack cleanup');
   audioPlaying = false;
   playingMIDI = false;
+  stopAllNotesAndPedal();
+  suppressedNoteOffEvents.clear();
+  suppressNoteEventsUntilMs = 0;
   savedAudioPosSec = targetSec;
   const now = audioCtx.currentTime;
   const lead = 0.05;
@@ -6681,9 +6724,7 @@ function seekTrackToRatio(ratio){
   const midiElapsedMs = getMidiElapsedMsForAudioPos(savedAudioPosSec);
   midiStartCtxTime = t0 - (midiElapsedMs / 1000);
   transportStartAudioTime = midiStartCtxTime;
-  buildPendingNotes();
-  midiIndex = 0;
-  rebuildNoteStateAtElapsed(midiElapsedMs);
+  midiIndex = rebuildNoteStateAtElapsed(midiElapsedMs);
   const seekNowSec = (midiElapsedMs / 1000) - ((midiFirstNoteMs || 0) / 1000);
   rebuildFallingNotesAtElapsed(seekNowSec);
   if(wasPlaying){
@@ -6693,14 +6734,17 @@ function seekTrackToRatio(ratio){
     startAudio((t0 - now) * 1000);
     audioStartCtxTime = t0;
     playingMIDI = true;
-    startTrackVideoPlayback(currentTrackKey);
+    if(trackVideo.active && trackVideo.key === currentTrackKey) syncTrackVideoToPlayback(true);
+    else startTrackVideoPlayback(currentTrackKey);
   } else {
     playbackPaused = true;
-    pausedTransportSec = getTransportNowSec();
-    pausedMidiElapsedMs = (audioCtx.currentTime - midiStartCtxTime) * 1000;
+    pausedTransportSec = midiElapsedMs / 1000;
+    pausedMidiElapsedMs = midiElapsedMs;
     lastTransportNowSec = getVisualNowSec();
     syncTrackVideoToPlayback(false);
   }
+  setBackboardViewMode('playback-mode');
+  updatePlayButton();
   updateDisabledKeysForConfig();
   renderTopPadGrid();
 }
@@ -6774,6 +6818,10 @@ function startTrackVideoPlayback(key){
   if(!track || !track.video) return;
   const videos = getTrackVideoElements(key);
   if(!videos) return;
+  if(trackVideo.active && trackVideo.key === key && trackVideo.hqVideo === videos.hq){
+    syncTrackVideoToPlayback(!playbackPaused && (audioPlaying || playingMIDI));
+    return;
+  }
   ++musicAudioRequestGeneration;
   trackVideo.active = true;
   trackVideo.key = key;
@@ -7109,44 +7157,42 @@ function rebuildNoteStateAtElapsed(elapsedMs){
     st.fromAngle = 0;
     st.targetAngle = 0;
   });
-  const noteState = new Map(); // note -> { on, vel, part }
-  let nextIndex = 0;
-  for(let i=0;i<midiEvents.length;i++){
-    const ev = midiEvents[i];
-    const adjTime = midiFirstNoteMs + (ev.timeMs - midiFirstNoteMs) * (midiStretch / Math.max(1e-6, currentPlaybackRate));
-    if(adjTime > elapsedMs){
-      nextIndex = i;
-      break;
-    }
-    nextIndex = i + 1;
-    if(ev.type === 'on'){
-      noteState.set(Number(ev.note), { on: true, vel: ev.velocity, part: ev.part || null });
-    } else if(ev.type === 'off'){
-      noteState.delete(Number(ev.note));
-    }
+  const { nextIndex, heldNotes, sustainDown } = getMidiStateAtElapsed(midiEvents, elapsedMs, adjustMidiTimeMs);
+  const noteState = new Map();
+  for(const event of heldNotes){
+    const note = Number(event.note);
+    if(!noteState.has(note)) noteState.set(note, []);
+    noteState.get(note).push(event);
   }
-  noteState.forEach((info, note) => {
+  noteState.forEach((events, note) => {
     const state = keyAnimState.get(note);
     if(!state || !state.mesh) return;
     const mesh = state.mesh;
     const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN;
-    const vel = Math.max(VELOCITY_MIN, info.vel || 0);
+    const vel = Math.max(VELOCITY_MIN, events.at(-1).velocity || 0);
     const depthScale = (vel - VELOCITY_MIN) / (VELOCITY_MAX - VELOCITY_MIN);
     const target = base * (0.55 + 0.45 * depthScale);
     mesh.rotation.x = target;
     state.phase = 'held';
     state.fromAngle = target;
     state.targetAngle = target;
-    if(info.part){
-      applyTrackGlow(note, mesh, info.part, true);
-    } else {
-      applyKeyGlow(mesh, note, true);
+    for(const event of events){
+      if(event.part) applyTrackGlow(note, mesh, event.part, true);
+      else applyKeyGlow(mesh, note, true);
     }
-    activeNotes.set(note, { velocity: Math.max(0, Math.min(1, (info.vel || 0)/127)), tOn: performance.now() });
+    activeNotes.set(note, { velocity: Math.max(0, Math.min(1, vel/127)), tOn: performance.now() });
     activeNoteSet.add(note);
   });
+  sustainKeyDown = sustainDown;
+  sustainAnim.phase = sustainDown ? 'held' : 'idle';
+  sustainAnim.startMs = elapsedMs;
+  sustainAnim.fromAngle = sustainDown ? PEDAL_MAX_ANGLE : 0;
+  sustainAnim.targetAngle = sustainAnim.fromAngle;
+  if(sustainPedalMesh) sustainPedalMesh.rotation.x = sustainAnim.targetAngle;
+  applySustainPedalGlow(sustainDown);
   keyAnimState.forEach(st => { if(st.mesh) clampKeyRotation(st.mesh); });
   clearDisabledKeyMaterials();
+  requestBackboardRedraw();
   return nextIndex;
 }
 
@@ -10314,10 +10360,17 @@ function handleTopPadVideoKeys(ev){
   const video = topPadActive ? topPadVideo.hqVideo : trackVideo.hqVideo;
   const audio = topPadActive ? topPadVideo.audio : null;
   if(!video) return;
+  const seekVideoSeconds = seconds => {
+    const duration = trackActive ? getTrackDurationSec() : video.duration;
+    if(!Number.isFinite(duration) || duration <= 0) return;
+    const target = Math.max(0, Math.min(duration, seconds));
+    if(trackActive) seekTrackToRatio(target / duration);
+    else seekMediaWithFreeze(video, target, { audio, syncMs: getSyncOffsetMs() });
+  };
   if(shift && key === '?'){ prevent(); showVideoKeyboardShortcuts(); return; }
   if(key === 'f') { prevent(); if(topPadActive) toggleTopPadVideoFocus(); return; }
-  if(key === 'home') { prevent(); video.currentTime = 0; return; }
-  if(key === 'end') { prevent(); video.currentTime = video.duration || 0; return; }
+  if(key === 'home') { prevent(); seekVideoSeconds(0); return; }
+  if(key === 'end') { prevent(); seekVideoSeconds(trackActive ? getTrackDurationSec() : video.duration); return; }
   if(key === ' ' || key === 'k'){
     prevent();
     if(topPadActive) topPadVideo.ui?.notifyTransportToggle?.(video.paused ? 'play' : 'pause');
@@ -10349,10 +10402,10 @@ function handleTopPadVideoKeys(ev){
     renderTopPadGrid();
     return;
   }
-  if(key === 'j'){ prevent(); video.currentTime = Math.max(0, video.currentTime - 10); return; }
-  if(key === 'l'){ prevent(); video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 10); return; }
-  if(key === 'arrowleft'){ prevent(); video.currentTime = Math.max(0, video.currentTime - 5); return; }
-  if(key === 'arrowright'){ prevent(); video.currentTime = Math.min(video.duration || Infinity, video.currentTime + 5); return; }
+  if(key === 'j'){ prevent(); seekVideoSeconds((trackActive ? getPlaybackPositionSec() : video.currentTime) - 10); return; }
+  if(key === 'l'){ prevent(); seekVideoSeconds((trackActive ? getPlaybackPositionSec() : video.currentTime) + 10); return; }
+  if(key === 'arrowleft'){ prevent(); seekVideoSeconds((trackActive ? getPlaybackPositionSec() : video.currentTime) - 5); return; }
+  if(key === 'arrowright'){ prevent(); seekVideoSeconds((trackActive ? getPlaybackPositionSec() : video.currentTime) + 5); return; }
   if(key === 'arrowup'){
     prevent();
     if(trackActive){

@@ -1,6 +1,6 @@
 :root {
     color-scheme: light dark;
-    --start-overlay-light: 0;
+    --start-overlay-light: 0.5;
     --start-overlay-contrast: 1;
     --primary-color: #0f1115;
     --hl-tertiary-color: #8be78f;
@@ -12,7 +12,7 @@ html,body { height:100%; }
 body {
     margin:0;
     font: 16px/1.5 "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif;
-    background: #0f1115;
+    background: var(--black-primary, #1f1e1e);
     color: #e7f6f0;
     overflow: hidden;
     min-height: 100vh;
@@ -371,6 +371,7 @@ textarea {
     font-family: "Press Start 2P", "Segoe UI", Roboto, Arial, sans-serif;
 }
 .bg-overlay {
+    --start-bg-light-mix: clamp(0, (var(--start-overlay-light, .5) - .5) * 2, 1);
     position: absolute;
     inset: 0;
     display: flex;
@@ -385,9 +386,9 @@ textarea {
     content: "";
     position: absolute;
     inset: 0;
-    background-image: url("../assets/overlays/overlay-start-dark.png");
+    background-image: url("../assets/overlays/overlay-about-dark.png");
     background-repeat: repeat;
-    opacity: calc(1 - var(--start-overlay-light, 0));
+    opacity: calc(1 - var(--start-bg-light-mix));
     filter: contrast(var(--start-overlay-contrast, 1));
     transition: opacity 0.15s linear;
     pointer-events: none;
@@ -397,13 +398,16 @@ textarea {
     content: "";
     position: absolute;
     inset: 0;
-    background-image: url("../assets/overlays/overlay-start-light.png");
+    background-image: url("../assets/overlays/overlay-about-light.png");
     background-repeat: repeat;
-    opacity: var(--start-overlay-light, 0);
+    opacity: var(--start-bg-light-mix);
     filter: contrast(var(--start-overlay-contrast, 1));
     transition: opacity 0.15s linear;
     pointer-events: none;
     z-index: 0;
+}
+@media (prefers-color-scheme: light) {
+    .bg-overlay { --start-bg-light-mix: clamp(0, var(--start-overlay-light, .5) * 2, 1); }
 }
 .bg-overlay > * {
     position: relative;

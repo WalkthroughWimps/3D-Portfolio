@@ -1,6 +1,8 @@
 @import url('../_7-shared-scripts/panel-assembly/settings-sections.css');
 #review-panels {
   --panel-margin: 12px;
+  --drawer-duration: 260ms;
+  --drawer-ease: cubic-bezier(.2,.8,.2,1);
   position: fixed;
   inset: 0;
   z-index: 2147483646;
@@ -20,7 +22,7 @@
   border-radius: 12px;
   background: #17212dea;
   box-shadow: 0 16px 40px #0009;
-  transition: transform .25s ease;
+  transition: transform var(--drawer-duration) var(--drawer-ease);
 }
 #review-panels .review-panel--left { left: var(--panel-margin); }
 #review-panels .review-panel--right { right: var(--panel-margin); }
@@ -44,11 +46,17 @@
 }
 #review-panels .review-panel--left .review-panel-toggle { left: 100%; border-radius: 0 8px 8px 0; }
 #review-panels .review-panel--right .review-panel-toggle { right: 100%; border-radius: 8px 0 0 8px; }
+#review-panels .review-panel.is-closed .review-panel-toggle { visibility: hidden; pointer-events: none; }
 #review-panels .review-panel-body { display: flex; flex-direction: column; min-height: 0; flex: 1; overflow: hidden; }
-#review-panels .review-panel.is-closed .review-panel-body { visibility: hidden; }
 #review-panels .review-panel-head { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; min-height: 48px; padding: 7px 8px; border-bottom: 1px solid #718494; }
 #review-panels .review-panel-head strong { flex: 1; }
-#review-panels .review-panel-close { flex: 0 0 auto; min-height: 32px; padding: 5px 8px; border: 1px solid #718494; border-radius: 6px; color: #fff; background: #254157; }
+#review-panels .review-panel-close { flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; padding: 3px; border: 1px solid var(--settings-border); border-radius: 7px; background: var(--settings-control); }
+#review-panels .review-panel-close-icon { display: block; width: 30px; height: 30px; background-color: color-mix(in srgb, var(--settings-secondary) var(--review-gear-accent-percent,70%), var(--settings-border)); mask: url('../assets/icons/icon-settings.png') center / contain no-repeat; transform: rotate(0); filter: drop-shadow(0 0 4px color-mix(in srgb, var(--review-gear-glow-color, var(--settings-secondary)) var(--review-gear-glow-percent,35%), transparent)); transition: transform var(--drawer-duration) var(--drawer-ease), background-color var(--drawer-duration) var(--drawer-ease); }
+#review-panels .review-panel.is-closed .review-panel-close-icon { transform: rotate(-90deg); background-color: var(--settings-border); }
+#review-panels .review-panel--right.is-constructor .review-panel-close-icon { --review-gear-glow-color: #bb747b; background-color: color-mix(in srgb, #bb747b var(--constructor-accent-percent,70%), #9d575d); }
+#review-panels .review-panel--right.is-constructor.is-closed .review-panel-close-icon { background-color: #9d575d; }
+#review-panels#review-panels .review-debug-opener { flex: 0 0 auto; min-height: 34px; margin: 0 8px 8px; padding: 6px 8px; border: 1px solid var(--settings-border); border-radius: 6px; color: var(--settings-secondary); background: var(--settings-section); text-align: center; }
+#review-panels#review-panels .is-constructor .review-debug-opener { color: #fff4f2; border-color: rgb(187 116 123 / var(--constructor-accent-alpha,.7)); background: #58343d; }
 #review-panels .review-settings-tabs { flex: 1 1 auto; min-width: 0; display: flex; gap: 5px; overflow-x: auto; }
 #review-panels .review-settings-tab { flex: 0 0 auto; min-height: 32px; padding: 5px 10px; }
 #review-panels .review-settings-tab[aria-selected="true"] { background: #46799a; color: #fff; }
@@ -90,7 +98,8 @@
   #review-panels .review-panel { width: calc(100vw - 2 * var(--panel-margin)); }
   #review-panels .review-panel-toggle { height: 92px; width: 34px; font-size: 9px; }
 }
-@media (prefers-reduced-motion: reduce) { #review-panels .review-panel { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #review-panels { --drawer-duration: 0ms; } }
+html.a11y-motion-reduced #review-panels { --drawer-duration: 0ms; }
 
 /* Debug uses the Settings palette in reverse, with the same panel construction. */
 #review-panels .review-panel--left[data-debug-primary=green] { --settings-surface:#17291e;--settings-section:#20372a;--settings-control:#2c4937;--settings-border:#86b99a; }

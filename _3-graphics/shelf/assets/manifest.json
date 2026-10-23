@@ -1,0 +1,792 @@
+{
+  "grades": [
+    {
+      "grade": 1,
+      "pages": [
+        {
+          "url": "assets/grade-1/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-02.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-03.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-1/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    },
+    {
+      "grade": 2,
+      "pages": [
+        {
+          "url": "assets/grade-2/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-02.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-03.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-2/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    },
+    {
+      "grade": 3,
+      "pages": [
+        {
+          "url": "assets/grade-3/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-02.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-03.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-3/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    },
+    {
+      "grade": 4,
+      "pages": [
+        {
+          "url": "assets/grade-4/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-02.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-03.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-4/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    },
+    {
+      "grade": 5,
+      "pages": [
+        {
+          "url": "assets/grade-5/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-02.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-03.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-5/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    },
+    {
+      "grade": 6,
+      "pages": [
+        {
+          "url": "assets/grade-6/page-01.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-02.jpg",
+          "size": [
+            1024,
+            1447
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-03.jpg",
+          "size": [
+            1024,
+            1447
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-04.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-05.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-06.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-07.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-08.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-09.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-10.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-11.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-12.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-13.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-14.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-15.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-16.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-17.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        },
+        {
+          "url": "assets/grade-6/page-18.jpg",
+          "size": [
+            1024,
+            1448
+          ]
+        }
+      ]
+    }
+  ],
+  "source": "assets/.blend/graphics-page.blend",
+  "bytes": 33477008
+}

@@ -151,7 +151,6 @@
 <!-- site-header:generated:start -->
 <a class="skip-link" href="#page-main">Skip to content</a>
 <div class="nav-wrap">
-  <div class="page-note page-note--nav" aria-hidden="true">Right Mouse Button<br>Rotate</div>
   <div class="navigation-bg">
     <nav class="navigation" aria-label="Site">
       <a href="../_1-about/about.html" class="nav-icon about-icon" title="About Me" aria-label="About Me">
@@ -423,9 +422,16 @@
               const hdr = document.querySelector('.header');
               if (!hdr) return;
               document.documentElement.style.setProperty('--header-height', Math.ceil(hdr.getBoundingClientRect().height || 0) + 'px');
+              const centered = document.documentElement.dataset.musicCenterViewport === 'true';
+              document.documentElement.style.setProperty('--music-scene-top', document.body.dataset.headerLayout === 'legacy' && !centered ? Math.max(0, Math.ceil(hdr.getBoundingClientRect().bottom)) + 'px' : '0px');
               const picker = document.getElementById('instrumentPicker');
-              if (picker) {
-                const top = Math.ceil(hdr.getBoundingClientRect().bottom + 12);
+              if (picker && !picker.classList.contains('instrument-picker--backboard')) {
+                const modern = document.body.dataset.headerLayout === 'modern';
+                const rail = hdr.querySelector('.navigation-bg') || hdr.querySelector('.navigation');
+                const visibleHeaderBottom = Math.max(0, ...[hdr.querySelector('.head-wrapper'), hdr.querySelector('.title')]
+                  .filter(Boolean).map(element => element.getBoundingClientRect().bottom));
+                const top = modern ? Math.ceil(visibleHeaderBottom + 12) : Math.ceil(hdr.getBoundingClientRect().bottom + 12);
+                picker.style.left = modern && rail ? Math.ceil(rail.getBoundingClientRect().right + 12) + 'px' : '0.75rem';
                 picker.style.top = top + 'px';
                 picker.style.maxHeight = 'calc(100vh - ' + (top + 24) + 'px)';
               }
@@ -433,6 +439,8 @@
             if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', updateHeaderHeight, { once: true });
             else updateHeaderHeight();
             window.addEventListener('resize', updateHeaderHeight);
+            window.addEventListener('site:header-layout-change', updateHeaderHeight);
+            window.addEventListener('site:music-center-change', updateHeaderHeight);
             setTimeout(updateHeaderHeight, 250);
         </script>
 <script>

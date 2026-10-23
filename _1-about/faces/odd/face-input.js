@@ -20,7 +20,7 @@ export function createFaceInput({context,rig,deck,perform,onInputOwnership=()=>{
   function consume(event){event.preventDefault();event.stopImmediatePropagation();}
   function release(){const old=gesture;gesture=null;preview=null;hoverEdge=null;hoverLane=-1;hoverMainMeter=false;if(old?.kind==='edge')deck.previewRate(null);if(old&&canvas.hasPointerCapture(old.id))canvas.releasePointerCapture(old.id);if(old)onInputOwnership(false);canvas.style.cursor='';return old;}
   function cancel(){clearTimeout(wheelTimer);wheelTimer=null;hoverLane=-1;const old=release();if(old?.changed&&old.kind==='dial')deck.setControl(old.key,old.value);if(old?.kind==='lane-max')deck.engine.setLane(old.lane,{gain:old.value});if(old?.kind==='volume-slide')deck.setVolume(old.value);if(old?.changed&&old.kind==='seek')deck.engine.seek(old.value);}
-  function volume(event){const p=planePoint(event,.319);if(p)deck.setVolume(Math.round(Math.max(0,Math.min(2,(p.x+.20)/.20))*20)/20);}
+  function volume(event){const p=planePoint(event,.319);if(p)deck.setVolume(Math.round(Math.max(0,Math.min(2,(p.x+.20)/.20))*100)/100);}
   function wind(){if(gesture?.kind!=='wind'||deck.locked)return;const total=heldWindDistance((performance.now()-gesture.startedAt)/1000,gesture.step),delta=total-gesture.wound;gesture.wound=total;if(delta)deck.engine.seek(deck.engine.targetPosition+delta);}
   canvas.addEventListener('pointerdown',event=>{
     if(!enabled||event.button!==0)return;
@@ -47,7 +47,7 @@ export function createFaceInput({context,rig,deck,perform,onInputOwnership=()=>{
       }
     }
     if(!['clip','edge','lane-max'].includes(next.kind)&&action!=='unstick')rig.pauseWork();
-    gesture=next;canvas.setPointerCapture(event.pointerId);onInputOwnership(true);consume(event);
+    gesture=next;canvas.setPointerCapture(event.pointerId);if(next.kind==='volume-slide')canvas.style.cursor='none';onInputOwnership(true);consume(event);
   },{capture:true,signal:events.signal});
   canvas.addEventListener('pointermove',event=>{
     if(!enabled)return;

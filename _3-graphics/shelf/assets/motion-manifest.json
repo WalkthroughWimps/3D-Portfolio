@@ -1,0 +1,113 @@
+{
+  "items": [
+    {
+      "file": "assets/grade-1/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 58770,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-1/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 43142,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-2/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 72450,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-2/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 59722,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-3/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 78663,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-3/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 69990,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-4/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 67176,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-4/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 59199,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-5/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 65512,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-5/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 52302,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-6/motion/front.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 61878,
+      "rgbaMipBytes": 958464.0
+    },
+    {
+      "file": "assets/grade-6/motion/back.jpg",
+      "size": [
+        351,
+        512
+      ],
+      "bytes": 42635,
+      "rgbaMipBytes": 958464.0
+    }
+  ],
+  "rgbaMipBytes": 11501568.0
+}

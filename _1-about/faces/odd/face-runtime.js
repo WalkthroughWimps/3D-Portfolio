@@ -15,10 +15,18 @@ export const ODD_MOUNT=Object.freeze({center:[0,.982,0],normal:[0,1,0],right:[1,
 export function createOddFace({stage,focusFace=()=>{},onInputOwnership=()=>{}}={}) {
   const binding=createModelFace({id:'odd',backingName:'back.odd'}),events=new AbortController();
   let host=null,group=null,carrier=null,rig=null,deck=null,dialog=null,launcher=null,accessible=null,stylesheet=null,controls=null,editor=null;
-  let suspended=false,disposed=false,upright=true,reduced=false,roll=0,globalMuted=false,returnFocus=null;
+  let suspended=false,disposed=false,enabled=true,upright=true,reduced=false,roll=0,globalMuted=false,returnFocus=null;
   let settingsUI=null,preferences={};
   let feedback=null,feedbackTimer=null;
   const inverse=new THREE.Matrix4(),right=new THREE.Vector3();
+  const faceView=new THREE.Vector3();
+  function syncLaunchers(){
+    if(!launcher||!accessible)return;
+    if(!host||suspended||!enabled){launcher.hidden=accessible.hidden=true;return;}
+    const local=host.cube.worldToLocal(host.camera.getWorldPosition(faceView));
+    const focused=local.y>Math.max(Math.abs(local.x),Math.abs(local.z))*.9;
+    launcher.hidden=accessible.hidden=!focused;
+  }
   function focus(){focusFace(ODD_MOUNT);host?.canvas.focus({preventScroll:true});}
   function initialize(){
     if(deck)return;
@@ -51,7 +59,7 @@ export function createOddFace({stage,focusFace=()=>{},onInputOwnership=()=>{}}={
     rig?.dispose();rig=null;group?.removeFromParent();host=group=carrier=null;binding.detach();
   }
   function attach(context){
-    if(host)detach();binding.attach(context);host=context;suspended=false;initialize();launcher.hidden=accessible.hidden=false;deck.resume();
+    if(host)detach();binding.attach(context);host=context;suspended=false;initialize();launcher.hidden=accessible.hidden=true;deck.resume();
     group=new THREE.Group();group.name='Odd physical folded-cloth machine mount';group.position.fromArray(ODD_MOUNT.center);
     group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(...ODD_MOUNT.right),new THREE.Vector3(...ODD_MOUNT.up),new THREE.Vector3(...ODD_MOUNT.normal)));
     carrier=new THREE.Group();group.add(carrier);context.cube.add(group);rig=createClothTransport(carrier,{statorParent:group,maxTextureSize:context.renderer.capabilities.maxTextureSize});rig.configure(preferences);rig.syncClips(deck.engine.clips,{silent:true});
@@ -89,7 +97,7 @@ export function createOddFace({stage,focusFace=()=>{},onInputOwnership=()=>{}}={
   }
   return {id:binding.id,backingName:binding.backingName,get backing(){return binding.backing;},get components(){return binding.components;},get runtime(){return deck;},get gestureActive(){return Boolean(controls?.active);},get mechanism(){return rig;},attach,detach,endGesture,
     update(dt){
-      if(!host||suspended||disposed)return;controls.tick(dt);deck.tick();rig.syncClips(deck.engine.clips);
+      if(!host||suspended||disposed)return;syncLaunchers();controls.tick(dt);deck.tick();rig.syncClips(deck.engine.clips);
       if(deck.engine.loading&&!feedback.hidden){const text=Math.floor((performance.now()-deck.engine.loading.startedAt)/1000)+'s',node=feedback.querySelector('[data-feedback-time]');if(node.textContent!==text)node.textContent=text;}
       if(upright){inverse.copy(group.matrixWorld).invert();right.setFromMatrixColumn(host.camera.matrixWorld,0).transformDirection(inverse);if(right.x*right.x+right.y*right.y>.01){const angle=Math.atan2(right.y,right.x),delta=Math.atan2(Math.sin(angle-roll),Math.cos(angle-roll));if(!controls.active&&!editor.active)roll+=reduced?delta:Math.max(-dt*2.6,Math.min(dt*2.6,delta*(1-Math.exp(-dt*7))));}}else roll=0;
       carrier.rotation.z=roll;carrier.updateWorldMatrix(false,true);
@@ -100,8 +108,8 @@ export function createOddFace({stage,focusFace=()=>{},onInputOwnership=()=>{}}={
       rig.update(dt,{position:deck.position,moving:engine.playing||engine.recording||engine.winding,reduced,clips,lane:preview?.clip.lane??deck.lane,volume:engine.volume,level:engine.getLevel(),laneLevels:engine.getLaneLevels(),hoverLane:controls.hoverLane,hoverMainMeter:controls.hoverMainMeter,lanes:engine.lanes,selected:deck.selected,statusText:deck.status,muted:engine.muted,siteMuted:engine.siteMuted,loop:engine.loop,recording:engine.recording,pending:engine.pending,playing:engine.playing,direction:engine.winding?engine.windingDirection:engine.playbackPending?0:engine.direction,preview,hoverEdge:controls.hoverEdge,capture:engine.capturePreview,interactionActive:controls.active||editor.active||deck.locked});
       editor.update(host.camera,rig.group,host.canvas.getBoundingClientRect());
     },
-    applySettings(snapshot){const enabled=snapshot.about?.odd?.enabled!==false;if(group)group.visible=enabled;rig?.setEnabled(enabled&&!suspended);if(launcher)launcher.hidden=accessible.hidden=!enabled;upright=snapshot.cube?.uprightFaces!==false;reduced=Boolean(snapshot.accessibility?.reducedMotion);globalMuted=Boolean(snapshot.audio?.muted);if(deck){deck.root.classList.toggle('odd-reduced-motion',reduced);deck.engine.setSiteMuted(globalMuted);}},
-    suspend(){suspended=true;rig?.suspend();endGesture();if(controls)controls.enabled=false;deck?.suspend();if(feedback)feedback.hidden=true;clearTimeout(feedbackTimer);if(dialog?.open)close();},resume(){suspended=false;rig?.resume();if(controls)controls.enabled=true;if(host)deck?.resume();},
+    applySettings(snapshot){enabled=snapshot.about?.odd?.enabled!==false;if(group)group.visible=enabled;rig?.setEnabled(enabled&&!suspended);syncLaunchers();upright=snapshot.cube?.uprightFaces!==false;reduced=Boolean(snapshot.accessibility?.reducedMotion);globalMuted=Boolean(snapshot.audio?.muted);if(deck){deck.root.classList.toggle('odd-reduced-motion',reduced);deck.engine.setSiteMuted(globalMuted);}},
+    suspend(){suspended=true;syncLaunchers();rig?.suspend();endGesture();if(controls)controls.enabled=false;deck?.suspend();if(feedback)feedback.hidden=true;clearTimeout(feedbackTimer);if(dialog?.open)close();},resume(){suspended=false;rig?.resume();if(controls)controls.enabled=true;if(host)deck?.resume();},
     dispose(){if(disposed)return;detach();disposed=true;events.abort();settingsUI?.dispose();editor?.dispose();deck?.dispose();dialog?.remove();launcher?.remove();accessible?.remove();feedback?.remove();stylesheet?.remove();binding.dispose();}
   };
 }

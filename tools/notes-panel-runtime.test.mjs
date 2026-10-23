@@ -21,6 +21,7 @@ test('settings reserve horizontal space without zooming or overlapping edge cont
   for (const availableRight of [900, 1100, 1450]) {
     const result = drawingLayout({width: 1920, availableRight, left: -600, right: 2200, layersOpen: true, fitInterior: false});
     assert.equal(result.zoom, 1); assert.equal(result.offset, (1920 - availableRight) / 2);
+    if (result.compact) { assert.equal(result.uiLeft, 12); continue; }
     assert.ok(result.gearsLeft + p.gears <= result.uiLeft);
     const rightWidth = p.tools + (result.stacked ? 0 : p.panelGap + p.layers);
     assert.equal(result.uiLeft + rightWidth, availableRight - 12);
@@ -37,4 +38,20 @@ test('fit mode remains opt-in at runtime while compact controls never force shri
     assert.equal(result.compact, true); assert.equal(result.zoom, 1);
     assert.equal(result.uiLeft, 12); assert.equal(result.uiRight, 12);
   }
+});
+
+test('rail clearance shifts the left tablet and reduces the space available for fitting', () => {
+  const base = {width: 1440, left: 100, right: 1340, availableRight: 1440, layersOpen: false, margin: 12};
+  const rail = drawingLayout({...base, availableLeft: 100, leftPanelWidth: 520, compactAt: 1050, fitInterior: false});
+  assert.equal(rail.gearsLeft, 112);
+  assert.equal(rail.uiLeft, 1076);
+  assert.equal(rail.dockLeft, 770);
+  assert.equal(rail.offset, -50);
+  const fit = drawingLayout({...base, availableLeft: 100, leftPanelWidth: 520, compactAt: 1050, fitInterior: true});
+  assert.ok(fit.zoom < drawingLayout({...base, fitInterior: true}).zoom);
+  const mobile = drawingLayout({...base, width: 390, availableRight: 390, availableLeft: 68, compactAt: 1050, fitInterior: false});
+  assert.equal(mobile.uiLeft, 80);
+  assert.equal(mobile.uiRight, 12);
+  assert.equal(mobile.dockLeft, 229);
+  assert.equal(drawingLayout({...base, width: 390, availableRight: 390, availableLeft: 0, compactAt: 1050, fitInterior: false}).uiLeft, 12);
 });

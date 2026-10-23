@@ -122,7 +122,7 @@ export function setupTabletControls({ camera, domElement, tabletGroup, modelCent
     controls.userData.sharedMouse = installStandardGlbMouseControls({
       controls,
       domElement,
-      canInteract: () => !!(controls && controls.enabled)
+      canInteract: () => !!(controls && controls.enabled && !controls.userData?.videoPresentationActive)
     });
     return controls;
   } catch (e) {

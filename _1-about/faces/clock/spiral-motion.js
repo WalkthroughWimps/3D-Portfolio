@@ -19,10 +19,10 @@ export function validateSpiralManifest(manifest, scene) {
   return pivots;
 }
 
-export function spiralMotion(date, manifest) {
-  // Absolute epoch time keeps fractional ratios continuous across midnight/DST.
+export function spiralMotion(date, manifest, visualSeconds = date.getTime() / 1000) {
+  // The decorative train can run faster while the ring remains at wall time.
   const seconds = date.getTime() / 1000;
-  const input = seconds * TAU / manifest.inputPeriodSeconds;
+  const input = visualSeconds * TAU / manifest.inputPeriodSeconds;
   const angles = Object.fromEntries(V9_NAMES.filter(name => name !== 'clock-ring').map(name =>
     [name, (manifest.nodes[name].basePhase + manifest.nodes[name].inputFactor * input) % TAU]));
   // The specified 60-second ring is an independent wall-time drive; the

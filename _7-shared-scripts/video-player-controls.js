@@ -12,6 +12,8 @@ import { assetUrl, safeDrawImage } from './assets-config.js';
 import { isAudioAllowed } from './audio-consent.js';
 import { getEffectiveAudioSettings as getSharedEffectiveAudioSettings, patchAudioSettings } from './audio-settings.js';
 import { parseSrt, captionAtTime, captionTimeForVideo } from './media/captions.js';
+import { getSharedSettings } from './core/settings.js';
+import { VIDEO_EXPLAINER_DEFAULTS } from './core/settings-schema.js';
 
 // Player state management
 
@@ -1264,15 +1266,16 @@ function formatTime(t) {
         return null;
       }
 
-      const DEFAULT_ENTRIES_6 = [
-        { id: 'online-classes', title: 'Online Classes', description: 'Remote learning cuts and overlays.', order: 0 },
-        { id: 'a-list-videos', title: 'A-List Videos', description: 'Promo edits and highlights.', order: 1 },
-        { id: 'news-broadcast', title: 'News Broadcast', description: 'Broadcast-style segments.', order: 2 },
-        { id: 'neotube-studios', title: 'NeoTube Studios', description: 'Studio-branded content.', order: 3 },
-        { id: 'music-videos', title: 'Music Videos', description: 'Music-driven visuals and edits.', order: 4 },
-        { id: 'random-vids', title: 'Random Vids', description: 'Favorite mixes and experiments.', order: 5 }
-      ];
+      const DEFAULT_ENTRIES_6 = Object.entries(VIDEO_EXPLAINER_DEFAULTS).map(([id, item], order) => ({
+        id, title: item.title, description: item.text, order
+      }));
       const entries = (Array.isArray(opts.entries) && opts.entries.length) ? opts.entries : DEFAULT_ENTRIES_6;
+      const useVideoExplainers = opts.layout !== 'split2-right' && entries.length === 6 &&
+        entries.every((entry, index) => entry.id === DEFAULT_ENTRIES_6[index].id);
+      let videoExplainerSettings = getSharedSettings().get().videos;
+      const stopVideoExplainerSettings = useVideoExplainers
+        ? getSharedSettings().subscribe(snapshot => { videoExplainerSettings = snapshot.videos; })
+        : () => {};
 
       const gridCanvas = document.createElement('canvas');
       const controlsCanvas = document.createElement('canvas'); // separate layer for bars/icons
@@ -1775,11 +1778,16 @@ function formatTime(t) {
         v.__srcList = normalized;
         v.__srcIndex = 0;
         v.__sourceLoaded = false;
+        v.__metadataReady = false;
+        v.__sourcesExhausted = false;
 
         // tryNext logic — picks the next viable source from the stored list
         const tryNext = () => {
           const i = v.__srcIndex || 0;
-          if (i >= (v.__srcList ? v.__srcList.length : 0)) return;
+          if (i >= (v.__srcList ? v.__srcList.length : 0)) {
+            v.__sourcesExhausted = true;
+            return;
+          }
           const current = v.__srcList[v.__srcIndex++];
           const srcPath = resolveMediaUrl(current);
           if (!srcPath) { tryNext(); return; }
@@ -1797,6 +1805,7 @@ function formatTime(t) {
         v.addEventListener('abort', onAbortLike);
         v.addEventListener('stalled', onAbortLike);
         v.addEventListener('loadedmetadata', () => {
+          v.__metadataReady = true;
           v.removeEventListener('error', tryNext);
           v.removeEventListener('abort', onAbortLike);
           v.removeEventListener('stalled', onAbortLike);
@@ -1894,6 +1903,9 @@ function formatTime(t) {
         const sources = audioUrl ? [audioUrl] : [`${entry.id}.opus`];
         return createAudio(sources);
       });
+      previewVideos.forEach((video, idx) => video.addEventListener('play', () => {
+        if (gridDisposed || playingFull || hoverIndex !== idx || previewWindows[idx]?.phase !== 'playing') video.pause();
+      }));
       const captionCues = new Map();
       const captionLoads = new Map();
       let captionsEnabled = false;
@@ -1930,49 +1942,48 @@ function formatTime(t) {
       // expose preview/full video element arrays so external player instances can reuse them
       try { window.__videoGridPreviewVideos = previewVideos; window.__videoGridFullVideos = fullVideos; } catch  { /* ignore */ }
 
-      // Preload scheduling: defer all network-heavy loads until the page
-      // has finished loading. Provide a staged loader which first warms
-      // the tablet animation, then low-quality previews + audio (opus),
-      // then finally high-quality video files. This avoids a download
-      // storm and keeps the initial page quick so the progress bar shows.
+      // Preload scheduling starts after the intro when requested by the page.
+      // Two workers warm preview/audio and full sources, with the hovered
+      // entry promoted ahead of other pending work.
+      let prioritizeGridMedia = () => {};
       const schedulePreload = (() => {
         let _started = false;
+        let priorityIndex = -1;
+        prioritizeGridMedia = (index) => { priorityIndex = index; };
         const doSchedule = () => {
           if (_started || gridDisposed) return; _started = true;
 
-          // Helper: safe attempt to load a URL via a lightweight video element
+          // Each phase owns one task per entry. A hover changes which pending
+          // entry workers take next without starting a duplicate load.
           const runLimited = async (items, concurrency, warm) => {
-            let next = 0;
+            const pending = new Set(items);
             const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-              while (!gridDisposed && next < items.length) {
-                const item = items[next++];
+              while (!gridDisposed && pending.size) {
+                const item = [...pending].find(task => task.index === priorityIndex) || pending.values().next().value;
+                pending.delete(item);
                 try { await warm(item); } catch { /* Continue warming the remaining items. */ }
               }
             });
             await Promise.all(workers);
           };
 
-          const warmPreviewsAndAudio = async () => {
+          const warmGridMedia = async () => {
             try {
               // Assign deferred thumbnail src now (lightweight images)
               thumbs.forEach((img) => {
                 try { if (img && img.__deferredSrc && !img.src) img.src = img.__deferredSrc; } catch  { /* ignore */ }
               });
-              // Warm low-quality preview metadata (fast) and audio sources (opus)
-              await runLimited(previewVideos.map((video, index) => ({ video, audio: fullAudios[index] })), 2, async ({ video, audio }) => {
+              const tasks = [
+                ...previewVideos.map((_, index) => ({ index, kind: 'preview' })),
+                ...fullVideos.map((_, index) => ({ index, kind: 'full' }))
+              ];
+              await runLimited(tasks, 2, async ({ index, kind }) => {
                 if (gridDisposed) return;
-                video?.__warmMetadata?.(); audio?.__ensureSrc?.();
-                await new Promise(resolve => setTimeout(resolve, 225));
-              });
-            } catch  { /* ignore */ }
-          };
-
-          const warmHighQuality = async () => {
-            try {
-              await runLimited(fullVideos, 1, async (video) => {
-                if (gridDisposed) return;
-                video?.__warmMetadata?.();
-                await new Promise(resolve => setTimeout(resolve, 400));
+                if (kind === 'preview') {
+                  previewVideos[index]?.__warmMetadata?.();
+                  fullAudios[index]?.__ensureSrc?.();
+                } else fullVideos[index]?.__warmMetadata?.();
+                await new Promise(resolve => setTimeout(resolve, kind === 'preview' ? 225 : 400));
               });
             } catch  { /* ignore */ }
           };
@@ -1980,15 +1991,13 @@ function formatTime(t) {
           (async () => {
             // If page already loaded use immediate, otherwise wait for window load
             if (document.readyState === 'complete') {
-              await warmPreviewsAndAudio();
-              await warmHighQuality();
+              await warmGridMedia();
             } else {
               const onLoad = async () => {
                 try { window.removeEventListener('load', onLoad); } catch  {}
                 preloadLoadListener = null;
                 if (gridDisposed) return;
-                await warmPreviewsAndAudio();
-                await warmHighQuality();
+                await warmGridMedia();
               };
               preloadLoadListener = onLoad;
               window.addEventListener('load', onLoad);
@@ -2077,25 +2086,43 @@ function formatTime(t) {
         if (fullIndex >= 0) startZoomOut(fullIndex);
       }
 
+      let playbackGeneration = 0;
+      let pendingAudioReady = null;
+      function cancelPendingPlayback() {
+        playbackGeneration++;
+        if (pendingAudioReady) {
+          pendingAudioReady.video.removeEventListener('canplay', pendingAudioReady.listener);
+          pendingAudioReady = null;
+        }
+        fullVideos.forEach(video => { try { video.pause(); } catch {} });
+        fullAudios.forEach(audio => { try { audio.pause(); } catch {} });
+        previewVideos.forEach(video => { try { video.pause(); } catch {} });
+      }
+
+      function isCurrentPlayback(idx, generation = playbackGeneration) {
+        return !gridDisposed && generation === playbackGeneration &&
+          playingFull && fullIndex === idx &&
+          !['prepare', 'in', 'out', 'fade'].includes(animation.phase);
+      }
+
       function startFullPlayback(idx) {
         const video = fullVideos[idx];
         const audio = getFullAudio(idx);
-        if (!video) return;
-        if (["prepare", "in", "out", "fade"].includes(animation.phase)) return;
+        if (!video || !isCurrentPlayback(idx)) return;
+        const generation = playbackGeneration;
         ensureVideoMuted(video);
         if (canUseAudio()) {
-          startAudioForVideo(video, audio);
+          startAudioForVideo(video, audio, idx, generation);
         } else if (audio) {
           try { audio.pause(); } catch  { /* ignore */ }
         }
-        video.play().catch(() => {});
+        try { video.play().then(() => {
+          if (!isCurrentPlayback(idx, generation) && !isCurrentPlayback(idx)) video.pause();
+        }).catch(() => {}); } catch {}
       }
 
       function pauseFullPlayback(idx) {
-        const video = fullVideos[idx];
-        const audio = getFullAudio(idx);
-        if (video) { try { video.pause(); } catch  { /* ignore */ } }
-        if (audio) { try { audio.pause(); } catch  { /* ignore */ } }
+        if (idx >= 0) cancelPendingPlayback();
       }
 
       function applyAudioSettings(audio) {
@@ -2208,13 +2235,13 @@ function formatTime(t) {
         ctx.restore();
       }
 
-      function startAudioForVideo(video, audio) {
-        if (!video || !audio) return;
+      function startAudioForVideo(video, audio, idx, generation = playbackGeneration) {
+        if (!video || !audio || !isCurrentPlayback(idx, generation) || video.paused) return;
         if (!canUseAudio()) {
           try { audio.pause(); } catch  { /* ignore */ }
           return;
         }
-        resetAudioSyncState(fullIndex);
+        resetAudioSyncState(idx);
         applyAudioSettings(audio);
         applyAudioPlaybackSettings(audio);
         try {
@@ -2223,7 +2250,9 @@ function formatTime(t) {
           const target = Math.max(0, (video.currentTime || 0) - syncSec);
           audio.currentTime = target;
         } catch  { /* ignore */ }
-        try { audio.play().catch(() => {}); } catch  { /* ignore */ }
+        try { audio.play().then(() => {
+          if (!isCurrentPlayback(idx, generation) && !isCurrentPlayback(idx)) audio.pause();
+        }).catch(() => {}); } catch  { /* ignore */ }
       }
 
       fullVideos.forEach((video, idx) => {
@@ -2231,14 +2260,19 @@ function formatTime(t) {
         if (!video || !audio) return;
         try { video.muted = true; video.volume = 0; } catch  { /* ignore */ }
         video.addEventListener('play', () => {
+          const generation = playbackGeneration;
+          if (!isCurrentPlayback(idx, generation)) { video.pause(); return; }
           if (canUseAudio()) {
             if (video.readyState >= 2) {
-              startAudioForVideo(video, audio);
+              startAudioForVideo(video, audio, idx, generation);
             } else {
+              if (pendingAudioReady) pendingAudioReady.video.removeEventListener('canplay', pendingAudioReady.listener);
               const onReady = () => {
                 video.removeEventListener('canplay', onReady);
-                startAudioForVideo(video, audio);
+                if (pendingAudioReady?.listener === onReady) pendingAudioReady = null;
+                startAudioForVideo(video, audio, idx, generation);
               };
+              pendingAudioReady = { video, listener: onReady };
               video.addEventListener('canplay', onReady, { once: true });
             }
           }
@@ -2247,7 +2281,7 @@ function formatTime(t) {
         video.addEventListener('pause', () => { try { audio.pause(); } catch  {} });
         video.addEventListener('seeking', () => { resetAudioSyncState(idx); });
         video.addEventListener('timeupdate', () => {
-          syncAudioToVideo(video, audio, idx);
+          if (isCurrentPlayback(idx) && !video.paused) syncAudioToVideo(video, audio, idx);
         });
         video.addEventListener('ratechange', () => {
           applyAudioPlaybackSettings(audio);
@@ -2255,7 +2289,7 @@ function formatTime(t) {
         });
         video.addEventListener('ended', () => {
           try { audio.pause(); } catch  {}
-          if (playingFull && fullIndex === idx) startZoomOut(idx);
+          if (isCurrentPlayback(idx)) startZoomOut(idx);
         });
       });
 
@@ -2263,11 +2297,16 @@ function formatTime(t) {
         if (!vid) return;
         vid.addEventListener('ended', () => {
           if (uiState.fullscreen) { /* fullscreen disabled */ }
-          startZoomOut(idx);
+          if (isCurrentPlayback(idx)) startZoomOut(idx);
+        });
+        vid.addEventListener('error', () => {
+          // The fallback handler runs first; after metadata it is detached.
+          if (isCurrentPlayback(idx) && (vid.__metadataReady || vid.__sourcesExhausted)) startZoomOut(idx);
         });
       });
 
       let hoverIndex = -1;
+      let lastHoverIndex = -1;
       let description = 'Hover a thumbnail to preview selected highlights.';
       let playingFull = false;
       let fullIndex = -1;
@@ -2639,6 +2678,10 @@ function formatTime(t) {
       }
 
       function drawDescription() {
+        if (useVideoExplainers) {
+          drawVideoExplainer();
+          return;
+        }
         // Do NOT scale/stretch the text just because the band is taller.
         // Keep a stable font size and wrap into multiple lines when needed.
         const band = layout.descBand;
@@ -2708,11 +2751,115 @@ function formatTime(t) {
         ctx.restore();
       }
 
+      function drawVideoExplainer() {
+        const band = layout.descBand;
+        const pad = Math.max(18, Math.round(Math.min(band.w, band.h) * 0.06));
+        const width = Math.max(1, band.w - pad * 2);
+        const height = Math.max(1, band.h - pad * 2);
+        const selected = hoverIndex >= 0 ? hoverIndex : lastHoverIndex;
+        const id = entries[selected]?.id;
+        const text = id ? videoExplainerSettings?.explainer?.[id] ?? entries[selected].description
+          : description;
+        const family = {
+          sans: '"Segoe UI", "Helvetica Neue", Arial, sans-serif',
+          serif: 'Georgia, "Times New Roman", serif',
+          mono: 'Consolas, "Courier New", monospace'
+        }[videoExplainerSettings?.explainerFont] || '"Segoe UI", Arial, sans-serif';
+        const style = videoExplainerSettings?.explainerStyle || 'normal';
+        const placement = videoExplainerSettings?.explainerPlacement || 'center';
+        const align = videoExplainerSettings?.explainerAlign || 'center';
+        const requestedSize = Number(videoExplainerSettings?.explainerSize) || 46;
+        ctx.save();
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.strokeStyle = 'rgba(0,0,0,0.72)';
+        ctx.lineWidth = 3;
+        ctx.lineJoin = 'round';
+        ctx.textBaseline = 'alphabetic';
+        const wrap = (value, maxWidth) => {
+          const lines = [];
+          for (const paragraph of String(value).replace(/\r\n?/g, '\n').split('\n')) {
+            if (!paragraph.trim()) { lines.push(''); continue; }
+            let line = '';
+            for (const word of paragraph.trim().split(/\s+/)) {
+              const candidate = line ? `${line} ${word}` : word;
+              if (ctx.measureText(candidate).width <= maxWidth) { line = candidate; continue; }
+              if (line) { lines.push(line); line = ''; }
+              for (const char of word) {
+                if (line && ctx.measureText(line + char).width > maxWidth) { lines.push(line); line = ''; }
+                line += char;
+              }
+            }
+            lines.push(line);
+          }
+          return lines;
+        };
+        let size = requestedSize;
+        let lines = [];
+        let lineH = 0;
+        do {
+          ctx.font = `${style} ${size}px ${family}`;
+          lines = wrap(text, width);
+          lineH = Math.round(size * 1.25);
+          if (lines.length * lineH <= height || size <= 12) break;
+          size -= 1;
+        } while (true);
+        const blockW = Math.min(width, Math.max(0, ...lines.map(line => ctx.measureText(line).width)));
+        const blockH = lines.length * lineH;
+        const anchorIndex = placement === 'follow' ? selected : entries.findIndex(entry => entry.id === placement);
+        const col = anchorIndex < 0 ? 1 : anchorIndex % 3;
+        const row = anchorIndex < 0 ? 0.5 : Math.floor(anchorIndex / 3);
+        const x = band.x + pad + (col === 0 ? 0 : col === 1 ? (width - blockW) / 2 : width - blockW);
+        const freeHeight = Math.max(0, height - blockH);
+        const y = band.y + pad + (row === 0 ? 0 : row === 1 ? freeHeight : freeHeight / 2);
+        const textX = align === 'left' ? x : align === 'right' ? x + blockW : x + blockW / 2;
+        ctx.textAlign = align;
+        ctx.beginPath();
+        ctx.rect(band.x + pad, band.y + pad, width, height);
+        ctx.clip();
+        for (let i = 0; i < lines.length; i++) {
+          const baseline = y + size + i * lineH;
+          ctx.strokeText(lines[i], textX, baseline);
+          ctx.fillText(lines[i], textX, baseline);
+        }
+        ctx.restore();
+      }
+
       function drawHoveredTitle() {
         if (hoverIndex < 0 || opts.layout === 'split2-right') return;
         const cell = layout.cells[hoverIndex];
         const title = String(entries[hoverIndex]?.title || '').toUpperCase();
         if (!cell || !title) return;
+        if (useVideoExplainers) {
+          const inset = Math.max(10, Math.round(cell.h * 0.05));
+          const maxWidth = cell.w - inset * 2;
+          const belowBand = cell.y > layout.descBand.y;
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(cell.x, cell.y, cell.w, cell.h);
+          ctx.clip();
+          let size = Math.max(16, Math.min(44, Math.round(gridCanvas.height * 0.044)));
+          do {
+            ctx.font = `${size}px "Impact","Arial Black","Segoe UI Black","Segoe UI",sans-serif`;
+            if (ctx.measureText(title).width <= maxWidth || size <= 16) break;
+            size--;
+          } while (true);
+          const panelH = size * 1.5;
+          const panelY = belowBand ? cell.y + inset : cell.y + cell.h - inset - panelH;
+          ctx.fillStyle = 'rgba(0,0,0,0.72)';
+          ctx.fillRect(cell.x, panelY, cell.w, panelH);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'rgba(255,255,255,0.96)';
+          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+          ctx.lineWidth = 3;
+          ctx.lineJoin = 'round';
+          const x = cell.x + cell.w / 2;
+          const y = panelY + panelH / 2;
+          ctx.strokeText(title, x, y, maxWidth);
+          ctx.fillText(title, x, y, maxWidth);
+          ctx.restore();
+          return;
+        }
         const band = layout.descBand;
         const below = cell.y < band.y;
         const fontSize = Math.max(22, Math.min(56, Math.round(gridCanvas.height * 0.052)));
@@ -2844,6 +2991,7 @@ function formatTime(t) {
       function startPreview(idx) {
         const v = previewVideos[idx], state = previewWindows[idx];
         if (!v || !state) return;
+        state.generation = (state.generation || 0) + 1;
         const clips = opts.previewSegments?.[entries[idx].id] || [[1, 7]];
         if (!state.bag.length) {
           state.bag = clips.map((_, i) => i);
@@ -2867,6 +3015,7 @@ function formatTime(t) {
 
       function stopPreview(idx) {
         previewVideos[idx]?.pause();
+        previewWindows[idx].generation = (previewWindows[idx].generation || 0) + 1;
         previewWindows[idx].phase = 'idle';
         previewWindows[idx].outgoing = null;
       }
@@ -2881,7 +3030,10 @@ function formatTime(t) {
           if (!v.seeking && v.readyState >= 2) {
             state.phase = 'playing';
             state.fadeStarted = now;
-            v.play().catch(() => { state.phase = 'idle'; });
+            const generation = state.generation;
+            v.play().catch(() => {
+              if (state.generation === generation) state.phase = 'idle';
+            });
           }
         }
         if (state.phase !== 'playing' || v.seeking) return 0;
@@ -2951,6 +3103,8 @@ function formatTime(t) {
         if (idx === hoverIndex) return;
         if (hoverIndex >= 0) stopPreview(hoverIndex);
         hoverIndex = idx;
+        if (idx >= 0) lastHoverIndex = idx;
+        prioritizeGridMedia(idx);
         if (idx >= 0) {
           lastHoverEntry = entries[idx];
           description = entries[idx].description;
@@ -2962,9 +3116,14 @@ function formatTime(t) {
         const v = fullVideos[idx];
         if (!v) return;
         entryStill = captureEntryStill(idx);
+        cancelPendingPlayback();
+        prioritizeGridMedia(idx);
+        v.__ensureSrc?.();
+        fullAudios[idx]?.__ensureSrc?.();
         fullIndex = idx;
         if (captionsEnabled) loadCaptions(idx);
         playingFull = true;
+        opts.onPresentationChange?.(true);
         renderer.domElement.style.cursor = '';
         lastMouseMoveTs = performance.now();
         chromeTarget = 1;
@@ -2995,6 +3154,7 @@ function formatTime(t) {
         if (idx === -1) return;
         if (['out', 'fade'].includes(animation.phase) && fullIndex === idx) return;
         pauseFullPlayback(idx);
+        opts.onPresentationChange?.(false);
         captionLive.textContent = '';
         exitStill = document.createElement("canvas");
         const v = fullVideos[idx];
@@ -4605,7 +4765,10 @@ function formatTime(t) {
         restoreOriginalMaterial,
         destroy() {
           if (gridDisposed) return;
+          stopVideoExplainerSettings();
+          cancelPendingPlayback();
           gridDisposed = true;
+          opts.onPresentationChange?.(false);
           cancelAnimationFrame(gridRenderFrame);
           clearPendingSingleClick();
           if (preloadLoadListener) window.removeEventListener('load', preloadLoadListener);

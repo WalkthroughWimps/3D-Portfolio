@@ -1,0 +1,1192 @@
+{
+  "items": [
+    {
+      "file": "assets/grade-1/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 110070,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-1/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 158338,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-1/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21312,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1128,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 5912,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12564,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12766,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12765,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 11814,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16969,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18070,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16550,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16136,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16529,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15307,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18271,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17862,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16211,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 14391,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15482,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12748,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-1/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 167192,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-2/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 202892,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-2/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21299,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1112,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 6017,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18016,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18542,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17232,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17389,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 11166,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17133,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 10962,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 22789,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19646,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19596,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18483,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16362,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17807,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19151,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20818,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17787,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-2/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 199308,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-3/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 224575,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-3/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21281,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1099,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 6028,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16242,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16420,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18000,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20034,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19650,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18831,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17722,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19299,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19346,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18584,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18548,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17794,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15185,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18859,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 14098,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 13696,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-3/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 181507,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-4/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 207001,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-4/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21287,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1099,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 6006,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18574,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19124,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20907,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20579,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 22557,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16513,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17153,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16195,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20031,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20681,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 9325,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20811,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 21204,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20048,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19610,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18576,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-4/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 138710,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-5/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 183621,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-5/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21316,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1132,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 6022,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16929,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18633,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15705,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15367,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16688,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16097,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20909,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19827,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19233,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18477,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18343,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18837,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18230,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12793,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 14843,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15003,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-5/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/back.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 126446,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-6/travel/front.jpg",
+      "size": [
+        702,
+        1024
+      ],
+      "bytes": 180049,
+      "rgbaMipBytes": 3833856.0
+    },
+    {
+      "file": "assets/grade-6/travel/inside-back.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 21297,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/inside-front.jpg",
+      "size": [
+        172,
+        256
+      ],
+      "bytes": 1106,
+      "rgbaMipBytes": 234837.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-01.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 6019,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-02.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20667,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-03.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 21112,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-04.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 13072,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-05.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12647,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-06.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18020,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-07.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18143,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-08.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 15681,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-09.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16855,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-10.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17331,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-11.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 16332,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-12.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20714,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-13.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 20430,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-14.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 17772,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-15.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 18779,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-16.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 12535,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-17.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 13984,
+      "rgbaMipBytes": 247125.33333333334
+    },
+    {
+      "file": "assets/grade-6/travel/page-18.jpg",
+      "size": [
+        181,
+        256
+      ],
+      "bytes": 19991,
+      "rgbaMipBytes": 247125.33333333334
+    }
+  ]
+}

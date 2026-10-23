@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-/** A compact oval basket carried by two guides fitted to the corrected backing. */
+/** A compact oval basket following the Skills face's deployment. */
 export function createBeanBagContainer({assembly, camera, canvas, supply, visuals, getSettings = () => ({})}) {
   const panels = [...assembly.motion.panels.values()];
   const find = name => panels.find(panel => panel.record.panelId === `panel-microsoft-${name}`);
@@ -42,32 +42,11 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
   const resources = new Set(), own = value => {resources.add(value); return value;};
   const brass = own(new THREE.MeshStandardMaterial({color:'#b99a5d', metalness:.66, roughness:.34, emissive:'#503417'}));
   const enamel = own(new THREE.MeshStandardMaterial({color:'#477d80', metalness:.28, roughness:.42, emissive:'#18383b', side:THREE.DoubleSide,transparent:true,opacity:.58,depthWrite:false}));
-  const lining = own(new THREE.MeshStandardMaterial({color:'#183b42', roughness:.84, side:THREE.DoubleSide}));
-  const dark = own(new THREE.MeshStandardMaterial({color:'#152a30', metalness:.24, roughness:.5}));
-  const jointGeometry = own(new THREE.SphereGeometry(1, 14, 10)), rodGeometry = own(new THREE.CylinderGeometry(1, 1, 1, 12));
-  const up = new THREE.Vector3(0, 1, 0);
-  function setBar(mesh, from, to, radius) {
-    const vector = to.clone().sub(from); mesh.position.copy(from).add(to).multiplyScalar(.5);
-    mesh.quaternion.setFromUnitVectors(up, vector.clone().normalize());
-    mesh.scale.set(radius, vector.length(), radius);
-  }
-  function bar(parent, name, from, to, radius, material) {
-    const mesh = new THREE.Mesh(rodGeometry, material); mesh.name = name; parent.add(mesh);
-    setBar(mesh, new THREE.Vector3(...from), new THREE.Vector3(...to), radius); return mesh;
-  }
-  function joint(parent, name, size, material) {
-    const mesh = new THREE.Mesh(jointGeometry, material); mesh.name = name; mesh.scale.setScalar(size); parent.add(mesh); return mesh;
-  }
-  // The crossbar and its bearings travel with the bowl; the curved guides stay fixed.
-  bar(carriage, 'Moving basket crossbar', [left, hingeY, faceZ], [right, hingeY, faceZ], .0035, brass);
-  for (const x of [left, right]) {
-    const cap = joint(carriage, 'Sliding guide bearing', .007, brass); cap.position.set(x, hingeY, faceZ);
-  }
   const hinge = new THREE.Group(); hinge.name = 'Moving bottom basket hinge'; hinge.position.set(0, hingeY, faceZ); carriage.add(hinge);
   const centerTop = topY - hingeY;
   const bottomY = u => lower(halfWidth*u) - hingeY + .005;
   const topEdge = u => centerTop + .009 * u * u;
-  // The rear wall is planar. The front has a continuously rounded oval profile.
+  // The open bowl has a continuously rounded oval profile.
   const frontZ = (u, v) => .008 + depth * Math.sqrt(Math.max(0, 1-u*u)) * Math.sin(Math.PI * (.08 + .92*v) / 2);
   function surface(name, zAt, material) {
     const cols = 40, rows = 12, positions = [], indices = [];
@@ -84,28 +63,23 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name; hinge.add(mesh); return mesh;
   }
   const flap = surface('Smooth rounded oval basket front', frontZ, enamel);
-  surface('Flat basket back', () => -.008, lining);
   function line(name, points, material, size=.005) {
     const mesh = new THREE.Mesh(own(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), Math.max(32, points.length*2), size, 8, false)), material);
     mesh.name = name; hinge.add(mesh); return mesh;
   }
-  const frontRim = [], backRim = [], lowerRim = [];
+  const frontRim = [], lowerRim = [];
   for (let i = 0; i <= 40; i++) {
     const u = i/20-1;
     frontRim.push(new THREE.Vector3(halfWidth*u, topEdge(u), frontZ(u,1)+.002));
-    backRim.push(new THREE.Vector3(halfWidth*u, topEdge(u), -.008));
     lowerRim.push(new THREE.Vector3(halfWidth*u, bottomY(u), frontZ(u,0)+.002));
   }
   line('Wide oval front lip', frontRim, brass, .003);
-  line('Flat back rim', backRim, brass, .0025);
   line('Circular lower basket seam', lowerRim, brass, .002);
   for (const u of [-1,1]) line('Basket folded side seam', [
     new THREE.Vector3(halfWidth*u,bottomY(u),.005),
     new THREE.Vector3(halfWidth*u,(bottomY(u)+topEdge(u))*.5,.013),
     new THREE.Vector3(halfWidth*u,topEdge(u),.02)
   ],brass,.0025);
-  const floor = new THREE.Mesh(own(new THREE.BoxGeometry(halfWidth*1.68,.003,depth*.9)),lining);
-  floor.name = 'Magnetic inner cradle'; floor.position.set(0,.013,depth*.46); hinge.add(floor);
   // Replacement IDs share a physical slot; only one of each pair can be present.
   const storedBags = Array.from({length:8},(_,id) => {
     const slot=id%4, x=(slot%2 ? 1 : -1)*.047, y=.032, z=(slot<2 ? .025 : .057);
@@ -116,25 +90,14 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
   });
   const syncBags = () => {const available = new Set(supply.snapshot().availableIds); storedBags.forEach((bag,id) => {bag.visible=available.has(id);});};
   const unsubscribe = supply.subscribe(syncBags); syncBags();
-  const arms = [-1,1].map(side => {
-    const shoulder=joint(hinge,'Retainer shoulder',.006,brass);
-    const upper=bar(hinge,'Retainer upper arm',[0,0,0],[0,.01,0],.003,brass);
-    const elbow=joint(hinge,'Retainer elbow',.0045,brass);
-    const forearm=bar(hinge,'Retainer forearm',[0,0,0],[0,.01,0],.0025,dark);
-    const hand=joint(hinge,'Catching palm',.007,brass);
-    return {side,shoulder,upper,elbow,forearm,hand};
-  });
   const sadMouth = new THREE.Line(own(new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(-.013,topY-.045-hingeY,depth+.005),
     new THREE.Vector3(0,topY-.041-hingeY,depth+.006),
     new THREE.Vector3(.013,topY-.045-hingeY,depth+.005)
   ])),own(new THREE.LineBasicMaterial({color:'#e4be80'})));
   sadMouth.name='Sad catcher expression'; sadMouth.visible=false; hinge.add(sadMouth);
-  const eyes=[-.009,.009].map(x=>{const eye=joint(hinge,'Catcher expression eye',.002,brass);eye.position.set(x,topY-.034-hingeY,depth+.005);return eye;});
-
-  // Aperture correction has already changed the loaded GLB by the time this face
-  // attaches. Fit both guides to that skin while rolling the rounded outer wall
-  // inward. Clearance includes both walls, the lip, and the base, not just the rear.
+  // Fit the folding path to the corrected backing. Keep conservative clearance
+  // samples for the open side and lower bowl while rolling below the cards.
   const backing=assembly.rawNodes.get('back.skills') || assembly.rawNodes.get('back.skills Export') ||
     assembly.model.getObjectByName('back.skills') || assembly.model.getObjectByName('back.skills Export');
   if(!backing)throw new Error('Skills basket requires its corrected backing');
@@ -176,22 +139,9 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
     if(!Number.isFinite(required))throw new Error('Skills basket could not sample its backing');
     return {rise,angle,z:Math.max(THREE.MathUtils.lerp(faceZ,required,t),required)};
   });
-  for(const x of [left,right]){
-    const points=path.map(({rise,z})=>new THREE.Vector3(x,hingeY+rise,z));
-    const rail=new THREE.Mesh(own(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),128,.0025,8,false)),dark);
-    rail.name='Backing-following retraction guide';root.add(rail);
-  }
-  // The owner begins tucked. Install that pose before the first rendered update
-  // so creation itself never flashes the open bowl for one frame.
-  carriage.position.y=path[64].rise;
-  carriage.position.z=path[64].z-faceZ;
-  hinge.rotation.x=path[64].angle;
-
-  let transition=1,retraction=1,sad=0,sadTime=0,catchPulse=0,tucked=true,suspended=false,disposed=false;
+  let retraction=1,sad=0,sadTime=0,catchPulse=0,tucked=true,suspended=false,disposed=false;
   const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();
-  const bottomIds=new Set([word.record.panelId,excel.record.panelId,powerPoint.record.panelId]);
-  const busy=()=>[...bottomIds].some(id=>assembly.motion.active.has(id)||assembly.motion.queue.has(id)||(assembly.motion.panels.get(id)?.clickProgress??1)<1);
-  const allowed=()=>!disposed&&!suspended&&!assembly.suspended&&assembly.motion.focused&&!assembly.motion.paused&&!busy()&&retraction<.02&&getSettings().about?.skills?.enabled!==false;
+  const allowed=()=>!disposed&&!suspended&&!assembly.suspended&&assembly.motion.focused&&!assembly.motion.paused&&retraction<.02&&getSettings().about?.skills?.enabled!==false;
   function pickStoredBag(event) {
     if (!allowed()) return null;
     root.updateWorldMatrix(true,true); camera.updateWorldMatrix(true,false);
@@ -208,32 +158,43 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
     }
     return null;
   }
-  function poseArms() {
-    const droop=sad,reach=catchPulse;
-    for(const arm of arms) {
-      const s=arm.side;
-      const shoulder=new THREE.Vector3(s*(halfWidth-.007),topY-.009-hingeY,.015);
-      const elbow=new THREE.Vector3(s*(halfWidth*.76),topY-.055-.022*droop-hingeY,.038+.009*reach);
-      const palm=new THREE.Vector3(s*(halfWidth*.47),topY-.065-.032*droop+.012*reach-hingeY,.06+.018*reach);
-      arm.shoulder.position.copy(shoulder);arm.elbow.position.copy(elbow);arm.hand.position.copy(palm);
-      setBar(arm.upper,shoulder,elbow,.003);setBar(arm.forearm,elbow,palm,.0025);
-    }
-    sadMouth.visible=sad>.35&&retraction<.2;
-    for(const eye of eyes)eye.visible=sadMouth.visible;
+  function hitTray(event) {
+    if(!allowed())return false;
+    root.updateWorldMatrix(true,true);camera.updateWorldMatrix(true,false);
+    const rect=canvas.getBoundingClientRect();ndc.set((event.clientX-rect.left)/rect.width*2-1,-(event.clientY-rect.top)/rect.height*2+1);
+    ray.setFromCamera(ndc,camera);
+    // The hinge and bowl are translated by faceZ in root space. A depth test
+    // around zero misses the real tray and can accept a ray through the face.
+    // Only the bowl itself should toggle toss mode when a card is clicked above it.
+    const hit=ray.intersectObject(flap,true)[0];
+    if(!hit)return Boolean(pickStoredBag(event));
+    const local=hit.point.clone().applyMatrix4(root.matrixWorld.clone().invert());
+    return Math.abs(local.x)<=halfWidth+.045&&local.y>=lower(halfWidth)-.08&&local.y<=topY+.06&&local.z>=faceZ-.045&&local.z<=faceZ+depth+.08;
   }
-  function update(dt) {
-    if(disposed||suspended||assembly.suspended)return;
-    const step=Math.max(0,Math.min(.05,Number.isFinite(dt)?dt:0));
-    const reduced=assembly.motion.reducedMotion;
-    const target=(!assembly.motion.focused||busy()||getSettings().about?.skills?.enabled===false)?1:0;
-    transition=reduced?target:THREE.MathUtils.clamp(transition+Math.sign(target-transition)*Math.min(Math.abs(target-transition),step/1.4),0,1);
-    retraction=smooth(transition);
+  function floorAnchor(){
+    root.updateWorldMatrix(true,false);
+    return new THREE.Vector3(0,hingeY-.075,faceZ+depth*.52).applyMatrix4(root.matrixWorld);
+  }
+  function poseArms() {
+    sadMouth.visible=sad>.35&&retraction<.2;
+  }
+  function syncPose() {
+    // PanelMotion has already updated the rig in the face's update. Its actual
+    // deployment also accounts for queued/active card turns and reversals.
+    retraction=1-THREE.MathUtils.clamp(assembly.rig.deployment,0,1);
     const index=retraction*64,lo=Math.floor(index),hi=Math.min(64,lo+1),mix=index-lo;
     const from=path[lo],to=path[hi];
     carriage.position.y=THREE.MathUtils.lerp(from.rise,to.rise,mix);
     carriage.position.z=THREE.MathUtils.lerp(from.z,to.z,mix)-faceZ;
     hinge.rotation.x=THREE.MathUtils.lerp(from.angle,to.angle,mix);
     tucked=retraction>.01;
+  }
+  syncPose();
+  function update(dt) {
+    if(disposed||suspended||assembly.suspended)return;
+    const step=Math.max(0,Math.min(.05,Number.isFinite(dt)?dt:0));
+    const reduced=assembly.motion.reducedMotion;
+    syncPose();
     const contrast=THREE.MathUtils.clamp(getSettings().start?.contrast??.5,0,1);
     const ease=contrast*contrast*(3-2*contrast);
     brass.emissiveIntensity=.08+(2.4-.08)*ease;
@@ -243,7 +204,7 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
   }
   poseArms();
   return {
-    root,carriage,hinge,flap,storedBags,pickStoredBag,get open(){return retraction<.02;},get travel(){return 1-retraction;},
+    root,carriage,hinge,flap,storedBags,pickStoredBag,hitTray,floorAnchor,get open(){return retraction<.02;},get travel(){return 1-retraction;},
     get retraction(){return retraction;},get tucked(){return tucked;},get sad(){return sad;},
     get bounds(){return {left,right,topY,hingeY,radius,depth,faceZ,referencePanelId:sidePanel.record.panelId,referenceSpan:sideSpan};},
     get railPath(){return path.map(p=>({...p}));},
@@ -254,7 +215,7 @@ export function createBeanBagContainer({assembly, camera, canvas, supply, visual
       bag.updateWorldMatrix(true,false);return bag.getWorldPosition(new THREE.Vector3());
     },
     onCatch(){catchPulse=1;},onDestroy(){sadTime=2.6;sad=Math.max(sad,.2);},
-    suspend(){suspended=true;},resume(){suspended=false;},
+    suspend(){suspended=true;},resume(){suspended=false;update(0);},
     dispose(){if(disposed)return;disposed=true;unsubscribe();root.removeFromParent();resources.forEach(resource=>resource.dispose());resources.clear();}
   };
 }

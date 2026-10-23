@@ -51,7 +51,7 @@ export function createFaceRegistry(options) {
       }
       speakers.applySettings(snapshot); backings.applySettings(snapshot); interior.applySettings(snapshot);
     } },
-    endGestures() { each('endGesture'); },
+    endGestures(options) { each('endGesture', options); },
     suspend() { if (!disposed) { suspended = true; interior.suspend(); speakers.suspend(); each('suspend'); } },
     resume() { if (!disposed) { suspended = false; interior.resume(); speakers.resume(); each('resume'); } }, detach,
     dispose() { if (disposed) return; disposed = true; interior.dispose(); backings.dispose(); speakers.dispose(); for (const face of [...faces.values()].reverse()) face.dispose(); attached = false; }
