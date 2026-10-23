@@ -100,3 +100,45 @@ test('Music presentation follows camera focus, not ordinary track playback', () 
   assert.equal(events.at(-1).active, false);
   assert.equal(events.length, 2);
 });
+
+test('recorded track starts without a sampled keyboard instrument', () => {
+  const source = readFileSync(new URL('../_5-music/music-piano-controls.v2.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function startMIDIPlayback(){');
+  const end = source.indexOf('function advanceMIDI(elapsedMs){', start);
+  assert.ok(start >= 0 && end > start);
+  const calls = [];
+  const context = {
+    instrumentPlayer: null, midiLoaded: true, playingMIDI: false, audioCtx: { state: 'suspended', currentTime: 4, resume: () => calls.push('resume') },
+    safeRun: fn => fn(), playbackPaused: true, pausedTransportSec: 1, pausedMidiElapsedMs: 1000,
+    suppressedNoteOffEvents: new Set([60]), clearAllKeyGlow: () => {}, resetPlaybackVisuals: () => {},
+    setBackboardViewMode: () => {}, disposeAudioSource: () => {}, savedAudioPosSec: 3, midiIndex: 8,
+    resetKeys: () => {}, getSyncOffsetMs: () => 0, midiFirstNoteMs: 0, SONG_LEAD_IN_SEC: 0,
+    buildPendingNotes: () => calls.push('notes'), startAudio: () => calls.push('audio'),
+    startTrackVideoPlayback: () => calls.push('video'), currentTrackKey: 'baby',
+    console: { log: () => {} }
+  };
+  runInNewContext(`${source.slice(start, end)}\nstartMIDIPlayback();`, context);
+  assert.deepEqual(calls, ['resume', 'notes', 'audio', 'video']);
+  assert.equal(context.playingMIDI, true);
+  assert.equal(context.playbackPaused, false);
+  assert.equal(context.savedAudioPosSec, 0);
+  assert.equal(context.suppressedNoteOffEvents.size, 0);
+});
+
+test('default piano starts only after module state is initialized', () => {
+  const source = readFileSync(new URL('../_5-music/music-piano-controls.v2.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function loadDefaultInstrument(){');
+  const end = source.indexOf('function ensureAudio(){', start);
+  const bootstrap = source.lastIndexOf("if(document.readyState === 'complete') loadDefaultInstrument();");
+  assert.ok(start >= 0 && end > start && bootstrap > source.indexOf('const NoteEngine = {'));
+  assert.ok(bootstrap > source.indexOf('const instrumentPlayersBySide = {'));
+  const loaded = [];
+  const context = {
+    document: { readyState: 'complete' }, window: { addEventListener: () => {} },
+    musicPageDisposed: false, musicPageSignal: null, instrumentPlayer: null, currentInstrumentName: null,
+    loadInstrument: id => { loaded.push(id); return Promise.resolve({}); },
+    console: { warn: () => {} }
+  };
+  runInNewContext(`${source.slice(start, end)}\n${source.slice(bootstrap)}`, context);
+  assert.deepEqual(loaded, ['keys_acoustic_piano']);
+});

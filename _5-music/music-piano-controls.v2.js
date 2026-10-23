@@ -5581,6 +5581,12 @@ async function loadInstrument(id){
 }
 window.loadInstrument = loadInstrument;
 window.getCurrentInstrumentName = () => currentInstrumentName;
+// Initialize the playable keyboard when the module is ready. The hidden DOM
+// picker is optional and must not be responsible for loading the default sound.
+function loadDefaultInstrument(){
+  if(musicPageDisposed || musicPageSignal?.aborted || instrumentPlayer || currentInstrumentName) return;
+  void loadInstrument('keys_acoustic_piano').catch(error => console.warn('[Instrument] default piano load failed', error));
+}
 function ensureAudio(){
   ensureAudioContext();
   if(!audioCtx) return;
@@ -6964,11 +6970,6 @@ function startMIDIPlayback(){
   const firstNoteSec = (midiFirstNoteMs||0)/1000;
   const lead = 0.2; // schedule slightly in the future for stability
   const now = audioCtx.currentTime;
-  // If no sampled instrument is loaded, provide only visual feedback and do not run oscillator fallback
-  if(!instrumentPlayer){
-    if(mesh){ const base = (isBlackKey(mesh)? BLACK_MAX : WHITE_MAX) * KEY_PRESS_SIGN; mesh.rotation.x = base * 0.6; }
-    return;
-  }
   const t0 = now + lead;
   const tAudio = t0 + SONG_LEAD_IN_SEC + Math.max(userOffsetSec, 0);
   const tMidiZero = t0 + SONG_LEAD_IN_SEC + Math.max(-userOffsetSec, 0);
@@ -11015,3 +11016,6 @@ window.addEventListener('keydown', handleKeyDown, { capture:true, passive:false 
 window.addEventListener('keyup', handleKeyUp, { capture:true, passive:false });
 window.addEventListener('blur', panicAllNotes);
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden) panicAllNotes(); });
+
+if(document.readyState === 'complete') loadDefaultInstrument();
+else window.addEventListener('load', loadDefaultInstrument, { once: true });
