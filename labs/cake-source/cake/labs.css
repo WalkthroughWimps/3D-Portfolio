@@ -1,0 +1,36 @@
+.labs-privacy-feedback{margin:1rem auto;padding:.75rem 1rem;width:min(70rem,calc(100% - 2rem));border:1px solid #b87a48;border-radius:.6rem;background:#fff3e5;color:#493021;font:600 .9rem/1.5 system-ui,sans-serif}
+.labs-privacy-feedback:empty{display:none}
+.labs-sample-filter{display:block;max-width:30rem;margin:1rem 0;font-weight:700}
+.labs-sample-filter select{display:block;width:100%;margin-top:.5rem}
+.labs-sample-copy{font-size:.95rem;line-height:1.5}
+html[data-labs-preview] #cake-order:not([data-labs-privacy-ready="true"]){display:none!important}
+html[data-labs-preview] #order-overlay{display:none!important}
+#cake-order label:has([data-labs-private="true"]){display:none!important}
+body.labs-status-page{height:100svh;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+body.labs-status-page .narrow{width:min(100%,760px);max-width:760px;height:100%;min-height:0;display:flex;flex-direction:column;margin:0 auto;padding:.4rem .65rem}
+body.labs-status-page .narrow>.kicker,body.labs-status-page .narrow>h1,body.labs-status-page .narrow>p.hint{display:none}
+body.labs-status-page .status-card{flex:1;min-height:0;display:flex;flex-direction:column;padding:.55rem;overflow:hidden}
+body.labs-status-page #status-feedback:empty{display:none}
+body.labs-status-page #status-result{flex:1;min-height:0}
+body.labs-status-page #status-result:not([hidden]){display:flex;flex-direction:column}
+body.labs-status-page #status-result>#status-badge,body.labs-status-page #status-result>#status-title,body.labs-status-page #status-result>#status-cake,body.labs-status-page #status-result>#status-date,body.labs-status-page #status-result>#status-reply,body.labs-status-page #status-result>#status-updated{display:none}
+body.labs-status-page #status-order-document{flex:1;min-height:0}
+body.labs-status-page #status-order-document .order-document{height:100%;min-height:0;display:flex;flex-direction:column;margin:0!important;padding:.35rem!important}
+body.labs-status-page #refresh-status{flex:none;min-height:42px;margin-top:.35rem}
+.labs-receipt-controls{flex:none;display:flex;align-items:center;justify-content:space-between;gap:.35rem;background:#fffaf2;padding:.2rem;border-radius:.45rem}
+.labs-receipt-controls button{min-height:40px;padding:.3rem .5rem;font-size:.78rem}
+.labs-receipt-controls span{font-size:.78rem;font-weight:700;white-space:nowrap}
+.labs-receipt-window{position:relative;flex:1;min-height:0;max-width:100%;overflow:hidden;background:#fffaf2f0;border-radius:.45rem}
+.labs-receipt-page{position:absolute;inset:0;min-width:0;padding:.4rem;overflow:hidden;overflow-wrap:anywhere}
+.labs-receipt-page.allergen-detected{background-color:#ec1832;border:4px solid #b60012}
+.labs-receipt-paper{height:100%;min-height:0;padding:.35rem;background:#fffaf2e8;overflow:hidden}
+.labs-receipt-heading{font:700 .9rem/1.3 Georgia,serif;color:#741e35;margin:0 0 .35rem}
+.labs-receipt-detail{margin:0 0 .3rem;font:.83rem/1.35 Arial,sans-serif;overflow-wrap:anywhere}
+.labs-receipt-emphasis{font-weight:700;font-size:.95rem}
+.labs-receipt-cell{padding:.3rem .4rem;border:1px solid #d8c5c1;border-radius:.35rem;background:#fffaf2}
+.labs-receipt-cell .sheet-mobile-label{display:block!important;font-size:.68rem!important;margin-bottom:.15rem!important}
+.labs-receipt-cell img{display:block;max-width:100%;max-height:120px;object-fit:contain}
+.labs-receipt-page .order-allergy-box{margin:.2rem 0!important;padding:.5rem!important;font-size:.75rem!important;line-height:1.25!important}
+.labs-receipt-page .order-allergy-box strong{font-size:.82rem!important}
+.labs-receipt-page .order-allergy-box ul{margin:.2rem 0!important}
+@media(max-width:520px){.labs-receipt-controls button{font-size:.7rem;padding:.25rem .4rem}.labs-receipt-page{padding:.3rem}.labs-receipt-detail{font-size:.76rem}.labs-receipt-cell img{max-height:95px}}

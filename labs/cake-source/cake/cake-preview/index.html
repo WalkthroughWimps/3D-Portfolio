@@ -1,0 +1,92 @@
+<!doctype html>
+<html data-labs-preview lang="en">
+  <head><base href="/cake/"><script>window.CAKE_LABS_MENU={"cakes":[["redVelvet","Red velvet"],["vanilla","Vanilla"],["lemon","Lemon"],["white","White cake"],["chocolate","Chocolate"],["carrot","Carrot cake"],["pistachio","Pistachio"]],"fillings":[["none","No added pieces"],["chocolateChips","Chocolate chips"],["candyCoatedChocolate","Candy-coated chocolate"],["almondPieces","Almond pieces"],["walnutPieces","Walnut pieces"],["caramelNutChocolate","Caramel nut chocolate"],["peanutButterCup","Peanut butter cup"]],"toppers":[["none","None"],["strawberry","Strawberry"],["blueberries","Blueberries"],["raspberries","Raspberries"],["chocolateChips","Chocolate chips"],["chocolateCurls","Chocolate curls"],["candyCoatedChocolate","Candy-coated chocolate"],["almondPieces","Almond pieces"],["walnutPieces","Walnut pieces"],["caramelNutChocolate","Caramel nut chocolate"],["peanutButterCup","Peanut butter cup"],["rainbowSprinkles","Rainbow sprinkles"],["rosette","Rosette"],["pipedDollop","Piped dollop"],["pipedRuffle","Piped ruffle"],["fondantDisc","Fondant disc"],["fondantRibbon","Fondant ribbon"]],"amounts":{"light":{"label":"Light","frequency":0.55,"description":"A little crunch · about half the normal amount"},"normal":{"label":"Normal","frequency":1,"description":"A balanced scattering throughout"},"extra":{"label":"Extra","frequency":1.5,"description":"A generous scattering · about 50% more"}},"icings":[["buttercream","Buttercream","#fff4df"],["vanillaButtercream","Vanilla buttercream","#fff0cd"],["strawberryButtercream","Strawberry buttercream","#edb5bc"],["chocolateButtercream","Chocolate buttercream","#583025"],["creamCheese","Cream cheese frosting","#fff8e8"],["whippedCream","Whipped cream","#fffdf5"]],"legacyIcings":[["cream","Cream (original color choice)","#fff4df"],["chocolate","Chocolate (original color choice)","#583025"],["blush","Blush (original color choice)","#edb5bc"],["lavender","Lavender (original color choice)","#c8b4df"]],"sizes":[["6","6-inch round"],["8","8-inch round"],["10","10-inch round"]],"allergens":["Milk","Eggs","Wheat","Soy","Peanuts","Tree nuts","Sesame","Fish","Shellfish"],"severities":[["mild","Mild"],["moderate","Moderate"],["severe","Severe"],["unsure","Not sure"],["noneAtFacility","None used at facility"]]};</script><script src="/cake/order-options.js"></script><script src="/cake/appearance-settings.js"></script><script src="/cake/allergy-rules.js"></script><script src="/cake/labs-menu-data.js"></script><script src="/cake/labs-runtime.js"></script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f8f1ee" />
+    <title>Sample Cake Studio</title>
+    <meta name="description" content="Explore the cake studio, browse flavors, and build a cake request for your celebration." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playwrite+IT+Moderna:wght@200..400&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="scene-mode.css" />
+  <link rel="stylesheet" href="/cake/labs.css"></head>
+  <body data-mode="preview">
+    <main class="home-screen">
+      <!-- Shared public wording is managed in the studio's Website info screen. -->
+      <div class="top-garnish" aria-hidden="true"><div class="static-toppers"><img src="assets/images/toppers/sliced-strawberry-v1.webp" alt=""><img src="assets/images/toppers/sliced-rosette-v1.webp" alt=""></div></div>
+      <div class="frosting-band frosting-band-one" aria-hidden="true"></div>
+      <div class="frosting-band frosting-band-two" aria-hidden="true"></div>
+      <section class="hero" aria-label="Cake studio home">
+        <div class="hero-title">
+          <p id="site-tagline" class="eyebrow" data-site-section="tagline" data-site-content="tagline">Cakes made to celebrate</p>
+          <h1 id="site-name" data-site-content="businessName">Sample Cake Studio</h1>
+        </div>
+        <div class="hero-description">
+          <p id="site-intro" class="intro" data-site-section="intro" data-site-content="intro">A considered little home for beautiful, custom cakes.</p>
+          <a class="home-request-button" href="/cake/order.html" data-site-content="requestButtonLabel">Start a cake request</a>
+        </div>
+      </section>
+      <footer class="site-footer">
+        <p id="business-location" data-site-section="location" data-site-content="location" hidden></p>
+        <a id="business-email" data-site-link="email" hidden href="mailto:"></a>
+        <a id="business-phone" data-site-link="phone" hidden href="tel:"></a>
+      </footer>
+    </main>
+
+    <dialog id="order-overlay" class="order-overlay" aria-labelledby="order-title">
+      <div class="order">
+        <button class="close-order" type="button" aria-label="Close order form">×</button>
+        <p class="section-kicker">Let’s make something lovely</p>
+        <h2 id="order-title">Tell me about your celebration.</h2>
+        <form id="order-form">
+          <label>Name<input required name="name" autocomplete="name" /></label>
+          <label>Email<input required type="email" name="email" autocomplete="email" /></label>
+          <label>Event date<input required type="date" name="date" /></label>
+          <label>Tell me what you’re dreaming of<textarea required name="details" rows="4" placeholder="Servings, flavors, colors, occasion…"></textarea></label>
+          <button type="submit">Send inquiry <span>↗</span></button>
+          <p class="form-note" id="form-note" role="status"></p>
+        </form>
+      </div>
+    </dialog>
+
+    <!-- Floating appearance editor: controls stay small so the site remains visible. -->
+    <nav class="editor" aria-label="Site appearance controls">
+      <div class="editor-options" aria-live="polite"></div>
+      <button class="editor-bauble" type="button" aria-expanded="false" aria-label="Open appearance settings">✦</button>
+      <section id="editor-panel" class="editor-panel" aria-live="polite"></section>
+    </nav>
+    <button id="editor-mode-toggle" type="button" aria-label="Switch to phone editor">Phone editor</button>
+    <aside id="desktop-editor" class="desktop-editor" aria-label="Desktop appearance editor" inert>
+      <div class="desktop-editor-head"><strong>Site editor</strong><span>Live preview</span></div>
+      <div class="desktop-tabs" role="tablist" aria-label="Editor sections">
+        <button id="desktop-tab-site" type="button" role="tab" aria-selected="true" aria-controls="editor-panel" data-tab="site">Site</button>
+        <button id="desktop-tab-cake" type="button" role="tab" aria-selected="false" aria-controls="editor-panel" data-tab="cake" tabindex="-1">Cake</button>
+        <button id="desktop-tab-history" type="button" role="tab" aria-selected="false" aria-controls="editor-panel" data-tab="history" tabindex="-1">History</button>
+      </div>
+      <div id="desktop-editor-content"></div>
+    </aside>
+    <nav id="text-toolbar" class="text-toolbar" aria-label="Text editing controls" hidden>
+      <button type="button" data-text-action="align-left" aria-label="Align left">☰</button>
+      <button type="button" data-text-action="align-center" aria-label="Align center">≡</button>
+      <button type="button" data-text-action="align-right" aria-label="Align right">☷</button>
+      <button type="button" data-text-action="font-down" aria-label="Decrease font size">A−</button>
+      <button type="button" data-text-action="font-up" aria-label="Increase font size">A+</button>
+      <button type="button" data-text-action="weight" aria-label="Toggle bold">B</button>
+      <button type="button" data-text-action="done">Done</button>
+    </nav>
+    <span id="copy-edit-instruction" class="visually-hidden">Press F2 to edit this text. While editing, press Escape or select Done to finish.</span>
+
+    <script src="cake-toppings.js"></script>
+    <script src="cake-presets.js"></script>
+    <script src="cake-contact.js"></script>
+    <script src="cake-garnish.js"></script>
+    <script src="cake-material-catalog.js"></script>
+    <script src="cake-materials.js"></script>
+    <script src="script.js"></script>
+    <script src="order-options.js"></script>
+    <script src="scene.js"></script>
+    <script src="navigation.js"></script>
+  </body>
+</html>

@@ -1,0 +1,9 @@
+/* Ordered items and tiers. Array order is always top to bottom. */
+(function(scope){
+  const legacyItem=order=>({productType:'cake',quantity:order.quantity||1,size:order.cake?.size||'8',sizeLabel:order.cakeLabels?.size,notes:'',mixFillings:false,tiers:[{flavor:order.cake?.flavor||'redVelvet',icing:order.cake?.icing||'buttercream',notes:'',fillings:order.cake?.filling&&order.cake.filling!=='none'?[{id:order.cake.filling,amount:order.cake.amount||'normal',label:order.cakeLabels?.filling,visual:order.cakeVisuals?.fillings}]:[],toppers:[['topperA',order.cake?.topperA],['topperB',order.cake?.topperB]].filter(([,id])=>id&&id!=='none').map(([slot,id])=>({id,quantity:1,label:order.cakeLabels?.[slot],visual:order.cakeVisuals?.[slot]})),labels:order.cakeLabels||{},visuals:order.cakeVisuals||{}}]});
+  const items=order=>order.items?.length?order.items:[legacyItem(order)];
+  function effectiveFillings(item,tier){if(!item.mixFillings)return tier.fillings||[];const merged=new Map();for(const t of item.tiers)for(const f of t.fillings||[]){if(merged.has(f.id)&&merged.get(f.id).amount!==f.amount)throw new Error('Use the same amount for a filling that is mixed into both tiers.');merged.set(f.id,f);}return [...merged.values()];}
+  const tierName=(item,index)=>item.tiers.length===1?'Single tier':index===0?'Top tier':'Bottom tier';
+  function cakeOf(item,tier=item.tiers[0]){const toppers=(tier.toppers||[]).flatMap(t=>Array.from({length:Math.min(t.quantity,2)},()=>t.id));const filling=effectiveFillings(item,tier)[0];return {flavor:tier.flavor,icing:tier.icing,size:item.size,filling:filling?.id||'none',amount:filling?.amount||'normal',topperA:toppers[0]||'none',topperB:toppers[1]||'none'};}
+  const api={items,legacyItem,effectiveFillings,tierName,cakeOf};if(typeof module!=='undefined')module.exports=api;else scope.CakeOrderModel=api;
+})(typeof window==='undefined'?globalThis:window);

@@ -1,0 +1,13 @@
+/* Progressive enhancement: clients without media queries keep the complete table. */
+@media screen and (max-width:600px){
+  .cake-order-sheet,.cake-order-sheet tbody,.cake-order-sheet tr,.cake-order-sheet caption{display:block!important;width:100%!important;min-width:0!important;box-sizing:border-box!important}
+  .cake-order-sheet colgroup,.cake-order-sheet thead{display:none!important}
+  .cake-order-sheet .sheet-selection{font-size:0!important;border-top:8px solid #fffaf2!important}
+  .cake-order-sheet .sheet-selection td{display:inline-block!important;width:50%!important;min-height:88px!important;box-sizing:border-box!important;font-size:14px!important;padding:10px!important;border-bottom:0!important}
+  .cake-order-sheet .sheet-selection .sheet-picture,.cake-order-sheet .sheet-selection .sheet-quantity{min-height:132px!important}
+  .cake-order-sheet .sheet-selection .sheet-quantity{font-size:26px!important}
+  .cake-order-sheet .sheet-selection td:last-child{width:100%!important}
+  .cake-order-sheet td[colspan]{display:block!important;width:100%!important;box-sizing:border-box!important;padding:12px!important}
+  .cake-order-sheet .sheet-mobile-label{display:block!important}
+  .sheet-scroll .cake-order-sheet{min-width:0!important}
+}

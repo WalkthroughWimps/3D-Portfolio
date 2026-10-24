@@ -1,0 +1,9 @@
+/* Editor visibility is presentation only. The server authorizes every admin route. */
+body:not([data-mode="admin"]) :is(.editor,#editor-mode-toggle,#desktop-editor,#text-toolbar,#copy-edit-instruction,#order-overlay){display:none!important}
+body[data-mode="preview"] :is(.hero,.site-footer,.universal-nav){display:none!important}
+body[data-mode="preview"] .home-screen{min-height:0;height:100svh}
+body[data-mode="preview"] .frosting-band-one{top:30svh;height:8svh}
+body[data-mode="preview"] .top-garnish{height:30svh}
+.admin-design-bar{position:fixed;top:.5rem;left:50%;transform:translateX(-50%);z-index:100;display:flex;align-items:center;gap:.8rem;background:#fffaf2;color:#741e35;padding:.25rem .7rem;border-radius:99px;box-shadow:0 2px 8px #0004;font:14px system-ui}
+.admin-design-bar a{color:#741e35;text-decoration:none;display:grid;align-items:center;min-height:44px;white-space:nowrap}
+.admin-design-bar button{min-height:44px;border:0;background:transparent;color:#741e35;font:inherit;white-space:nowrap}
