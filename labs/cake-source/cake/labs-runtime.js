@@ -254,8 +254,8 @@
 
   async function handleApi(url, method, headers, input, init) {
     const pathname = url.pathname.replace(/^\/cake(?=\/api\/)/, '');
-    if(pathname==='/api/admin/session'&&method==='GET'&&/\/labs-admin\.html$/.test(location.pathname))return jsonResponse({csrf:'labs-local-demo'});
-    if(pathname==='/api/admin/menu'&&/\/labs-admin\.html$/.test(location.pathname)){
+    if(pathname==='/api/admin/session'&&method==='GET'&&/\/labs-admin(?:\.html)?\/?$/.test(location.pathname))return jsonResponse({csrf:'labs-local-demo'});
+    if(pathname==='/api/admin/menu'&&/\/labs-admin(?:\.html)?\/?$/.test(location.pathname)){
       if(method==='GET')return jsonResponse(readCatalog());
       if(method==='POST'){
         if(headers.get('X-CSRF-Token')!=='labs-local-demo')return jsonResponse({error:'Refresh the sample controls.'},403);

@@ -9,7 +9,7 @@
   const pageByPath = new Map([
     ['/', 'home'], ['/index.html', 'home'], ['/flavors', 'flavors'], ['/cake/flavors.html', 'flavors'],
     ['/gallery', 'gallery'], ['/gallery.html', 'gallery'], ['/about', 'about'], ['/about.html', 'about'],
-    ['/order', 'order'], ['/cake/order.html', 'order'], ['/cake/order-status.html', 'order'], ['/custom', 'custom'], ['/custom.html', 'custom']
+    ['/order', 'order'], ['/cake/order.html', 'order'], ['/order-status', 'order'], ['/cake/order-status.html', 'order'], ['/custom', 'custom'], ['/custom.html', 'custom']
   ]);
   const normalizedPath = (location.pathname.replace(/^\/cake(?=\/|$)/, '').replace(/\/$/, '') || '/');
   const page = pageByPath.get(normalizedPath) || body.dataset.page || 'home';
