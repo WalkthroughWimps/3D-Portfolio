@@ -10,3 +10,4 @@ body.labs-status-page{height:auto;min-height:100%;display:block;overflow:visible
 body.labs-status-page .narrow{width:min(100%,760px);max-width:760px;height:auto;min-height:0;display:block;margin:0 auto;padding:1rem .65rem}
 body.labs-status-page .status-card{display:block;overflow:visible}
 body.labs-status-page #status-result:not([hidden]){display:block}
+html[data-labs-preview] #draft-notice{display:none!important}
