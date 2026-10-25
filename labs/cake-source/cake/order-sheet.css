@@ -11,11 +11,11 @@
   .cake-order-sheet .sheet-mobile-label{display:block!important}
   .sheet-scroll .cake-order-sheet{min-width:0!important}
 }
-.compact-order-inner{padding:12px;background:#fffaf2e8;color:#42262c;font:14px/1.55 Arial,Helvetica,sans-serif;overflow-wrap:anywhere}
-.compact-order-item{display:grid;grid-template-columns:minmax(88px,140px) minmax(0,1fr);gap:14px;align-items:start;padding:14px 4px;border-top:1px solid #d8c5c1;background:var(--compact-row,#fffaf2)}
-.compact-order-picture img,.compact-cake-placeholder{display:block;width:100%;max-width:140px;aspect-ratio:1;object-fit:contain;background:#f4e8df;border-radius:50%}
+.compact-order-inner{padding:10px;background:#fffaf2e8;color:#42262c;font:14px/1.4 Arial,Helvetica,sans-serif;overflow-wrap:anywhere}
+.compact-order-item{display:grid;grid-template-columns:minmax(88px,112px) minmax(0,1fr);gap:12px;align-items:start;padding:9px 2px;border-top:1px solid #d8c5c1;background:var(--compact-row,#fffaf2)}
+.compact-order-picture img,.compact-cake-placeholder{display:block;width:100%;max-width:112px;aspect-ratio:1;object-fit:contain;background:#f4e8df;border:1px solid #d8c5c1;border-radius:.45rem}
 .compact-cake-placeholder{display:grid;place-items:center;text-align:center;color:#684650;font-weight:700}
-.compact-order-details h4{margin:0 0 6px;color:#741e35;font:700 16px/1.35 Georgia,serif}
-.compact-tier{padding:5px 0 7px;border-top:1px solid #eadbd5}
-.compact-tier:first-of-type{border-top:0}.compact-order-details p,.compact-customer-notes{margin:7px 0 0}
-@media(max-width:520px){.compact-order-item{grid-template-columns:76px minmax(0,1fr);gap:10px;padding:11px 2px}.compact-order-picture img,.compact-cake-placeholder{max-width:76px}.compact-order-inner{padding:8px;font-size:13px}}
+.compact-order-details h4{margin:0 0 3px;color:#741e35;font:700 15px/1.25 Georgia,serif}
+.compact-tier{padding:4px 0 5px;border-top:1px solid #eadbd5}
+.compact-tier:first-of-type{border-top:0}.compact-tier-heading{font-size:12px;color:#715c5f}.compact-tier-cake{margin-top:1px;font-size:14px}.compact-tier-toppings,.compact-tier-fillings,.compact-tier-notes,.compact-shared-fillings,.compact-item-notes{margin-top:2px;font-size:12px;line-height:1.35}.compact-tier-toppings b,.compact-tier-fillings b,.compact-tier-notes b,.compact-shared-fillings b,.compact-item-notes b{color:#741e35}.compact-order-details p,.compact-customer-notes{margin:5px 0 0}
+@media(max-width:520px){.compact-order-item{grid-template-columns:76px minmax(0,1fr);gap:9px;padding:8px 1px}.compact-order-picture img,.compact-cake-placeholder{max-width:76px}.compact-order-inner{padding:7px;font-size:13px}.compact-tier-cake{font-size:13px}}

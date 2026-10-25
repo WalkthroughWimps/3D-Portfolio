@@ -13,6 +13,7 @@
   const TOKEN_PATTERN = /^[\w-]{43}$/;
   const IDEMPOTENCY_PATTERN = /^[\w-]{20,80}$/;
   const OBVIOUS_PRIVATE_TEXT = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+?\d[\d ().-]{8,}\d)|\b(?:password|credit card|social security|medical history)\b/i;
+  const DEMO_NAME='Demo Guest',DEMO_EMAIL='demo@example.invalid',SAFE_DELIVERY_ADDRESS='Sample delivery address — not a real address.';
   const nowIso = () => new Date().toISOString();
   const clone = value => JSON.parse(JSON.stringify(value));
   const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), {
@@ -73,35 +74,45 @@
   function choiceLabel(menu, group, id, fallback = id) {
     return menu[group]?.find(entry => entry[0] === id)?.[1] || fallback;
   }
+  function effectiveSize(value,menu){
+    const sizes=menu.sizes||[];
+    if(menu.settings?.sizeEnabled!==true){const defaultSize=sizes.find(([id])=>String(id)==='8')?.[0]??sizes[0]?.[0];return defaultSize==null?'8':String(defaultSize);}
+    return String(value??'');
+  }
 
   function makeSafeOrder(payload, menu) {
     const cake = payload?.cake;
     if (!cake || typeof cake !== 'object') throw new Error('Choose a cake before continuing.');
-    if(window.CakeAllergens&&!window.CakeAllergens.inspectItems(payload.items||[{cake}],menu,payload.allergies).allowed)throw new Error('An ingredient conflicts with an allergy or has unverified information. Review the filtered sample menu.');
+    if(payload.fulfillment?.method==='delivery'&&menu.settings?.deliveryEnabled!==true)throw new Error('Delivery is not available for this sample menu.');
+    const allergyAssessment=window.CakeAllergens?window.CakeAllergens.inspectItems(payload.items||[{cake}],menu,payload.allergies):{allowed:true,issues:[]};
+    if(!allergyAssessment.allowed)throw new Error('An ingredient conflicts with an allergy or has unverified information. Review the filtered sample menu.');
     const choices = [
       ['cakes','flavor'], ['icings','icing'], ['sizes','size'], ['fillings','filling'], ['toppers','topperA'], ['toppers','topperB']
     ];
     for (const [group, field] of choices) {
+      if(field==='size'&&menu.settings?.sizeEnabled!==true)continue;
       if (!menu[group]?.some(([id]) => id === String(cake[field] ?? ''))) throw new Error('One of those cake choices is no longer available. Refresh the page and try again.');
     }
     if (!menu.amounts?.[cake.amount]) throw new Error('Choose a valid filling amount.');
     const event=sampleEvent(payload);
     if(!event)throw new Error('Enter a valid event date and time.');
     const {date,time}=event;
-    const sizeLabel = choiceLabel(menu, 'sizes', String(cake.size));
+    const selectedCakeSize=effectiveSize(cake.size,menu);
+    const sizeLabel = choiceLabel(menu, 'sizes', selectedCakeSize);
     const cakeLabels = {
       flavor:choiceLabel(menu,'cakes',cake.flavor), icing:choiceLabel(menu,'icings',cake.icing),
       size:sizeLabel, filling:choiceLabel(menu,'fillings',cake.filling),
       topperA:choiceLabel(menu,'toppers',cake.topperA), topperB:choiceLabel(menu,'toppers',cake.topperB)
     };
     const safeCake = {
-      flavor:cake.flavor, icing:cake.icing, size:String(cake.size), filling:cake.filling,
+      flavor:cake.flavor, icing:cake.icing, size:selectedCakeSize, filling:cake.filling,
       amount:cake.amount, topperA:cake.topperA, topperB:cake.topperB
     };
     if (Array.isArray(payload.items) && (payload.items.length < 1 || payload.items.length > 8)) throw new Error('Choose between one and eight cake items for the demo.');
     const sourceItems = Array.isArray(payload.items) ? payload.items : [];
     const safeItems = sourceItems.map(item => {
-      if (!item || item.productType !== 'cake' || !Array.isArray(item.tiers) || item.tiers.length < 1 || item.tiers.length > 2 || !menu.sizes.some(([id]) => id === String(item.size))) throw new Error('Review the cake selections and try the demo again.');
+      const itemSize=effectiveSize(item?.size,menu);
+      if (!item || item.productType !== 'cake' || !Array.isArray(item.tiers) || item.tiers.length < 1 || item.tiers.length > 2 || (menu.settings?.sizeEnabled===true&&!menu.sizes.some(([id])=>id===itemSize))) throw new Error('Review the cake selections and try the demo again.');
       const tiers = item.tiers.map(tier => {
         if (!menu.cakes.some(([id]) => id === tier.flavor) || !menu.icings.some(([id]) => id === tier.icing)) throw new Error('Review the cake selections and try the demo again.');
         const tierFillings=Array.isArray(tier.fillings)?tier.fillings:[];
@@ -127,7 +138,7 @@
       } else mixFillings = false;
       return {
         productType:'cake', quantity:Number.isInteger(item.quantity) ? Math.max(1,Math.min(item.quantity,99)) : 1,
-        size:String(item.size), sizeLabel:choiceLabel(menu,'sizes',String(item.size)), mixFillings, notes:'', tiers
+        size:itemSize, sizeLabel:choiceLabel(menu,'sizes',itemSize), mixFillings, notes:'', tiers
       };
     });
     if (Array.isArray(payload.items) && (!safeItems.length || safeItems.length !== sourceItems.length)) throw new Error('Review the cake selections and try the demo again.');
@@ -136,9 +147,11 @@
     const createdAt = nowIso();
     return {
       id, token, status:'pending', createdAt, updatedAt:createdAt,
-      name:'Demo Guest', date, quantity:safeItems[0]?.quantity || 1, cake:safeCake, cakeLabels, ...(safeItems.length ? { items:safeItems } : {}),
+      menuSettings:{maxFillings:Number.isInteger(menu.settings?.maxFillings)?Math.max(1,Math.min(4,menu.settings.maxFillings)):2,deliveryEnabled:menu.settings?.deliveryEnabled===true,sizeEnabled:menu.settings?.sizeEnabled===true},
+      allergyConflict:allergyAssessment.issues.length>0,
+      name:DEMO_NAME, email:DEMO_EMAIL, phone:'', date, quantity:safeItems[0]?.quantity || 1, cake:safeCake, cakeLabels, ...(safeItems.length ? { items:safeItems } : {}),
       cakeVisuals:{ flavor:menu.visuals?.cakes?.[cake.flavor], icing:menu.visuals?.icings?.[cake.icing] },
-      fulfillment:{ method:'pickup', time, timezone:'America/Chicago', address:'Demo only — no pickup or delivery is arranged.' },
+      fulfillment:{ method:payload.fulfillment?.method==='delivery'?'delivery':'pickup', time, timezone:'America/Chicago', address:payload.fulfillment?.method==='delivery'?SAFE_DELIVERY_ADDRESS:'' },
       reply:'This sample exists only in this browser. No message was sent to the studio.',
       details:'Fictional Labs request. No message was sent.'
       ,allergies:payload.allergies?.length?[{name:'Sample reported allergy (details omitted in Labs)',severity:'unsure'}]:[]
@@ -153,11 +166,33 @@
     const allowed = {name:'Demo Guest',email:'demo@example.invalid',phone:'',details:'',timezone:'America/Chicago'};
     for (const [key,value] of Object.entries(allowed)) if (payload[key] != null && payload[key] !== value) return true;
     if (!sampleEvent(payload)) return true;
-    if (payload.fulfillment && (Object.keys(payload.fulfillment).some(key=>!['method','time','address','timezone'].includes(key)) || payload.fulfillment.address || !['pickup',undefined].includes(payload.fulfillment.method) || (payload.fulfillment.timezone && payload.fulfillment.timezone!=='America/Chicago'))) return true;
+    if (payload.fulfillment) {
+      const method=payload.fulfillment.method||'pickup';
+      const allowedAddress=method==='delivery'?SAFE_DELIVERY_ADDRESS:'';
+      if(Object.keys(payload.fulfillment).some(key=>!['method','time','address','timezone'].includes(key))||!['pickup','delivery'].includes(method)||payload.fulfillment.address!==allowedAddress||(payload.fulfillment.timezone&&payload.fulfillment.timezone!=='America/Chicago'))return true;
+    }
     if (Array.isArray(payload.items) && payload.items.some(item => item.notes || item.tiers?.some(tier => tier.notes))) return true;
     if (!validAllergies(payload.allergies, window.CAKE_LABS_MENU || window.CakeOrderOptions)) return true;
     if (payload.otherAllergen || payload.details) return true;
     return false;
+  }
+  function submissionFingerprint(payload) {
+    const cleanChoice = value => value == null ? '' : String(value);
+    const cleanFillings = value => Array.isArray(value) ? value.map(entry => ({ id:cleanChoice(entry?.id), amount:cleanChoice(entry?.amount) })) : [];
+    const items = Array.isArray(payload.items) ? payload.items.map(item => ({
+      productType:cleanChoice(item?.productType), quantity:Number(item?.quantity)||1,
+      size:cleanChoice(item?.size), mixFillings:Boolean(item?.mixFillings),
+      tiers:Array.isArray(item?.tiers) ? item.tiers.map(tier => ({
+        flavor:cleanChoice(tier?.flavor), icing:cleanChoice(tier?.icing),
+        fillings:cleanFillings(tier?.fillings), toppers:Array.isArray(tier?.toppers)?tier.toppers.map(cleanChoice):[]
+      })) : []
+    })) : [];
+    const cake=payload.cake&&typeof payload.cake==='object'?{
+      flavor:cleanChoice(payload.cake.flavor),icing:cleanChoice(payload.cake.icing),size:cleanChoice(payload.cake.size),
+      filling:cleanChoice(payload.cake.filling),amount:cleanChoice(payload.cake.amount),
+      topperA:cleanChoice(payload.cake.topperA),topperB:cleanChoice(payload.cake.topperB)
+    }:{};
+    return JSON.stringify({cake,items,date:payload.date||'',time:payload.requestedTime??payload.fulfillment?.time??'',method:payload.fulfillment?.method||'pickup',allergyAlert:Boolean(payload.allergies?.length)});
   }
   function validAllergies(allergies, options) {
     if (allergies == null) return true;
@@ -172,8 +207,9 @@
     return Boolean(form?.querySelector('#allergen-list input[type="checkbox"]:checked'));
   }
 
-  const PRIVATE_MESSAGE = 'Cleared: the private input was removed. Contact details and named allergy information are not collected. This local demo saves cake choices, event date/time, and only a generic allergy flag.';
-  const PRIVACY_INTRO = 'This is a browser-local demo. Use example cake choices and event details; don’t enter names or contact details. The allergy checklist filters ingredients, while saved samples keep only a generic allergy flag.';
+  const PRIVATE_MESSAGE = 'Private test details were cleared. Contact details and notes are discarded before saving; named allergy information is not stored. This local demo saves cake choices, event date/time, and only a generic allergy flag.';
+  const PRIVATE_DISCARDED_MESSAGE = 'Private test details were discarded. The saved sample uses fixed demo contact details and blank notes/address fields.';
+  const PRIVACY_INTRO = 'This is a browser-local demo. You can try the Deets test fields; contact details, address, and notes are discarded before saving. The allergy checklist filters ingredients, while saved samples keep only a generic allergy flag.';
   function purgeDrafts() {
     let purged = false;
     try { for (const key of DRAFT_KEYS) if (sessionStorage.getItem(key) !== null) { sessionStorage.removeItem(key); purged = true; } } catch {}
@@ -222,15 +258,15 @@
     const date=payload.date||todayIso(),time=requested??fulfillment??'';
     return validIsoDate(date) && (time === '' || (typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time))) ? {date,time} : null;
   }
-  const privateSelectors = '[name="name"],[name="email"],[name="phone"],[name="details"],#fulfillment-timezone,#fulfillment-method,#delivery-address,#other-allergen,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
+  const privateSelectors = '[name="name"],[name="email"],[name="phone"],[name="details"],#delivery-address,#other-allergen,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
+  const editablePrivateSelectors = '[name="name"],[name="email"],[name="phone"],[name="details"],#delivery-address,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
+  const fixedSelectors = '#fulfillment-timezone,#other-allergen';
   function prepareOrder(form) {
     if (!form || form.dataset.labsPrivacyReady === 'true') return;
     form.dataset.labsPrivacyReady = 'true';
+    form.autocomplete='off';
     const fixed = new Map([
-      ['name','Demo Guest'], ['email','demo@example.invalid'], ['phone',''],
-      ['details',''], ['fulfillment-timezone','America/Chicago'],
-      ['fulfillment-method','pickup'], ['delivery-address',''], ['other-allergen',''],
-      ['top-tier-notes',''], ['bottom-tier-notes',''], ['cake-item-notes','']
+      ['fulfillment-timezone','America/Chicago'], ['other-allergen','']
     ]);
     const keyOf = node => node.name || node.id;
     const lock = node => {
@@ -243,7 +279,13 @@
       const label = node.closest('label'); if (label && !label.hidden) label.hidden = true;
     };
     const scan = () => {
-      form.querySelectorAll(privateSelectors).forEach(lock);
+      form.querySelectorAll(fixedSelectors).forEach(lock);
+      for(const node of form.querySelectorAll(editablePrivateSelectors)){node.setAttribute('autocomplete','off');node.removeAttribute('data-labs-private');}
+      const menu=readMenu(),enabled=menu?.settings?.deliveryEnabled===true,method=form.querySelector('#fulfillment-method'),option=method?.querySelector('option[value="delivery"]'),address=form.querySelector('#delivery-address'),addressLabel=form.querySelector('#delivery-address-field')||address?.closest('label');
+      if(option){if(option.disabled===enabled)option.disabled=!enabled;if(option.hidden===enabled)option.hidden=!enabled;if(!enabled&&method.value==='delivery')method.value='pickup';}
+      const showAddress=enabled&&method?.value==='delivery';
+      if(addressLabel&&addressLabel.hidden!==!showAddress)addressLabel.hidden=!showAddress;
+      if(address){address.disabled=!showAddress;address.required=showAddress;address.autocomplete='off';}
       const no=form.querySelector('#no-allergies');
       if(no)no.checked=!allergySelected(form);
     };
@@ -262,32 +304,57 @@
     if (allergy) {
       const allergyHeading=allergy.querySelector('.step');if(allergyHeading)allergyHeading.textContent = 'Allergies and dietary needs';
       const help = allergy.querySelector('#allergies-help');
-      if (help) help.textContent = 'Select applicable ingredients and severity. Labs stores only a generic allergy flag.';
+      if (help) help.textContent = 'Choose allergens and severity to filter ingredients.';
       for (const node of allergy.querySelectorAll('.other-allergen,#other-help,.inline-note,#allergen-feedback')) node.hidden = true;
       const other=allergy.querySelector('#other-allergen');if(other){other.value='';other.disabled=true;}
       allergy.querySelector('#allergen-list')?.addEventListener('change',()=>{
         const no=form.querySelector('#no-allergies');if(no)no.checked=!allergySelected(form);
       });
     }
+    const method=form.querySelector('#fulfillment-method');if(method)method.addEventListener('change',scan);
+    for(const id of ['top-tier-notes','bottom-tier-notes','cake-item-notes']){const label=form.querySelector(`#${id}`)?.closest('label');if(label)label.hidden=true;}
     const contact = form.querySelector('[name="name"]')?.closest('section');
     if (contact) {
-      const heading = contact.querySelector('.step'); if (heading) heading.textContent = 'Review sample cake';
-      for (const node of contact.querySelectorAll('#contact-help,.hint')) node.hidden = true;
-      const consent = contact.querySelector('[name="consent"]');
+      const heading = contact.querySelector('.step'); if (heading) heading.textContent = 'Deets';
+      const help=contact.querySelector('#contact-help');if(help)help.textContent='Email or phone required, or both.';
+      for (const node of contact.querySelectorAll('.hint')) if(node!==help)node.hidden=true;
+      const consent = form.querySelector('[name="consent"]');
       if (consent) { consent.checked = true; consent.closest('label').hidden = true; }
-      const send = contact.querySelector('[type="submit"]'); if (send) send.textContent = 'Save sample cake locally';
     }
+    const reviewSection=form.querySelector('[type="submit"]')?.closest('section');for(const hint of reviewSection?.querySelectorAll('p.hint')||[])if(/Your request, contact details, and any allergy information are stored for the cake studio/i.test(hint.textContent))hint.hidden=true;
+    const review=document.querySelector('#customer-order-review');
+    if(review){
+      const sanitizeReview=()=>{
+        for(const overview of review.querySelectorAll('.order-overview'))if(overview.dataset.labsSafe!=='true'){
+          overview.dataset.labsSafe='true';const date=form.querySelector('#event-date')?.value||'Date to be confirmed',time=form.querySelector('#requested-time')?.value||'Time to be confirmed';
+          overview.replaceChildren();const line=document.createElement('p');line.textContent=`Sample order · ${date} · ${time}`;overview.append(line);
+        }
+        review.querySelectorAll('.compact-customer-notes').forEach(node=>node.remove());
+      };
+      sanitizeReview();new MutationObserver(sanitizeReview).observe(review,{childList:true,subtree:true});
+    }
+    const send=form.querySelector('[type="submit"]');if(send)send.textContent='Save sample cake locally';
     const celebration = form.querySelector('#event-date')?.closest('section');
     if (celebration) {
-      const heading = celebration.querySelector('.step'); if (heading) heading.textContent = 'Event date and time';
       const dateInput=form.querySelector('#event-date'),timeInput=form.querySelector('#requested-time');
       if(dateInput&&!dateInput.value)dateInput.value=todayIso();
       for(const input of [dateInput,timeInput]) if(input) input.addEventListener('change',()=>form.dispatchEvent(new Event('change',{bubbles:true})));
     }
-    form.addEventListener('submit', () => { scan(); for (const node of form.querySelectorAll('[data-labs-private="true"]')) {
-      const expected = fixed.get(keyOf(node)) || '';
-      if (node.value !== expected) { node.value = expected; purgeDrafts(); privateNotice(); }
-    } }, true);
+    window.addEventListener('pagehide',()=>clearPrivateFields(form),{once:true});
+  }
+
+  function clearPrivateFields(form){for(const node of form?.querySelectorAll(privateSelectors)||[])node.value='';for(const selector of ['#customer-order-review','#builder-order-overview'])document.querySelector(selector)?.replaceChildren();}
+  function prepareSubmission(payload){
+    const source=payload&&typeof payload==='object'?payload:{},fulfillment=source.fulfillment&&typeof source.fulfillment==='object'?source.fulfillment:{},menu=readMenu();
+    const method=fulfillment.method==='delivery'&&menu?.settings?.deliveryEnabled===true?'delivery':'pickup';
+    return{...source,name:DEMO_NAME,email:DEMO_EMAIL,phone:'',details:'',website:'',cake:source.cake&&typeof source.cake==='object'?{...source.cake,notes:''}:source.cake,
+      fulfillment:{...fulfillment,method,time:source.requestedTime??fulfillment.time??'',timezone:'America/Chicago',address:method==='delivery'?SAFE_DELIVERY_ADDRESS:''},
+      ...(Array.isArray(source.items)?{items:source.items.map(item=>({...item,notes:'',tiers:Array.isArray(item.tiers)?item.tiers.map(tier=>({...tier,notes:''})):item.tiers}))}:{})};
+  }
+  function completeSubmission(){
+    const form=document.querySelector('#cake-order'),hadPrivate=[...(form?.querySelectorAll(privateSelectors)||[])].some(node=>node.value.trim()!=='');
+    clearPrivateFields(form);
+    if(hadPrivate)privateNotice(PRIVATE_DISCARDED_MESSAGE);
   }
 
   async function bodyFor(input, init) {
@@ -327,20 +394,20 @@
       if (payload?.consent !== true) return jsonResponse({ error:'Please confirm the demo request before continuing.' }, 400);
       const key = headers.get('Idempotency-Key') || '';
       if (!IDEMPOTENCY_PATTERN.test(key)) return jsonResponse({ error:'Refresh the form and try again.' }, 400);
-      const menu = readMenu();
-      if (!menu) return jsonResponse({ error:'The demo menu has not loaded.' }, 503);
-      let order;
-      try { order = makeSafeOrder(payload, menu); }
-      catch (error) { return jsonResponse({ error:error.message }, 400); }
-
-      // Event date and time are requested logistics; named allergy details remain represented only by a generic flag.
-      const fingerprint = JSON.stringify({ cake:order.cake, items:order.items || [], date:order.date, time:order.fulfillment.time, allergyAlert:Boolean(order.allergies.length) });
+      const fingerprint = submissionFingerprint(payload);
       state = readState();
       const previous = state.submissions[key];
       if (previous) {
         if (previous.fingerprint !== fingerprint) return jsonResponse({ error:'This demo key was already used for a different cake. Start a new demo request.' }, 409);
         return jsonResponse(previous.receipt, 200);
       }
+      const menu = readMenu();
+      if (!menu) return jsonResponse({ error:'The demo menu has not loaded.' }, 503);
+      let order;
+      try { order = makeSafeOrder(payload, menu); }
+      catch (error) { return jsonResponse({ error:error.message }, 400); }
+
+      // This contains only selected menu IDs, requested logistics and a generic allergy flag.
       const maxFillings=Number.isInteger(menu.settings?.maxFillings)?Math.max(1,Math.min(4,menu.settings.maxFillings)):2;
       const overFillingLimit=(order.items||[]).some(item=>item.tiers.some(tier=>{
         let effective;
@@ -470,5 +537,5 @@
   if (document.body) successObserver.observe(document.body, { subtree:true, attributes:true, attributeFilter:['hidden'] });
   else document.addEventListener('DOMContentLoaded', () => successObserver.observe(document.body, { subtree:true, attributes:true, attributeFilter:['hidden'] }), { once:true });
 
-  window.CakeLabs = Object.freeze({ mode:'local-only', resetStorageKey:STORAGE_KEY, resetDemo, prepareOrder, sampleEvent });
+  window.CakeLabs = Object.freeze({ mode:'local-only', resetStorageKey:STORAGE_KEY, resetDemo, prepareOrder, prepareSubmission, completeSubmission, sampleEvent });
 })();

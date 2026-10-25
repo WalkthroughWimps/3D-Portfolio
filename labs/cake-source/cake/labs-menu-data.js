@@ -13,6 +13,13 @@
   const allergens = options.allergens;
   function error(status,message) { throw Object.assign(new Error(message),{status}); }
   const metadata = (contains = [], mayContain = []) => ({ verified:true,contains,mayContain });
+  const defaultSettings = () => ({maxFillings:options.settings?.maxFillings??2,deliveryEnabled:options.settings?.deliveryEnabled??false,sizeEnabled:options.settings?.sizeEnabled??false});
+  function normalizeSettings(value={},fallback=defaultSettings()){
+    if(!value||typeof value!=='object'||Array.isArray(value))error(400,'Choose valid ordering settings.');
+    const settings={maxFillings:Object.hasOwn(value,'maxFillings')?value.maxFillings:fallback.maxFillings,deliveryEnabled:Object.hasOwn(value,'deliveryEnabled')?value.deliveryEnabled:fallback.deliveryEnabled,sizeEnabled:Object.hasOwn(value,'sizeEnabled')?value.sizeEnabled:fallback.sizeEnabled};
+    if(!Number.isInteger(settings.maxFillings)||settings.maxFillings<1||settings.maxFillings>4||typeof settings.deliveryEnabled!=='boolean'||typeof settings.sizeEnabled!=='boolean')error(400,'Choose valid ordering settings.');
+    return settings;
+  }
   function fixtureAllergens(group,id) {
     if (id === 'none' || group === 'sizes') return metadata();
     if (group === 'cakes') return metadata(['Milk','Eggs','Wheat',...(['carrot','pistachio'].includes(id) ? ['Tree nuts'] : [])]);
@@ -30,7 +37,7 @@
     return {
       groups:Object.fromEntries(groups.map(group => [group,defaultMenu[group].map(([id,label,color],sortOrder) => ({ id,label,base:id,color:color || cakeColors[id] || '#fff4df',available:true,sortOrder,allergenInfo:fixtureAllergens(group,id) }))])),
       revision:0,
-      settings:{maxFillings:defaultMenu.settings?.maxFillings ?? 2},
+      settings:{maxFillings:defaultMenu.settings?.maxFillings ?? 2,deliveryEnabled:defaultMenu.settings?.deliveryEnabled ?? false,sizeEnabled:defaultMenu.settings?.sizeEnabled ?? false},
       appearance:appearanceApi.defaults()
     };
   }
@@ -47,8 +54,7 @@
   function publicMenu(catalog, defaultMenu = options) {
     const result = structuredClone(defaultMenu);
     result.revision = catalog.revision;
-    const maxFillings=catalog.settings?.maxFillings ?? defaultMenu.settings?.maxFillings ?? 2;
-    result.settings={maxFillings:Number.isInteger(maxFillings)&&maxFillings>=1&&maxFillings<=4?maxFillings:2};
+    result.settings=normalizeSettings(catalog.settings||{}, {maxFillings:defaultMenu.settings?.maxFillings??2,deliveryEnabled:defaultMenu.settings?.deliveryEnabled??false,sizeEnabled:defaultMenu.settings?.sizeEnabled??false});
     result.appearance = appearanceApi.normalize(catalog.appearance);
     result.visuals = {};
     result.allergenInfo = {};
@@ -73,9 +79,7 @@
     const next = structuredClone(catalog);
     delete next.entry;
     if (input.action === 'settings') {
-      const maxFillings=input.settings?.maxFillings;
-      if(!Number.isInteger(maxFillings)||maxFillings<1||maxFillings>4)error(400,'Choose a maximum of one to four fillings per tier.');
-      next.settings={maxFillings};next.revision++;return next;
+      next.settings=normalizeSettings(input.settings,next.settings||defaultSettings());next.revision++;return next;
     }
     if (input.action === 'appearance') {
       try { next.appearance = appearanceApi.normalize(input.appearance); } catch (cause) { error(400,cause.message); }

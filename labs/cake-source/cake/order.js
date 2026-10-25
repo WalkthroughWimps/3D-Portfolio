@@ -48,6 +48,7 @@
   otherInput.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); addAllergen(); } });
   otherInput.addEventListener('blur', event => { if (event.relatedTarget?.id !== 'add-allergen') addAllergen(false); });
   const allergies = () => [...allergenList.children].filter(row => row.querySelector('input').checked).map(row => ({ name: row.dataset.allergen, severity: row.querySelector('select').value }));
+  const allergyConflict=()=>window.CakeAllergens.inspectSelected?.(builder.items(),fullMenu,allergies())||{hasConflict:false,issues:[]};
   const date = document.querySelector('#event-date');
   date.min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
   date.max = `${Number(date.min.slice(0, 4)) + 2}${date.min.slice(4)}`;
@@ -191,7 +192,7 @@
     showDraftMessage('Review the cake selections above, then send your request when they are correct.');
   });
   const cake = () => builder.cake();
-  const fulfillment=()=>({method:document.querySelector('#fulfillment-method').value,time:document.querySelector('#requested-time').value,address:document.querySelector('#delivery-address').value,timezone:document.querySelector('#fulfillment-timezone').value});
+  const fulfillment=()=>({method:options.settings?.deliveryEnabled===true?document.querySelector('#fulfillment-method').value:'pickup',time:document.querySelector('#requested-time').value,address:options.settings?.deliveryEnabled===true?document.querySelector('#delivery-address').value:'',timezone:document.querySelector('#fulfillment-timezone').value});
   function update() {
     const value = cake(), noFilling = value.filling === 'none' || options.visuals?.fillings?.[value.filling]?.base === 'none';
     document.querySelector('#amount-field').disabled = noFilling;
@@ -199,8 +200,8 @@
     document.querySelector('#cake-summary').textContent = `${options.cakes.find(([id]) => id === value.flavor)?.[1]||'Choose a cake'} · ${options.icings.find(([id]) => id === value.icing)?.[1]||'Choose an icing'}`;
     // The inline composition is the single preview, including incomplete neutral drafts.
     const data=readDraftFields();
-    builder.update({id:'preview',status:'pending',name:data.name||'Your request',email:data.email,phone:data.phone,date:data.date,fulfillment:fulfillment(),allergies:allergies(),details:data.details,cake:value});
-    document.querySelector('#delivery-address-field').hidden=fulfillment().method!=='delivery';document.querySelector('#delivery-address').required=fulfillment().method==='delivery';
+    builder.update({id:'preview',status:'pending',name:data.name||'Your request',email:data.email,phone:data.phone,date:data.date,fulfillment:fulfillment(),allergies:allergies(),allergyConflict:allergyConflict().hasConflict,details:data.details,cake:value});
+    const deliveryEnabled=options.settings?.deliveryEnabled===true;document.querySelector('#fulfillment-method').closest('label').hidden=!deliveryEnabled;document.querySelector('#delivery-address-field').hidden=!deliveryEnabled||fulfillment().method!=='delivery';document.querySelector('#delivery-address').required=deliveryEnabled&&fulfillment().method==='delivery';
     if (retryLocked) setAttemptControlsLocked(true);
   }
   function setAttemptControlsLocked(locked) {
@@ -223,7 +224,7 @@
   update();
   let lastAllergySignature='';
   const flow=window.createCakeOrderFlow(form,{
-    allergies,builder,menu:options,isRetry:()=>retryLocked||Boolean(attemptedPayload),
+    allergies,allergyConflict,builder,menu:options,isRetry:()=>retryLocked||Boolean(attemptedPayload),
     applyAllergies(){
       const signature=JSON.stringify(allergies().map(a=>a.name));
       const screened=window.CakeAllergens.screenMenu(fullMenu,allergies());
@@ -247,13 +248,16 @@
       if (!form.elements.namedItem('consent').checked) { feedback.textContent = 'Please confirm consent again before safely retrying this request.'; form.elements.namedItem('consent').focus(); return; }
     } else {
       data.quantity=Number(data.quantity);
-      if (!data.email?.trim() && !data.phone?.trim()) { feedback.textContent = 'Please leave an email address or phone number.'; document.querySelector('#contact-email').focus(); return; }
+      if (!data.email?.trim() && !data.phone?.trim()) { feedback.textContent = 'Please leave an email address or phone number.';flow.show('time'); document.querySelector('#contact-email').focus(); return; }
+      const phone=data.phone?.trim()||'',digits=phone.replace(/\D/g,'');
+      if(phone&&(!/^[+()\d .-]+$/.test(phone)||digits.length<7||digits.length>15)){feedback.textContent='Check your phone number.';flow.show('time');document.querySelector('#contact-phone').focus();return;}
       if (otherInput.value.trim()) { addAllergen(); feedback.textContent = 'Choose the severity for your added allergy before sending.'; form.reportValidity(); return; }
       if(!builder.isComplete()){const limit=builder.fillingLimitIssue();feedback.textContent=limit?`Cake ${limit.itemIndex+1}, ${limit.tierIndex?'bottom':'top'} tier has ${limit.count} fillings. The current limit is ${limit.max} per tier. Remove ${limit.count-limit.max} before sending.`:'Choose a cake and icing for every tier before sending.';flow.reveal(builder.focusFirstIncomplete());return;}
       const safety=window.CakeAllergens.inspectItems(builder.items(),fullMenu,allergies());
       if(!safety.allowed){feedback.textContent='Some choices need allergy review. Review the filtered menu.';flow.show('allergens');return;}
       if (!form.reportValidity()) return;
       attemptedPayload = { ...data, consent:true, cake:cake(), items:builder.items(), fulfillment:fulfillment(), allergies:allergies() };
+      if(window.CakeLabs?.prepareSubmission)attemptedPayload=window.CakeLabs.prepareSubmission(attemptedPayload);
       const fullReview = builder.reviewText({id:'draft',status:'pending',...attemptedPayload});
       attemptedReview = fullReview.length <= 32_000 ? fullReview : 'The original order summary was too long to save. The exact original request is retained for retry; contact the studio before changing it.';
     }
@@ -273,6 +277,7 @@
       const link = new URL('/cake/order-status.html', location.origin); link.hash = result.token;
       document.querySelector('#status-link').href = link.href;
       form.hidden = true; const success = document.querySelector('#order-success'); success.hidden = false; success.focus();
+      window.CakeLabs?.completeSubmission?.();
       form.reset();
       document.querySelector('#copy-link').addEventListener('click', async () => {
         try { await navigator.clipboard.writeText(link.href); document.querySelector('#copy-feedback').textContent = 'Private link copied.'; }

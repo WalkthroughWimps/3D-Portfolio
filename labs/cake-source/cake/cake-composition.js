@@ -44,22 +44,22 @@
       const chosen=interleave(families.map(family=>[...row.querySelectorAll(`.composition-filling[data-filling-index="${family}"]`)].filter(img=>Number(img.dataset.pieceIndex)<Math.max(1,Math.round(Number(img.dataset.baseCount)*density)))));
       for(const img of row.querySelectorAll('.composition-filling'))img.hidden=!chosen.includes(img);
       const icing=Math.min(height*.16,Math.max(4,piece*.25)),areaHeight=Math.max(0,height-icing);
-      const points=spread(chosen.length,width,areaHeight,piece*.65,seedOf(row.dataset.fillingSeed||''));
-      chosen.forEach((img,index)=>{img.style.width=piece+'px';img.style.height='auto';img.style.left=points[index].x+'px';img.style.top=(icing+points[index].y)+'px';img.style.transform=`translate(-50%,-50%) rotate(${img.dataset.rotation}deg)`;});
+      const fillSlots=[...new Set(chosen.map(img=>Number(img.dataset.slot||0)))],fillColumns=Math.max(2,Math.min(2,Math.max(...fillSlots,0)+1));
+      for(const slot of fillSlots){const group=chosen.filter(img=>Number(img.dataset.slot||0)===slot),column=slot%fillColumns,rowIndex=Math.floor(slot/fillColumns),rows=Math.max(1,Math.ceil((Math.max(...fillSlots,0)+1)/fillColumns)),zoneWidth=width/fillColumns,zoneHeight=areaHeight/rows,points=spread(group.length,zoneWidth,zoneHeight,piece*.55,seedOf((row.dataset.fillingSeed||'')+'|'+slot));group.forEach((img,index)=>{img.style.width=piece+'px';img.style.height='auto';img.style.left=(column*zoneWidth+points[index].x)+'px';img.style.top=(icing+rowIndex*zoneHeight+points[index].y)+'px';img.style.transform=`translate(-50%,-50%) rotate(${img.dataset.rotation}deg)`;});}
       const cap=Math.round(Math.min(42,Math.max(14,height*.4))),all=[...row.querySelectorAll('.composition-topper')];
       const hasSprinkles=all.some(element=>element.classList.contains('composition-sprinkle'));
       const visible=Math.min(all.length,Math.max(2,Math.floor(width/(hasSprinkles?22:40))));
       all.forEach((img,index)=>img.hidden=index>=visible);
-      const band=Math.min(height,Math.max(cap,height*.35)),topPoints=spread(visible,width,band,cap*.7,seedOf(row.dataset.topperSeed||''));
-      all.slice(0,visible).forEach((img,index)=>{
+      const topSlots=[...new Set(all.slice(0,visible).map(img=>Number(img.dataset.slot||0)))];
+      for(const slot of topSlots){const group=all.slice(0,visible).filter(img=>Number(img.dataset.slot||0)===slot),zoneWidth=width/2,points=spread(group.length,zoneWidth,Math.max(2,height*.08),cap*.48,seedOf((row.dataset.topperSeed||'')+'|'+slot));group.forEach((img,index)=>{
         const profile=toppers[img.dataset.topper],sprinkle=img.classList.contains('composition-sprinkle');
         const ratio=sprinkle?0.43:(img.naturalWidth&&img.naturalHeight?img.naturalHeight/img.naturalWidth:1)*profile.heightScale;
         const drawnWidth=sprinkle?Math.max(6,Math.min(14,width*.025)):Math.max(1,Math.min(profile.width,cap/Math.max(.05,ratio),width*.26));
-        img.style.width=drawnWidth+'px';img.style.height=Math.max(1,drawnWidth*ratio)+'px';img.style.left=topPoints[index].x+'px';img.style.top=Math.max(0,topPoints[index].y-drawnWidth*ratio/2)+'px';img.style.bottom='auto';
-      });
+        img.style.width=drawnWidth+'px';img.style.height=Math.max(1,drawnWidth*ratio)+'px';img.style.left=(slot*zoneWidth+points[index].x)+'px';img.style.top=Math.max(-4,points[index].y-drawnWidth*ratio*.7)+'px';img.style.bottom='auto';
+      });}
     }
   }
-  function render(container,item,options){container.replaceChildren();container.dataset.tiers=item.tiers.length;const generation=String(Number(container.dataset.generation||0)+1);container.dataset.generation=generation;
+  function render(container,item,options,uiSlots){container.replaceChildren();container.dataset.tiers=item.tiers.length;const generation=String(Number(container.dataset.generation||0)+1);container.dataset.generation=generation;
     const node=(tag,cls,text)=>{const n=document.createElement(tag);n.className=cls;if(text)n.textContent=text;return n;};
     for(const [ti,tier]of item.tiers.entries()){
       const cake=options.visuals?.cakes?.[tier.flavor]?.base||tier.flavor,color=tier.icing?(options.visuals?.icings?.[tier.icing]?.color||options.icings.find(i=>i[0]===tier.icing)?.[2]||'#d0d0d0'):'#bfc0c1';
@@ -70,17 +70,17 @@
         const base=options.visuals?.fillings?.[f.id]?.base||f.id;if(!fills[base])continue;
         const count={light:3,normal:5,extra:8}[f.amount]||5;
         for(let i=0;i<count;i++){
-          const img=node('img','composition-filling');img.alt='';img.dataset.fillingIndex=String(fi);img.dataset.pieceIndex=String(i);img.dataset.baseCount=String(count);img.dataset.rotation=String((i*47+fi*13)%100-50);
+          const img=node('img','composition-filling');img.alt='';img.dataset.fillingIndex=String(fi);img.dataset.slot=String(Math.max(0,uiSlots?.[ti]?.fillings?.findIndex(entry=>entry?.id===f.id)??fi));img.dataset.pieceIndex=String(i);img.dataset.baseCount=String(count);img.dataset.rotation=String((i*47+fi*13)%100-50);
           img.src='/cake/assets/images/'+fills[base];row.append(img);
         }
       }
-      const toppingGroups=tier.toppers.map(t=>Array.from({length:t.quantity*((options.visuals?.toppers?.[t.id]?.base||t.id)==='rainbowSprinkles'?6:1)},()=>t.id));const all=interleave(toppingGroups);row.dataset.topperSeed=tier.toppers.map(t=>t.id).join('|')+'|'+ti;
-      for(const [index,id]of all.entries()){
+      const toppingGroups=tier.toppers.map(t=>Array.from({length:t.quantity*((options.visuals?.toppers?.[t.id]?.base||t.id)==='rainbowSprinkles'?6:1)},()=>({id:t.id,slot:Math.max(0,uiSlots?.[ti]?.toppers?.findIndex(entry=>entry?.id===t.id)??tier.toppers.indexOf(t))})));const all=interleave(toppingGroups);row.dataset.topperSeed=tier.toppers.map(t=>t.id).join('|')+'|'+ti;
+      for(const [index,{id,slot}]of all.entries()){
         const base=options.visuals?.toppers?.[id]?.base||id,profile=toppers[base];if(!profile)continue;
         if(base==='rainbowSprinkles'){
-          const sprinkle=node('span','composition-topper composition-sprinkle');sprinkle.dataset.topper=base;sprinkle.style.backgroundColor=['#ec3b4a','#20b7e2','#f4c32f','#5dc755','#f382d0','#f8ede0'][index%6];sprinkle.style.borderRadius='999px';sprinkle.style.transform=`translateX(-50%) rotate(${(index*47)%150-75}deg)`;row.append(sprinkle);
+          const sprinkle=node('span','composition-topper composition-sprinkle');sprinkle.dataset.topper=base;sprinkle.dataset.slot=String(slot);sprinkle.style.backgroundColor=['#ec3b4a','#20b7e2','#f4c32f','#5dc755','#f382d0','#f8ede0'][index%6];sprinkle.style.borderRadius='999px';sprinkle.style.transform=`translateX(-50%) rotate(${(index*47)%150-75}deg)`;row.append(sprinkle);
         }else{
-          const img=node('img','composition-topper');img.alt='';img.dataset.topper=base;
+          const img=node('img','composition-topper');img.alt='';img.dataset.topper=base;img.dataset.slot=String(slot);
           img.onload=()=>{if(container.dataset.generation===generation&&img.isConnected)sizeContents(container);};
           img.src='/cake/assets/images/'+profile.image;row.append(img);
         }

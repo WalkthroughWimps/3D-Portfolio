@@ -64,7 +64,12 @@
     }
     return { allowed:issues.length === 0,requiresReview:allergies.reported || issues.length > 0,issues };
   }
-  const api = { normalizeAllergies,screenMenu,inspectItems };
+  // Warnings describe selected ingredients; a reported allergy alone is not a conflict.
+  function inspectSelected(items,menu,entries){
+    const issues=inspectItems(items,menu,entries).issues.filter(issue=>issue.id&&['allergen-match','unknown-allergy','unverified'].includes(issue.reason));
+    return {hasConflict:issues.length>0,issues};
+  }
+  const api = { normalizeAllergies,screenMenu,inspectItems,inspectSelected };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else scope.CakeAllergens = api;
 })(typeof window === 'undefined' ? globalThis : window);

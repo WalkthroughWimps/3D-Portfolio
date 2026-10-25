@@ -11,7 +11,7 @@
     control.className='page-button';control.append(symbol,text);
   };
   if(ordering){
-    for(const [section,icon,label]of [['allergens','⚑','Allergens'],['time','◷','Date'],['cake','▰','Cake'],['review','≡','Review']]){
+    for(const [section,icon,label]of [['allergens','⚑','Allergens'],['time','◷','Deets'],['cake','▰','Cake'],['review','≡','Review']]){
       const button=document.createElement('button');button.type='button';button.dataset.orderSection=section;
       iconLabel(button,icon,label);button.addEventListener('click',()=>document.dispatchEvent(new CustomEvent('cake-order-section',{detail:{section}})));
       navigation.append(button);
