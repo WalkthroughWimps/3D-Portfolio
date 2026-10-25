@@ -8,6 +8,7 @@
   const STORAGE_KEY = 'cake-labs-demo-v1';
   const SESSION_KEY = 'cake-labs-session-v1';
   const MENU_KEY = 'cake-labs-menu-v1';
+  const PRIVACY_SEEN_KEY = 'cake-labs-privacy-dialog-v1';
   const DRAFT_KEYS = ['cake-labs-order-draft-v1', 'cake-labs-order-attempt-lock-v1', 'cake-order-draft-v1', 'cake-order-attempt-lock-v1'];
   const TOKEN_PATTERN = /^[\w-]{43}$/;
   const IDEMPOTENCY_PATTERN = /^[\w-]{20,80}$/;
@@ -85,7 +86,7 @@
     }
     if (!menu.amounts?.[cake.amount]) throw new Error('Choose a valid filling amount.');
     const event=sampleEvent(payload);
-    if(!event)throw new Error('Choose one of the fictional sample dates and times.');
+    if(!event)throw new Error('Enter a valid event date and time.');
     const {date,time}=event;
     const sizeLabel = choiceLabel(menu, 'sizes', String(cake.size));
     const cakeLabels = {
@@ -103,7 +104,9 @@
       if (!item || item.productType !== 'cake' || !Array.isArray(item.tiers) || item.tiers.length < 1 || item.tiers.length > 2 || !menu.sizes.some(([id]) => id === String(item.size))) throw new Error('Review the cake selections and try the demo again.');
       const tiers = item.tiers.map(tier => {
         if (!menu.cakes.some(([id]) => id === tier.flavor) || !menu.icings.some(([id]) => id === tier.icing)) throw new Error('Review the cake selections and try the demo again.');
-        const fillings = (Array.isArray(tier.fillings) ? tier.fillings : []).slice(0, 4).filter(fill => menu.fillings.some(([id]) => id === fill.id && id !== 'none')).map(fill => ({
+        const tierFillings=Array.isArray(tier.fillings)?tier.fillings:[];
+        if(tierFillings.length>4)throw new Error('Choose no more than four fillings per tier.');
+        const fillings = tierFillings.filter(fill => menu.fillings.some(([id]) => id === fill.id && id !== 'none')).map(fill => ({
           id:fill.id, amount:menu.amounts[fill.amount] ? fill.amount : 'normal', label:choiceLabel(menu,'fillings',fill.id)
         }));
         const toppers = (Array.isArray(tier.toppers) ? tier.toppers : []).slice(0, 6).filter(top => menu.toppers.some(([id]) => id === top.id && id !== 'none')).map(top => ({
@@ -144,50 +147,88 @@
 
   function hasPrivateOrderData(payload) {
     if (!payload || typeof payload !== 'object') return false;
+    const allowedKeys=new Set(['name','email','phone','details','date','requestedTime','timezone','fulfillment','cake','items','allergies','consent','website','quantity','amount','flavor','icing','size','filling','topperA','topperB']);
+    if(Object.keys(payload).some(key=>!allowedKeys.has(key)))return true;
+    if(payload.website)return true;
     const allowed = {name:'Demo Guest',email:'demo@example.invalid',phone:'',details:'',timezone:'America/Chicago'};
     for (const [key,value] of Object.entries(allowed)) if (payload[key] != null && payload[key] !== value) return true;
     if (!sampleEvent(payload)) return true;
-    if (payload.fulfillment && (payload.fulfillment.address || !['pickup',undefined].includes(payload.fulfillment.method))) return true;
+    if (payload.fulfillment && (Object.keys(payload.fulfillment).some(key=>!['method','time','address','timezone'].includes(key)) || payload.fulfillment.address || !['pickup',undefined].includes(payload.fulfillment.method) || (payload.fulfillment.timezone && payload.fulfillment.timezone!=='America/Chicago'))) return true;
     if (Array.isArray(payload.items) && payload.items.some(item => item.notes || item.tiers?.some(tier => tier.notes))) return true;
-    if (Array.isArray(payload.allergies) && payload.allergies.some(a => !['Tree nuts','Milk'].includes(a?.name) || a.severity !== 'unsure')) return true;
+    if (!validAllergies(payload.allergies, window.CAKE_LABS_MENU || window.CakeOrderOptions)) return true;
+    if (payload.otherAllergen || payload.details) return true;
     return false;
   }
+  function validAllergies(allergies, options) {
+    if (allergies == null) return true;
+    if (!Array.isArray(allergies) || allergies.length > 9) return false;
+    const names = options?.allergens || [], severities = new Set((options?.severities || []).map(([id]) => id)), seen = new Set();
+    return allergies.every(item => {
+      if (!item || !names.includes(item.name) || !severities.has(item.severity) || seen.has(item.name)) return false;
+      seen.add(item.name); return true;
+    });
+  }
+  function allergySelected(form) {
+    return Boolean(form?.querySelector('#allergen-list input[type="checkbox"]:checked'));
+  }
 
-  const PRIVATE_MESSAGE = 'Cleared: this Labs preview accepts cake choices only. Personal and health details are not collected.';
+  const PRIVATE_MESSAGE = 'Cleared: the private input was removed. Contact details and named allergy information are not collected. This local demo saves cake choices, event date/time, and only a generic allergy flag.';
+  const PRIVACY_INTRO = 'This is a browser-local demo. Use example cake choices and event details; don’t enter names or contact details. The allergy checklist filters ingredients, while saved samples keep only a generic allergy flag.';
   function purgeDrafts() {
     let purged = false;
     try { for (const key of DRAFT_KEYS) if (sessionStorage.getItem(key) !== null) { sessionStorage.removeItem(key); purged = true; } } catch {}
     return purged;
   }
-  function privateNotice() {
-    let notice = document.querySelector('#labs-privacy-feedback');
-    if (!notice) {
-      notice = document.createElement('p'); notice.id = 'labs-privacy-feedback';
-      notice.className = 'labs-privacy-feedback'; notice.setAttribute('role', 'status');
-      (document.querySelector('main') || document.body).prepend(notice);
-    }
-    notice.textContent = PRIVATE_MESSAGE;
+  let privacyDialog, privacyReturnFocus;
+  let purgeNoticeShown=false;
+  function ensurePrivacyDialog() {
+    if (privacyDialog?.isConnected) return privacyDialog;
+    privacyDialog=document.createElement('dialog');privacyDialog.id='labs-privacy-dialog';privacyDialog.setAttribute('aria-labelledby','labs-privacy-title');
+    const heading=document.createElement('h2');heading.id='labs-privacy-title';heading.textContent='About this local demo';
+    const message=document.createElement('p');message.id='labs-privacy-feedback';message.className='labs-privacy-feedback';message.setAttribute('role','status');
+    const close=document.createElement('button');close.id='labs-privacy-dismiss';close.type='button';close.textContent='Continue';
+    privacyDialog.append(heading,message,close);document.body.append(privacyDialog);
+    close.addEventListener('click',()=>privacyDialog.close());
+    privacyDialog.addEventListener('close',()=>{if(privacyReturnFocus?.isConnected)privacyReturnFocus.focus();privacyReturnFocus=null;});
+    return privacyDialog;
   }
-  function sampleDate(offset=30) {
-    const day = new Date(); day.setDate(day.getDate() + offset);
+  function privateNotice(message=PRIVATE_MESSAGE) {
+    const dialog=ensurePrivacyDialog(),feedback=dialog.querySelector('#labs-privacy-feedback');
+    feedback.textContent=message;
+    if(!dialog.open){privacyReturnFocus=document.activeElement;dialog.showModal();}
+  }
+  function showPrivacyIntro() {
+    let seen=false;try{seen=sessionStorage.getItem(PRIVACY_SEEN_KEY)==='1';}catch{}
+    if(seen)return;
+    try{sessionStorage.setItem(PRIVACY_SEEN_KEY,'1');}catch{}
+    if(purgeNoticeShown)return;
+    privateNotice(PRIVACY_INTRO);
+  }
+  function todayIso() {
+    const day = new Date();
     return `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`;
   }
-  const sampleDates=()=>[sampleDate(30),sampleDate(42)];
-  const sampleTimes=['','10:00','14:00'];
+  function validIsoDate(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const [year,month,day] = value.split('-').map(Number);
+    if(year<1||month<1||month>12||day<1)return false;
+    const leap=year%4===0&&(year%100!==0||year%400===0),days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+    return day<=days[month-1];
+  }
   function sampleEvent(payload) {
-    if(payload===undefined)payload={date:document.querySelector('#event-date')?.value||sampleDate(30),requestedTime:document.querySelector('#requested-time')?.value??''};
+    if(payload===undefined)payload={date:document.querySelector('#event-date')?.value||todayIso(),requestedTime:document.querySelector('#requested-time')?.value??''};
     const requested=payload.requestedTime,fulfillment=payload.fulfillment?.time;
     if(requested!=null&&fulfillment!=null&&requested!==fulfillment)return null;
-    const date=payload.date||sampleDate(30),time=requested??fulfillment??'';
-    return sampleDates().includes(date)&&sampleTimes.includes(time)?{date,time}:null;
+    const date=payload.date||todayIso(),time=requested??fulfillment??'';
+    return validIsoDate(date) && (time === '' || (typeof time === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(time))) ? {date,time} : null;
   }
-  const privateSelectors = '[name="name"],[name="email"],[name="phone"],[name="date"],[name="details"],#requested-time,#fulfillment-timezone,#fulfillment-method,#delivery-address,#other-allergen,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
+  const privateSelectors = '[name="name"],[name="email"],[name="phone"],[name="details"],#fulfillment-timezone,#fulfillment-method,#delivery-address,#other-allergen,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
   function prepareOrder(form) {
     if (!form || form.dataset.labsPrivacyReady === 'true') return;
     form.dataset.labsPrivacyReady = 'true';
     const fixed = new Map([
-      ['name','Demo Guest'], ['email','demo@example.invalid'], ['phone',''], ['date',sampleDate(30)],
-      ['details',''], ['requested-time',''], ['fulfillment-timezone','America/Chicago'],
+      ['name','Demo Guest'], ['email','demo@example.invalid'], ['phone',''],
+      ['details',''], ['fulfillment-timezone','America/Chicago'],
       ['fulfillment-method','pickup'], ['delivery-address',''], ['other-allergen',''],
       ['top-tier-notes',''], ['bottom-tier-notes',''], ['cake-item-notes','']
     ]);
@@ -201,11 +242,10 @@
       }
       const label = node.closest('label'); if (label && !label.hidden) label.hidden = true;
     };
-    let sampleAllergyValue='';
     const scan = () => {
       form.querySelectorAll(privateSelectors).forEach(lock);
       const no=form.querySelector('#no-allergies');
-      if(no){no.checked=!sampleAllergyValue;const label=no.closest('label');if(label&&!label.hidden)label.hidden=true;}
+      if(no)no.checked=!allergySelected(form);
     };
     scan();
     const observer = new MutationObserver(scan); observer.observe(form,{childList:true,attributes:true,attributeFilter:['hidden'],subtree:true});
@@ -220,24 +260,13 @@
     for (const type of ['beforeinput','paste','drop','input','change']) form.addEventListener(type,purgeField,true);
     const allergy = form.querySelector('[aria-labelledby="allergies-heading"]');
     if (allergy) {
-      allergy.querySelector('.step').textContent = 'Sample ingredient filter';
+      const allergyHeading=allergy.querySelector('.step');if(allergyHeading)allergyHeading.textContent = 'Allergies and dietary needs';
       const help = allergy.querySelector('#allergies-help');
-      if (help) help.textContent = 'Choose a fictional test scenario. Do not enter your own health information.';
-      for (const node of allergy.querySelectorAll('#allergen-list,.other-allergen,#other-help,.inline-note,#allergen-feedback')) node.hidden = true;
-      const select = document.createElement('select'); select.id = 'labs-allergy-sample';
-      for (const [value,label] of [['','Sample: no allergy filter'],['Tree nuts','Sample: tree nut filter'],['Milk','Sample: milk filter']]) select.add(new Option(label,value));
-      const label = document.createElement('label'); label.className = 'labs-sample-filter'; label.textContent = 'Test menu filtering'; label.append(select);
-      (allergy.querySelector('#no-allergies')?.closest('label') || help)?.after(label);
-      select.addEventListener('change', () => {
-        sampleAllergyValue=select.value;
-        for (const row of allergy.querySelectorAll('#allergen-list > *')) {
-          const checkbox = row.querySelector('input'), severity = row.querySelector('select');
-          if (!checkbox) continue;
-          checkbox.checked = row.dataset.allergen === select.value;
-          if (severity) { severity.value = checkbox.checked ? 'unsure' : ''; severity.disabled = !checkbox.checked; severity.required = checkbox.checked; }
-        }
-        const no=form.querySelector('#no-allergies');if(no)no.checked=!select.value;
-        allergy.querySelector('#allergen-list')?.dispatchEvent(new Event('change',{bubbles:true}));
+      if (help) help.textContent = 'Select applicable ingredients and severity. Labs stores only a generic allergy flag.';
+      for (const node of allergy.querySelectorAll('.other-allergen,#other-help,.inline-note,#allergen-feedback')) node.hidden = true;
+      const other=allergy.querySelector('#other-allergen');if(other){other.value='';other.disabled=true;}
+      allergy.querySelector('#allergen-list')?.addEventListener('change',()=>{
+        const no=form.querySelector('#no-allergies');if(no)no.checked=!allergySelected(form);
       });
     }
     const contact = form.querySelector('[name="name"]')?.closest('section');
@@ -250,26 +279,10 @@
     }
     const celebration = form.querySelector('#event-date')?.closest('section');
     if (celebration) {
-      const heading = celebration.querySelector('.step'); if (heading) heading.textContent = 'Fictional sample event';
-      for (const node of celebration.querySelectorAll('.hint')) node.hidden = true;
-      const eventControls=document.createElement('div');eventControls.className='labs-sample-event';eventControls.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0';
-      const dayLabel=document.createElement('label');dayLabel.textContent='Fictional example day';dayLabel.style.display='block';
-      const daySelect=document.createElement('select');daySelect.id='labs-example-day';daySelect.setAttribute('aria-label','Fictional example day');daySelect.style.cssText='display:block;width:100%;min-height:44px;margin-top:.35rem';
-      const offsets=[30,42];offsets.forEach((offset,index)=>daySelect.add(new Option(index===0?'About 30 days from today':'About 42 days from today',String(offset))));dayLabel.append(daySelect);
-      const timeLabel=document.createElement('label');timeLabel.textContent='Fictional example time';timeLabel.style.display='block';
-      const timeSelect=document.createElement('select');timeSelect.id='labs-example-time';timeSelect.setAttribute('aria-label','Fictional example time');timeSelect.style.cssText='display:block;width:100%;min-height:44px;margin-top:.35rem';
-      for(const [value,label] of [['','No time selected'],['10:00','10:00 AM'],['14:00','2:00 PM']])timeSelect.add(new Option(label,value));timeLabel.append(timeSelect);
-      eventControls.append(dayLabel,timeLabel);
-      const copy = document.createElement('p'); copy.className = 'labs-sample-copy'; copy.textContent = 'Choose a fictional date and time preset. The pickup details are fixed for this local demo.';
+      const heading = celebration.querySelector('.step'); if (heading) heading.textContent = 'Event date and time';
       const dateInput=form.querySelector('#event-date'),timeInput=form.querySelector('#requested-time');
-      const applyPreset=()=>{
-        const date=sampleDate(Number(daySelect.value)),time=timeSelect.value;
-        fixed.set('date',date);fixed.set('requested-time',time);
-        dateInput.value=date;dateInput.dispatchEvent(new Event('change',{bubbles:true}));
-        timeInput.value=time;timeInput.dispatchEvent(new Event('change',{bubbles:true}));
-      };
-      daySelect.addEventListener('change',applyPreset);timeSelect.addEventListener('change',applyPreset);
-      celebration.append(eventControls,copy);
+      if(dateInput&&!dateInput.value)dateInput.value=todayIso();
+      for(const input of [dateInput,timeInput]) if(input) input.addEventListener('change',()=>form.dispatchEvent(new Event('change',{bubbles:true})));
     }
     form.addEventListener('submit', () => { scan(); for (const node of form.querySelectorAll('[data-labs-private="true"]')) {
       const expected = fixed.get(keyOf(node)) || '';
@@ -320,14 +333,22 @@
       try { order = makeSafeOrder(payload, menu); }
       catch (error) { return jsonResponse({ error:error.message }, 400); }
 
-      // Fingerprint only the non-personal cake selection; names, dates, contacts, notes and addresses are discarded.
-      const fingerprint = JSON.stringify({ cake:order.cake, items:order.items || [],allergyAlert:Boolean(order.allergies.length) });
+      // Event date and time are requested logistics; named allergy details remain represented only by a generic flag.
+      const fingerprint = JSON.stringify({ cake:order.cake, items:order.items || [], date:order.date, time:order.fulfillment.time, allergyAlert:Boolean(order.allergies.length) });
       state = readState();
       const previous = state.submissions[key];
       if (previous) {
         if (previous.fingerprint !== fingerprint) return jsonResponse({ error:'This demo key was already used for a different cake. Start a new demo request.' }, 409);
         return jsonResponse(previous.receipt, 200);
       }
+      const maxFillings=Number.isInteger(menu.settings?.maxFillings)?Math.max(1,Math.min(4,menu.settings.maxFillings)):2;
+      const overFillingLimit=(order.items||[]).some(item=>item.tiers.some(tier=>{
+        let effective;
+        try{effective=window.CakeOrderModel?.effectiveFillings?window.CakeOrderModel.effectiveFillings(item,tier):item.mixFillings?[...new Map(item.tiers.flatMap(entry=>entry.fillings).map(fill=>[fill.id,fill])).values()]:tier.fillings;}
+        catch{return true;}
+        return effective.length>maxFillings;
+      }));
+      if(overFillingLimit)return jsonResponse({error:`Choose no more than ${maxFillings} fillings per tier for this menu.`},400);
       const receipt = { id:order.id, token:order.token, status:order.status };
       const next = clone(state);
       next.orders.push(order);
@@ -385,7 +406,7 @@
   } catch { /* The in-memory adapter still works without storage. */ }
   function localizePage() {
     if (!document.body) return;
-    if (purgedOnLoad) privateNotice();
+    if (purgedOnLoad && !purgeNoticeShown) {purgeNoticeShown=true;privateNotice('Cleared: old drafts were removed from this tab. Contact details and named allergy information are not collected.');}
     const homeForm = document.querySelector('#order-overlay #order-form');
     if (homeForm && homeForm.dataset.labsReplaced !== 'true') {
       homeForm.dataset.labsReplaced = 'true';
@@ -424,6 +445,7 @@
   const purgedOnLoad = purgeDrafts();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', localizePage, { once:true });
   else localizePage();
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',showPrivacyIntro,{once:true});else showPrivacyIntro();
 
   // The old homepage inquiry is replaced in Labs. Clear attempted injected fields as well.
   for (const type of ['beforeinput','paste','drop','input','change']) document.addEventListener(type, event => {

@@ -4,7 +4,7 @@
   const dialog = document.createElement('dialog'); dialog.id = 'studio-menu-dialog'; dialog.setAttribute('aria-labelledby','studio-menu-title');
   dialog.innerHTML = `<header><div><p class="menu-kicker">Customer choices</p><h2 id="studio-menu-title">Ordering menu</h2></div><button type="button" data-close aria-label="Close ordering menu">×</button></header>
     <p>Add choices, adjust their preview style, or hide unavailable items. Saved changes appear for all customers.</p>
-    <label>Category<select id="menu-category"></select></label><p class="menu-hint" id="menu-list-help">Drag choices to reorder them, or use the move buttons. Hidden choices stay at the bottom.</p><div id="menu-choices" aria-label="Existing choices" aria-describedby="menu-list-help"></div>
+    <label>Category<select id="menu-category"></select></label><label class="menu-limit-setting" id="menu-max-fillings-label">Max fillings per tier<select id="menu-max-fillings" aria-describedby="menu-max-fillings-help"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></label><p class="menu-hint" id="menu-max-fillings-help">Customers can choose up to this many different fillings on each tier.</p><p class="menu-hint" id="menu-list-help">Drag choices to reorder them, or use the move buttons. Hidden choices stay at the bottom.</p><div id="menu-choices" aria-label="Existing choices" aria-describedby="menu-list-help"></div>
     <button type="button" id="menu-new">+ Add another choice</button>
     <form id="menu-choice-form"><h3 id="menu-form-title">Add a choice</h3><label>Name<input id="menu-label" maxlength="80" required autocomplete="off"></label>
     <label id="menu-base-label">Preview style<select id="menu-base"></select></label><label id="menu-color-label">Preview tint<input id="menu-color" type="color" value="#fff4df"></label>
@@ -14,7 +14,7 @@
     <p class="menu-hint">New names use an existing cake or decoration style for their visual preview. Hiding a choice preserves previous orders.</p>
     <button type="submit">Save choice for customers</button></form><p id="menu-feedback" role="status"></p>`;
   document.body.append(dialog);
-  const get = id => dialog.querySelector('#'+id), category=get('menu-category'), base=get('menu-base'), color=get('menu-color'), name=get('menu-label'), available=get('menu-available'), form=get('menu-choice-form'), feedback=get('menu-feedback');
+  const get = id => dialog.querySelector('#'+id), category=get('menu-category'), maxFillings=get('menu-max-fillings'), base=get('menu-base'), color=get('menu-color'), name=get('menu-label'), available=get('menu-available'), form=get('menu-choice-form'), feedback=get('menu-feedback');
   Object.entries(names).forEach(([id,label])=>category.add(new Option(label,id)));
   let catalog, editing=null, csrf, saving=false;
   async function api(url, init) {
@@ -46,6 +46,7 @@
     if(!entry)useCurrentStyle();
   }
   function renderList() {
+    maxFillings.value=String(catalog.settings?.maxFillings??2);
     const list=get('menu-choices'),entries=catalog.groups[category.value];list.replaceChildren(...entries.map((entry,index)=>{
       const row=document.createElement('div');row.className='menu-choice-row'+(entry.available?'':' is-hidden');row.dataset.id=entry.id;row.draggable=entry.available&&!saving;
       const label=document.createElement('span');label.className='menu-choice-name';label.textContent=entry.label;
@@ -74,7 +75,7 @@
     });
   }
   async function reloadAfterConflict(){catalog=await api('/api/admin/menu');renderList();feedback.textContent='The menu changed elsewhere. The latest menu is loaded; review it and try your change again.';}
-  async function mutate(payload){if(saving||!catalog)return;saving=true;category.disabled=true;get('menu-new').disabled=true;renderList();feedback.textContent='Saving…';try{catalog=await api('/api/admin/menu',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({...payload,revision:catalog.revision})});renderList();feedback.textContent=payload.action==='toggle'?(payload.available?'Choice is available.':'Choice hidden and moved to the bottom.'):'Order saved.';}catch(error){if(error.status===409){try{await reloadAfterConflict();}catch(loadError){feedback.textContent=`${error.message} Latest menu could not be loaded: ${loadError.message}`;}}else{catalog=await api('/api/admin/menu').catch(()=>catalog);renderList();feedback.textContent=error.message;}}finally{saving=false;category.disabled=false;get('menu-new').disabled=false;renderList();}}
+  async function mutate(payload){if(saving||!catalog)return;saving=true;category.disabled=true;maxFillings.disabled=true;get('menu-new').disabled=true;renderList();feedback.textContent='Saving…';try{catalog=await api('/api/admin/menu',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({...payload,revision:catalog.revision})});renderList();feedback.textContent=payload.action==='settings'?'Filling limit saved. Customers will see it when they open or refresh the order form.':payload.action==='toggle'?(payload.available?'Choice is available.':'Choice hidden and moved to the bottom.'):'Order saved.';}catch(error){if(error.status===409){try{await reloadAfterConflict();}catch(loadError){feedback.textContent=`${error.message} Latest menu could not be loaded: ${loadError.message}`;}}else{catalog=await api('/api/admin/menu').catch(()=>catalog);renderList();feedback.textContent=error.message;}}finally{saving=false;category.disabled=false;maxFillings.disabled=false;get('menu-new').disabled=false;renderList();}}
   function reorderTo(from,to){const entries=[...catalog.groups[category.value]],moving=entries.splice(from,1)[0];entries.splice(to,0,moving);const active=entries.filter(x=>x.available),hidden=entries.filter(x=>!x.available);mutate({action:'reorder',group:category.value,ids:[...active,...hidden].map(x=>x.id)});}
   function reorderBy(index,dir){const entries=catalog.groups[category.value],target=index+dir;if(!entries[index]?.available||!entries[target]?.available)return;reorderTo(index,target);}
   async function open() {
@@ -83,6 +84,7 @@
     catch(error){feedback.textContent=error.message;} finally{form.inert=!catalog;category.disabled=!catalog;get('menu-new').disabled=!catalog;}
   }
   category.addEventListener('change',()=>{if(catalog){renderList();edit(null);feedback.textContent='';}});
+  maxFillings.addEventListener('change',()=>mutate({action:'settings',settings:{maxFillings:Number(maxFillings.value)}}));
   base.addEventListener('change',()=>{const source=catalog.groups[category.value].find(item=>item.id===base.value);if(source)color.value=source.color;});
   get('menu-new').addEventListener('click',()=>{edit(null);name.focus();feedback.textContent='';});
   get('menu-use-current').addEventListener('click',useCurrentStyle);

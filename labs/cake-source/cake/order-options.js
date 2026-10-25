@@ -1,6 +1,7 @@
 /* Shared customer choices: used by the form, preview, and server validation. */
 (function (scope) {
   const options = {
+    settings: { maxFillings: 2 },
     cakes: [['redVelvet', 'Red velvet'], ['vanilla', 'Vanilla'], ['lemon', 'Lemon'], ['white', 'White cake'], ['chocolate', 'Chocolate'], ['carrot', 'Carrot cake'], ['pistachio', 'Pistachio']],
     fillings: [['none', 'No added pieces'], ['chocolateChips', 'Chocolate chips'], ['candyCoatedChocolate', 'Candy-coated chocolate'], ['almondPieces', 'Almond pieces'], ['walnutPieces', 'Walnut pieces'], ['caramelNutChocolate', 'Caramel nut chocolate'], ['peanutButterCup', 'Peanut butter cup']],
     toppers: [['none', 'None'], ['strawberry', 'Strawberry'], ['blueberries', 'Blueberries'], ['raspberries', 'Raspberries'], ['chocolateChips', 'Chocolate chips'], ['chocolateCurls', 'Chocolate curls'], ['candyCoatedChocolate', 'Candy-coated chocolate'], ['almondPieces', 'Almond pieces'], ['walnutPieces', 'Walnut pieces'], ['caramelNutChocolate', 'Caramel nut chocolate'], ['peanutButterCup', 'Peanut butter cup'], ['rainbowSprinkles', 'Rainbow sprinkles'], ['rosette', 'Rosette'], ['pipedDollop', 'Piped dollop'], ['pipedRuffle', 'Piped ruffle'], ['fondantDisc', 'Fondant disc'], ['fondantRibbon', 'Fondant ribbon']],

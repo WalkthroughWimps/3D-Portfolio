@@ -54,8 +54,8 @@
       const preferred=data.map(item=>({item,v:item.variants.filter(v=>v.level===0&&!v.inline).sort((a,b)=>a.w*a.h-b.w*b.h)[0]}));
       const preferredArea=preferred.reduce((sum,q)=>sum+(q.v?(q.v.w+gap)*(q.v.h+gap):w*h),0);
       if(preferredArea<w*h*.66){
-        // In a roomy category, use best-candidate Poisson anchors directly. Distances
-        // are normalized to the panel so the huddle uses its full height as well.
+        // Use physical pixel distances for Poisson anchors: stretching each axis
+        // independently bunches items horizontally on tall phone screens.
         for(let pass=0;pass<24&&!solution;pass++){
           const placed=[],order=preferred.map(q=>({...q,key:rand()})).sort((a,b)=>b.v.w*b.v.h-a.v.w*a.v.h||a.key-b.key);
           for(const q of order){
@@ -63,10 +63,10 @@
             for(let k=0;k<160;k++){
               const bw=q.v.w+gap,bh=q.v.h+gap,x=pad+rand()*Math.max(0,w-pad*2-bw+gap),y=pad+rand()*Math.max(0,h-pad*2-bh+gap),r={x,y,w:bw,h:bh,item:q.item,v:q.v};
               if(obstacles.some(o=>intersects(r,o))||placed.some(o=>intersects(r,o)))continue;
-              const cx=(x+bw/2)/w,cy=(y+bh/2)/h;
-              const separation=placed.length?Math.min(...placed.map(o=>Math.hypot(cx-(o.x+o.w/2)/w,cy-(o.y+o.h/2)/h))):.5;
-              const edge=Math.hypot((cx-.5)*1.1,cy-.5);
-              const score=separation-edge*.16;
+              const cx=x+bw/2,cy=y+bh/2;
+              const separation=placed.length?Math.min(...placed.map(o=>Math.hypot(cx-o.x-o.w/2,cy-o.y-o.h/2))):Math.sqrt(area);
+              const edge=Math.hypot(cx-w/2,cy-h/2);
+              const score=separation-edge*.06;
               if(score>bestScore){best=r;bestScore=score;}
             }
             if(!best)break;placed.push(best);
@@ -103,15 +103,29 @@
         if(attempt>=12&&bestPenalty<40)break;
       }
       if(solution){
-        // Sample a small collision-free orbit around each anchor. On roomy screens
-        // targets can drift much farther from the packing edges, producing a huddle
-        // with varying heights and spacing rather than rows or columns.
+        // Approximate centroidal Voronoi relaxation evens the empty space around
+        // each anchor. Samples are integration points, never placement grid cells.
+        // Every move is constrained by the real hit rectangles and side arrows.
         const blocked=q=>obstacles.some(r=>intersects(q,r));
-        for(let pass=0;pass<45;pass++)for(const q of solution){
-          const radius=Math.max(3,Math.min(20,Math.sqrt(area)*.13))*(1-pass/60);
-          const nx=Math.max(pad,Math.min(w-pad-q.w+gap,q.x+(rand()-.5)*radius)),ny=Math.max(pad,Math.min(h-pad-q.h+gap,q.y+(rand()-.5)*radius));
-          const candidate={x:nx,y:ny,w:q.w,h:q.h};
-          if(!blocked(candidate)&&!solution.some(other=>other!==q&&intersects(candidate,other))){q.x=nx;q.y=ny;}
+        const sampleCount=Math.min(1400,Math.max(320,data.length*90));
+        const step=Math.sqrt(w*h/sampleCount),samples=[];
+        for(let y=pad+step/2;y<h-pad;y+=step)for(let x=pad+step/2;x<w-pad;x+=step){
+          if(!obstacles.some(r=>x>=r.x&&x<=r.x+r.w&&y>=r.y&&y<=r.y+r.h))samples.push({x,y});
+        }
+        for(let pass=0;pass<20;pass++){
+          const sums=solution.map(()=>({x:0,y:0,n:0}));
+          for(const p of samples){let nearest=0,distance=Infinity;
+            for(let i=0;i<solution.length;i++){const q=solution[i],dx=p.x-q.x-q.w/2,dy=p.y-q.y-q.h/2,d=dx*dx+dy*dy;if(d<distance){distance=d;nearest=i;}}
+            if(sums[nearest]){sums[nearest].x+=p.x;sums[nearest].y+=p.y;sums[nearest].n++;}
+          }
+          const order=pass%2?[...solution.keys()].reverse():[...solution.keys()];
+          for(const i of order){const q=solution[i],sum=sums[i];if(!sum.n)continue;
+            const tx=Math.max(pad,Math.min(w-pad-q.w+gap,sum.x/sum.n-q.w/2)),ty=Math.max(pad,Math.min(h-pad-q.h+gap,sum.y/sum.n-q.h/2));
+            for(let blend=.65;blend>.015;blend*=.5){
+              const candidate={x:q.x+(tx-q.x)*blend,y:q.y+(ty-q.y)*blend,w:q.w,h:q.h};
+              if(!blocked(candidate)&&!solution.some(other=>other!==q&&intersects(candidate,other))){q.x=candidate.x;q.y=candidate.y;break;}
+            }
+          }
         }
         for(const q of solution){apply(q.item,q.v);q.item.el.style.left=q.x+'px';q.item.el.style.top=q.y+'px';}
       }else{

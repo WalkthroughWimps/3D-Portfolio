@@ -249,7 +249,7 @@
       data.quantity=Number(data.quantity);
       if (!data.email?.trim() && !data.phone?.trim()) { feedback.textContent = 'Please leave an email address or phone number.'; document.querySelector('#contact-email').focus(); return; }
       if (otherInput.value.trim()) { addAllergen(); feedback.textContent = 'Choose the severity for your added allergy before sending.'; form.reportValidity(); return; }
-      if(!builder.isComplete()){feedback.textContent='Choose a cake and icing for every tier before sending.';flow.reveal(builder.focusFirstIncomplete());return;}
+      if(!builder.isComplete()){const limit=builder.fillingLimitIssue();feedback.textContent=limit?`Cake ${limit.itemIndex+1}, ${limit.tierIndex?'bottom':'top'} tier has ${limit.count} fillings. The current limit is ${limit.max} per tier. Remove ${limit.count-limit.max} before sending.`:'Choose a cake and icing for every tier before sending.';flow.reveal(builder.focusFirstIncomplete());return;}
       const safety=window.CakeAllergens.inspectItems(builder.items(),fullMenu,allergies());
       if(!safety.allowed){feedback.textContent='Some choices need allergy review. Review the filtered menu.';flow.show('allergens');return;}
       if (!form.reportValidity()) return;

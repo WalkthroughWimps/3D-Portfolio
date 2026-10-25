@@ -30,6 +30,7 @@
     return {
       groups:Object.fromEntries(groups.map(group => [group,defaultMenu[group].map(([id,label,color],sortOrder) => ({ id,label,base:id,color:color || cakeColors[id] || '#fff4df',available:true,sortOrder,allergenInfo:fixtureAllergens(group,id) }))])),
       revision:0,
+      settings:{maxFillings:defaultMenu.settings?.maxFillings ?? 2},
       appearance:appearanceApi.defaults()
     };
   }
@@ -46,6 +47,8 @@
   function publicMenu(catalog, defaultMenu = options) {
     const result = structuredClone(defaultMenu);
     result.revision = catalog.revision;
+    const maxFillings=catalog.settings?.maxFillings ?? defaultMenu.settings?.maxFillings ?? 2;
+    result.settings={maxFillings:Number.isInteger(maxFillings)&&maxFillings>=1&&maxFillings<=4?maxFillings:2};
     result.appearance = appearanceApi.normalize(catalog.appearance);
     result.visuals = {};
     result.allergenInfo = {};
@@ -69,6 +72,11 @@
     if (!Number.isInteger(input.revision) || input.revision !== catalog.revision) error(409,'The sample menu changed. Reload and try again.');
     const next = structuredClone(catalog);
     delete next.entry;
+    if (input.action === 'settings') {
+      const maxFillings=input.settings?.maxFillings;
+      if(!Number.isInteger(maxFillings)||maxFillings<1||maxFillings>4)error(400,'Choose a maximum of one to four fillings per tier.');
+      next.settings={maxFillings};next.revision++;return next;
+    }
     if (input.action === 'appearance') {
       try { next.appearance = appearanceApi.normalize(input.appearance); } catch (cause) { error(400,cause.message); }
       next.revision++;

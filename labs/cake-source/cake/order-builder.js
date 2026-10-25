@@ -3,6 +3,7 @@ window.createCakeOrderBuilder=function(form,options,frame){
   const $=s=>document.querySelector(s),node=(tag,text)=>{const n=document.createElement(tag);if(text)n.textContent=text;return n;};
   const initialTier=()=>({flavor:'',icing:'',fillings:[],toppers:[],notes:''});
   const initialItem=()=>({productType:'cake',quantity:1,size:options.sizes.some(v=>v[0]==='8')?'8':options.sizes[0][0],mixFillings:false,notes:'',tiers:[initialTier()]});
+  const maxFillings=()=>Number.isInteger(options.settings?.maxFillings)&&options.settings.maxFillings>=1&&options.settings.maxFillings<=4?options.settings.maxFillings:2;
   const items=[initialItem()];let active=0,activeTier=0,rendering=false,undo=null;
   const section=form.querySelector('.cake-choices'),choose=node('div');choose.className='fields cake-management-wrap';choose.innerHTML='<label>Your cake<select id="cake-item-picker" aria-label="Current cake"></select></label><div id="cake-item-tabs" class="actions" hidden></div><div class="cake-management"><button type="button" class="secondary" id="add-cake-item">Add cake</button><button type="button" class="secondary cake-delete" id="remove-cake-item" aria-label="Delete current cake">×</button><button type="button" class="secondary" id="undo-cake-change" hidden>Undo</button></div>';
   section.insertBefore(choose,section.children[1]);
@@ -26,7 +27,10 @@ window.createCakeOrderBuilder=function(form,options,frame){
   function tabs(){const holder=$('#cake-item-tabs');if(holder.children.length===items.length){[...holder.children].forEach((b,i)=>{b.textContent=`Cake ${i+1} · Qty ${items[i].quantity}`;b.className=i===active?'':'secondary';b.setAttribute('aria-pressed',String(i===active));});}else holder.replaceChildren(...items.map((item,i)=>{const b=node('button',`Cake ${i+1} · Qty ${item.quantity}`);b.type='button';b.className=i===active?'':'secondary';b.setAttribute('aria-pressed',String(i===active));b.addEventListener('click',()=>{sync();active=i;activeTier=0;load();change();});return b;}));const picker=$('#cake-item-picker');picker.replaceChildren(...items.map((item,i)=>new Option(`Cake ${i+1} · Qty ${item.quantity}`,String(i))));picker.value=String(active);$('#add-cake-item').disabled=items.length>=8;}
   function load(){rendering=true;const item=items[active];form.querySelector('[name=quantity]').value=item.quantity;$('#size').value=item.size;$('#cake-item-notes').value=item.notes;loadTier('top',item.tiers[0]);bottom.hidden=item.tiers.length===1;$('#add-bottom-tier').hidden=item.tiers.length>1;$('#remove-bottom-tier').hidden=item.tiers.length===1;if(item.tiers[1])loadTier('bottom',item.tiers[1]);for(const id of ['bottom-flavor','bottom-icing','bottom-filling','bottom-amount','bottom-topperA','bottom-topperB','bottom-topperA-quantity','bottom-topperB-quantity','bottom-tier-notes','bottom-add-filling'])$('#'+id).disabled=bottom.hidden;bottom.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=bottom.hidden);$('#mix-fillings').checked=item.mixFillings;rendering=false;tabs();}
   function change(){form.dispatchEvent(new Event('change',{bubbles:true}));}
-  for(const prefix of ['top','bottom'])$('#'+prefix+'-add-filling').addEventListener('click',()=>{sync();const tier=items[active].tiers[prefix==='top'?0:1];if(tier.fillings.length>=4)return;const next=options.fillings.find(([id])=>id!=='none'&&!tier.fillings.some(f=>f.id===id));if(next){tier.fillings.push({id:next[0],amount:'normal'});load();change();}});
+  const fillingIds=item=>new Set(item.tiers.flatMap(tier=>tier.fillings.map(filling=>filling.id)));
+  const fillingLimit=()=>document.dispatchEvent(new CustomEvent('cake-order-filling-limit',{detail:{max:maxFillings()}}));
+  for(const prefix of ['top','bottom'])$('#'+prefix+'-add-filling').addEventListener('click',()=>{sync();const item=items[active],tier=item.tiers[prefix==='top'?0:1],next=options.fillings.find(([id])=>id!=='none'&&!tier.fillings.some(f=>f.id===id));if(tier.fillings.length>=maxFillings()||item.mixFillings&&next&&fillingIds(item).size>=maxFillings()){fillingLimit();return;}if(next){tier.fillings.push({id:next[0],amount:'normal'});load();change();}});
+  $('#mix-fillings').addEventListener('change',()=>{if(!$('#mix-fillings').checked)return;sync();const item=items[active];if(fillingIds(item).size>maxFillings()){$('#mix-fillings').checked=false;item.mixFillings=false;fillingLimit();change();}});
   $('#cake-item-picker').addEventListener('change',event=>{const next=Number(event.target.value);sync();active=next;activeTier=0;load();change();});
   $('#add-cake-item').addEventListener('click',()=>{sync();if(items.length>=8)return;items.push(initialItem());active=items.length-1;activeTier=0;load();change();});
   $('#remove-cake-item').addEventListener('click',()=>{sync();undo={kind:'cake',item:structuredClone(items[active]),index:active};if(items.length===1){items[0]=initialItem();active=0;}else{items.splice(active,1);active=Math.min(active,items.length-1);}activeTier=0;$('#undo-cake-change').hidden=false;load();change();});
@@ -42,6 +46,7 @@ window.createCakeOrderBuilder=function(form,options,frame){
     for(const group of ['cakes','icings','fillings','toppers','sizes']){
       options[group]=menu[group];validIds[group]=ids(group);
     }
+    options.settings=menu.settings;
     options.allergyScreen=menu.allergyScreen;
     for(const item of items)for(const tier of item.tiers){
       if(!validIds.cakes.has(tier.flavor))tier.flavor='';
@@ -69,8 +74,9 @@ window.createCakeOrderBuilder=function(form,options,frame){
     restore(snapshot){if(!validateSnapshot(snapshot))return false;items.splice(0,items.length,...structuredClone(snapshot.items));active=snapshot.active;activeTier=0;load();change();return true;},
     reset(){items.splice(0,items.length,initialItem());active=0;activeTier=0;load();change();},
     activeItemIndex(){return active;},activeTier(){return activeTier;},setActiveTier(index){if(index<0||index>=items[active].tiers.length)return;activeTier=index;},hasExtra(){return items[active].tiers.length>1;},addExtra(){$('#add-bottom-tier').click();},removeExtra(){$('#remove-bottom-tier').click();},
-    isComplete(){sync();return items.every(item=>item.tiers.every(t=>validIds.cakes.has(t.flavor)&&validIds.icings.has(t.icing))&&(()=>{try{item.tiers.forEach(t=>CakeOrderModel.effectiveFillings(item,t));return true;}catch{return false;}})());},
-    focusFirstIncomplete(){sync();for(let i=0;i<items.length;i++)for(let t=0;t<items[i].tiers.length;t++){if(!items[i].tiers[t].flavor||!items[i].tiers[t].icing){active=i;activeTier=t;load();return $('#'+(t?'bottom-':'')+(!items[i].tiers[t].flavor?'flavor':'icing'));}}return null;},
+    fillingLimitIssue(){sync();for(let i=0;i<items.length;i++)for(let t=0;t<items[i].tiers.length;t++){const count=items[i].mixFillings?fillingIds(items[i]).size:items[i].tiers[t].fillings.length;if(count>maxFillings())return {itemIndex:i,tierIndex:t,count,max:maxFillings()};}return null;},
+    isComplete(){sync();return items.every(item=>{if(!item.tiers.every(tier=>validIds.cakes.has(tier.flavor)&&validIds.icings.has(tier.icing)))return false;try{return item.tiers.every(tier=>CakeOrderModel.effectiveFillings(item,tier).length<=maxFillings());}catch{return false;}});},
+    focusFirstIncomplete(){sync();for(let i=0;i<items.length;i++)for(let t=0;t<items[i].tiers.length;t++){const tier=items[i].tiers[t],count=items[i].mixFillings?fillingIds(items[i]).size:tier.fillings.length;if(!tier.flavor||!tier.icing||count>maxFillings()){active=i;activeTier=t;load();return $('#'+(t?'bottom-':'')+(!tier.flavor?'flavor':!tier.icing?'icing':'filling'));}}return null;},
     cake(){sync();try{return CakeOrderModel.cakeOf(items[active]);}catch{return CakeOrderModel.cakeOf({...items[active],mixFillings:false});}}
   };
 };
