@@ -12,7 +12,7 @@
       document.querySelector('#status-title').textContent = result.status === 'pending' ? 'Your request is awaiting review.' : 'An update from the cake studio.';
       document.querySelector('#status-cake').textContent = `${result.cakeLabels?.flavor || CakeOrderOptions.cakes.find(([id]) => id === result.cake.flavor)?.[1] || result.cake.flavor} · ${result.cakeLabels?.size || result.cake.size + '-inch round'}${result.cakeLabels?.icing ? ' · ' + result.cakeLabels.icing : ''}`;
       document.querySelector('#status-date').textContent = `Celebration date: ${new Date(result.date + 'T12:00:00').toLocaleDateString(undefined, { dateStyle: 'long' })}`;
-      document.querySelector('#status-order-document').innerHTML=CakeOrderSheet.render([result],{imageUrl:(_,i)=>result.images?.[i]});
+      document.querySelector('#status-order-document').innerHTML=CakeOrderSheet.renderCompact([result],{imageUrl:(_,i)=>result.images?.[i]});
       document.querySelector('#status-reply').textContent = result.reply || 'Your request is in our review list. Please check this link again for our response.';
       document.querySelector('#status-updated').textContent = `Updated ${new Date(result.updatedAt).toLocaleString()}`;
     } catch (error) { feedback.textContent = error.message; document.querySelector('#status-result').hidden = true; }

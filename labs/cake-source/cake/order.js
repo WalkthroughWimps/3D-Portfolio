@@ -6,8 +6,8 @@
   catch { document.querySelector('#order-feedback').textContent = 'The cake menu could not load. Please refresh to try again.'; form.querySelector('[type=submit]').disabled = true; return; }
   const fullMenu=structuredClone(options);
   const select = (id, values, initial) => { const node = document.getElementById(id); values.forEach(([value, label]) => node.add(new Option(label, value))); if (initial&&values.some(([id])=>id===initial)) node.value = initial; };
-  select('flavor', options.cakes); select('size', options.sizes, '8'); select('icing', options.icings); select('filling', options.fillings);
-  select('topperA', options.toppers, 'strawberry'); select('topperB', options.toppers, 'rosette');
+  select('flavor', [['','Choose a cake'],...options.cakes]); select('size', options.sizes, '8'); select('icing', [['','Choose an icing'],...options.icings]); select('filling', options.fillings);
+  select('topperA', options.toppers, 'none'); select('topperB', options.toppers, 'none');
   const builder=createCakeOrderBuilder(form,options,frame);
   function markFavorites(){
     let favorites={};try{favorites=JSON.parse(sessionStorage.getItem('cake-favorites-v1')||'{}');}catch{}
@@ -52,7 +52,7 @@
   date.min = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Chicago' }).format(new Date());
   date.max = `${Number(date.min.slice(0, 4)) + 2}${date.min.slice(4)}`;
   const draftStorageKey = 'cake-order-draft-v1', retryLockStorageKey = 'cake-order-attempt-lock-v1', draftLifetimeMs = 24 * 60 * 60 * 1000;
-  let submissionKey = crypto.randomUUID(), submitted = false, recoveryBlocked = false, retryLocked = false, clearingDraft = false, retryExpired = false, staleAttemptDisplay = false, attemptedAt = null, attemptedPayload = null, attemptedReview = '';
+  let submissionKey = crypto.randomUUID(), submitted = false, recoveryBlocked = false, recoveryAcknowledged = false, retryLocked = false, clearingDraft = false, retryExpired = false, staleAttemptDisplay = false, attemptedAt = null, attemptedPayload = null, attemptedReview = '';
   let draftStorage = null, draftSaveTimer = null, savedDraft = false;
   // Public Labs samples keep form fields in memory; only sanitized demo orders persist.
   try { if (!window.CakeLabs) { draftStorage = window.sessionStorage; draftStorage.getItem(draftStorageKey); } } catch { draftStorage = null; }
@@ -156,6 +156,7 @@
       draftStorage.setItem(draftStorageKey, JSON.stringify(draft)); savedDraft = true;
       if (attemptedAt) draftStorage.setItem(retryLockStorageKey, JSON.stringify({version:1,attemptedAt,submissionKey}));
       if (staleAttemptDisplay) showDraftMessage('This attempted request includes cake choices no longer on the menu. The current preview may show defaults; retry sends the original cake selections shown below. To change the order, start a new request after checking with the studio.', true);
+      else if (recoveryAcknowledged) showDraftMessage('Review the cake selections above, then send your request when they are correct.');
       else if (!recoveryBlocked) showDraftMessage(`Your unfinished request, including contact and allergy details, is saved in this tab until ${new Date(draft.updatedAt + draftLifetimeMs).toLocaleString()}. Clear it on shared devices.`);
       else showDraftMessage('Some saved cake choices are no longer on the menu. Your other details were restored; review the current cake selections before sending.');
       return true;
@@ -184,7 +185,7 @@
     try { draftStorage?.removeItem(draftStorageKey); draftStorage?.removeItem(retryLockStorageKey); } catch {} location.reload();
   });
   useCurrentCakeButton.addEventListener('click', () => {
-    recoveryBlocked = false; useCurrentCakeButton.hidden = true;
+    recoveryBlocked = false; recoveryAcknowledged = true; useCurrentCakeButton.hidden = true;
     flow?.reveal(document.querySelector('#flavor'));
     document.querySelector('#flavor').focus(); persistDraft();
     showDraftMessage('Review the cake selections above, then send your request when they are correct.');
@@ -196,7 +197,7 @@
     document.querySelector('#amount-field').disabled = noFilling;
     document.querySelector('#amount-help').textContent = noFilling ? 'Choose filling pieces to adjust the amount.' : options.amounts[value.amount]?.description;
     document.querySelector('#cake-summary').textContent = `${options.cakes.find(([id]) => id === value.flavor)?.[1]||'Choose a cake'} · ${options.icings.find(([id]) => id === value.icing)?.[1]||'Choose an icing'}`;
-    if(value.flavor&&value.icing)frame.contentWindow?.postMessage({ type: 'cake-order-preview', cake: value, options }, location.origin);
+    // The inline composition is the single preview, including incomplete neutral drafts.
     const data=readDraftFields();
     builder.update({id:'preview',status:'pending',name:data.name||'Your request',email:data.email,phone:data.phone,date:data.date,fulfillment:fulfillment(),allergies:allergies(),details:data.details,cake:value});
     document.querySelector('#delivery-address-field').hidden=fulfillment().method!=='delivery';document.querySelector('#delivery-address').required=fulfillment().method==='delivery';
@@ -205,7 +206,7 @@
   function setAttemptControlsLocked(locked) {
     for (const control of form.querySelectorAll('input,select,textarea,button')) {
       if (control.type === 'submit') { control.disabled = locked && retryExpired; continue; }
-      if (control.name === 'consent' || control.closest('#cake-item-tabs,.build-navigation,.build-review')) continue;
+      if (control.name === 'consent' || control.id === 'cake-item-picker' || control.closest('#cake-item-tabs,.build-navigation,.build-review,#draft-notice')) continue;
       if (locked) {
         if (!lockedControlStates.has(control)) lockedControlStates.set(control, control.disabled);
         control.disabled = true;
@@ -222,7 +223,7 @@
   update();
   let lastAllergySignature='';
   const flow=window.createCakeOrderFlow(form,{
-    allergies,isRetry:()=>retryLocked||Boolean(attemptedPayload),
+    allergies,builder,menu:options,isRetry:()=>retryLocked||Boolean(attemptedPayload),
     applyAllergies(){
       const signature=JSON.stringify(allergies().map(a=>a.name));
       const screened=window.CakeAllergens.screenMenu(fullMenu,allergies());
@@ -248,8 +249,9 @@
       data.quantity=Number(data.quantity);
       if (!data.email?.trim() && !data.phone?.trim()) { feedback.textContent = 'Please leave an email address or phone number.'; document.querySelector('#contact-email').focus(); return; }
       if (otherInput.value.trim()) { addAllergen(); feedback.textContent = 'Choose the severity for your added allergy before sending.'; form.reportValidity(); return; }
+      if(!builder.isComplete()){feedback.textContent='Choose a cake and icing for every tier before sending.';flow.reveal(builder.focusFirstIncomplete());return;}
       const safety=window.CakeAllergens.inspectItems(builder.items(),fullMenu,allergies());
-      if(!safety.allowed){feedback.textContent='Some choices need allergy review. Go back to Allergies and review the filtered menu.';flow.show(0);return;}
+      if(!safety.allowed){feedback.textContent='Some choices need allergy review. Review the filtered menu.';flow.show('allergens');return;}
       if (!form.reportValidity()) return;
       attemptedPayload = { ...data, consent:true, cake:cake(), items:builder.items(), fulfillment:fulfillment(), allergies:allergies() };
       const fullReview = builder.reviewText({id:'draft',status:'pending',...attemptedPayload});

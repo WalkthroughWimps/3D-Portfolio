@@ -84,8 +84,9 @@
       if (!menu[group]?.some(([id]) => id === String(cake[field] ?? ''))) throw new Error('One of those cake choices is no longer available. Refresh the page and try again.');
     }
     if (!menu.amounts?.[cake.amount]) throw new Error('Choose a valid filling amount.');
-    const sampleDate = new Date(); sampleDate.setDate(sampleDate.getDate()+30);
-    const date = `${sampleDate.getFullYear()}-${String(sampleDate.getMonth()+1).padStart(2,'0')}-${String(sampleDate.getDate()).padStart(2,'0')}`; // User-entered event dates are never retained.
+    const event=sampleEvent(payload);
+    if(!event)throw new Error('Choose one of the fictional sample dates and times.');
+    const {date,time}=event;
     const sizeLabel = choiceLabel(menu, 'sizes', String(cake.size));
     const cakeLabels = {
       flavor:choiceLabel(menu,'cakes',cake.flavor), icing:choiceLabel(menu,'icings',cake.icing),
@@ -134,7 +135,7 @@
       id, token, status:'pending', createdAt, updatedAt:createdAt,
       name:'Demo Guest', date, quantity:safeItems[0]?.quantity || 1, cake:safeCake, cakeLabels, ...(safeItems.length ? { items:safeItems } : {}),
       cakeVisuals:{ flavor:menu.visuals?.cakes?.[cake.flavor], icing:menu.visuals?.icings?.[cake.icing] },
-      fulfillment:{ method:payload.fulfillment?.method === 'delivery' ? 'delivery' : 'pickup', time:'', timezone:'America/Chicago', address:'Demo only — no pickup or delivery is arranged.' },
+      fulfillment:{ method:'pickup', time, timezone:'America/Chicago', address:'Demo only — no pickup or delivery is arranged.' },
       reply:'This sample exists only in this browser. No message was sent to the studio.',
       details:'Fictional Labs request. No message was sent.'
       ,allergies:payload.allergies?.length?[{name:'Sample reported allergy (details omitted in Labs)',severity:'unsure'}]:[]
@@ -143,10 +144,10 @@
 
   function hasPrivateOrderData(payload) {
     if (!payload || typeof payload !== 'object') return false;
-    const allowed = {name:'Demo Guest',email:'demo@example.invalid',phone:'',details:'',requestedTime:'',timezone:'America/Chicago'};
+    const allowed = {name:'Demo Guest',email:'demo@example.invalid',phone:'',details:'',timezone:'America/Chicago'};
     for (const [key,value] of Object.entries(allowed)) if (payload[key] != null && payload[key] !== value) return true;
-    if (payload.date != null && payload.date !== sampleDate()) return true;
-    if (payload.fulfillment && (payload.fulfillment.address || payload.fulfillment.time || !['pickup',undefined].includes(payload.fulfillment.method))) return true;
+    if (!sampleEvent(payload)) return true;
+    if (payload.fulfillment && (payload.fulfillment.address || !['pickup',undefined].includes(payload.fulfillment.method))) return true;
     if (Array.isArray(payload.items) && payload.items.some(item => item.notes || item.tiers?.some(tier => tier.notes))) return true;
     if (Array.isArray(payload.allergies) && payload.allergies.some(a => !['Tree nuts','Milk'].includes(a?.name) || a.severity !== 'unsure')) return true;
     return false;
@@ -167,16 +168,25 @@
     }
     notice.textContent = PRIVATE_MESSAGE;
   }
-  function sampleDate() {
-    const day = new Date(); day.setDate(day.getDate() + 30);
+  function sampleDate(offset=30) {
+    const day = new Date(); day.setDate(day.getDate() + offset);
     return `${day.getFullYear()}-${String(day.getMonth()+1).padStart(2,'0')}-${String(day.getDate()).padStart(2,'0')}`;
+  }
+  const sampleDates=()=>[sampleDate(30),sampleDate(42)];
+  const sampleTimes=['','10:00','14:00'];
+  function sampleEvent(payload) {
+    if(payload===undefined)payload={date:document.querySelector('#event-date')?.value||sampleDate(30),requestedTime:document.querySelector('#requested-time')?.value??''};
+    const requested=payload.requestedTime,fulfillment=payload.fulfillment?.time;
+    if(requested!=null&&fulfillment!=null&&requested!==fulfillment)return null;
+    const date=payload.date||sampleDate(30),time=requested??fulfillment??'';
+    return sampleDates().includes(date)&&sampleTimes.includes(time)?{date,time}:null;
   }
   const privateSelectors = '[name="name"],[name="email"],[name="phone"],[name="date"],[name="details"],#requested-time,#fulfillment-timezone,#fulfillment-method,#delivery-address,#other-allergen,#top-tier-notes,#bottom-tier-notes,#cake-item-notes';
   function prepareOrder(form) {
     if (!form || form.dataset.labsPrivacyReady === 'true') return;
     form.dataset.labsPrivacyReady = 'true';
     const fixed = new Map([
-      ['name','Demo Guest'], ['email','demo@example.invalid'], ['phone',''], ['date',sampleDate()],
+      ['name','Demo Guest'], ['email','demo@example.invalid'], ['phone',''], ['date',sampleDate(30)],
       ['details',''], ['requested-time',''], ['fulfillment-timezone','America/Chicago'],
       ['fulfillment-method','pickup'], ['delivery-address',''], ['other-allergen',''],
       ['top-tier-notes',''], ['bottom-tier-notes',''], ['cake-item-notes','']
@@ -191,7 +201,12 @@
       }
       const label = node.closest('label'); if (label && !label.hidden) label.hidden = true;
     };
-    const scan = () => form.querySelectorAll(privateSelectors).forEach(lock);
+    let sampleAllergyValue='';
+    const scan = () => {
+      form.querySelectorAll(privateSelectors).forEach(lock);
+      const no=form.querySelector('#no-allergies');
+      if(no){no.checked=!sampleAllergyValue;const label=no.closest('label');if(label&&!label.hidden)label.hidden=true;}
+    };
     scan();
     const observer = new MutationObserver(scan); observer.observe(form,{childList:true,attributes:true,attributeFilter:['hidden'],subtree:true});
     const purgeField = event => {
@@ -213,16 +228,15 @@
       for (const [value,label] of [['','Sample: no allergy filter'],['Tree nuts','Sample: tree nut filter'],['Milk','Sample: milk filter']]) select.add(new Option(label,value));
       const label = document.createElement('label'); label.className = 'labs-sample-filter'; label.textContent = 'Test menu filtering'; label.append(select);
       (allergy.querySelector('#no-allergies')?.closest('label') || help)?.after(label);
-      const no = allergy.querySelector('#no-allergies');
-      if (no) { no.checked = true; no.closest('label').hidden = true; }
       select.addEventListener('change', () => {
+        sampleAllergyValue=select.value;
         for (const row of allergy.querySelectorAll('#allergen-list > *')) {
           const checkbox = row.querySelector('input'), severity = row.querySelector('select');
           if (!checkbox) continue;
           checkbox.checked = row.dataset.allergen === select.value;
           if (severity) { severity.value = checkbox.checked ? 'unsure' : ''; severity.disabled = !checkbox.checked; severity.required = checkbox.checked; }
         }
-        if (no) no.checked = !select.value;
+        const no=form.querySelector('#no-allergies');if(no)no.checked=!select.value;
         allergy.querySelector('#allergen-list')?.dispatchEvent(new Event('change',{bubbles:true}));
       });
     }
@@ -238,7 +252,24 @@
     if (celebration) {
       const heading = celebration.querySelector('.step'); if (heading) heading.textContent = 'Fictional sample event';
       for (const node of celebration.querySelectorAll('.hint')) node.hidden = true;
-      const copy = document.createElement('p'); copy.className = 'labs-sample-copy'; copy.textContent = 'The sample uses a fictional date and pickup. No event details are needed.'; celebration.append(copy);
+      const eventControls=document.createElement('div');eventControls.className='labs-sample-event';eventControls.style.cssText='display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:.75rem;margin:1rem 0';
+      const dayLabel=document.createElement('label');dayLabel.textContent='Fictional example day';dayLabel.style.display='block';
+      const daySelect=document.createElement('select');daySelect.id='labs-example-day';daySelect.setAttribute('aria-label','Fictional example day');daySelect.style.cssText='display:block;width:100%;min-height:44px;margin-top:.35rem';
+      const offsets=[30,42];offsets.forEach((offset,index)=>daySelect.add(new Option(index===0?'About 30 days from today':'About 42 days from today',String(offset))));dayLabel.append(daySelect);
+      const timeLabel=document.createElement('label');timeLabel.textContent='Fictional example time';timeLabel.style.display='block';
+      const timeSelect=document.createElement('select');timeSelect.id='labs-example-time';timeSelect.setAttribute('aria-label','Fictional example time');timeSelect.style.cssText='display:block;width:100%;min-height:44px;margin-top:.35rem';
+      for(const [value,label] of [['','No time selected'],['10:00','10:00 AM'],['14:00','2:00 PM']])timeSelect.add(new Option(label,value));timeLabel.append(timeSelect);
+      eventControls.append(dayLabel,timeLabel);
+      const copy = document.createElement('p'); copy.className = 'labs-sample-copy'; copy.textContent = 'Choose a fictional date and time preset. The pickup details are fixed for this local demo.';
+      const dateInput=form.querySelector('#event-date'),timeInput=form.querySelector('#requested-time');
+      const applyPreset=()=>{
+        const date=sampleDate(Number(daySelect.value)),time=timeSelect.value;
+        fixed.set('date',date);fixed.set('requested-time',time);
+        dateInput.value=date;dateInput.dispatchEvent(new Event('change',{bubbles:true}));
+        timeInput.value=time;timeInput.dispatchEvent(new Event('change',{bubbles:true}));
+      };
+      daySelect.addEventListener('change',applyPreset);timeSelect.addEventListener('change',applyPreset);
+      celebration.append(eventControls,copy);
     }
     form.addEventListener('submit', () => { scan(); for (const node of form.querySelectorAll('[data-labs-private="true"]')) {
       const expected = fixed.get(keyOf(node)) || '';
@@ -349,94 +380,6 @@
       location.reload();
   }
 
-  function paginateStatusReceipt(force = false) {
-    const host = document.querySelector('#status-order-document');
-    const receipt = host?.querySelector(':scope > .order-document');
-    if (!receipt || document.querySelector('#status-result')?.hidden || (receipt.dataset.labsPaginated === 'true' && !force)) return;
-    receipt.dataset.labsPaginated = 'true';
-    const source = receipt.firstElementChild;
-    const blocks = receipt._labsBlocks || [];
-    const addText = (group,text,className='') => {
-      if (!text?.trim()) return;
-      const node = document.createElement('p'); node.className = `labs-receipt-detail ${className}`; node.textContent = text.trim();
-      blocks.push({group,node});
-    };
-    if (!receipt._labsBlocks) {
-      if (!source) return;
-      const overview = source.querySelector('.order-overview');
-      if (overview) {
-        const allergy = overview.querySelector('.order-allergy-box');
-        const plainText = overview.innerText.replace(allergy?.innerText || '', '');
-        for (const [index,line] of plainText.split('\n').map(line => line.trim()).filter(Boolean).entries()) addText('Sample summary',line,index===0?'labs-receipt-emphasis':'');
-        if (allergy) { const node = allergy.cloneNode(true); node.classList.add('labs-receipt-detail'); blocks.push({group:'Sample allergy alert',node}); }
-      }
-      for (const table of source.querySelectorAll('.cake-order-sheet')) {
-        const group = table.querySelector('caption')?.textContent?.trim() || 'Cake details';
-        for (const cell of table.querySelectorAll('tbody td')) {
-          const node = document.createElement('div'); node.className = 'labs-receipt-detail labs-receipt-cell';
-          node.innerHTML = cell.innerHTML; blocks.push({group,node});
-        }
-        let after = table.nextElementSibling;
-        while (after && !after.matches('.cake-order-sheet')) {
-          addText(group,after.innerText); after = after.nextElementSibling;
-        }
-      }
-      addText('Local sample status',document.querySelector('#status-reply')?.textContent || 'This sample exists only in this browser.');
-      addText('Local sample status',document.querySelector('#status-updated')?.textContent);
-      if (!blocks.length) addText('Sample receipt',source.innerText);
-      receipt._labsBlocks = blocks;
-    }
-    document.body.classList.add('labs-status-page');
-    const controls = document.createElement('nav'); controls.className = 'labs-receipt-controls'; controls.setAttribute('aria-label','Sample receipt pages');
-    const previous = document.createElement('button'); previous.type = 'button'; previous.className = 'secondary'; previous.textContent = '← Previous';
-    const count = document.createElement('span'); count.setAttribute('role','status');
-    const next = document.createElement('button'); next.type = 'button'; next.className = 'secondary'; next.textContent = 'Next →';
-    controls.append(previous,count,next);
-    const viewport = document.createElement('div'); viewport.className = 'labs-receipt-window';
-    receipt.replaceChildren(controls,viewport);
-    const pages = [];
-    function newPage(group) {
-      const page = document.createElement('div'); page.className = 'labs-receipt-page';
-      if (receipt.classList.contains('allergen-detected')) {
-        page.classList.add('allergen-detected');
-        page.style.backgroundImage = receipt.style.backgroundImage;
-      }
-      const paper = document.createElement('div'); paper.className = 'labs-receipt-paper';
-      const heading = document.createElement('h3'); heading.className = 'labs-receipt-heading'; heading.textContent = group;
-      paper.append(heading); page.append(paper); viewport.append(page); pages.push({page,paper,group,count:0});
-      return pages[pages.length - 1];
-    }
-    let target = newPage(blocks[0].group);
-    for (const block of blocks) {
-      if (target.group !== block.group && target.count) target = newPage(block.group);
-      target.paper.append(block.node); target.count++;
-      if (target.count > 1 && target.paper.scrollHeight > target.page.clientHeight - 12) {
-        block.node.remove(); target.count--;
-        target = newPage(block.group); target.paper.append(block.node); target.count++;
-      }
-    }
-    let current = 0;
-    function show(index) {
-      current = Math.max(0,Math.min(pages.length - 1,index));
-      receipt.dataset.labsPage = String(current);
-      pages.forEach(({page},i) => { page.hidden = i !== current; page.inert = i !== current; page.setAttribute('aria-label',`Sample receipt page ${i + 1} of ${pages.length}`); });
-      previous.disabled = current === 0; next.disabled = current === pages.length - 1;
-      count.textContent = `Page ${current + 1} of ${pages.length}`;
-    }
-    previous.addEventListener('click', () => show(current - 1)); next.addEventListener('click', () => show(current + 1));
-    show(Number(receipt.dataset.labsPage) || 0);
-  }
-  function watchStatusReceipt() {
-    const host = document.querySelector('#status-order-document');
-    if (!host || host.dataset.labsWatch === 'true') return;
-    host.dataset.labsWatch = 'true';
-    new MutationObserver(()=>paginateStatusReceipt()).observe(host,{childList:true});
-    let resizeTimer;
-    window.addEventListener('resize',() => { clearTimeout(resizeTimer); resizeTimer=setTimeout(()=>paginateStatusReceipt(true),80); });
-    host.addEventListener('load',event => { if (event.target instanceof HTMLImageElement) paginateStatusReceipt(true); },true);
-    paginateStatusReceipt();
-  }
-
   try {
     if (!sessionStorage.getItem(SESSION_KEY)) sessionStorage.setItem(SESSION_KEY, randomToken(12));
   } catch { /* The in-memory adapter still works without storage. */ }
@@ -456,7 +399,7 @@
     const footer = document.querySelector('.site-footer');
     if (footer && !footer.hidden && [...footer.children].every(child => child.hidden)) footer.hidden = true;
     const result = document.querySelector('#status-result');
-    if (result) watchStatusReceipt();
+
     if (result && !result.hidden) {
       document.querySelector('#status-title').textContent = 'Your local sample request.';
       document.querySelector('#status-badge').textContent = 'Saved in this browser';
@@ -505,5 +448,5 @@
   if (document.body) successObserver.observe(document.body, { subtree:true, attributes:true, attributeFilter:['hidden'] });
   else document.addEventListener('DOMContentLoaded', () => successObserver.observe(document.body, { subtree:true, attributes:true, attributeFilter:['hidden'] }), { once:true });
 
-  window.CakeLabs = Object.freeze({ mode:'local-only', resetStorageKey:STORAGE_KEY, resetDemo, prepareOrder });
+  window.CakeLabs = Object.freeze({ mode:'local-only', resetStorageKey:STORAGE_KEY, resetDemo, prepareOrder, sampleEvent });
 })();

@@ -1,0 +1,9 @@
+/* Option art floats independently from the button's position and wiggle rotation. */
+.cake-motion-enabled .huddle-option .option-art{animation:huddle-option-float 14s linear infinite}
+.huddle-option.motion-solo{animation:huddle-solo .65s ease-in-out 2 both}
+.huddle-option.motion-highlight{animation:huddle-highlight .9s ease-in-out 3 both}
+.huddle-option.motion-group{animation:huddle-group .6s ease-in-out 2 var(--motion-delay,0ms) both}
+@keyframes huddle-option-float{from{transform:rotate(0deg) translateX(2px) rotate(0deg)}to{transform:rotate(360deg) translateX(2px) rotate(-360deg)}}
+@keyframes huddle-solo{0%,100%{rotate:0deg}50%{rotate:calc(2deg * var(--wiggle-direction,1))}}
+@keyframes huddle-highlight{0%,100%{rotate:0deg}50%{rotate:calc(3deg * var(--wiggle-direction,1))}}
+@keyframes huddle-group{0%,100%{rotate:0deg}50%{rotate:calc(2deg * var(--wiggle-direction,1))}}

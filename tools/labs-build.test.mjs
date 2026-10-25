@@ -31,7 +31,7 @@ test('Labs build includes the public Cake demo and retains Route Map and host fi
         return count + (entry.isDirectory() ? countFiles(child) : 1);
       }, 0);
     }
-    assert.equal(countFiles(cake), 139);
+    assert.equal(countFiles(cake), 145);
     assert.equal(countFiles(path.join(output, 'routemap')), 547);
 
     for (const control of ['_headers', '_redirects', '404.html']) {
