@@ -1,0 +1,461 @@
+{
+  "title": "Chapter 8 - Where to change things",
+  "snapshot": "29 October 2026",
+  "introduction": [
+    "A practical lookup for maintaining the site. Find the task in the contents, use the UI when it already supplies the control, and use the named source anchors when changing implementation. All paths start at `C:/Dropbox/Resume Website/`.",
+    "Each code anchor was checked against the local source while generating this edition. Line numbers are snapshot hints; search for the named function or literal when lines move. A function nested inside another function is a source location, not necessarily an API you can call externally.",
+    "These are source-verified references, not a claim that every browser workflow has passed acceptance. UI names describe current source; Constructor availability can depend on page, active face and review context. Export private content before testing changes.",
+    "Companion chapters 1-7 explain saving, shared settings, faces, content, media, assets and troubleshooting. This lookup adds specific implementation anchors; it is not an exhaustive catalog of every internal function."
+  ],
+  "groups": [
+    {
+      "title": "Shared settings and site interface",
+      "tasks": [
+        {
+          "title": "Add a saved setting or change its default/range",
+          "ui": "Gear -> General or the relevant page/face tab. Constructor contains authoring controls registered by the feature.",
+          "refs": [
+            {"file":"_7-shared-scripts/core/settings-schema.js","anchor":"export const SETTINGS_FIELDS","role":"Canonical field paths, persistence keys, parsers and defaults."},
+            {"file":"_7-shared-scripts/core/settings-controls.js","anchor":"export function mountSettingsControls","role":"Connects data-setting controls to the store."},
+            {"file":"_7-shared-scripts/core/settings.js","anchor":"function patch(input)","role":"Applies and persists validated changes; inspect subscribe for consumers."}
+          ],
+          "change":"Add the schema field, bind a UI control and subscribe the actual feature. Change range validation and the UI range together. A new default does not override a saved browser value.",
+          "check":"Change the control, inspect its actual feature, reload, then check a clean/default context without clearing unrelated content. Test any old saved value that needs migration."
+        },
+        {
+          "title":"Move a setting into another tab or Constructor",
+          "ui":"Gear -> tabs; Constructor mode switches the available contexts.",
+          "refs":[
+            {"file":"debug/panel-shell.js","anchor":"function registerContext(id, label, element)","role":"Registers an ordinary Settings context."},
+            {"file":"debug/panel-shell.js","anchor":"function registerConstructorContext(id, label, element","role":"Registers the authoring context."},
+            {"file":"debug/panel-shell.js","anchor":"function registerContextControls(id, element)","role":"Registers controls pinned to a context."}
+          ],
+          "change":"Move the owning element/registration, preserving its data-setting paths and disposer. Page modules and face modules often construct their own controls; the shell does not own all markup.",
+          "check":"Open ordinary Settings and Constructor on the intended page. Check context selection, pinned controls, persistence and cleanup after navigation."
+        },
+        {
+          "title":"Change section collapse behavior or remove a redundant wrapper",
+          "ui":"Section headings in Settings and Constructor; genuine child groups should remain independently collapsible.",
+          "refs":[
+            {"file":"_7-shared-scripts/panel-assembly/CollapsibleSections.mjs","anchor":"export function mountCollapsibleSections","role":"Shared heading/details enhancement, state and grouping."},
+            {"file":"_6-docs/library/editor.js","anchor":"<h2 data-section-static>","role":"Example of a static introduction above real collapsible groups."}
+          ],
+          "change":"Use the shared helper instead of a new bespoke accordion. Mark non-collapsible introduction headings data-section-static. Preserve stable section IDs/scopes. Follow settings-menu-gestures.md; do not add visible advertising for hidden transfer gestures.",
+          "check":"Collapse one and all sections; expand again, reload and check nested groups. Confirm no unwanted parent fold swallows the entire panel."
+        },
+        {
+          "title":"Change focused-media UI hiding and movement",
+          "ui":"Gear -> General -> Focused media: Hide site UI, Animate UI, left/right hide choices and movement timings.",
+          "refs":[
+            {"file":"debug/settings-focused-media.js","anchor":"export const focusedMediaMarkup","role":"Control labels, grouping and data-setting fields."},
+            {"file":"debug/settings-focused-media.js","anchor":"export function mountFocusedMediaControls","role":"Disabled/linked controls and Reduced motion override."},
+            {"file":"_7-shared-scripts/core/presentation-ui.js","anchor":"export function createPresentationUiMotion","role":"Measured edge offsets, animation and restoration."}
+          ],
+          "settings":"`interaction.focusUiMoveAway`, `focusUiAnimate`, `focusUiHideHeader`, `focusUiHideNavbar`, `focusUiHideGear`, `focusUiHideTopRight`, `focusUiOutSpeedMs`, `focusUiInSpeedMs`, `focusUiSeparateInSpeed` (all under interaction).",
+          "change":"Trace the linked-speed checkbox read/write semantics rather than guessing from its internal name. Preserve access to Back and intentional Settings/Debug overlays. Effective Reduced motion overrides animation without overwriting its saved choice.",
+          "check":"Focus/exit media on affected pages, interrupt an animation, open both side panels, resize, and test Reduced motion on/off. Confirm no invisible UI still intercepts player input."
+        },
+        {
+          "title":"Change reset speed/easing or centering beside side panels",
+          "ui":"General -> Transform resets; each page's Center on viewport option where exposed.",
+          "refs":[
+            {"file":"_7-shared-scripts/shared-glb-mouse-controls.js","anchor":"export function transformResetDuration","role":"Shared reset timing preference mapping."},
+            {"file":"_7-shared-scripts/core/transform-easing.js","anchor":"export function resolveTransformResetEasing","role":"Resolves the chosen reset curve."},
+            {"file":"_7-shared-scripts/core/panel-viewport.js","anchor":"export function panelViewport","role":"Measures the usable viewport with Settings and Debug."}
+          ],
+          "settings":"`interaction.panResetSpeed`, `interaction.rotationResetSpeed`, `interaction.panResetEasing`, `interaction.rotationResetEasing`; page-specific `<page>.centerOnViewport`.",
+          "change":"Follow the page adapter for its canonical pose. Do not replace the default pose with the current pan. About retains its upright-face exception. Use shared measured space rather than hardcoded panel widths.",
+          "check":"Pan and rotate, reset each independently, interrupt a reset, open either/both panels, and compare normal versus Reduced motion. Check CSS3D hit alignment as well as the model."
+        },
+        {
+          "title":"Change Page summary text, destinations or travel speed",
+          "ui":"Page summary next to the name/title; General -> Points of interest for navigation motion.",
+          "refs":[
+            {"file":"_7-shared-scripts/core/page-summary.js","anchor":"const pages =","role":"Shared page summary copy and fallback destinations."},
+            {"file":"_7-shared-scripts/core/page-summary.js","anchor":"export function registerPageSummaryPoints","role":"Page owner registers actual callbacks/destinations."},
+            {"file":"debug/settings-poi.js","anchor":"export function mountPoiSettings","role":"Navigation animation/speed controls; getPoiMotion supplies effective timing."}
+          ],
+          "settings":"`interaction.poiAnimate`, `interaction.poiSpeed`.",
+          "change":"Edit the brief summary here, but update callback-driven points in the page controller that registers them. Preserve readiness guards and disposal; use actual actions rather than synthetic key presses.",
+          "check":"Use every changed destination from a fresh page and from another focused state. Test Back/Escape and Reduced motion. Ensure the list includes the actual content, not only static fallback labels."
+        },
+        {
+          "title":"Change header behavior or the keyboard help guide",
+          "ui":"General -> Header; Shortcuts opens the page/state-specific help dialog.",
+          "refs":[
+            {"file":"_7-shared-scripts/core/header.js","anchor":"export function enhanceHeader","role":"Shared header enhancement; markup/style owners include header.html, template.css and colors.css."},
+            {"file":"_7-shared-scripts/core/page-shortcuts.js","anchor":"export function createShortcutGuide","role":"Help dialog construction and key rendering."},
+            {"file":"_7-shared-scripts/core/page-shortcuts.js","anchor":"const PAGE_SHORTCUTS","role":"Page/state shortcut inventory; actual event handlers are separate."}
+          ],
+          "change":"A help entry does not implement a shortcut. Update its real handler too. Shared header/import-map regions are generated: inspect tools/prepare-site-html.mjs and coordinate all destinations before regeneration.",
+          "check":"Check modern/legacy header choices, portrait/nav stacking, focus visibility, dialog keyboard use and text-field exclusions. Verify the advertised action is implemented in that state."
+        }
+      ]
+    },
+    {
+      "title":"Start and shared project launchers",
+      "tasks":[
+        {
+          "title":"Change a featured project and how it opens",
+          "ui":"Start selected-work presentation; shared selected-work launchers and preview overlays.",
+          "refs":[
+            {"file":"_0-start/start/project-overlays.js","anchor":"export function mountStartProjectOverlays","role":"Owns embedded project overlay setup and return behavior."},
+            {"file":"_7-shared-scripts/core/selected-work.js","anchor":"export function mountSelectedWork","role":"Shared selected-work interface; inspect the selected project ID and launcher here."}
+          ],
+          "change":"Change the project's label, artwork, stable ID and real launcher coherently. Root index.html and _0-start/start-page.js own the welcome/native and 3D Start routes. An overlay can reuse another page without navigation.",
+          "check":"Launch the project from Start and its normal page, close it and confirm focus and underlying scene/media resume correctly. Check consent and playback for media projects."
+        }
+      ]
+    },
+    {
+      "title":"About cube and six faces",
+      "tasks":[
+        {
+          "title":"Change face focus or the cube's framing",
+          "ui":"About -> Page summary -> a face; Cube settings control shared shell/face behavior.",
+          "refs":[
+            {"file":"_1-about/about.js","anchor":"function focusFace(","role":"Shared camera/cube face focus."},
+            {"file":"_1-about/about.js","anchor":"function frameBesideSettings(","role":"Host framing around side panels."},
+            {"file":"_1-about/faces/index.js","anchor":"export function createFaceRegistry","role":"Face registration entry point."}
+          ],
+          "change":"Change the host for shared focus, not a face's local artwork. Keep compatible IDs: Fish uses about, Oddio uses odd; Cube settings use faces. Preserve attach/update/suspend/resume/dispose and borrowed-resource ownership.",
+          "check":"Visit all six faces, rotate/reset, open either side panel and navigate away/back. Check reduced motion and clearance after any physical change."
+        },
+        {
+          "title":"Fish: change frame, hover layout or deployed pose",
+          "ui":"Fish face -> its Settings/Constructor controls. Fish and picture-gallery/ring modes are distinct.",
+          "refs":[
+            {"file":"_1-about/faces/about/fish-face.js","anchor":"function setFrameOptions(","role":"Commits normalized frame options and geometry/layout updates."},
+            {"file":"_1-about/faces/about/fish-face.js","anchor":"function setHoverOptions(","role":"Commits hover configuration."},
+            {"file":"_1-about/faces/about/fish-face.js","anchor":"function setPose(","role":"Applies the physical pose; inspect deployment flow before changing it."}
+          ],
+          "change":"Use existing controls first. For code changes follow normalization, saved values and constructor synchronization together. Keep authored mount coordinates and shared contrast response intact.",
+          "check":"Open/close, switch modes and return, inspect oblique views, compare stowed/deployed clearance and verify saved settings and live contrast."
+        },
+        {
+          "title":"Fish gallery: change picture preparation or stored imagery",
+          "ui":"Fish's picture/gallery authoring controls; project artwork and browser-imported pictures have different storage.",
+          "refs":[
+            {"file":"_1-about/faces/about/picture-library.mjs","anchor":"export function createPictureLibrary","role":"Browser picture-library entry point."},
+            {"file":"_1-about/faces/about/picture-library.mjs","anchor":"async function prepareImage(","role":"Image preparation; inspect stored blobs and entry metadata together."}
+          ],
+          "change":"Preserve normalized entries and caption metadata. Project artwork also has its own local catalog/assets and packaging tool; importing a browser blob does not update that project catalog.",
+          "check":"Import, display and reopen a disposable picture; check captions/aspect/order, content export and reload. A preference-only archive may not contain the image bytes."
+        },
+        {
+          "title":"Refs: change cabinet controls, door geometry or picture storage",
+          "ui":"Refs face -> its Settings/Constructor and editor controls.",
+          "refs":[
+            {"file":"_1-about/faces/refs/controls.js","anchor":"export function createRefsControls","role":"Control markup, display/apply logic and control handlers."},
+            {"file":"_1-about/faces/refs/doors.js","anchor":"export function createRefsDoors","role":"Physical door construction/configuration."},
+            {"file":"_1-about/faces/refs/picture-source.js","anchor":"export async function saveRefsOriginal","role":"Original picture persistence rather than merely the preview texture."}
+          ],
+          "change":"For layout dragging start at createRefsEditor in editor.js; for doors use the construction owner. Preserve picture IDs, originals/previews and history boundaries. Read the local README before cabinet restructuring.",
+          "check":"Open/close doors, edit/undo a layout and export/reopen it. Check source art survives, not only the visible preview. Inspect backing and neighboring-face clearance."
+        },
+        {
+          "title":"Skills: change beanbag throwing or appearance",
+          "ui":"Skills face -> beanbag interaction and its face-owned controls.",
+          "refs":[
+            {"file":"_1-about/faces/skills/BeanBagThrower.mjs","anchor":"export function createBeanBagThrower","role":"Throw/interaction mechanism and pose-dependent behavior."},
+            {"file":"_1-about/faces/skills/BeanBagVisuals.mjs","anchor":"export function createBeanBagVisuals","role":"Reusable visual geometry/material resources."},
+            {"file":"_1-about/faces/skills/face.js","anchor":"function applySettings(","role":"Face integration of shared settings."}
+          ],
+          "change":"Supply/container/sound have separate BeanBag modules. Shared panel construction is in _7-shared-scripts/panel-assembly/. Follow the existing update/disposal owner rather than adding a second render loop.",
+          "check":"Pick up, throw, return and exhaust/replenish where supported. Check suspension, sound permission, live contrast and host geometry after navigation."
+        },
+        {
+          "title":"Clock: change gear finish, hands or winding math",
+          "ui":"Clock -> its material/mechanism controls.",
+          "refs":[
+            {"file":"_1-about/faces/clock/controls.js","anchor":"function setFinish(","role":"Commits the selected finish through the controls."},
+            {"file":"_1-about/faces/clock/gear-appearance.js","anchor":"export function createGearAppearance","role":"Material appearance owner and generated surface resources."},
+            {"file":"_1-about/faces/clock/winding.js","anchor":"export function handAngles(","role":"Time-to-hand angle calculation; offsetForWinding handles winding offsets."}
+          ],
+          "change":"Hand construction starts at createClockHands in hands.js. Keep mechanism JSON/node contracts and shared magnetic-drive references. Materials must respond to site contrast, including loaded saved values.",
+          "check":"Compare ordinary clock motion and winding; change finish/contrast live, suspend/resume and inspect deployed/retracted geometry. Do not infer mechanical clearance from correct timekeeping."
+        },
+        {
+          "title":"Oddio: move an entire physical add-on panel",
+          "ui":"Constructor -> Oddio -> Side-panel placement; choose the add-on and its permitted side/host/gap/vertical position.",
+          "refs":[
+            {"file":"_1-about/faces/odd/addon-layout-editor.js","anchor":"export function createAddonLayoutEditor","role":"Authoring diagram and fields; proposal/finish handle preview and commit."},
+            {"file":"_1-about/faces/odd/addon-layout.mjs","anchor":"export function constrainAddon","role":"Constrains a requested position."},
+            {"file":"_1-about/faces/odd/addon-layout.mjs","anchor":"export function resolveAddonLayout","role":"Resolves complete layout; ADDON_SPECS and MAIN_PANELS define bounds."}
+          ],
+          "settings":"`about.odd.addonTransportSide/Host/Gap/Y`, corresponding Shuttle/Meter/TrackMeters fields; layoutSnapCtrl/Shift/Both.",
+          "change":"These controls move the whole assembly. To change permitted dimensions/hosts, inspect ADDON_SPECS and envelope constraints; do not merely remove clamping. Preserve arm/tape clearance and preview cancellation.",
+          "check":"Drag and type a placement, cancel, commit and reload. Check flips and front/oblique views with all other add-ons present."
+        },
+        {
+          "title":"Oddio: rearrange four buttons or change their shape",
+          "ui":"Constructor -> Oddio -> Four-button panel. Existing editor swaps slots/actions and controls icon, color, image and flips.",
+          "refs":[
+            {"file":"_1-about/faces/odd/pod-config.mjs","anchor":"export const POD_DEFAULTS","role":"Default slot actions; assignPodAction and swapPodSlots preserve assignment rules."},
+            {"file":"_1-about/faces/odd/pod-editor.js","anchor":"const CENTERS=","role":"Authoring diagram positions; BUTTONS supplies button paths."},
+            {"file":"_1-about/faces/odd/shuttle-controls.js","anchor":"const CENTERS=","role":"Physical button geometry/icon/input placement; inspect buttonShape and applyShape too."}
+          ],
+          "settings":"`about.odd.podTransportConfig`, `about.odd.podShuttleConfig`; addonTransportFlipX/Y and addonShuttleFlipX/Y.",
+          "change":"Use assignment UI for rearranging existing slots. A geometry/layout edit must keep diagram, visible mesh, icon and proxy hit target aligned. A fifth slot requires schema/normalizer/editor/geometry changes: changing the drawing alone is insufficient.",
+          "check":"Activate every slot after swaps/flips, compare diagram to model and verify saved import/export. Confirm the supported action remains unique when assignment swaps another slot."
+        },
+        {
+          "title":"Oddio: connect an existing 2D action to a 3D button",
+          "ui":"Accessible Oddio console supplies the 2D action; a physical panel can expose supported action IDs.",
+          "refs":[
+            {"file":"_1-about/faces/odd/face-runtime.js","anchor":"function perform(action)","role":"Physical action dispatcher, including special mappings and deck-button forwarding."},
+            {"file":"_1-about/faces/odd/deck.mjs","anchor":"export function createSoundDeck","role":"Accessible controls, handlers and shared engine."},
+            {"file":"_1-about/faces/odd/pod-config.mjs","anchor":"export const POD_ACTIONS","role":"Assignable action inventory; schema validation has a matching allowlist."}
+          ],
+          "change":"Find the 2D data-action and actual handler. Decide one-shot/held/toggle/value semantics. For a new assignment update POD_ACTIONS/POD_ICONS and the podConfig validator in settings-schema.js. Route through the existing deck/engine; keep permission, busy and selection guards.",
+          "check":"Compare the 2D and 3D result, enabled/pressed states, undo/redo and suspension. Held winding must release on cancellation. Microphone/file access needs a real gesture/device test."
+        },
+        {
+          "title":"Oddio: change folding speeds, colors or tape effects",
+          "ui":"Oddio Settings: Armatures, Woven voices & enamel controls and related face-owned sections; accessible console contains audio effect controls.",
+          "refs":[
+            {"file":"_1-about/faces/odd/oddio-settings.js","anchor":"export function createOddioSettings","role":"Face-owned ordinary/Constructor controls and shared-store registration."},
+            {"file":"_1-about/faces/odd/face-runtime.js","anchor":"rig.update(dt,","role":"Feeds physical tape state from the shared engine each host tick."},
+            {"file":"_1-about/faces/odd/deck.mjs","anchor":"createAudioEngine(","role":"Connects accessible UI to audio-engine.mjs; effects have their own audio owner."}
+          ],
+          "settings":"`about.odd.armSpeed`, `foldSpeed`, `separateSpeeds`, `sewingAnimations`, `color1` through `color4`, `highlightColor`.",
+          "change":"Keep visual state derived from the deck engine. Do not duplicate playhead or audio state to change an animation. Cloth-rig/arm-motion own physical mechanisms; live audio effects belong to the engine/effects path.",
+          "check":"Play, pause, reverse, seek and edit a clip; compare cloth and audio. Check linked/separate timing, Reduced motion, contrast and return after suspension."
+        },
+        {
+          "title":"Notes: change toolbar tools or side-panel layout",
+          "ui":"Notes face -> drawing workspace, tool strip and layers/art panels.",
+          "refs":[
+            {"file":"_1-about/notes/notes-face.js","anchor":"function layoutStyle(","role":"Workspace panel style/layout helper; frameLayout and readPanelMargin supply related sizing."},
+            {"file":"_1-about/notes/notes-face.js","anchor":"function showTools(","role":"Controls tool-panel presentation."},
+            {"file":"_1-about/notes/drawing-editor.js","anchor":"export function createDrawingEditor","role":"Tool UI and drawing-editor behavior."}
+          ],
+          "change":"Separate panel CSS/layout changes from drawing input/tool logic. Preserve input ownership while drawing, the layers boundary and saved tool state. Do not reload an edited tab without exporting the current drawing.",
+          "check":"Open tools, select several tools, draw/select/drag, resize, and open Settings/Debug. Verify panels clear required navigation and tools stay usable without accidental cube rotation."
+        },
+        {
+          "title":"Notes: change layers or editable-file export",
+          "ui":"Notes -> Layers; drawing library/save/export controls for editable content.",
+          "refs":[
+            {"file":"_1-about/notes/drawing-layers.js","anchor":"export function createLayersPanel","role":"Layer tree UI, rename and drag/drop integration."},
+            {"file":"_1-about/notes/drawing-library.js","anchor":"export function validateDrawing","role":"Editable drawing format validation."},
+            {"file":"_1-about/notes/drawing-library.js","anchor":"export function createDownloadManager","role":"Download ownership/lifetime; drawingFile describes the editable wrapper."}
+          ],
+          "change":"Route layer edits through the existing document/history actions. Distinguish editable drawing data, library contents, preferences and raster output. A PNG is not an editable backup.",
+          "check":"Create groups/layers, hide/lock/reorder, undo/redo, export and reopen editable content. Check anchors and group structure as well as visible appearance."
+        }
+      ]
+    },
+    {
+      "title":"Graphics books, boxes and easel",
+      "tasks":[
+        {
+          "title":"Move grid books, resize a reader or change page arrows",
+          "ui":"Graphics -> select coursebooks -> grid/spread and page navigation controls.",
+          "refs":[
+            {"file":"_3-graphics/shelf/book-layout.mjs","anchor":"export function gridPoses(","role":"Grid object poses; gridView computes its camera framing."},
+            {"file":"_3-graphics/shelf/book-layout.mjs","anchor":"export function focusPoses(","role":"Focused-book arrangement; tightView/readerFrame handle related fitting."},
+            {"file":"_3-graphics/shelf/page-controls.mjs","anchor":"export function pageControlPlacements(","role":"Physical navigation placement; overviewPageControlPlacements handles overview."}
+          ],
+          "change":"Change object placement and fit together, accounting for aspect and header safe area. Navigation meshes should stay in scene space when the user rotates the scene. Artwork/tier generation is a separate change.",
+          "check":"Grid and spread, focused and overview, tall/wide viewports, neighboring books, outside-click put-away and arrow hit areas after rotation."
+        },
+        {
+          "title":"Change board-game box rotation or focus framing",
+          "ui":"Graphics -> Global Conquest/Manor Mayhem -> box inspection/open/pack-up.",
+          "refs":[
+            {"file":"_3-graphics/shelf/game-view-controls.mjs","anchor":"export function installGameViewControls","role":"Inspection drag/camera interaction."},
+            {"file":"_3-graphics/shelf/graphics-preview.mjs","anchor":"function frameGameArtwork(","role":"Fits game artwork for closed/open states."},
+            {"file":"_3-graphics/shelf/graphics-preview.mjs","anchor":"function choose(","role":"Item selection/state transition; putAway restores shelf state."}
+          ],
+          "change":"Follow the item state and authored animation frame, not only the generic camera. Board tabletop scenes are separate from arcade games. Preserve nearest-visible picking and sticky-note ownership locks.",
+          "check":"Rotate all directions, open/close, inspect board, pack away and select another item. Compare both games and resize while focused."
+        },
+        {
+          "title":"Reduce book surface relief or change its material style",
+          "ui":"Gear -> Graphics -> page surface controls.",
+          "refs":[
+            {"file":"_7-shared-scripts/core/settings-schema.js","anchor":"'graphics.pageSurfaceType'","role":"Surface type default and allowed options."},
+            {"file":"_7-shared-scripts/core/settings-schema.js","anchor":"'graphics.pageSurfaceStrength'","role":"Relief strength, with adjacent scale and ink controls."},
+            {"file":"_3-graphics/shelf/graphics-preview.mjs","anchor":"function applyScene(","role":"Scene-level appearance settings entry point; follow imported material owner."}
+          ],
+          "settings":"`graphics.pageSurfaceType`, `pageSurfaceStrength`, `pageSurfaceScale`, `pageSurfaceInk`.",
+          "change":"Try the existing material controls before replacing coursebook artwork. Trace the consuming material module before changing shader implementation; the schema defines storage, not the rendering effect itself.",
+          "check":"Inspect text and artwork close up and at grid distance under several views; check contrast and persistence. Avoid trading a material problem for larger images."
+        }
+      ]
+    },
+    {
+      "title":"Video players and arcade cabinet",
+      "tasks":[
+        {
+          "title":"Change player controls, seek targets or hover previews",
+          "ui":"On-screen video player controls across Videos, Games, Music, Graphics and embedded Start projects.",
+          "refs":[
+            {"file":"_7-shared-scripts/media/controls-view.js","anchor":"function getLayout(cw, ch)","role":"Control rectangles and display proportions."},
+            {"file":"_7-shared-scripts/media/controls-input.js","anchor":"export function createControlsInput","role":"Pointer mapping and hit inspection; seekHitPadding is an input option."},
+            {"file":"_7-shared-scripts/media/controls-view.js","anchor":"function drawHoverPreview(","role":"Timeline preview rendering; setCameraGestureActive suppresses it during camera gestures."}
+          ],
+          "change":"Update visible geometry and effective hit bounds together. Keep capability checks for players with fewer actions. Suppress previews during pan/rotate and do not let seeking fall through to play/pause.",
+          "check":"Use small and large players; drag seek/volume/sync, hover the timeline, pan/rotate over controls and test Back/Escape. Compare every page using the shared renderer."
+        },
+        {
+          "title":"Change Videos tablet focus or transport integration",
+          "ui":"Videos -> category preview -> focused playback; player Back/focus controls.",
+          "refs":[
+            {"file":"_2-videos/tablet-focus.js","anchor":"export function createTabletFocus","role":"Tablet focus controller with snapshot, fit, projection and restoration."},
+            {"file":"_2-videos/tablet-focus.js","anchor":"function setFocus(","role":"Changes focused state."},
+            {"file":"_2-videos/videos-video-adapter.js","anchor":"export function createVideosVideoAdapter","role":"Page-to-shared-player adapter."}
+          ],
+          "change":"Keep full-canvas dimensions and projection offset distinct. Inspect the actual screen mesh bounds before changing fit. Shared media URLs begin in media-catalog.js but page adapters determine which source plays.",
+          "check":"Enter/exit focus from rotated/panned views, resize, use Back/Escape and Reduced motion. Check soundtrack sync as well as the visual video."
+        },
+        {
+          "title":"Change arcade menu, launched game or reel audio",
+          "ui":"Games cabinet -> menu, five games and two video reels.",
+          "refs":[
+            {"file":"_4-games/games.js","anchor":"function setupMenu(","role":"Cabinet menu setup; follow its actual IDs and launch handlers."},
+            {"file":"_4-games/games.js","anchor":"function updateCssGameObject(","role":"CSS3D embedded-game placement relative to the model."},
+            {"file":"_4-games/games.js","anchor":"function setSharedVolume(","role":"Shared player volume path for cabinet media."}
+          ],
+          "change":"Cabinet presentation belongs here; a game's rules/content belong to its root games/ export and authoring package. Keep CSS3D and WebGL bounds aligned. Paired video/soundtrack controls must reach the actual audio owner.",
+          "check":"Launch/exit each changed game, restore cabinet input, play both reels and test sound/seek/Back. Check mouse targets after rotating/resizing the cabinet."
+        }
+      ]
+    },
+    {
+      "title":"Music piano, instruments and recorded tracks",
+      "tasks":[
+        {
+          "title":"Change instrument slots, group choices or the More picker",
+          "ui":"Music instrument group tabs, existing sound slots and More picker; two-instrument mode has separate panels.",
+          "refs":[
+            {"file":"_5-music/instruments/catalog.js","anchor":"const INSTRUMENT_CONFIG =","role":"Instrument records, IDs, labels and source/backend configuration."},
+            {"file":"_5-music/instruments/catalog.js","anchor":"const INSTRUMENT_TABS =","role":"Instrument group inventory."},
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"function openCategoryPicker(","role":"More picker opening; updateCategoryPickerColumns handles its columns."}
+          ],
+          "change":"The active 3D controller is music-piano-controls.v2.js. Preserve IDs, backend/source and group mapping. Do not mistake old similarly named controllers or the separate 2D recorder for the active owner.",
+          "check":"Select every changed slot/group, sample low/mid/high notes with the picker open, switch one/two-instrument modes, reload and check saved choices."
+        },
+        {
+          "title":"Change instrument loading feedback or gain",
+          "ui":"Music piano readiness, note feedback; Music master gain and any instrument-level controls.",
+          "refs":[
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"async function loadInstrument(id)","role":"Instrument-load coordination and failure handling."},
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"function showMusicInstrumentNotice(","role":"Music feedback presentation."},
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"function setInstrumentAutoGain(","role":"Per-instrument gain calibration path."}
+          ],
+          "settings":"`music.masterGain`; instrument mix/readiness has additional controller-owned state.",
+          "change":"Keep loading/ready/error distinct. Notify on an attempted note that cannot play, not on every successful note. Soften sample/backend gain in the actual instrument route, while preserving release/sustain and global mute.",
+          "check":"Slow/failed load, rapidly switch instruments, play repeated/overlapping notes and sustain. Listen to low and high notes; a successful network request does not prove acceptable sound."
+        },
+        {
+          "title":"Change song icons and their distribution",
+          "ui":"Gear -> Music -> Track icons: common size, horizontal distance and vertical offset.",
+          "refs":[
+            {"file":"_5-music/music-track-icon-layout.mjs","anchor":"export function layoutMusicTrackIcons","role":"Fixed available area, margins and overview icon circles."},
+            {"file":"_5-music/music-track-icon-layout.mjs","anchor":"export function layoutSelectedMusicTrackIcons","role":"Selected icon transition while keeping source indices stable."},
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"function renderTopPadGrid(","role":"Tablet drawing and integration of computed positions."}
+          ],
+          "settings":"`music.trackIconSize`, `music.trackIconSpacing`, `music.trackIconVerticalOffset`.",
+          "change":"Use existing controls for normal adjustments. The layout supports different track counts; do not assume every state is a three-icon triangle. Retain common visual/hit circles and strict title/song-name margins.",
+          "check":"Select every song after changing spacing, switch modes, resize and inspect both labels and hit targets. Confirm hidden icons cannot activate another track."
+        },
+        {
+          "title":"Change recorded-track files, MIDI timing or playback volume",
+          "ui":"Music -> song selection; recorded playback with falling notes and video; common volume/sync controls.",
+          "refs":[
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"const TRACKS =","role":"Per-track audio/MIDI/video records."},
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"async function selectTrack(","role":"Track selection/loading flow; loadTrackAudio chooses audio candidates."},
+            {"file":"_5-music/music-recorded-volume.mjs","anchor":"export function createRecordedTrackVolumeRoute","role":"Recorded-source gain connection and live settings update."}
+          ],
+          "change":"Recorded audio supplies the soundtrack; MIDI drives notes/keys. Do not fix soundtrack volume by changing only instrument master gain. Timing/seek helpers include music-track-timing.mjs and midi-seek-state.mjs; follow music-midi-workflow.md before preparing replacements.",
+          "check":"Seek during playback and pause, including sustained notes; inspect start/middle/end sync, volume, mute and zero level. Confirm chosen screen/instrument mode persists through seeking."
+        },
+        {
+          "title":"Change Music video focus and panel sizing",
+          "ui":"Music tablet -> video playback, focus/fullscreen-style controls and Back/Escape.",
+          "refs":[
+            {"file":"_5-music/music-piano-controls.v2.js","anchor":"function startTopPadZoom(","role":"Music-specific focus transition; inspect projected video bounds and restoration."},
+            {"file":"_5-music/music-screen-layout.mjs","anchor":"export function musicPlayerRect(","role":"Player content rectangle."},
+            {"file":"_5-music/music-screen-layout.mjs","anchor":"export function layoutMusicVideoZones(","role":"Video zones and instrument slide layout inputs."}
+          ],
+          "change":"Fit the actual playing video area, not the whole tablet/piano or an already magnified rectangle. Keep camera/projection and drawing/hit rectangles distinct. Music does not share every Videos focus assumption.",
+          "check":"Start from home and a user-transformed view; focus/exit, resize and press Escape. Ensure Back, seek, volume and sync remain visible and usable."
+        }
+      ]
+    },
+    {
+      "title":"Docs content and desk",
+      "tasks":[
+        {
+          "title":"Add a document or change its source/title",
+          "ui":"Constructor -> Docs -> Document; Source and cover; Paper format and placement.",
+          "refs":[
+            {"file":"_6-docs/library/editor.js","anchor":"export function mountDocsEditor","role":"Editor fields, type handling and Save to project/export actions."},
+            {"file":"_6-docs/library/editor.js","anchor":"function persistDraft(","role":"Browser draft persistence."},
+            {"file":"_6-docs/library/schema.js","anchor":"export function validateLibrary","role":"Collection validation; presentationUrl normalizes supported presentation sources."}
+          ],
+          "change":"Use documents.json as project collection data. PDF/image uploads and Save to project use the local authoring server; a browser draft is not a published update. Presentations use supported hosted Microsoft URLs/embeds; direct PPTX conversion is separate.",
+          "check":"Save/export, reopen in another review tab and inspect the real document, not just its cover. Test external presentation permissions signed out. Back up uploaded binaries alongside the manifest."
+        },
+        {
+          "title":"Move desk papers or change paper dimensions",
+          "ui":"Docs Constructor -> Paper format and placement: format, width/height, scale, Desk X/Z and rotation.",
+          "refs":[
+            {"file":"_6-docs/library/editor.js","anchor":"function suggestPosition(","role":"Placement suggestions within tabletop/lamp bounds."},
+            {"file":"_6-docs/library/editor.js","anchor":"function footprint(","role":"Physical document footprint calculation."},
+            {"file":"_6-docs/library/editor.js","anchor":"function updateSuggestedPosition(","role":"Updates automatic placement without blindly replacing explicit positioning."}
+          ],
+          "change":"Dimensions/Desk X/Z use metres; rotation uses degrees. Keep placement data separate from the desk model transform. Changing the desk scale without adapting its paper layout can misalign every document.",
+          "check":"Compare portrait/landscape/widescreen formats, overlaps, lamp clearance, click targets and reload. Confirm the saved dimensions match the intended physical proportions."
+        },
+        {
+          "title":"Change desk drawers or the web export",
+          "ui":"Docs -> click drawer/hardware; accessible drawer controls. Desk material export is an offline asset task.",
+          "refs":[
+            {"file":"_6-docs/desk-drawers.js","anchor":"export function createDeskDrawers","role":"Drawer collection, accessible controls and integration."},
+            {"file":"_6-docs/desk-drawers.js","anchor":"function toggle(entry)","role":"Open/close transition; update samples it on the owned loop."},
+            {"file":"_6-docs/desk-drawers.js","anchor":"const DURATION =","role":"Current base duration; exported parent-local offset metadata controls travel."}
+          ],
+          "change":"Preserve Drawer_TL/TR/BL/BR nodes and docsDrawerOffset when exporting _6-docs/assets/desk.glb. tools/export-docs-desk.py owns the web material/export recipe. Source blend and web GLB are distinct. Desk work remains stopped unless separately resumed.",
+          "check":"Open/close all four drawers and reverse mid-motion; test Reduced motion, document occlusion and sticky placement input locks. Re-import the exported GLB to inspect actual textures and transforms."
+        }
+      ]
+    },
+    {
+      "title":"Sticky notes and maintaining the reference",
+      "tasks":[
+        {
+          "title":"Change sticky-note UI, text bundles or read behavior",
+          "ui":"General Constructor -> Sticky notes; page note icon handles visibility/read entry points.",
+          "refs":[
+            {"file":"_7-shared-scripts/sticky-notes/index.js","anchor":"export async function mountStickyNotes","role":"Shared authoring/read interface and state."},
+            {"file":"_7-shared-scripts/sticky-notes/index.js","anchor":"function startPlacement(","role":"Placement-mode entry; open/shut/animateDialog own reading presentation."},
+            {"file":"_7-shared-scripts/sticky-notes/data.js","anchor":"const MAX_TEXT =","role":"Content limits and validation; anchors are validated separately."}
+          ],
+          "change":"Project bundle is assets/annotations/sticky-notes.json. Browser drafts and visitor dismissal/read history are distinct. Export/import content through the actual owner; changing a local draft does not publish it.",
+          "check":"Place/read/close, hide/show and reveal dismissed notes, reload, export/import and compare text/color/rotation/anchors. Test a fresh visitor separately from the authoring browser."
+        },
+        {
+          "title":"Change how a note sticks to a 3D surface",
+          "ui":"Sticky placement/repositioning on supported page surfaces.",
+          "refs":[
+            {"file":"_7-shared-scripts/sticky-notes/scene-adapter.js","anchor":"export function createSceneStickyAdapter","role":"Shared scene adapter and raycasting."},
+            {"file":"_7-shared-scripts/sticky-notes/scene-adapter.js","anchor":"function anchorAt(","role":"Creates a surface anchor from a hit, with clearance logic."},
+            {"file":"_7-shared-scripts/sticky-notes/scene-adapter.js","anchor":"function ownInput(","role":"Suspends scene interaction while placing/editing."}
+          ],
+          "change":"Pages can supply specialized adapters; registerStickySceneAdapter connects them. Preserve surface IDs, triangle/barycentric or supported plane conventions. A model replacement can invalidate saved anchors and require migration.",
+          "check":"Place near edges/curves, rotate the object, edit/reposition and cancel. Confirm placement never triggers the underlying GLB action and saved notes return to the same surface after reload."
+        }
+      ]
+    }
+  ],
+  "maintenance":[
+    "Editable task records are in `docs/user-guide/08-task-to-script-reference.json`. Add a task under its page/group with a UI route, exact file/literal anchors, change boundaries and a meaningful verification check. Prefer named declarations/configuration keys over a line number alone.",
+    "Rebuild from the repository root: `python tools/build-user-guide.py docs/user-guide/08-task-to-script-reference.json`. Use the installed/bundled Python if the Windows Store alias intercepts python. ReportLab and pypdf are required; Poppler renders the result for visual review.",
+    "The builder rejects missing files and missing literal anchors. That catches some stale references; it cannot prove a function is still the active owner or that the UI route still exists. Recheck imports/call sites and the browser workflow when a feature changes. Snapshot line numbers are recalculated each build.",
+    "Cross-PDF navigation is in each footer; Chapter 9 supplies the derived alphabetical script/function index with links back to these task pages. Keep all PDFs together. Use `python tools/build-user-guide.py --all` after changing tasks so the index and destination pages are rebuilt together. Browser acceptance, more screenshots and broader field/asset coverage remain. Continue adding high-value tasks instead of cataloging every private helper.",
+    "Separate deferred work: deliberate folder migration/obsolete-file review, controller architecture and animation standardization, plus mobile/device acceptance. Coordinate file reservations before edits and request the agreed quiet window before moves. No publication or desk continuation is authorized by this documentation pass."
+  ]
+}

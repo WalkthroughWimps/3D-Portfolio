@@ -1,0 +1,3755 @@
+{
+  "schemaVersion": 2,
+  "fields": [
+    {
+      "path": "header.useLegacy",
+      "key": "site.header.useLegacy",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 65,
+      "generated": false,
+      "group": "Header",
+      "ui": "General -> Header",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/header.js"
+      ]
+    },
+    {
+      "path": "header.useLegacyNavbar",
+      "key": "site.header.useLegacyNavbar",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 66,
+      "generated": false,
+      "group": "Header",
+      "ui": "General -> Header",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/header.js"
+      ]
+    },
+    {
+      "path": "about.centerOnViewport",
+      "key": "site.about.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 67,
+      "generated": false,
+      "group": "About framing",
+      "ui": "About framing preference and host viewport behavior",
+      "owners": [
+        "_1-about/about.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "music.centerOnViewport",
+      "key": "site.music.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 68,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "graphics.centerOnViewport",
+      "key": "site.graphics.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 69,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.shelfRotation",
+      "key": "site.graphics.shelfRotation",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 70,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.videoRotation",
+      "key": "site.graphics.videoRotation",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 71,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.videoZoom",
+      "key": "site.graphics.videoZoom",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 72,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.pageSurfaceType",
+      "key": "site.graphics.pageSurfaceType",
+      "default": "paper",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "paper",
+        "felt",
+        "woven",
+        "smooth"
+      ],
+      "schemaLine": 73,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.pageSurfaceStrength",
+      "key": "site.graphics.pageSurfaceStrength",
+      "default": 0.18,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        2
+      ],
+      "choices": [],
+      "schemaLine": 74,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.pageSurfaceScale",
+      "key": "site.graphics.pageSurfaceScale",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.5,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 75,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "graphics.pageSurfaceInk",
+      "key": "site.graphics.pageSurfaceInk",
+      "default": 0.35,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 76,
+      "generated": false,
+      "group": "Graphics",
+      "ui": "Graphics settings -> viewport, shelf/video navigation and page surface controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_3-graphics/shelf/graphics-preview.mjs"
+      ]
+    },
+    {
+      "path": "games.centerOnViewport",
+      "key": "site.games.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 77,
+      "generated": false,
+      "group": "Games",
+      "ui": "Games settings -> Center on viewport",
+      "owners": [
+        "debug/panel-shell.js",
+        "_4-games/games.js"
+      ]
+    },
+    {
+      "path": "videos.centerOnViewport",
+      "key": "site.videos.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 78,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.online-classes",
+      "key": "site.videos.explainer.online-classes",
+      "default": "Remote learning cuts and overlays.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.a-list-videos",
+      "key": "site.videos.explainer.a-list-videos",
+      "default": "Promo edits and highlights.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.news-broadcast",
+      "key": "site.videos.explainer.news-broadcast",
+      "default": "Broadcast-style segments.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.neotube-studios",
+      "key": "site.videos.explainer.neotube-studios",
+      "default": "Studio-branded content.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.music-videos",
+      "key": "site.videos.explainer.music-videos",
+      "default": "Music-driven visuals and edits.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainer.random-vids",
+      "key": "site.videos.explainer.random-vids",
+      "default": "Favorite mixes and experiments.",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainerSize",
+      "key": "site.videos.explainerSize",
+      "default": 46,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        18,
+        72
+      ],
+      "choices": [],
+      "schemaLine": 82,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainerFont",
+      "key": "site.videos.explainerFont",
+      "default": "sans",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "sans",
+        "serif",
+        "mono"
+      ],
+      "schemaLine": 83,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainerStyle",
+      "key": "site.videos.explainerStyle",
+      "default": "normal",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "normal",
+        "bold",
+        "italic",
+        "bold italic"
+      ],
+      "schemaLine": 84,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainerAlign",
+      "key": "site.videos.explainerAlign",
+      "default": "center",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "center",
+        "left",
+        "right"
+      ],
+      "schemaLine": 85,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "videos.explainerPlacement",
+      "key": "site.videos.explainerPlacement",
+      "default": "center",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "online-classes",
+        "a-list-videos",
+        "news-broadcast",
+        "neotube-studios",
+        "music-videos",
+        "random-vids",
+        "center",
+        "follow"
+      ],
+      "schemaLine": 86,
+      "generated": false,
+      "group": "Videos",
+      "ui": "Videos settings and page-specific explainer controls",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "docs.centerOnViewport",
+      "key": "site.docs.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 87,
+      "generated": false,
+      "group": "Docs",
+      "ui": "Docs settings -> Center on viewport; document content is in Constructor",
+      "owners": [
+        "debug/panel-shell.js",
+        "_6-docs/docs-3d.js"
+      ]
+    },
+    {
+      "path": "cube.faceSnap",
+      "key": "site.cube.faceSnap",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 88,
+      "generated": false,
+      "group": "Cube",
+      "ui": "About -> Cube tab",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/about.js"
+      ]
+    },
+    {
+      "path": "cube.uprightFaces",
+      "key": "site.cube.uprightFaces",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 89,
+      "generated": false,
+      "group": "Cube",
+      "ui": "About -> Cube tab",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/about.js"
+      ]
+    },
+    {
+      "path": "cube.showShell",
+      "key": "site.cube.showShell",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 90,
+      "generated": false,
+      "group": "Cube",
+      "ui": "About -> Cube tab",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/about.js"
+      ]
+    },
+    {
+      "path": "about.about.enabled",
+      "key": "site.about.about.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Fish visibility",
+      "ui": "About -> Cube or pinned Fish visibility/backing controls; frame/gallery preferences have private owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/about/fish-face.js"
+      ]
+    },
+    {
+      "path": "about.about.showBacking",
+      "key": "site.about.about.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Fish visibility",
+      "ui": "About -> Cube or pinned Fish visibility/backing controls; frame/gallery preferences have private owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/about/fish-face.js"
+      ]
+    },
+    {
+      "path": "about.skills.enabled",
+      "key": "site.about.skills.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Skills visibility",
+      "ui": "About -> Cube or pinned Skills visibility/backing controls; beanbag/panel settings have additional owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/skills/face.js"
+      ]
+    },
+    {
+      "path": "about.skills.showBacking",
+      "key": "site.about.skills.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Skills visibility",
+      "ui": "About -> Cube or pinned Skills visibility/backing controls; beanbag/panel settings have additional owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/skills/face.js"
+      ]
+    },
+    {
+      "path": "about.notes.enabled",
+      "key": "site.about.notes.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.showBacking",
+      "key": "site.about.notes.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.clock.enabled",
+      "key": "site.about.clock.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.showBacking",
+      "key": "site.about.clock.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.refs.enabled",
+      "key": "site.about.refs.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Refs visibility",
+      "ui": "About -> Cube or pinned Refs visibility/backing controls; cabinet/editor settings have private owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/refs/controls.js"
+      ]
+    },
+    {
+      "path": "about.refs.showBacking",
+      "key": "site.about.refs.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Refs visibility",
+      "ui": "About -> Cube or pinned Refs visibility/backing controls; cabinet/editor settings have private owners",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/refs/controls.js"
+      ]
+    },
+    {
+      "path": "about.odd.enabled",
+      "key": "site.about.odd.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.showBacking",
+      "key": "site.about.odd.showBacking",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.armSpeed",
+      "key": "site.about.odd.armSpeed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 95,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.sewingAnimations",
+      "key": "site.about.odd.sewing-animations",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 96,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.innerRotation",
+      "key": "site.about.odd.inner-rotation",
+      "default": "none",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "none",
+        "clockwise",
+        "counterclockwise"
+      ],
+      "schemaLine": 97,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.innerSpeed",
+      "key": "site.about.odd.inner-speed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.2,
+        5
+      ],
+      "choices": [],
+      "schemaLine": 98,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.mainMeterWidth",
+      "key": "site.about.odd.mainMeterWidth",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.6,
+        1.1
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.mainMeterHeight",
+      "key": "site.about.odd.mainMeterHeight",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.6,
+        1.1
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.trackMeterWidth",
+      "key": "site.about.odd.trackMeterWidth",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.6,
+        1.1
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.trackMeterHeight",
+      "key": "site.about.odd.trackMeterHeight",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.6,
+        1.1
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.separateSpeeds",
+      "key": "site.about.odd.separateSpeeds",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 102,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.foldSpeed",
+      "key": "site.about.odd.foldSpeed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 103,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.jams",
+      "key": "site.about.odd.jams",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 104,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.jamFrequency",
+      "key": "site.about.odd.jamFrequency",
+      "default": 10,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        100
+      ],
+      "choices": [],
+      "schemaLine": 105,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.highlightColor",
+      "key": "site.about.odd.highlightColor",
+      "default": "#d9f5ff",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 106,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.trackMetersReady",
+      "key": "site.about.odd.track-meters-ready",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 107,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportFlipX",
+      "key": "site.about.odd.addon-transport-flip-x",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportFlipY",
+      "key": "site.about.odd.addon-transport-flip-y",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.podTransportConfig",
+      "key": "site.about.odd.pod-transport-config",
+      "default": "",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleFlipX",
+      "key": "site.about.odd.addon-shuttle-flip-x",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleFlipY",
+      "key": "site.about.odd.addon-shuttle-flip-y",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.podShuttleConfig",
+      "key": "site.about.odd.pod-shuttle-config",
+      "default": "",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonMeterSide",
+      "key": "site.about.odd.addon-meter-side",
+      "default": "left",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "left",
+        "right"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonMeterHost",
+      "key": "site.about.odd.addon-meter-host",
+      "default": "upper",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "upper",
+        "lower"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonMeterGap",
+      "key": "site.about.odd.addon-meter-gap",
+      "default": 5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        30
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonMeterY",
+      "key": "site.about.odd.addon-meter-y",
+      "default": 39.5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -82,
+        82
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportSide",
+      "key": "site.about.odd.addon-transport-side",
+      "default": "right",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "left",
+        "right"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportHost",
+      "key": "site.about.odd.addon-transport-host",
+      "default": "lower",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "upper",
+        "lower"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportGap",
+      "key": "site.about.odd.addon-transport-gap",
+      "default": 2,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        30
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTransportY",
+      "key": "site.about.odd.addon-transport-y",
+      "default": -29,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -82,
+        82
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleSide",
+      "key": "site.about.odd.addon-shuttle-side",
+      "default": "left",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "left",
+        "right"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleHost",
+      "key": "site.about.odd.addon-shuttle-host",
+      "default": "lower",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "upper",
+        "lower"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleGap",
+      "key": "site.about.odd.addon-shuttle-gap",
+      "default": 7.7,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        30
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonShuttleY",
+      "key": "site.about.odd.addon-shuttle-y",
+      "default": -27,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -82,
+        82
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTrackMetersSide",
+      "key": "site.about.odd.addon-trackmeters-side",
+      "default": "right",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "left",
+        "right"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTrackMetersHost",
+      "key": "site.about.odd.addon-trackmeters-host",
+      "default": "upper",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "upper",
+        "lower"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTrackMetersGap",
+      "key": "site.about.odd.addon-trackmeters-gap",
+      "default": 1.8,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        30
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.addonTrackMetersY",
+      "key": "site.about.odd.addon-trackmeters-y",
+      "default": 36.5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -82,
+        82
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.layoutSnapCtrl",
+      "key": "site.about.odd.layout-snap-ctrl",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.01,
+        10
+      ],
+      "choices": [],
+      "schemaLine": 119,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.layoutSnapShift",
+      "key": "site.about.odd.layout-snap-shift",
+      "default": 0.01,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.01,
+        10
+      ],
+      "choices": [],
+      "schemaLine": 120,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.layoutSnapBoth",
+      "key": "site.about.odd.layout-snap-both",
+      "default": 0.1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.01,
+        10
+      ],
+      "choices": [],
+      "schemaLine": 121,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.stackBlends",
+      "key": "site.about.odd.stackBlends",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 122,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.tickSpacingMs",
+      "key": "site.about.odd.tickSpacingMs",
+      "default": 200,
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 123,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particles",
+      "key": "site.about.odd.particles",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 124,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particleDensity",
+      "key": "site.about.odd.particleDensity",
+      "default": 90,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        240
+      ],
+      "choices": [],
+      "schemaLine": 125,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particleLife",
+      "key": "site.about.odd.particleLife",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 126,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particleSize",
+      "key": "site.about.odd.particleSize",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 127,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particleWind",
+      "key": "site.about.odd.particleWind",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -2,
+        2
+      ],
+      "choices": [],
+      "schemaLine": 128,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.particleSpread",
+      "key": "site.about.odd.particleSpread",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 129,
+      "generated": false,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.color1",
+      "key": "site.about.odd.color1",
+      "default": "#cf542c",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.color2",
+      "key": "site.about.odd.color2",
+      "default": "#188b91",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.color3",
+      "key": "site.about.odd.color3",
+      "default": "#dfaa27",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.odd.color4",
+      "key": "site.about.odd.color4",
+      "default": "#788b36",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Oddio",
+      "ui": "About -> Oddio Settings and Constructor; data-pref controls bind to about.odd fields",
+      "owners": [
+        "_1-about/faces/odd/oddio-settings.js",
+        "_1-about/faces/odd/addon-layout-editor.js"
+      ]
+    },
+    {
+      "path": "about.notes.armSpeed",
+      "key": "site.about.notes.armSpeed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 132,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.separateSpeeds",
+      "key": "site.about.notes.separateSpeeds",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 133,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.foldSpeed",
+      "key": "site.about.notes.foldSpeed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 134,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.showClippedArt",
+      "key": "site.about.notes.clipped",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 135,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.rearArtwork",
+      "key": "site.about.notes.rearArtwork",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 136,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.projector",
+      "key": "site.about.notes.projector",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 137,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.backingProjection",
+      "key": "site.about.notes.backingProjection",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 138,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.notes.fitInterior",
+      "key": "site.about.notes.fitInterior",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 139,
+      "generated": false,
+      "group": "Notes",
+      "ui": "About -> Notes ordinary/Constructor controls and pinned visibility; editable drawings are separate",
+      "owners": [
+        "_1-about/notes/notes-face.js",
+        "_1-about/faces/backing-controls.js"
+      ]
+    },
+    {
+      "path": "about.clock.timeOffsetSeconds",
+      "key": "site.about.clock.timeOffsetSeconds",
+      "default": 0,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -1000000000,
+        1000000000
+      ],
+      "choices": [],
+      "schemaLine": 140,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.markerPhase",
+      "key": "site.about.clock.markerPhase",
+      "default": 0,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        -1000000,
+        1000000
+      ],
+      "choices": [],
+      "schemaLine": 141,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.showGroove",
+      "key": "site.about.clock.showGroove",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 142,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.grooveColor",
+      "key": "site.about.clock.grooveColor",
+      "default": "#a98b55",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 143,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.gearSpeed",
+      "key": "site.about.clock.gearSpeed",
+      "default": 150,
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 144,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.gearFinishes",
+      "key": "site.about.clock.gearFinishes",
+      "default": "",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 148,
+      "generated": false,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.hourVisible",
+      "key": "site.about.clock.hourVisible",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.hourStyle",
+      "key": "site.about.clock.hourStyle",
+      "default": "tapered",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "baton",
+        "tapered",
+        "skeleton",
+        "slim-arrow",
+        "chevron",
+        "art-deco",
+        "spade",
+        "breguet",
+        "rocket"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.hourLength",
+      "key": "site.about.clock.hourLength",
+      "default": 0.39,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.18,
+        0.7
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.hourGirth",
+      "key": "site.about.clock.hourGirth",
+      "default": 0.035,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.008,
+        0.07
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.hourColor",
+      "key": "site.about.clock.hourColor",
+      "default": "#f4f0d9",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.minuteVisible",
+      "key": "site.about.clock.minuteVisible",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.minuteStyle",
+      "key": "site.about.clock.minuteStyle",
+      "default": "tapered",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "baton",
+        "tapered",
+        "skeleton",
+        "slim-arrow",
+        "chevron",
+        "art-deco",
+        "spade",
+        "breguet",
+        "rocket"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.minuteLength",
+      "key": "site.about.clock.minuteLength",
+      "default": 0.58,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.45,
+        0.82
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.minuteGirth",
+      "key": "site.about.clock.minuteGirth",
+      "default": 0.026,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.008,
+        0.07
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.minuteColor",
+      "key": "site.about.clock.minuteColor",
+      "default": "#c7e7ff",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.secondVisible",
+      "key": "site.about.clock.secondVisible",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.secondStyle",
+      "key": "site.about.clock.secondStyle",
+      "default": "baton",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "baton",
+        "tapered",
+        "skeleton",
+        "slim-arrow",
+        "chevron",
+        "art-deco",
+        "spade",
+        "breguet",
+        "rocket"
+      ],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.secondLength",
+      "key": "site.about.clock.secondLength",
+      "default": 0.3,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.04,
+        0.55
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.secondGirth",
+      "key": "site.about.clock.secondGirth",
+      "default": 0.018,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.008,
+        0.07
+      ],
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.clock.secondColor",
+      "key": "site.about.clock.secondColor",
+      "default": "#e27d66",
+      "prop": "",
+      "legacy": [],
+      "type": "color",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 64,
+      "generated": true,
+      "group": "Clock",
+      "ui": "About -> Clock; hand, groove and gear sections depend on the loaded clock variant",
+      "owners": [
+        "_1-about/faces/clock/controls.js",
+        "_1-about/faces/clock/face.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.enabled",
+      "key": "site.about.spheroid.enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 156,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.pattern",
+      "key": "site.about.spheroid.pattern",
+      "default": "crossed",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "crossed",
+        "ascending",
+        "descending"
+      ],
+      "schemaLine": 157,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.strands",
+      "key": "site.about.spheroid.strands",
+      "default": 9,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        4,
+        18
+      ],
+      "choices": [],
+      "schemaLine": 158,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.turns",
+      "key": "site.about.spheroid.turns",
+      "default": 1.35,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.5,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 159,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.glow",
+      "key": "site.about.spheroid.glow",
+      "default": 0.65,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 160,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.speed",
+      "key": "site.about.spheroid.speed",
+      "default": 0.24,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 161,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.color",
+      "key": "site.about.spheroid.color",
+      "default": "cyan",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "cyan",
+        "amber",
+        "violet"
+      ],
+      "schemaLine": 162,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rotationMode",
+      "key": "site.about.spheroid.rotation-mode",
+      "default": "together",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "together",
+        "independent"
+      ],
+      "schemaLine": 163,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rotationDirection",
+      "key": "site.about.spheroid.rotation-direction",
+      "default": "counterclockwise",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "clockwise",
+        "counterclockwise"
+      ],
+      "schemaLine": 164,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rotationSpeed",
+      "key": "site.about.spheroid.rotation-speed",
+      "default": 0.015,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        0.25
+      ],
+      "choices": [],
+      "schemaLine": 165,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.ascendingRotationDirection",
+      "key": "site.about.spheroid.ascending-rotation-direction",
+      "default": "counterclockwise",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "clockwise",
+        "counterclockwise"
+      ],
+      "schemaLine": 166,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.ascendingRotationSpeed",
+      "key": "site.about.spheroid.ascending-rotation-speed",
+      "default": 0.015,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        0.25
+      ],
+      "choices": [],
+      "schemaLine": 167,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.descendingRotationDirection",
+      "key": "site.about.spheroid.descending-rotation-direction",
+      "default": "clockwise",
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "clockwise",
+        "counterclockwise"
+      ],
+      "schemaLine": 168,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.descendingRotationSpeed",
+      "key": "site.about.spheroid.descending-rotation-speed",
+      "default": 0.015,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        0.25
+      ],
+      "choices": [],
+      "schemaLine": 169,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.bridgeEnabled",
+      "key": "site.about.spheroid.bridge-enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 170,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.bridgeCount",
+      "key": "site.about.spheroid.bridge-count",
+      "default": 4,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        1,
+        36
+      ],
+      "choices": [],
+      "schemaLine": 171,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.bridgeGlow",
+      "key": "site.about.spheroid.bridge-glow",
+      "default": 0.8,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1.5
+      ],
+      "choices": [],
+      "schemaLine": 172,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.bridgeSpeed",
+      "key": "site.about.spheroid.bridge-speed",
+      "default": 0.8,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 173,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rearPull",
+      "key": "site.about.spheroid.rear-pull",
+      "default": 0.025,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        0.08
+      ],
+      "choices": [],
+      "schemaLine": 174,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rearPullEnabled",
+      "key": "site.about.spheroid.rear-pull-enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 175,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "about.spheroid.rearPullInfluence",
+      "key": "site.about.spheroid.rear-pull-influence",
+      "default": 0.22,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.1,
+        0.85
+      ],
+      "choices": [],
+      "schemaLine": 176,
+      "generated": false,
+      "group": "Skills spheroid",
+      "ui": "About -> Skill/Skills -> Lattice -> Spheroid lattice, when that host section is present",
+      "owners": [
+        "_1-about/faces/backing-controls.js",
+        "_1-about/faces/interior-drive.js"
+      ]
+    },
+    {
+      "path": "audio.volume",
+      "key": "site.audio.volume",
+      "default": 0.25,
+      "prop": "",
+      "legacy": [
+        "a11y:masterVolume"
+      ],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 177,
+      "generated": false,
+      "group": "Audio",
+      "ui": "General -> Audio",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/audio-settings.js"
+      ]
+    },
+    {
+      "path": "audio.muted",
+      "key": "site.audio.muted",
+      "default": false,
+      "prop": "",
+      "legacy": [
+        "a11y:mute"
+      ],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 178,
+      "generated": false,
+      "group": "Audio",
+      "ui": "General -> Audio",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/audio-settings.js"
+      ]
+    },
+    {
+      "path": "audio.syncMs",
+      "key": "site.audio.sync",
+      "default": -270,
+      "prop": "",
+      "legacy": [
+        "globalAudioMidiOffsetMs",
+        "a11y:audioSyncMs"
+      ],
+      "type": "number",
+      "bounds": [
+        -3000,
+        3000
+      ],
+      "choices": [],
+      "schemaLine": 179,
+      "generated": false,
+      "group": "Audio",
+      "ui": "General -> Audio",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/audio-settings.js"
+      ]
+    },
+    {
+      "path": "audio.preservePitch",
+      "key": "site.audio.preservePitch",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 180,
+      "generated": false,
+      "group": "Audio",
+      "ui": "General -> Audio",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/audio-settings.js"
+      ]
+    },
+    {
+      "path": "accessibility.reducedMotion",
+      "key": "site.a11y.settings",
+      "default": null,
+      "prop": "reducedMotion",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 181,
+      "generated": false,
+      "group": "Accessibility",
+      "ui": "General -> Accessibility; effective motion also follows OS preferences",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/motion-preference.js"
+      ]
+    },
+    {
+      "path": "accessibility.highContrast",
+      "key": "site.a11y.settings",
+      "default": false,
+      "prop": "highContrast",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 182,
+      "generated": false,
+      "group": "Accessibility",
+      "ui": "General -> Accessibility; effective motion also follows OS preferences",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/motion-preference.js"
+      ]
+    },
+    {
+      "path": "accessibility.textScale",
+      "key": "site.a11y.settings",
+      "default": 1,
+      "prop": "textScale",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        1,
+        1.25
+      ],
+      "choices": [],
+      "schemaLine": 183,
+      "generated": false,
+      "group": "Accessibility",
+      "ui": "General -> Accessibility; effective motion also follows OS preferences",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/motion-preference.js"
+      ]
+    },
+    {
+      "path": "accessibility.focusOutline",
+      "key": "site.a11y.settings",
+      "default": "auto",
+      "prop": "focusOutline",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "auto",
+        "always"
+      ],
+      "schemaLine": 184,
+      "generated": false,
+      "group": "Accessibility",
+      "ui": "General -> Accessibility; effective motion also follows OS preferences",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/motion-preference.js"
+      ]
+    },
+    {
+      "path": "accessibility.shortcutHints",
+      "key": "site.a11y.settings",
+      "default": "auto",
+      "prop": "shortcutHints",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "auto",
+        "always",
+        "hidden"
+      ],
+      "schemaLine": 185,
+      "generated": false,
+      "group": "Accessibility",
+      "ui": "General -> Accessibility; effective motion also follows OS preferences",
+      "owners": [
+        "debug/panel-shell.js",
+        "_7-shared-scripts/core/motion-preference.js"
+      ]
+    },
+    {
+      "path": "interaction.animateResets",
+      "key": "site.interaction.animate-resets",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 186,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiMoveAway",
+      "key": "site.interaction.focus-ui-move-away",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 187,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiAnimate",
+      "key": "site.interaction.focus-ui-animate",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 188,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiKeepBehind",
+      "key": "site.interaction.focus-ui-keep-behind",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 190,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiHideHeader",
+      "key": "site.interaction.focus-ui-hide-header",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 191,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiHideNavbar",
+      "key": "site.interaction.focus-ui-hide-navbar",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 192,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiHideGear",
+      "key": "site.interaction.focus-ui-hide-gear",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 193,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiHideTopRight",
+      "key": "site.interaction.focus-ui-hide-top-right",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 194,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiOutSpeedMs",
+      "key": "site.interaction.focus-ui-out-speed-ms",
+      "default": 460,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        2000
+      ],
+      "choices": [],
+      "schemaLine": 195,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiSeparateInSpeed",
+      "key": "site.interaction.focus-ui-separate-in-speed",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 196,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.focusUiInSpeedMs",
+      "key": "site.interaction.focus-ui-in-speed-ms",
+      "default": 460,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        2000
+      ],
+      "choices": [],
+      "schemaLine": 197,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.poiAnimate",
+      "key": "site.interaction.poi-animate",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 198,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.poiSpeed",
+      "key": "site.interaction.poi-speed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 199,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.panResetSpeed",
+      "key": "site.interaction.pan-reset-speed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 200,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.rotationResetSpeed",
+      "key": "site.interaction.rotation-reset-speed",
+      "default": 1,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.25,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 201,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.panResetEasing",
+      "key": "site.interaction.pan-reset-easing",
+      "default": null,
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 202,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "interaction.rotationResetEasing",
+      "key": "site.interaction.rotation-reset-easing",
+      "default": null,
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 203,
+      "generated": false,
+      "group": "Interaction and motion",
+      "ui": "General -> Focused media / Transform resets / Points of interest",
+      "owners": [
+        "debug/settings-focused-media.js",
+        "debug/settings-reset-easing.js",
+        "debug/settings-poi.js"
+      ]
+    },
+    {
+      "path": "scene.lighting",
+      "key": "site.scene.lighting",
+      "default": null,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 204,
+      "generated": false,
+      "group": "Scene lighting",
+      "ui": "General -> Scene appearance; Start also has lighting/visual controls",
+      "owners": [
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.animationAllowed",
+      "key": "site.start.animation.allowed",
+      "default": null,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 205,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.centerOnViewport",
+      "key": "site.start.centerOnViewport",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 206,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "media.syncDrag",
+      "key": "video-sync-unlimited-drag",
+      "default": null,
+      "prop": "",
+      "legacy": [],
+      "type": "choice",
+      "bounds": null,
+      "choices": [
+        "enabled",
+        "disabled"
+      ],
+      "schemaLine": 207,
+      "generated": false,
+      "group": "Video preferences",
+      "ui": "Videos page settings; exposed shared-player controls depend on the adapter",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "media.tabletFocus",
+      "key": "video.tablet.focus",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 208,
+      "generated": false,
+      "group": "Video preferences",
+      "ui": "Videos page settings; exposed shared-player controls depend on the adapter",
+      "owners": [
+        "debug/panel-shell.js",
+        "_2-videos/videos.js"
+      ]
+    },
+    {
+      "path": "start.contrast",
+      "key": "site.contrast.value",
+      "default": 0.5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 209,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.brightness",
+      "key": "site.start.brightness",
+      "default": 0.5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 210,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.backgroundContrast",
+      "key": "site.start.background.contrast",
+      "default": 0.5,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        1
+      ],
+      "choices": [],
+      "schemaLine": 211,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.look.underlight",
+      "key": "site.start.look.underlight",
+      "default": 0.65,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 212,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "start.look.speakerPurple",
+      "key": "site.start.look.speaker-purple",
+      "default": 0.65,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 213,
+      "generated": false,
+      "group": "Start appearance",
+      "ui": "Start native/3D controls and its page settings; not every schema field has a visible control",
+      "owners": [
+        "_0-start/start-page.js",
+        "debug/panel-shell.js"
+      ]
+    },
+    {
+      "path": "music.masterGain",
+      "key": "music.instrument.master",
+      "default": 0.85,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.2,
+        3
+      ],
+      "choices": [],
+      "schemaLine": 214,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.midiSyncOffsets",
+      "key": "site.music.midi-sync-offsets",
+      "default": "{}",
+      "prop": "",
+      "legacy": [],
+      "type": "custom",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 215,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.trackIconSize",
+      "key": "site.music.track-icon-size",
+      "default": 0.27,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.16,
+        0.32
+      ],
+      "choices": [],
+      "schemaLine": 216,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.trackIconSpacing",
+      "key": "site.music.track-icon-spacing",
+      "default": 0.26,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0.12,
+        0.36
+      ],
+      "choices": [],
+      "schemaLine": 217,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.trackIconVerticalOffset",
+      "key": "site.music.track-icon-vertical-offset",
+      "default": 0.22,
+      "prop": "",
+      "legacy": [],
+      "type": "number",
+      "bounds": [
+        0,
+        0.34
+      ],
+      "choices": [],
+      "schemaLine": 218,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.screenGrid",
+      "key": "site.music.screen-grid",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 219,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.showGridButton",
+      "key": "site.music.show-grid-button",
+      "default": false,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 220,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.featherControls",
+      "key": "site.music.feather-controls",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 221,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    },
+    {
+      "path": "music.highlightsEnabled",
+      "key": "site.music.highlights-enabled",
+      "default": true,
+      "prop": "",
+      "legacy": [],
+      "type": "boolean",
+      "bounds": null,
+      "choices": [],
+      "schemaLine": 222,
+      "generated": false,
+      "group": "Music",
+      "ui": "Music settings -> Music / Music screen / Track icons; instrument and track content have separate owners",
+      "owners": [
+        "debug/panel-shell.js",
+        "_5-music/music-piano-controls.v2.js"
+      ]
+    }
+  ],
+  "privateOwners": [
+    {
+      "name": "Fish frame and hover controls",
+      "source": "_1-about/faces/about/fish-face.js",
+      "notes": "Constructor -> Fish; normalizeFrameOptions/setFrameOptions and normalizeHoverSettings/setHoverOptions own these values. Private keys include site.about.fish.frame.v1 and site.about.fish.rings.v1; ordinary audio response uses site.about.fish.v1. Read their normalizers/defaults before changing ranges. These are separate from the central Fish visibility fields."
+    },
+    {
+      "name": "Fish imported pictures",
+      "source": "_1-about/faces/about/picture-library.mjs",
+      "notes": "createPictureLibrary owns local metadata at site.about.picture-library.v2 and original image blobs in the site-about-picture-assets-v1 IndexedDB database. Caption overrides and prepared display images differ from originals. A preference backup alone may not contain the image blobs."
+    },
+    {
+      "name": "Refs cabinet and layout options",
+      "source": "_1-about/faces/refs/controls.js",
+      "notes": "Constructor registration and createRefsControls own the detailed fields. The archive owner is about.refs.sketch; board.getOptions/apply and normalizeRefsOptions in snap-board.js define the content/validation boundary. The local fields list covers scale, width, height, placement, rotation, shoulder/opening/bay sizes, line weight and opacity. Original pictures have their own picture-source.js storage."
+    },
+    {
+      "name": "Skills panel and visual configuration",
+      "source": "_7-shared-scripts/panel-assembly/SkillsSettings.mjs",
+      "notes": "mountSkillsSettings registers archive owner about.skills. The fields inventory groups Filaments, Color, Bursts, Particles, Cards and Structure/Frame; presets and the source read/apply bundle own additional settings. SkillsBaseline.mjs supplies the captured baseline. Central visibility preferences are not the complete panel configuration."
+    },
+    {
+      "name": "Oddio audio sessions",
+      "source": "_1-about/faces/odd/session-io.mjs",
+      "notes": "sessionObject/unpackSession define editable sessions, currently format Oddio version 4, including sources/clips/lanes and session state. SAVE SESSION / OPEN SESSION in the accessible deck operate on this content. Physical panel preferences are mostly central schema fields; saving those is not an audio-session backup."
+    },
+    {
+      "name": "Notes editable drawings and library",
+      "source": "_1-about/notes/drawing-library.js",
+      "notes": "createDrawingLibrary, validateDrawing and parseDrawingFile own editable content. Current databases are site.about.notes.library and site.about.notes.working. Editable format notes-drawing differs from a raster export and from shared preferences. Preserve document/layer/anchor data when changing formats."
+    },
+    {
+      "name": "Sticky-note drafts and published bundles",
+      "source": "_7-shared-scripts/sticky-notes/index.js",
+      "notes": "General Constructor -> Sticky notes is the authoring entry. Shared index/data modules separate drafts, bundle validation and visitor read history; published content is assets/annotations/sticky-notes.json. Import/export the actual note bundle and preserve scene anchors rather than treating it as an ordinary scalar preference."
+    },
+    {
+      "name": "Docs collection and uploaded originals",
+      "source": "_6-docs/library/editor.js",
+      "notes": "Constructor -> Docs uses browser draft docs-library-draft-v1, Save document, Save to project and metadata JSON transfer. documents.json is the project manifest; original files and generated covers/pages are separate assets. validateLibrary in library/schema.js governs allowed content. Back up the referenced files as well as the manifest."
+    }
+  ]
+}

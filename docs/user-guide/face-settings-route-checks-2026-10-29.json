@@ -1,0 +1,98 @@
+[
+  {
+    "tab": "Fish",
+    "labels": [
+      "\t\t\t\t5 heading Matt Hall — portfolio home, Value: 1",
+      "\t\t\t\t7 heading Creative Technologist, Value: 2",
+      "\t\t\t\t39 button (expanded) Description: Close General Settings, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t175 heading Singing fish, Value: 3",
+      "\t\t\t\t\t\t\t\t176 button (expanded) Description: Singing fish, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t\t194 heading Hover rings, Value: 4",
+      "\t\t\t\t\t\t\t\t\t\t195 button (expanded) Description: Hover rings, Secondary Actions: Collapse"
+    ]
+  },
+  {
+    "tab": "Refs",
+    "labels": [
+      "\t\t\t\t5 heading Matt Hall — portfolio home, Value: 1",
+      "\t\t\t\t7 heading Creative Technologist, Value: 2",
+      "\t\t\t\t39 button (expanded) Description: Close General Settings, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t175 heading Portrait plates, Value: 3",
+      "\t\t\t\t\t\t\t\t176 button (expanded) Description: Portrait plates, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t219 heading Cabinet appearance, Value: 3",
+      "\t\t\t\t\t\t\t\t220 button (expanded) Description: Cabinet appearance, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t268 heading Sketch appearance, Value: 3",
+      "\t\t\t\t\t\t\t\t269 button (expanded) Description: Sketch appearance, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t293 heading Iris door, Value: 3",
+      "\t\t\t\t\t\t\t\t294 button (expanded) Description: Iris door, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t305 heading Glass display, Value: 3",
+      "\t\t\t\t\t\t\t\t306 button (expanded) Description: Glass display, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t310 checkbox (settable, integer) Description: Show glass display, Value: 1",
+      "\t\t\t\t\t\t\t325 heading Cupboard doors, Value: 3",
+      "\t\t\t\t\t\t\t\t326 button (expanded) Description: Cupboard doors, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t358 heading Butterfly, Value: 3",
+      "\t\t\t\t\t\t\t\t359 button (expanded) Description: Butterfly, Secondary Actions: Collapse"
+    ]
+  },
+  {
+    "tab": "Skill",
+    "labels": [
+      "\t\t\t\t5 heading Matt Hall — portfolio home, Value: 1",
+      "\t\t\t\t7 heading Creative Technologist, Value: 2",
+      "\t\t\t\t39 button (expanded) Description: Close General Settings, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t205 heading Visibility, Value: 3",
+      "\t\t\t\t\t\t\t\t206 button (expanded) Description: Visibility, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t209 checkbox (settable, integer) Description: Show side cards, Value: 0, ID: showSidePanels",
+      "\t\t\t\t\t\t\t210 heading Body colors, Value: 3",
+      "\t\t\t\t\t\t\t\t211 button (expanded) Description: Body colors, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t219 heading Square card depth, Value: 3",
+      "\t\t\t\t\t\t\t\t220 button (expanded) Description: Square card depth, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t234 heading Card arrangement, Value: 3, Help: Drag one card onto another to swap. Keyboard: choose two slots, then Swap. Apply changes updates the cube.",
+      "\t\t\t\t\t\t\t\t235 button (expanded) Description: Card arrangement, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t313 heading Card artwork, Value: 3",
+      "\t\t\t\t\t\t\t\t314 button (expanded) Description: Card artwork, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t\t360 heading Icon side, Value: 4",
+      "\t\t\t\t\t\t\t\t\t\t361 button (expanded) Description: Icon side, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t\t381 heading Name side, Value: 4",
+      "\t\t\t\t\t\t\t\t\t\t382 button (expanded) Description: Name side, Secondary Actions: Collapse"
+    ]
+  },
+  {
+    "tab": "Clock",
+    "labels": [
+      "\t\t\t\t5 heading Matt Hall — portfolio home, Value: 1",
+      "\t\t\t\t7 heading Creative Technologist, Value: 2",
+      "\t\t\t\t39 button (expanded) Description: Close General Settings, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t175 heading Clock time, Value: 3",
+      "\t\t\t\t\t\t\t\t176 button (expanded) Description: Clock time, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t184 heading Gear motion and finish, Value: 3",
+      "\t\t\t\t\t\t\t\t185 button (expanded) Description: Gear motion and finish, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t245 heading Seconds groove, Value: 3",
+      "\t\t\t\t\t\t\t\t246 button (expanded) Description: Seconds groove, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t250 checkbox (settable, integer) Description: Show groove, Value: 1",
+      "\t\t\t\t\t\t\t255 heading Hour hand, Value: 3",
+      "\t\t\t\t\t\t\t\t256 button (expanded) Description: Hour hand, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t260 checkbox (settable, integer) Description: Show hour hand, Value: 1",
+      "\t\t\t\t\t\t\t288 heading Minute hand, Value: 3",
+      "\t\t\t\t\t\t\t\t289 button (expanded) Description: Minute hand, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t293 checkbox (settable, integer) Description: Show minute hand, Value: 1",
+      "\t\t\t\t\t\t\t322 heading Second hand, Value: 3",
+      "\t\t\t\t\t\t\t\t323 button (expanded) Description: Second hand, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t327 checkbox (settable, integer) Description: Show second hand, Value: 1"
+    ]
+  },
+  {
+    "tab": "Notes",
+    "labels": [
+      "\t\t\t\t5 heading Matt Hall — portfolio home, Value: 1",
+      "\t\t\t\t7 heading Creative Technologist, Value: 2",
+      "\t\t\t\t39 button (expanded) Description: Close General Settings, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t175 heading Drawing surface, Value: 3",
+      "\t\t\t\t\t\t\t\t176 button (expanded) Description: Drawing surface, Secondary Actions: Collapse",
+      "\t\t\t\t\t\t\t\t180 checkbox (settable, integer) Description: Show clipped art, Value: 1",
+      "\t\t\t\t\t\t\t\t181 checkbox (settable, integer) Description: Show artwork from behind, Value: 1",
+      "\t\t\t\t\t\t\t185 heading Projector, Value: 3",
+      "\t\t\t\t\t\t\t\t186 button (expanded) Description: Projector, Secondary Actions: Collapse"
+    ]
+  }
+]

@@ -1,0 +1,27 @@
+MATT HALL PORTFOLIO - MAINTENANCE GUIDE
+Linked edition: 29 October 2026
+
+Start with 00-complete-condensed-guide.pdf for the overview.
+Use 08-task-to-script-reference.pdf when you know what you want to change.
+Use 09-script-function-index.pdf when you know a script or function name.
+
+The settings catalog is Chapter 10; the asset/source map is Chapter 11.
+The included settings CSV/JSON supports searching/filtering all central fields.
+KEEP ALL TWELVE PDFS IN THIS FOLDER.
+Footer links use relative filenames. The alphabetical index links to exact
+task pages. A PDF reader may restrict local cross-file links; internal
+contents, bookmarks and printed page numbers remain usable independently.
+
+The guide covers the current local working tree, which may include changes
+not published to the live website. Source anchors are checked by the builder;
+selected UI routes were inspected. It is not a full browser/device acceptance
+report or an exhaustive inventory of every internal function.
+
+Editable sources: docs/user-guide/ in the website repository.
+Rebuild all linked PDFs: python tools/build-user-guide.py --all
+Use an installed/bundled Python with ReportLab and pypdf.
+Render the resulting PDFs with Poppler and inspect before sharing.
+
+Remaining: broader recipe acceptance, content round trips, device audio,
+more screenshots and expanded settings/asset coverage. Folder migration,
+architecture/animation work and mobile readiness remain separate phases.
