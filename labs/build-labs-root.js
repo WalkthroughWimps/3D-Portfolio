@@ -10,6 +10,8 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const labs = path.join(root, "labs");
 const source = path.join(labs, "routemap-source");
+const cakeSource = path.join(labs, "cake-source");
+const cakeOutput = path.join(root, "dist-labs-root", "cake");
 const output = path.join(root, "dist-labs-root");
 const routeOutput = path.join(output, "routemap");
 const files = ["index.html", "styles.css", "accessibility.css", "accessibility.js", "map.js", "manifest.webmanifest", "service-worker.js"];
@@ -27,11 +29,21 @@ function insideProject(target) {
 
 if (!insideProject(output)) throw new Error("Labs output must remain inside the project.");
 if (!fs.existsSync(source)) throw new Error("Route Map Labs source is missing.");
+if (!fs.existsSync(path.join(cakeSource, "cake", "index.html"))) throw new Error("Cake Labs snapshot is missing.");
+if (!insideProject(cakeOutput)) throw new Error("Cake Labs output must remain inside the project.");
 
-fs.rmSync(output, { recursive: true, force: true });
+fs.rmSync(output, { recursive: true, force: true, maxRetries: 5, retryDelay: 1000 });
 fs.mkdirSync(routeOutput, { recursive: true });
 fs.copyFileSync(path.join(labs, "index.html"), path.join(output, "index.html"));
 fs.copyFileSync(path.join(labs, "styles.css"), path.join(output, "styles.css"));
+fs.cpSync(path.join(cakeSource, "cake"), cakeOutput, { recursive: true });
+for (const file of ["_headers", "_redirects"]) {
+  fs.copyFileSync(path.join(cakeSource, file), path.join(output, file));
+}
+fs.writeFileSync(path.join(output, "404.html"), `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Page not found · Matt Hall Labs</title></head>
+<body><main><h1>Page not found</h1><p>This Labs preview has no page at that address.</p><a href="/">Return to Labs</a> · <a href="/cake/">Open Cake Studio</a></main></body></html>
+`, "utf8");
 
 for (const file of files) fs.copyFileSync(path.join(source, file), path.join(routeOutput, file));
 for (const directory of directories) {
@@ -66,7 +78,7 @@ globalThis.RV_RUNTIME_CONFIG = Object.freeze({
 `;
 fs.writeFileSync(path.join(routeOutput, "scripts", "config", "runtime-config.js"), runtimeConfig, "utf8");
 
-const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The Route Map package contains no Cloudflare admin route, GitHub credential, or server write path.\n`;
+const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- /cake/ is a generated public snapshot of the Cake studio. Its authoritative source is https://github.com/WalkthroughWimps/cake.\n- Cake's route-scoped headers and redirects are retained. The host 404 is a generic Labs page so it does not brand unrelated missing routes as Cake pages.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The demos contain no Cloudflare admin route, GitHub credential, or server write path.\n`;
 fs.writeFileSync(path.join(output, "README-LABS-DEPLOYMENT.md"), readme, "utf8");
 
 console.log(`Labs package ready: ${output}`);

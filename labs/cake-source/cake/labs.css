@@ -1,0 +1,13 @@
+.labs-privacy-feedback{margin:0;padding:0;width:auto;border:0;border-radius:0;background:transparent;color:inherit;font:inherit;line-height:1.55}
+html[data-labs-preview] #cake-order:not([data-labs-privacy-ready="true"]){display:none!important}
+html[data-labs-preview] #order-overlay{display:none!important}
+#cake-order label:has([data-labs-private="true"]){display:none!important}
+body.labs-status-page{height:auto;min-height:100%;display:block;overflow:visible}
+body.labs-status-page .narrow{width:min(100%,760px);max-width:760px;height:auto;min-height:0;display:block;margin:0 auto;padding:1rem .65rem}
+body.labs-status-page .status-card{display:block;overflow:visible}
+body.labs-status-page #status-result:not([hidden]){display:block}
+html[data-labs-preview] #draft-notice{display:none!important}
+#labs-privacy-dialog{position:fixed;inset:50% auto auto 50%;transform:translate(-50%,-50%);width:min(30rem,calc(100vw - 2rem));max-width:none;max-height:calc(100vh - 2rem);overflow:auto;border:1px solid #c8bda8;border-radius:1rem;padding:1.25rem;background:#fffdf8;color:#211d18;box-shadow:0 1.2rem 4rem #0007}
+#labs-privacy-dialog::backdrop{background:#17130fc2}
+#labs-privacy-dialog h2{font-size:1.25rem;margin:0 0 .65rem}
+#labs-privacy-dismiss{min-height:44px;min-width:44px;margin-top:1rem;padding:.6rem 1.1rem}
