@@ -1,6 +1,7 @@
 import {getRefsContainerContour, getRefsElementFrames} from './snap-board.js';
 import {getRefsCompartmentContours, REFS_POCKET_IDS} from './contours.js';
 import {createCabinetMaterialLibrary, isCabinetWood} from './cabinet-materials.js';
+import {createRefsIrisPocketGeometry, refsIrisPocketRim} from './spherical-iris.js';
 
 const UNIT = 1.25 * 3 / 1536;
 const local = (point, options) => ({x: (point.x - 365) * UNIT * options.width,
@@ -211,6 +212,25 @@ function frontGeometry(THREE, outer, openings, options, frontY, backY) {
   return geometry;
 }
 
+function rearPanelGeometry(THREE, contour, pocket, y) {
+  const hole = pocket ? Array.from({length: 128}, (_, i) => {
+    const angle = 2 * Math.PI * i / 128;
+    const radius = refsIrisPocketRim(pocket, .003);
+    return new THREE.Vector2(pocket.x + radius * Math.cos(angle),
+      pocket.z + radius * Math.sin(angle));
+  }) : [];
+  const all = [...contour, ...hole.map(p => ({x: p.x, z: p.y}))];
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(
+    all.flatMap(p => [p.x, y, p.z]), 3));
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(
+    all.flatMap(p => [p.x / .5, p.z / .5]), 2));
+  geometry.setIndex(THREE.ShapeUtils.triangulateShape(
+    contour.map(p => new THREE.Vector2(p.x, p.z)), hole.length ? [hole] : []).flat());
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 /** A face-local, resource-owned shell with a cut-through sculpted front. */
 export function createRefsCabinet(THREE, parent, options, contrast) {
   const root = new THREE.Group(); root.name = 'refs.cabinet'; parent.add(root);
@@ -225,17 +245,39 @@ export function createRefsCabinet(THREE, parent, options, contrast) {
   const library = createCabinetMaterialLibrary(THREE);
   const materials = [shell, side, bronze, recess];
   let owned = [], disposed = false, metrics = null, lastContrast = contrast;
+  let pocket = null, pocketMesh = null, backMesh = null, currentOptions = options;
   function clear() {
     for (const mesh of owned) { root.remove(mesh); mesh.geometry.dispose(); }
-    owned = [];
+    owned = []; pocketMesh = backMesh = null;
   }
   function add(name, geometry, material) {
     const mesh = new THREE.Mesh(geometry, material); mesh.name = name;
     root.add(mesh); owned.push(mesh); return mesh;
   }
+  function removeOwned(mesh) {
+    if (!mesh) return;
+    mesh.removeFromParent(); mesh.geometry.dispose();
+    owned.splice(owned.indexOf(mesh), 1);
+  }
+  function refreshBack() {
+    removeOwned(backMesh); removeOwned(pocketMesh);
+    backMesh = pocketMesh = null;
+    if (!root.visible || !metrics) return;
+    const cup = currentOptions.dummyIrisEnabled ? pocket : null;
+    backMesh = add('refs.cabinet.full-rear-panel',
+      rearPanelGeometry(THREE, metrics.contour, cup, metrics.rearY + .003), side);
+    // The full rear panel and local mound participate in skin deployment.
+    backMesh.userData.refsIrisPocket = true;
+    if (cup) {
+      pocketMesh = add('refs.cabinet.iris-rear-mound',
+        createRefsIrisPocketGeometry(THREE, cup, .003), side);
+      pocketMesh.userData.refsIrisPocket = true;
+    }
+  }
   function rebuild(next) {
     if (disposed) return;
     clear();
+    currentOptions = next;
     root.visible = next.cabinetEnabled;
     const rearY = -.08, frontY = rearY - next.cabinetDepth;
     const frames = getRefsElementFrames(next);
@@ -281,6 +323,12 @@ export function createRefsCabinet(THREE, parent, options, contrast) {
       if (next.cabinetFrontEnabled && !next.cabinetCutaway) add(`refs.cabinet.${id}.recess-wall`,
         bandGeometry(THREE, pockets[id].map(p => local(p, next)), rearY + .002, frontBack), recess);
     }
+    refreshBack();
+  }
+  function setPocket(next) {
+    if (disposed || JSON.stringify(next) === JSON.stringify(pocket)) return;
+    pocket = next && {...next};
+    refreshBack();
   }
   function setContrast(gain) {
     lastContrast = gain;
@@ -316,7 +364,8 @@ export function createRefsCabinet(THREE, parent, options, contrast) {
     setContrast(lastContrast);
   }
   rebuild(options); configureAppearance(options);
-  return {root, rebuild, configureAppearance, setContrast, getMetrics: () => metrics,
+  return {root, rebuild, setPocket, configureAppearance, setContrast, getMetrics: () => metrics,
+    getDoorMaterialSources: () => ({face: shell, side, trim: bronze}),
     dispose() { if (disposed) return; disposed = true; clear(); root.removeFromParent();
       for (const material of materials) material.dispose(); library.dispose(); }};
 }

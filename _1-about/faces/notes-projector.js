@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
 /** A shielded optical head on the Notes arm; its image borrows the live glass texture. */
-export function createNotesProjector(parent, cube, face) {
+export function createNotesProjector(parent, face) {
   const group = new THREE.Group(); group.name = 'Notes shielded projector'; parent.add(group);
   const resources = new Set(), own = value => { resources.add(value); return value; };
   const metal = own(new THREE.MeshStandardMaterial({color:0x263844,metalness:.7,roughness:.35}));
@@ -13,10 +13,11 @@ export function createNotesProjector(parent, cube, face) {
   mesh(new THREE.CircleGeometry(.025,32),lensMaterial,'Soft blue projector lens',-.478).rotation.y = -Math.PI/2;
   const haloMaterial = own(new THREE.MeshBasicMaterial({color:0x8ed6de,transparent:true,opacity:.24,depthWrite:false}));
   const halo = mesh(new THREE.TorusGeometry(.038,.003,6,48),haloMaterial,'Projector side light',-.459); halo.rotation.y = Math.PI/2;
-  const beamMaterial = own(new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,uniforms:{},vertexShader:'varying vec3 n,v; void main(){vec4 p=modelViewMatrix*vec4(position,1.);n=normalize(normalMatrix*normal);v=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',fragmentShader:'varying vec3 n,v;void main(){float edge=pow(1.-abs(dot(normalize(n),normalize(v))),2.);gl_FragColor=vec4(.36,.64,.72,.008+.025*edge);}'}));
+  const beamMaterial = own(new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,uniforms:{glow:{value:1}},vertexShader:'varying vec3 n,v; void main(){vec4 p=modelViewMatrix*vec4(position,1.);n=normalize(normalMatrix*normal);v=normalize(-p.xyz);gl_Position=projectionMatrix*p;}',fragmentShader:'varying vec3 n,v;uniform float glow;void main(){float edge=pow(1.-abs(dot(normalize(n),normalize(v))),2.);gl_FragColor=vec4(.36,.64,.72,(.008+.025*edge)*glow);}'}));
   const beam = mesh(new THREE.CylinderGeometry(.885,.025,.488,64,1,true),beamMaterial,'Notes optical cone to third glass ring',-.722); beam.rotation.z = Math.PI/2;
-  const profile = [], point = new THREE.Vector3(); cube.updateWorldMatrix(true,true);
-  const inverse = cube.matrixWorld.clone().invert(), samples = [];
+  const profile = [], point = new THREE.Vector3(); parent.updateWorldMatrix(true,true);
+  face.backing?.updateWorldMatrix(true,true);
+  const inverse = parent.matrixWorld.clone().invert(), samples = [];
   face.backing?.traverse(node => { if (!node.isMesh) return; const transform = inverse.clone().multiply(node.matrixWorld), p = node.geometry.attributes.position;
     for (let i=0;i<p.count;i++) { point.fromBufferAttribute(p,i).applyMatrix4(transform); const r=Math.hypot(point.y,point.z); if (r<.4) samples.push({r,x:point.x}); }
   });
@@ -30,10 +31,15 @@ export function createNotesProjector(parent, cube, face) {
   const image=mesh(geometry,imageMaterial,'Notes live curved backing projection',0);
   const glassCenter = new THREE.Vector3();
   let snapshot={};
-  return {group,update(){const source=face.runtime?.projectionSource,notes=snapshot.about?.notes||{};group.visible=notes.enabled!==false;const active=notes.projector!==false;halo.visible=active;haloMaterial.opacity=active ? .24 : 0;lensMaterial.opacity=active ? .5 : .12;beam.visible=active&&!face.backing?.visible;image.visible=active&&notes.backingProjection!==false&&Boolean(face.backing?.visible&&source);if(source){
+  return {group,update(){const source=face.runtime?.projectionSource,notes=snapshot.about?.notes||{};group.visible=notes.enabled!==false;const active=notes.projector!==false;
+    const contrast=THREE.MathUtils.clamp(snapshot.start?.contrast??.5,0,1),smooth=contrast*contrast*(3-2*contrast);
+    const glow=(.08+(2.4-.08)*smooth)/1.24;
+    halo.visible=active;haloMaterial.opacity=active ? Math.min(1,.24*glow) : 0;
+    lensMaterial.opacity=Math.min(1,(active ? .5 : .12)*glow);beamMaterial.uniforms.glow.value=glow;
+    beam.visible=active&&!face.backing?.visible;image.visible=active&&notes.backingProjection!==false&&Boolean(face.backing?.visible&&source);if(source){
     imageMaterial.uniforms.image.value=source.texture;imageMaterial.uniforms.roll.value=source.carrier.rotation.z;
     source.carrier.getWorldPosition(glassCenter);parent.worldToLocal(glassCenter);
     const length=Math.max(.01,-.478-glassCenter.x),radius=source.radius/.885;
     beam.position.x=(glassCenter.x-.478)/2;beam.scale.set(radius,length/.488,radius);
-  }},applySettings(next){snapshot=next;},dispose(){group.removeFromParent();resources.forEach(resource=>resource.dispose());resources.clear();}};
+  }},applySettings(next){snapshot=next;this.update();},dispose(){group.removeFromParent();resources.forEach(resource=>resource.dispose());resources.clear();}};
 }

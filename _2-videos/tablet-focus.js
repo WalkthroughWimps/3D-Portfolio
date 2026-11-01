@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { prefersReducedMotion } from '../_7-shared-scripts/core/motion-preference.js';
 
 // Canvas dimensions never depend on the header. A projection offset centers the
 // tablet in the usable area without stretching its pixels or changing its tilt.
@@ -63,11 +64,11 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
     destinationLimits = destination;
     const fromDistance = from.position.distanceTo(from.target);
     const toDistance = destination.position.distanceTo(destination.target);
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const started = performance.now();
     const step = now => {
       if (disposed) return;
-      const t = Math.min(1, (now - started) / duration);
+      const reducedMotion = prefersReducedMotion();
+      const t = reducedMotion ? 1 : Math.min(1, (now - started) / duration);
       const ease = t * t * t * (t * (t * 6 - 15) + 10);
       camera.position.lerpVectors(from.position, destination.position, ease);
       controls.target.lerpVectors(from.target, destination.target, ease);
@@ -85,7 +86,8 @@ export function createTabletFocus({ camera, controls, tabletGroup, screenMesh, r
       if (t < 1) animation = requestAnimationFrame(step);
       else { cancel(); controls.update(); }
     };
-    animation = requestAnimationFrame(step);
+    if (prefersReducedMotion()) step(started);
+    else animation = requestAnimationFrame(step);
   };
   const resize = () => {
     if (disposed) return;

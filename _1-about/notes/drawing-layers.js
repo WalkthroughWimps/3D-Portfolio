@@ -1,10 +1,11 @@
 import { reorderSlot } from '../../_7-shared-scripts/panel-assembly/StableReorder.mjs';
 import { children, leaves, groupContext, selectionRoots, layerEditable, nodeVisible, inIsolation, objectEditable } from './drawing-document.js';
+import { mountCollapsibleSections } from '../../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
 
 export function createLayersPanel({ getDocument, getSelection, getIsolation = () => null, onSelect, onAction }) {
   const panel = document.createElement('section'); panel.className = 'notes-layers'; panel.hidden = true;
   panel.setAttribute('aria-label', 'Drawing layers');
-  panel.innerHTML = '<header><h2>Layers</h2><div class="notes-layer-header-actions"><button class="notes-layer-add" type="button" data-layer-action="add">+ Pane</button><button type="button" data-layer-action="close" aria-label="Close layers">×</button></div></header><div class="notes-layer-tree" role="tree" aria-label="Glass panes and objects"></div><footer><div class="notes-layer-actions"><button type="button" data-layer-action="group" title="Group (Ctrl/Cmd+G)">Group</button><button type="button" data-layer-action="ungroup" title="Ungroup (Ctrl/Cmd+Shift+G)">Ungroup</button></div><button type="button" class="notes-clear" data-layer-action="clear">Clear pane</button></footer>';
+  panel.innerHTML = '<header><h2>Layers</h2><button class="notes-layers-disclosure" type="button" aria-label="Toggle layer controls"></button><div class="notes-layer-header-actions"><button class="notes-layer-add" type="button" data-layer-action="add">+ Pane</button></div></header><div class="notes-layer-tree" role="tree" aria-label="Glass panes and objects"></div><footer><div class="notes-layer-actions"><button type="button" data-layer-action="group" title="Group (Ctrl/Cmd+G)">Group</button><button type="button" data-layer-action="ungroup" title="Ungroup (Ctrl/Cmd+Shift+G)">Ungroup</button></div><button type="button" class="notes-clear" data-layer-action="clear">Clear pane</button></footer>';
   const expanded = new Set(), collapsedPanes = new Set(), tree = panel.querySelector('.notes-layer-tree'), panes = tree; let signature = '', pendingRename = false, pointer = null, suppressClick = false;
   const control = new AbortController();
   const toolbar = document.createElement('div'); toolbar.className = 'notes-layer-toolbar'; toolbar.setAttribute('role', 'group'); toolbar.setAttribute('aria-label', 'Active pane and selection');
@@ -12,6 +13,13 @@ export function createLayersPanel({ getDocument, getSelection, getIsolation = ()
     const b = document.createElement('button'); b.type = 'button'; b.dataset.layerAction = action; b.append(document.createTextNode(label)); const kbd = document.createElement('kbd'); kbd.textContent = shortcut; b.append(kbd); b.setAttribute('aria-keyshortcuts', shortcut.replace('Ctrl', 'Control')); b.title = shortcut ? `${label} (${shortcut})` : label; kbd.remove(); toolbar.append(b);
   }
   panel.querySelector('footer').before(toolbar);
+  const panelFolds = mountCollapsibleSections(panel, {
+    scope: 'about:notes:layers', group: 'layers', headings: false, reorder: false,
+    disclosures: [{
+      id: 'controls', heading: panel.querySelector('.notes-layers-disclosure'),
+      body: [toolbar, tree, panel.querySelector('footer')], defaultExpanded: true
+    }]
+  });
   function button(text, label, callback, disabled = false) {
     const el = document.createElement('button'); el.type = 'button'; el.textContent = text; el.title = label; el.setAttribute('aria-label', label); el.disabled = disabled;
     el.addEventListener('click', event => { event.stopPropagation(); callback(); }); return el;
@@ -96,7 +104,7 @@ export function createLayersPanel({ getDocument, getSelection, getIsolation = ()
     const name = tree.querySelector('.notes-layer-row.is-selected .notes-layer-name') || panes.querySelector('.notes-pane-row.is-active .notes-layer-name');
     name?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
   }
-  const footerKeys = { add: 'Ctrl+Alt+N', group: 'Ctrl+G', ungroup: 'Ctrl+Shift+G', close: 'F7' };
+  const footerKeys = { add: 'Ctrl+Alt+N', group: 'Ctrl+G', ungroup: 'Ctrl+Shift+G' };
   panel.querySelectorAll('[data-layer-action]').forEach(button => { const shortcut = footerKeys[button.dataset.layerAction]; if (!shortcut) return; const badge = document.createElement('kbd'); badge.textContent = shortcut; if (button.dataset.layerAction === 'add') badge.textContent = ''; else if (button.dataset.layerAction !== 'close') button.title = `${button.textContent} (${shortcut})`; button.setAttribute('aria-keyshortcuts', shortcut.replace('Ctrl', 'Control')); button.title = `${button.textContent} (${shortcut}; Ctrl also supports Cmd)`; });
   
   panel.addEventListener('click', event => {
@@ -179,5 +187,5 @@ export function createLayersPanel({ getDocument, getSelection, getIsolation = ()
       }
       if (event.key === 'Enter' || event.code === 'Space') { item.querySelector('.notes-layer-row').click(); return true; }
       return false;
-    }, dispose() { finishDrop(true); control.abort(); panel.remove(); } };
+    }, dispose() { finishDrop(true); control.abort(); panelFolds.dispose(); panel.remove(); } };
 }

@@ -45,7 +45,25 @@ export class PanelGraphicOrientation{
       }
       if(!entry.front||!entry.back)throw new Error(`Missing paired prints: ${id}`);
       this.prints.set(id,entry);
+      // Establish the two physical print orientations once. The back is
+      // upside down in card space, so a north/south half-turn reads upright.
+      this._orient(entry.front,panel.baseQuaternion);
+      const north=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(-1,0,0),Math.PI)
+        .multiply(panel.baseQuaternion);
+      this._orient(entry.back,north);
     }
+  }
+  _orient(record,pose){
+    let best=0,score=-Infinity;
+    for(let quarter=0;quarter<4;quarter++){
+      const angle=quarter*Math.PI/2,inv=record.basis.inv;
+      const u=Math.sin(angle),v=Math.cos(angle);
+      const up=new THREE.Vector3(inv[0]*u+inv[1]*v,inv[2]*u+inv[3]*v,0)
+        .transformDirection(record.localToPivot).applyQuaternion(pose).normalize();
+      const candidate=up.y*record.imageUpSign;
+      if(candidate>score){score=candidate;best=angle;}
+    }
+    this.setAngle(record,best);record.fixedAngle=best;
   }
   /** Call after the name frame installs its live texture. Artwork owners may replace either map. */
   bindArtwork(){
@@ -55,74 +73,32 @@ export class PanelGraphicOrientation{
       const front=frontMaterials.find(m=>/ front print$/i.test(m?.name||''));
       const back=backMaterials.find(m=>/ back print$/i.test(m?.name||''));
       if(!front||!back)throw new Error(`Missing artwork material pair: ${id}`);
-      this.artwork.set(id,{front,back,icon:front.map,name:back.map,iconFront:front.map,iconBack:front.map,nameFront:back.map,nameBack:back.map});
-      this.syncDisplay(id);
+      this.artwork.set(id,{front,back,icon:front.map,name:back.map});
     }
   }
-  setArtwork(panelId,{icon,name,iconFront,iconBack,nameFront,nameBack}={}){
+  setArtwork(panelId,{icon,name,iconFront,nameBack}={}){
     const entry=this.artwork.get(panelId);if(!entry)return false;
-    if(icon){entry.icon=icon;entry.iconFront=icon;entry.iconBack=icon;}
-    if(name){entry.name=name;entry.nameFront=name;entry.nameBack=name;}
-    if(iconFront)entry.iconFront=iconFront;if(iconBack)entry.iconBack=iconBack;
-    if(nameFront)entry.nameFront=nameFront;if(nameBack)entry.nameBack=nameBack;
-    this.syncDisplay(panelId);return true;
-  }
-  syncDisplay(panelId,options){
-    const entry=this.artwork.get(panelId),panel=this.motion.panels.get(panelId);
-    if(!entry||!panel)return false;
-    // A click only changes the next resting-side intent. Keep both currently
-    // viewable artwork and the committed hover-entry image attached to their
-    // surfaces; prepare the hidden return surface after the midpoint.
-    const preserveVisible=options?.preserveVisible===true||Boolean(panel.turn);
-    const frontVisible=FRONT.clone().applyQuaternion(panel.baseQuaternion).z>=0;
-    const desired=this.motion.getLogicalSide(panelId);
-    if(preserveVisible){
-      if(panel.turn?.hover&&panel.turn.angle<=Math.PI)return true;
-      const hiddenFront=!frontVisible;
-      const material=hiddenFront?entry.front:entry.back;
-      const hiddenSide=panel.turn?desired:(desired==='icon'?'name':'icon');
-      const map=hiddenSide==='icon'?(hiddenFront?entry.iconFront:entry.iconBack):(hiddenFront?entry.nameFront:entry.nameBack);
-      if(material.map!==map){material.map=map;material.needsUpdate=true;}
-      return true;
-    }
-    const baselineFront=panel.turn?.hover?FRONT.clone().applyQuaternion(panel.turn.start).z>=0:frontVisible;
-    const frontMap=(baselineFront?desired==='icon':desired==='name')?entry.iconFront:entry.nameFront;
-    const backMap=(baselineFront?desired==='icon':desired==='name')?entry.nameBack:entry.iconBack;
-    if(entry.front.map!==frontMap){entry.front.map=frontMap;entry.front.needsUpdate=true;}
-    if(entry.back.map!==backMap){entry.back.map=backMap;entry.back.needsUpdate=true;}
-    panel.visibleArtworkSide=desired;
+    const front=iconFront||icon,back=nameBack||name;
+    if(front){entry.icon=front;if(entry.front.map!==front){entry.front.map=front;entry.front.needsUpdate=true;}}
+    if(back){entry.name=back;if(entry.back.map!==back){entry.back.map=back;entry.back.needsUpdate=true;}}
+    // Legacy mirrored variants never move between physical surfaces.
     return true;
   }
-  /** Predict the landing side and turn its UVs before that side becomes visible. */
-  prepareFlip(panelId,axis,{start,desired}={}){
-    const panel=this.motion.panels.get(panelId),pair=this.prints.get(panelId);
-    if(!panel||!pair)return;
-    const hoverEntry=panel.turn?.hover&&start===undefined;
-    start??=panel.baseQuaternion;
-    const frontVisible=FRONT.clone().applyQuaternion(start).z>0;
-    const incoming=frontVisible?pair.back:pair.front;
-    // Bind the landing image while its face is still hidden. The old visible
-    // print stays intact until the physical turn hides it.
-    const artwork=this.artwork.get(panelId);
-    if(artwork){
-      if(desired===undefined){
-        desired=hoverEntry?(panel.turn.startSide==='icon'?'name':'icon'):this.motion.getLogicalSide(panelId);
-      }
-      const target=desired==='icon'?(frontVisible?artwork.iconBack:artwork.iconFront):(frontVisible?artwork.nameBack:artwork.nameFront);
-      const material=frontVisible?artwork.back:artwork.front;
-      if(material.map!==target){material.map=target;material.needsUpdate=true;}
-    }
-    const landing=new THREE.Quaternion().setFromAxisAngle(axis,Math.PI).multiply(start);
-    let best=0,score=-Infinity;
-    for(let quarter=0;quarter<4;quarter++){
-      const angle=quarter*Math.PI/2,inv=incoming.basis.inv;
-      // Image +V after UV rotation: M^-1 R(-angle) (0,1).
-      const u=Math.sin(angle),v=Math.cos(angle);
-      const up=new THREE.Vector3(inv[0]*u+inv[1]*v,inv[2]*u+inv[3]*v,0)
-        .transformDirection(incoming.localToPivot).applyQuaternion(landing).normalize();
-      if(up.y*incoming.imageUpSign>score){score=up.y*incoming.imageUpSign;best=angle;}
-    }
-    this.setAngle(incoming,best);
+  syncDisplay(panelId){
+    const entry=this.artwork.get(panelId),panel=this.motion.panels.get(panelId);
+    if(!entry||!panel)return false;
+    panel.visibleArtworkSide=FRONT.clone().applyQuaternion(panel.baseQuaternion).z>=0?'icon':'name';
+    return true;
+  }
+  visibleUpScore(panelId,quaternion){
+    const pair=this.prints.get(panelId);if(!pair)return 1;
+    const frontVisible=FRONT.clone().applyQuaternion(quaternion).z>=0;
+    const print=frontVisible?pair.front:pair.back;
+    const {angle,basis,localToPivot,imageUpSign}=print;
+    const u=Math.sin(angle),v=Math.cos(angle),inv=basis.inv;
+    const up=new THREE.Vector3(inv[0]*u+inv[1]*v,inv[2]*u+inv[3]*v,0)
+      .transformDirection(localToPivot).applyQuaternion(quaternion).normalize();
+    return up.y*imageUpSign;
   }
   setAngle(record,angle){
     const uv=record.geometry.getAttribute('uv'),base=record.base;
@@ -131,7 +107,7 @@ export class PanelGraphicOrientation{
       uv.array[i]=.5+c*u-s*v;uv.array[i+1]=.5+s*u+c*v;}
     uv.needsUpdate=true;record.angle=angle;
   }
-  reset(){for(const record of this.owned)this.setAngle(record,0);}
+  reset(){for(const record of this.owned)this.setAngle(record,record.fixedAngle);}
   dispose(){for(const record of this.owned){record.mesh.geometry=record.original;record.geometry.dispose();}
     this.owned.length=0;this.prints.clear();this.artwork.clear();}
 }

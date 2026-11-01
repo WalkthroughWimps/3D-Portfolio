@@ -3,10 +3,19 @@ import {CABINET_MATERIALS} from './cabinet-materials.js';
 import {createRefsSelectorBacking} from './selector-backing.js';
 import {createRefsSelector} from './selector.js';
 import {createRefsPlateHousing} from './plate-housing.js';
-import {createRefsIrisPlaceholder} from './iris-placeholder.js';
+import {createRefsSphericalIris} from './spherical-iris.js';
+import {createRefsGlassDisplay} from './glass-display.js';
 import {createRefsPortraitWindow} from './portrait-window.js';
 import {normalizeRefsPlate, REFS_MAX_PLATES} from './plate-art.js';
 import {getRefsCompartmentContours} from './contours.js';
+import {createRefsDoors} from './doors.js';
+import {createRefsCabinetInteriors} from './cabinet-interiors.js';
+import {createRefsButterfly} from './butterfly.js';
+import {createRefsFaceOperations} from './face-operations.js';
+import {normalizeRefsDoors, REFS_DEFAULT_DOORS} from './door-options.js';
+import {REFS_ORIGINAL_QUOTE_TEXTS} from './reference-quotes.js';
+import {REFS_EXPORTED_DEFAULTS} from './exported-defaults.js';
+export {REFS_DOOR_IDS} from './door-options.js';
 export {REFS_MAX_PLATES} from './plate-art.js';
 
 const SNAP_RADIUS = 318;
@@ -16,36 +25,23 @@ const CANVAS_SIZE = 1536;
 const DRAWING_SCALE = 1.25;
 const WORLD_PER_DRAWING_UNIT = DRAWING_SCALE * 3 / CANVAS_SIZE;
 const FACE_OPENING_RADIUS = 333;
+// The authored About-face preset is the single source of startup/reset values.
 export const REFS_DEFAULT_OPTIONS = Object.freeze({
-  scale: 1, width: 1, height: 1, x: 0, y: 0, angle: 0,
-  outline: 'curio', roundness: .5, portraitRadius: 79, apertureRadius: 142,
-  baySpacing: 208, bayWidth: 62, lineWeight: 1, opacity: .68,
-  ink: '#e4dfcb', accent: '#65c5c8', innerTrim: true,
-  guides: true, anchors: true, opening: true, style: 'precision', hinges: false,
-  leftHinge: true, rightHinge: true, pairLinked: true,
-  cabinetEnabled: true, cabinetFrontEnabled: true, cabinetCutaway: false,
-  selectorBackingEnabled: true, housingEnabled: true,
-  dummyIrisEnabled: true, irisBulgeRatio: .15,
-  portraitWindowEnabled: true, portraitGlassEnabled: true, portraitLockEnabled: true,
-  portraitFrameWidthRatio: .20,
-  cabinetDepth: .22, wallThickness: .018,
-  cabinetFaceColor: '#182b3a', cabinetSideColor: '#182b3a', cabinetTrimColor: '#795b42',
-  cabinetFaceMaterial: 'painted', cabinetSideMaterial: 'painted',
-  cabinetWoodTint: 0, cabinetGrainScale: 1, cabinetSheen: .5,
-  mechanismEnabled: true, plateCount: 7, plateSpacing: .025, plateIndex: 0,
-  selectorAngle: 60, selectorSpeed: 1,
-  platesVersion: 1, plates: Array.from({length: 7}, () => Object.freeze({image: '', text: ''})),
-  elements: {}
+  ...REFS_EXPORTED_DEFAULTS,
+  doors: REFS_DEFAULT_DOORS,
+  plates: Object.freeze(REFS_EXPORTED_DEFAULTS.plates.map(plate => Object.freeze({...plate})))
 });
 const limits = Object.freeze({scale: [.6, 1.4], width: [.7, 1.3], height: [.7, 1.3],
   x: [-.35, .35], y: [-.35, .35], angle: [-Math.PI, Math.PI], roundness: [0, 1],
   portraitRadius: [48, 105], apertureRadius: [95, 170], baySpacing: [175, 240],
   bayWidth: [35, 80], lineWeight: [.5, 2], opacity: [0, 1],
-  cabinetDepth: [.04, .45], wallThickness: [.008, .05], irisBulgeRatio: [.03, 1],
+  cabinetDepth: [.04, .45], cabinetPosition: [-.5, .5], wallThickness: [.008, .05], irisBulgeRatio: [.03, 1],
+  irisOpening: [0, 100], irisSize: [.35, 1],
+  glassClarity: [0, 1], glassPolish: [0, 1], glassCurvature: [0, 1],
   cabinetWoodTint: [0, 1], cabinetGrainScale: [.5, 2], cabinetSheen: [0, 1],
   portraitFrameWidthRatio: [.14, .28],
   plateCount: [1, REFS_MAX_PLATES], plateSpacing: [.008, .06], plateIndex: [0, REFS_MAX_PLATES - 1],
-  selectorAngle: [35, 80], selectorSpeed: [.4, 2]});
+  selectorAngle: [35, 80], selectorSpeed: [.4, 2], doorSpeed: [.2, 4]});
 export const REFS_OPTION_LIMITS = limits;
 // Frames use the Illustrator plate's drawing coordinates: x grows to face-right,
 // y grows downward. The 365,405 origin is the middle of the square texture.
@@ -120,31 +116,72 @@ export function patchRefsElement(options, id, patch) {
   if (current.pairLinked && pairs[id]) elements[pairs[id]] = {...next, x: 730 - next.x};
   return normalizeRefsOptions({...current, elements});
 }
+/** A deliberate base-size edit also updates an existing custom frame. */
+export function patchRefsSizeOption(options, key, value) {
+  const current = normalizeRefsOptions(options);
+  const next = normalizeRefsOptions({...current, [key]: value});
+  const affected = {apertureRadius: ['aperture'], portraitRadius: ['portrait'],
+    bayWidth: ['leftBay', 'rightBay'], baySpacing: ['leftBay', 'rightBay']}[key];
+  if (!affected) return next;
+  const before = getRefsElementFrames(current), baseBefore = getBaseFrames(current), baseAfter = getBaseFrames(next);
+  const elements = {...next.elements};
+  for (const id of affected) {
+    if (!elements[id]) continue;
+    const old = before[id], from = baseBefore[id], to = baseAfter[id];
+    elements[id] = {...elements[id], x: old.x + to.x - from.x,
+      width: ['apertureRadius', 'portraitRadius'].includes(key) ? 2 * next[key] :
+        key === 'bayWidth' ? next[key] : old.width + to.width - from.width,
+      height: ['apertureRadius', 'portraitRadius'].includes(key) ? 2 * next[key] :
+        old.height + to.height - from.height};
+  }
+  return normalizeRefsOptions({...next, elements});
+}
 export function normalizeRefsOptions(value = {}) {
   const result = {...REFS_DEFAULT_OPTIONS};
   for (const [key, [min, max]] of Object.entries(limits)) {
     const number = Number(value[key]);
     if (Number.isFinite(number)) result[key] = Math.max(min, Math.min(max, number));
   }
+  // Enlarge the former default once; preserve custom sizes and subsequent
+  // intentional adjustments, including a versioned .8 selection.
+  if (Number(value.quoteDisplayVersion) < 2 || value.quoteDisplayVersion === undefined) {
+    if (Number(value.irisSize) === .8) result.irisSize = 1;
+  }
+  result.quoteDisplayVersion = 2;
   result.plateCount = Math.round(result.plateCount);
   // Earlier archives carried five default plates and had no content schema.
   // A versioned five-plate set is an intentional new choice.
   if (value.platesVersion !== 1 && (value.plateCount === undefined || Number(value.plateCount) === 5))
     result.plateCount = 7;
+  const hasIncomingPlates = Array.isArray(value.plates);
+  const assignOriginalQuotes = hasIncomingPlates && value.originalQuotesVersion !== 1;
+  if (assignOriginalQuotes) result.plateCount = Math.max(3, result.plateCount);
   result.plateIndex = Math.max(0, Math.min(result.plateCount - 1, Math.round(result.plateIndex)));
   result.platesVersion = 1;
-  const incomingPlates = Array.isArray(value.plates) ? value.plates : [];
+  const incomingPlates = hasIncomingPlates ? value.plates : REFS_DEFAULT_OPTIONS.plates;
   result.plates = Array.from({length: Math.min(REFS_MAX_PLATES,
-    Math.max(result.plateCount, incomingPlates.length))}, (_, index) => normalizeRefsPlate(incomingPlates[index]));
+    Math.max(result.plateCount, incomingPlates.length))}, (_, index) => {
+    const plate = normalizeRefsPlate(incomingPlates[index] ?? REFS_DEFAULT_OPTIONS.plates[index]);
+    // Apply the requested assignment once, retaining photos, colors and crop.
+    // Later edits or intentionally blank text remain editable after saving.
+    if (assignOriginalQuotes && index < REFS_ORIGINAL_QUOTE_TEXTS.length)
+      plate.text = REFS_ORIGINAL_QUOTE_TEXTS[index];
+    return plate;
+  });
+  result.originalQuotesVersion = 1;
+  result.doors = normalizeRefsDoors(value.doors);
+  if (typeof value.butterflyEnabled === 'boolean') result.butterflyEnabled = value.butterflyEnabled;
+  if (Object.hasOwn(result.doors, value.butterflyHost)) result.butterflyHost = value.butterflyHost;
   if (['curio', 'rounded', 'circular'].includes(value.outline)) result.outline = value.outline;
   if (['precision', 'sketch'].includes(value.style)) result.style = value.style;
   for (const key of ['cabinetFaceMaterial', 'cabinetSideMaterial'])
     if (CABINET_MATERIALS.includes(value[key])) result[key] = value[key];
-  for (const key of ['ink', 'accent', 'cabinetFaceColor', 'cabinetSideColor', 'cabinetTrimColor'])
+  for (const key of ['ink', 'accent', 'cabinetFaceColor', 'cabinetSideColor', 'cabinetTrimColor',
+    'glassBackingColor', 'glassTint', 'plateLightColor'])
     if (typeof value[key] === 'string' && /^#[\da-f]{6}$/i.test(value[key])) result[key] = value[key];
   for (const key of ['innerTrim', 'guides', 'anchors', 'opening', 'hinges', 'leftHinge', 'rightHinge', 'pairLinked',
     'cabinetEnabled', 'cabinetFrontEnabled', 'cabinetCutaway', 'selectorBackingEnabled',
-    'housingEnabled', 'mechanismEnabled', 'dummyIrisEnabled',
+    'housingEnabled', 'mechanismEnabled', 'dummyIrisEnabled', 'glassDisplayEnabled',
     'portraitWindowEnabled', 'portraitGlassEnabled', 'portraitLockEnabled'])
     if (typeof value[key] === 'boolean') result[key] = value[key];
   const incoming = value.elements && typeof value.elements === 'object' && !Array.isArray(value.elements) ? value.elements : {};
@@ -383,11 +420,24 @@ export function createRefsSnapBoard(THREE) {
 
   let disposed = false, contrast = refsContrastGain(.5), clearanceProbe = null, clearance = null;
   const cabinet = createRefsCabinet(THREE, placement, options, contrast);
-  const selectorBacking = createRefsSelectorBacking(THREE, placement, options, cabinet.getMetrics(), contrast);
   const plateHousing = createRefsPlateHousing(THREE, placement, options, cabinet.getMetrics(), contrast);
-  const dummyIris = createRefsIrisPlaceholder(THREE, placement, options, cabinet.getMetrics(), contrast);
+  const iris = createRefsSphericalIris(THREE, placement, options, cabinet.getMetrics(), contrast);
+  iris.setCabinetMaterials(cabinet.getDoorMaterialSources());
+  const glassDisplay = createRefsGlassDisplay(THREE, iris, options, contrast);
+  cabinet.setPocket(iris.root.visible ? iris.getPocket() : null);
+  const selectorBacking = createRefsSelectorBacking(THREE, placement, options,
+    cabinet.getMetrics(), contrast, iris.getPocket());
+  const doors = createRefsDoors(THREE, placement, options, cabinet.getMetrics(), contrast);
+  doors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+  const cabinetInteriors = createRefsCabinetInteriors(THREE, doors, options, cabinet.getMetrics(), contrast);
+  cabinetInteriors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+  const butterfly = createRefsButterfly(THREE, placement, doors, options);
   const selector = createRefsSelector(THREE, placement, options, cabinet.getMetrics(), contrast);
+  const displayText = state => glassDisplay.setText(options.plates[state.currentIndex]?.text ?? '');
+  const unsubscribeDisplayText = selector.subscribe(displayText);
+  displayText(selector.getState());
   const portraitWindow = createRefsPortraitWindow(THREE, placement, options, cabinet.getMetrics(), contrast);
+  const faceOperations = createRefsFaceOperations(placement, options, cabinet.getMetrics(), contrast, iris.getState());
   const listeners = new Set();
   function applyAppearance() {
     placement.scale.setScalar(options.scale);
@@ -401,16 +451,27 @@ export function createRefsSnapBoard(THREE) {
     if (redraw || ['cabinetEnabled', 'cabinetFrontEnabled', 'cabinetCutaway', 'cabinetDepth', 'wallThickness'].some(
       key => next[key] !== previous[key])) cabinet.rebuild(next);
     cabinet.configureAppearance(next);
+    iris.configure(next, cabinet.getMetrics());
+    iris.setCabinetMaterials(cabinet.getDoorMaterialSources());
+    cabinet.setPocket(iris.root.visible ? iris.getPocket() : null);
     selector.configure(next, cabinet.getMetrics());
-    selectorBacking.configure(next, cabinet.getMetrics());
+    glassDisplay.configure(next);
+    displayText(selector.getState());
+    selectorBacking.configure(next, cabinet.getMetrics(), iris.root.visible ? iris.getPocket() : null);
+    doors.configure(next, cabinet.getMetrics());
+    doors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+    cabinetInteriors.configure(next, cabinet.getMetrics());
+    cabinetInteriors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+    butterfly.configure(next);
     plateHousing.configure(next, cabinet.getMetrics());
-    dummyIris.configure(next, cabinet.getMetrics());
     portraitWindow.configure(next, cabinet.getMetrics());
+    faceOperations.configure(next, cabinet.getMetrics(), iris.getState());
   }
   return {
-    root, carrier, placement, sketch, cabinet, selectorBacking, plateHousing, dummyIris, selector, portraitWindow,
+    root, carrier, placement, sketch, cabinet, cabinetInteriors, butterfly, selectorBacking, plateHousing, iris, glassDisplay, selector, portraitWindow, faceOperations, doors,
     getOptions() { return {...options, plates: options.plates.map(plate => ({...plate})),
-      elements: Object.fromEntries(Object.entries(options.elements).map(([id, value]) => [id, {...value}]))}; },
+      elements: Object.fromEntries(Object.entries(options.elements).map(([id, value]) => [id, {...value}])),
+      doors: Object.fromEntries(Object.entries(options.doors).map(([id, value]) => [id, {...value}]))}; },
     getElementFrames() { return getRefsElementFrames(options); },
     getElementDescriptors() { return getRefsElementDescriptors(options); },
     getMetrics() { return cabinet.getMetrics(); },
@@ -443,10 +504,22 @@ export function createRefsSnapBoard(THREE) {
     },
     nextPlate() { return this.selectPlate((options.plateIndex + 1) % options.plateCount); },
     previousPlate() { return this.selectPlate((options.plateIndex + options.plateCount - 1) % options.plateCount); },
-    update(dt) { selector.update(dt); },
-    setReducedMotion(value) { selector.setReducedMotion(value); },
-    suspend() { selector.suspend(); },
-    resume() { selector.resume(); },
+    update(dt) { selector.update(dt); iris.update(dt); doors.setWallpaperTexture(selectorBacking.getWallpaperTexture()); doors.update(dt); butterfly.update(dt); },
+    setReducedMotion(value) { selector.setReducedMotion(value); iris.setReducedMotion(value); doors.setReducedMotion(value); butterfly.setReducedMotion(value); },
+    suspend() { selector.suspend(); iris.suspend(); doors.suspend(); butterfly.suspend(); },
+    resume() { selector.resume(); iris.resume(); doors.resume(); butterfly.resume(); },
+    setViewContext(context) { butterfly.setViewContext(context); },
+    getDoorState(id) { return doors.getState(id); },
+    getDoorStates() { return doors.getStates(); },
+    subscribeDoors(listener) { return doors.subscribe(listener); },
+    getDoorOptions(id) { return options.doors[id] ? {...options.doors[id]} : null; },
+    getPortal(id) { return doors.getPortal(id); },
+    updateDoor(id, patch) {
+      if (!Object.hasOwn(options.doors, id) || !patch || typeof patch !== 'object') return this.getOptions();
+      return this.setOptions({doors: {...options.doors, [id]: {...options.doors[id], ...patch}}});
+    },
+    setDoorOpen(id, open) { return this.updateDoor(id, {open: Boolean(open)}); },
+    toggleDoor(id) { const door = this.getDoorOptions(id); return door && this.setDoorOpen(id, !door.open); },
     patchElement(id, patch) { return this.setOptions(patchRefsElement(options, id, patch)); },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     setOptions(patch) {
@@ -460,15 +533,8 @@ export function createRefsSnapBoard(THREE) {
         JSON.stringify(nextOptions.elements) !== JSON.stringify(options.elements);
       options = nextOptions;
       configure(options, previousOptions, redraw);
-      if (clearanceProbe) {
+      if (clearanceProbe && !(Object.keys(patch).length === 1 && Object.hasOwn(patch, 'irisOpening'))) {
         clearance = clearanceProbe(this);
-        const appliedDepth = Math.min(options.cabinetDepth, clearance.maxDepth);
-        if (appliedDepth < options.cabinetDepth - 1e-9) {
-          const beforeCap = options;
-          options = {...options, cabinetDepth: appliedDepth};
-          configure(options, beforeCap, false);
-          clearance = clearanceProbe(this);
-        }
         clearance = {...clearance, requestedDepth: nextOptions.cabinetDepth,
           appliedDepth: options.cabinetDepth};
       }
@@ -486,21 +552,34 @@ export function createRefsSnapBoard(THREE) {
     setContrast(gain) {
       contrast = Number.isFinite(gain) ? Math.max(0, Math.min(2.4, gain)) : refsContrastGain(.5);
       cabinet.setContrast(contrast);
+      doors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+      cabinetInteriors.setCabinetMaterials(cabinet.getDoorMaterialSources());
+      cabinetInteriors.setContrast(contrast);
       selector.setContrast(contrast);
       selectorBacking.setContrast(contrast);
       plateHousing.setContrast(contrast);
-      dummyIris.setContrast(contrast);
+      iris.setContrast(contrast);
+      iris.setCabinetMaterials(cabinet.getDoorMaterialSources());
+      glassDisplay.setContrast(contrast);
       portraitWindow.setContrast(contrast);
+      faceOperations.setContrast(contrast);
+      doors.setContrast(contrast);
       applyAppearance();
     },
     dispose() {
       if (disposed) return; disposed = true;
       listeners.clear();
+      unsubscribeDisplayText();
       selector.dispose();
       selectorBacking.dispose();
       plateHousing.dispose();
-      dummyIris.dispose();
+      glassDisplay.dispose();
+      iris.dispose();
       portraitWindow.dispose();
+      faceOperations.dispose();
+      cabinetInteriors.dispose();
+      butterfly.dispose();
+      doors.dispose();
       cabinet.dispose();
       root.removeFromParent(); geometry.dispose(); texture.dispose(); material.dispose();
     }

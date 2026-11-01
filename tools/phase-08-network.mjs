@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 const origin='https://assets.matthallportfolio.com';
-const targets=['glb/card-test.glb','glb/toy-piano.glb','Renders/tablet-animation.webm','soundfonts/hypersound/hypersound.sf2','Videos/music-page/sunil-video_lq.webm','Videos/music-page/sunil-video.opus'];
+const targets=['glb/card-test.glb','glb/toy-piano.glb','Renders/tablet-animation.webm','soundfonts/hypersound/hypersound.sf2','Videos/music-page/sunil-video-lq.webm','Videos/music-page/sunil-video.opus'];
 const results=[];
 for (const requestOrigin of ['http://127.0.0.1:8879','https://matthallportfolio.com']) for (const key of targets) for (const mode of ['head','range']) {
   const url=`${origin}/${key}`;

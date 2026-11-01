@@ -1,0 +1,58 @@
+{
+  "panel_bounds": {
+    "upper": {
+      "name": "UPPER CLEAN PANEL BASE - exact authored shell",
+      "size_xyz": [
+        0.800000011920929,
+        0.03200000058859587,
+        0.6299999952316284
+      ],
+      "min_xyz": [
+        -0.4000000059604645,
+        -0.026000000536441803,
+        0.1899999976158142
+      ],
+      "max_xyz": [
+        0.4000000059604645,
+        0.006000000052154064,
+        0.8199999928474426
+      ],
+      "vertices": 11604,
+      "faces": 3868
+    },
+    "lower": {
+      "name": "LOWER CLEAN PANEL BASE - exact authored shell",
+      "size_xyz": [
+        0.9800000190734863,
+        0.03200000058859587,
+        0.6299999952316284
+      ],
+      "min_xyz": [
+        -0.49000000953674316,
+        -0.026000000536441803,
+        -0.8199999928474426
+      ],
+      "max_xyz": [
+        0.49000000953674316,
+        0.006000000052154064,
+        -0.1899999976158142
+      ],
+      "vertices": 124956,
+      "faces": 41652
+    }
+  },
+  "reference_meshes": 353,
+  "component_assets": 21,
+  "packed_images": 76,
+  "main_glb": {
+    "bytes": 8138092,
+    "nodes": 355,
+    "meshes": 237
+  },
+  "component_glb": {
+    "bytes": 3492176,
+    "nodes": 327,
+    "meshes": 152,
+    "named_assembly_roots": 21
+  }
+}

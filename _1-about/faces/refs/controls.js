@@ -1,9 +1,10 @@
 import {initPanelShell} from '../../../debug/panel-shell.js';
 import {getSettingsArchive} from '../../../_7-shared-scripts/panel-assembly/SettingsArchive.mjs';
-import {normalizeRefsOptions, REFS_DEFAULT_OPTIONS, REFS_MAX_PLATES} from './snap-board.js';
+import {normalizeRefsOptions, patchRefsSizeOption, REFS_DEFAULT_OPTIONS, REFS_MAX_PLATES} from './snap-board.js';
 import {createRefsPlateArtwork, REFS_MAX_TEXT_LENGTH} from './plate-art.js';
 import {compactRefsPreview, getRefsOriginal, sampleRefsOriginalPixel, saveRefsOriginal} from './picture-source.js';
 import {createRefsEditor} from './editor.js';
+import {REFS_DOOR_IDS} from './door-options.js';
 
 const OWNER = 'about.refs.sketch', PAGE = 'about';
 const fields = [
@@ -19,9 +20,12 @@ const fields = [
 ];
 const cabinetFields = [
   ['cabinetDepth', 'Cabinet depth', .04, .45, .005, 3],
+  ['cabinetPosition', 'Cabinet position', -.5, .5, .005, 3],
   ['portraitFrameWidthRatio', 'Portrait frame border / radius', .14, .28, .01, 2],
   ['wallThickness', 'Wall thickness', .008, .05, .001, 3],
-  ['irisBulgeRatio', 'Dummy iris bulge / aperture radius', .03, 1, .01, 2],
+  ['irisOpening', 'Iris opening', 0, 100, 1, 0, '%'],
+  ['irisSize', 'Iris door size', .35, 1, .01, 2],
+  ['glassCurvature', 'Stone crown curve', 0, 1, .01, 2],
   ['plateCount', 'Plate count', 1, REFS_MAX_PLATES, 1, 0],
   ['plateSpacing', 'Requested plate spacing', .008, .06, .001, 3],
   ['selectorAngle', 'Selector opening angle', 35, 80, 1, 0, '°'],
@@ -32,7 +36,11 @@ const appearanceFields = [
   ['cabinetGrainScale', 'Wood grain scale', .5, 2, .05, 2],
   ['cabinetSheen', 'Cabinet sheen', 0, 1, .05, 2]
 ];
-const allFields = [...fields, ...cabinetFields, ...appearanceFields];
+const glassFields = [
+  ['glassClarity', 'Glass clarity', 0, 1, .01, 2],
+  ['glassPolish', 'Stone polish', 0, 1, .01, 2]
+];
+const allFields = [...fields, ...cabinetFields, ...appearanceFields, ...glassFields];
 const selectorPhaseLabels = {
   open: 'Opening stack and selector', retract: 'Retracting displayed plate',
   return: 'Returning plate to storage', withdraw: 'Pulling empty selector clear of stack',
@@ -96,13 +104,14 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
   const root = document.createElement('div'); root.className = 'refs-panel refs-constructor';
   const generalRoot = document.createElement('div'); generalRoot.className = 'refs-panel refs-general';
   const style = document.createElement('style'); style.textContent = styleText;
-  root.innerHTML = `<section><h3>Sketch actions</h3><button type="button" data-focus>Focus Refs</button> <button type="button" data-reset>Reset sketch defaults</button><p data-save role="status" aria-live="polite"></p></section>
-    <section><div class="refs-cabinet-head"><div><h3>Cabinet construction</h3>
+  root.innerHTML = `<section><h3>Sketch actions</h3><button type="button" data-focus>Focus About</button> <button type="button" data-reset>Reset sketch defaults</button> <button type="button" data-undo disabled>Undo</button> <button type="button" data-redo disabled>Redo</button><p data-save role="status" aria-live="polite"></p></section>
+    <section id="refs-iris-geometry"><h3>Iris geometry</h3><p class="refs-editor-hint">Main opening changes the hole in the cabinet; iris door size changes the spherical door inside it.</p>${control(fields.find(field => field[0] === 'apertureRadius'))}${control(cabinetFields.find(field => field[0] === 'irisSize'))}${control(cabinetFields.find(field => field[0] === 'glassCurvature'))}</section>
+    <section><h3>Cabinet construction</h3><div class="refs-cabinet-head"><div>
       <label class="refs-check"><input type="checkbox" data-option="cabinetEnabled"> Show cabinet</label>
       <label class="refs-check"><input type="checkbox" data-option="cabinetFrontEnabled"> Cabinet front</label>
       <label class="refs-check"><input type="checkbox" data-option="selectorBackingEnabled"> Floral cabinet back</label>
       <label class="refs-check"><input type="checkbox" data-option="housingEnabled"> Plate housing</label>
-      <label class="refs-check"><input type="checkbox" data-option="dummyIrisEnabled"> Dummy iris door</label>
+      <label class="refs-check"><input type="checkbox" data-option="dummyIrisEnabled"> Iris door</label>
       <label class="refs-check"><input type="checkbox" data-option="cabinetCutaway"> Cutaway</label>
       <label class="refs-check"><input type="checkbox" data-option="mechanismEnabled"> Plate mechanism</label></div>
       <figure class="refs-plate-preview"><canvas data-plate-preview width="256" height="256" aria-label="Selected portrait plate preview" role="img"></canvas><figcaption data-plate-caption></figcaption></figure></div>
@@ -122,7 +131,9 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
       <label class="refs-check"><input type="checkbox" data-option="portraitWindowEnabled"> Portrait window frame</label>
       <label class="refs-check"><input type="checkbox" data-option="portraitGlassEnabled"> Portrait glass</label>
       <label class="refs-check"><input type="checkbox" data-option="portraitLockEnabled"> Portrait lock</label>
-      ${cabinetFields.map(control).join('')}
+      ${cabinetFields.filter(field => !['irisSize', 'glassCurvature'].includes(field[0])).map(control).join('')}
+      <p class="refs-editor-hint">Cabinet position: 0 aligns the front with the backing rim; negative moves inward, positive moves outward.</p>
+      <button type="button" data-toggle-iris>Open iris</button>
       <p class="refs-spacing-note" data-depth-clearance role="status"></p>
       <p class="refs-spacing-note">Plates automatically fit inside shallow cabinets. Applied spacing: <output data-applied-spacing></output>.</p>
     </section>
@@ -131,7 +142,7 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     <section><h3>Container profile and openings</h3>
       <label class="refs-select">Drawing style<select data-option="style" aria-label="Drawing style"><option value="precision">Precision</option><option value="sketch">Sketch</option></select></label>
       <label class="refs-select">Container profile<select data-option="outline" aria-label="Container profile"><option value="curio">Curio</option><option value="rounded">Rounded</option><option value="circular">Circular</option></select></label>
-      ${fields.slice(6, 11).map(control).join('')}
+      ${fields.slice(6, 11).filter(field => field[0] !== 'apertureRadius').map(control).join('')}
       <label class="refs-check"><input type="checkbox" data-option="opening"> Show face opening guide</label>
       <label class="refs-check"><input type="checkbox" data-option="hinges"> Show hinge axes</label>
       <label class="refs-check"><input type="checkbox" data-option="leftHinge"> Left hinge</label>
@@ -147,15 +158,44 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     </section>`;
   root.prepend(style);
   const materialChoices = '<option value="painted">Painted enamel</option><option value="oak">Oak</option><option value="walnut">Walnut</option><option value="mahogany">Mahogany</option><option value="brushedMetal">Brushed metal</option>';
-  generalRoot.innerHTML = `<section><h3>Portrait plates</h3><div class="refs-plates-head"><button type="button" data-focus>Focus Refs</button></div></section><section><h3>Cabinet appearance</h3>
+  generalRoot.innerHTML = `<section><h3>Portrait plates</h3><div class="refs-plates-head"><button type="button" data-focus>Focus About</button></div><label class="refs-select">Plate pilot light color<input type="color" data-option="plateLightColor" aria-label="Plate pilot light color"></label></section><section><h3>Cabinet appearance</h3>
     <label class="refs-select">Cabinet face material<select data-option="cabinetFaceMaterial" aria-label="Cabinet face material">${materialChoices}</select></label>
     <label class="refs-select">Cabinet side material<select data-option="cabinetSideMaterial" aria-label="Cabinet side material">${materialChoices}</select></label>
     <label class="refs-select">Cabinet face color<input type="color" data-option="cabinetFaceColor" aria-label="Cabinet face color"></label>
     <label class="refs-select">Cabinet side color<input type="color" data-option="cabinetSideColor" aria-label="Cabinet side color"></label>
     <label class="refs-select">Cabinet trim color<input type="color" data-option="cabinetTrimColor" aria-label="Cabinet trim color"></label>
     <p class="refs-editor-hint">Wood shows its natural color at tint 0. Raise tint to stain it with the saved face or side color. Colors also apply to paint and metal.</p>
-    ${appearanceFields.map(control).join('')}</section><section><h3>Sketch appearance</h3></section>`;
-  const [platesSection, appearanceSection, sketchSection] = generalRoot.querySelectorAll('section');
+    ${appearanceFields.map(control).join('')}</section><section><h3>Sketch appearance</h3></section><section><h3>Iris door</h3><p class="refs-editor-hint">For iris door size and main opening size, open Constructor → About → Iris geometry.</p></section><section><h3>Quote stone</h3>
+    <label class="refs-check"><input type="checkbox" data-option="glassDisplayEnabled"> Show quote stone</label>
+    <p class="refs-editor-hint">The stone shows the text saved on the plate physically on display. Edit Gem text above; the quote changes when that plate arrives.</p>
+    <label class="refs-select">Stone color<input type="color" data-option="glassBackingColor" aria-label="Quote stone color"></label>
+    ${glassFields.map(control).join('')}</section>`;
+  const doorNames = {leftBay: 'Left tall bay', rightBay: 'Right tall bay',
+    leftCrescent: 'Left crescent', rightCrescent: 'Right crescent',
+    leftArch: 'Left lower arch', rightArch: 'Right lower arch', plaque: 'Bottom plaque'};
+  const doorChoices = REFS_DOOR_IDS.map(id => `<option value="${id}">${doorNames[id]}</option>`).join('');
+  const generalDoors = document.createElement('section');
+  generalDoors.innerHTML = `<h3>Cupboard doors</h3><label class="refs-select">Selected door<select data-door-select aria-label="Selected cupboard door">${doorChoices}</select></label>
+    <div class="refs-plate-actions"><button type="button" data-door-toggle></button><output data-door-status role="status" aria-live="polite"></output></div>
+    <label class="refs-select">Opening angle <span><input type="number" data-door-field="angle" min="5" max="180" step="1" aria-label="Door opening angle">°</span></label>
+    <label class="refs-select">Animation speed <input type="number" data-door-speed min="0.2" max="4" step="0.1" aria-label="Door animation speed"></label>
+    <div class="refs-plate-actions">${REFS_DOOR_IDS.map(id => `<button type="button" data-door-quick="${id}" aria-label="Toggle ${doorNames[id]}">${doorNames[id]}</button>`).join('')}</div>`;
+  generalRoot.append(generalDoors);
+  const butterflySection = document.createElement('section');
+  butterflySection.innerHTML = `<h3>Butterfly</h3>
+    <label class="refs-check"><input type="checkbox" data-option="butterflyEnabled"> Butterfly behind cupboard door</label>
+    <label class="refs-select">Host door<select data-option="butterflyHost" aria-label="Butterfly host door">${doorChoices}</select></label>
+    <div class="refs-plate-actions"><button type="button" data-butterfly-reset>Reset butterfly</button><output data-butterfly-status role="status" aria-live="polite"></output></div>`;
+  generalRoot.append(butterflySection);
+  const constructorDoors = document.createElement('section');
+  constructorDoors.innerHTML = `<h3>Cupboard door construction</h3><p class="refs-editor-hint">Select a door in normal About settings or here. The side crescents start open; tall bays rotate 180°.</p>
+    <label class="refs-select">Selected door<select data-door-select aria-label="Selected cupboard door for construction">${doorChoices}</select></label>
+    <label class="refs-select">Door type<select data-door-field="type"><option value="hinged">Hinged</option><option value="rotating">Rotating cabinet</option><option value="none">No door</option></select></label>
+    <label class="refs-select">Hinge<select data-door-field="hinge"><option value="left">Left</option><option value="right">Right</option><option value="top">Top</option><option value="bottom">Bottom</option></select></label>
+    <label class="refs-select">Rotation axis<select data-door-field="axis"><option value="vertical">Vertical</option><option value="horizontal">Horizontal</option></select></label>
+    <label class="refs-select">Opening direction<select data-door-field="direction"></select></label>`;
+  root.append(constructorDoors);
+  const [platesSection, appearanceSection, sketchSection, irisSection] = generalRoot.querySelectorAll('section');
   const move = (selector, destination, ancestor) => {
     const element = root.querySelector(selector);
     if (element) destination.append(ancestor ? element.closest(ancestor) : element);
@@ -164,6 +204,8 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
   for (const selector of ['.refs-plate-actions', '.refs-picture-actions', '.refs-picture-settings', '.refs-picker', '.refs-gem-text', '.refs-gem-preview', '[data-picture-status]', '[data-selector-status]'])
     move(selector, platesSection);
   move('[data-option="plateCount"]', platesSection, '.refs-control');
+  move('[data-option="irisOpening"]', irisSection, '.refs-control');
+  move('[data-toggle-iris]', irisSection);
   for (const key of ['selectorBackingEnabled', 'portraitGlassEnabled', 'portraitLockEnabled'])
     move(`[data-option="${key}"]`, appearanceSection, 'label');
   move('[data-option="selectorSpeed"]', appearanceSection, '.refs-control');
@@ -174,6 +216,29 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
   const queryAll = selector => roots.flatMap(panel => [...panel.querySelectorAll(selector)]);
   const optionControls = queryAll('[data-option]');
   const status = root.querySelector('[data-save]'), archive = getSettingsArchive();
+  let selectedDoor = 'leftBay';
+  function displayDoor() {
+    for (const select of queryAll('[data-door-select]')) select.value = selectedDoor;
+    const option = board.getDoorOptions(selectedDoor), state = board.getDoorState(selectedDoor);
+    if (!option || !state) return;
+    query('[data-door-toggle]').textContent = option.open ? 'Close door' : 'Open door';
+    query('[data-door-status]').textContent = state.moving ? `${Math.round(state.openAmount * 100)}% open` :
+      option.open ? 'Open' : 'Closed';
+    for (const field of queryAll('[data-door-field]')) {
+      if (field.dataset.doorField === 'direction') {
+        const choices = option.type === 'rotating' ? ['clockwise', 'counterclockwise'] : ['out', 'in'];
+        if (field.options.length !== 2 || field.options[0].value !== choices[0])
+          field.replaceChildren(...choices.map(value => new Option(value[0].toUpperCase() + value.slice(1), value)));
+      }
+      field.value = String(option[field.dataset.doorField]);
+      field.disabled = (option.type === 'none' && field.dataset.doorField !== 'type') ||
+        (field.dataset.doorField === 'hinge' && option.type !== 'hinged') ||
+        (field.dataset.doorField === 'axis' && option.type !== 'rotating');
+    }
+    query('[data-door-speed]').value = String(board.getOptions().doorSpeed);
+    for (const button of queryAll('[data-door-quick]'))
+      button.setAttribute('aria-pressed', String(board.getDoorOptions(button.dataset.doorQuick).open));
+  }
   const plateSelect = query('[data-plate-select]');
   const selectorStatus = query('[data-selector-status]');
   const appliedSpacing = query('[data-applied-spacing]');
@@ -202,7 +267,35 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
   const pictureGenerations = new Map();
   const entryEvents = new Set();
   function capture() { archive.capture(OWNER); status.textContent = archive.getPersistenceStatus().ok ? 'Saved locally' : 'Local save failed'; }
-  const editor = createRefsEditor({board, onCommit: capture});
+  const historyKeys = [...new Set([...fields, ...cabinetFields, ...appearanceFields].map(field => field[0]))]
+    .filter(key => !['plateCount', 'plateSpacing', 'selectorAngle', 'selectorSpeed'].includes(key));
+  const constructionKeys = [...historyKeys, 'outline', 'style', 'cabinetEnabled', 'cabinetFrontEnabled',
+    'cabinetCutaway', 'selectorBackingEnabled', 'housingEnabled', 'dummyIrisEnabled',
+    'portraitWindowEnabled', 'portraitGlassEnabled', 'portraitLockEnabled', 'mechanismEnabled',
+    'pairLinked', 'opening', 'hinges', 'leftHinge', 'rightHinge', 'innerTrim', 'guides', 'anchors',
+    'cabinetFaceMaterial', 'cabinetSideMaterial', 'ink', 'accent', 'cabinetFaceColor',
+    'cabinetSideColor', 'cabinetTrimColor', 'elements'];
+  const historyState = options => Object.fromEntries(constructionKeys.map(key => [key, options[key]]));
+  const undoStack = [], redoStack = [];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function historyButtons() {
+    root.querySelector('[data-undo]').disabled = !undoStack.length;
+    root.querySelector('[data-redo]').disabled = !redoStack.length;
+  }
+  function record(before) {
+    const previous = historyState(before), current = historyState(board.getOptions());
+    if (same(previous, current)) return;
+    undoStack.push(previous); if (undoStack.length > 30) undoStack.shift();
+    redoStack.length = 0; historyButtons();
+  }
+  function travel(from, to) {
+    if (!from.length) return;
+    editor.finish(false);
+    const prior = historyState(board.getOptions());
+    const target = from.pop(); to.push(prior);
+    board.setOptions(target); capture(); historyButtons();
+  }
+  const editor = createRefsEditor({board, onCommit: before => { record(before); capture(); }});
   query('[data-editor]').append(editor.root);
   function displaySelector(state = board.getSelectorState()) {
     const options = board.getOptions();
@@ -218,20 +311,24 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     const clearance = board.getClearance();
     const depthRange = query('[data-option="cabinetDepth"]');
     if (clearance) {
-      depthRange.max = String(clearance.maxDepth);
-      depthClearance.textContent = `Backing-safe depth ceiling ${clearance.maxDepth.toFixed(3)}; applied ${clearance.appliedDepth.toFixed(3)}.` +
-        (clearance.requestedDepth > clearance.appliedDepth + .0005 ?
-          ` Requested ${clearance.requestedDepth.toFixed(3)} was fitted.` : '') +
-        (clearance.desiredTuck > clearance.safeOffset + .001 ? ' This footprint stops at its nearest clear tuck.' : '');
+      depthRange.max = '.45';
+      depthClearance.textContent = `Cabinet depth ${clearance.appliedDepth.toFixed(3)}. Position is set independently from the backing rim.`;
     }
     for (const input of optionControls) {
-      const key = input.dataset.option, value = options[key];
+      const key = input.dataset.option;
+      const frames = board.getElementFrames();
+      const value = key === 'apertureRadius' ? frames.aperture.width / 2 :
+        key === 'portraitRadius' ? frames.portrait.width / 2 :
+          key === 'bayWidth' ? frames.leftBay.width : options[key];
       if (input.type === 'checkbox') input.checked = Boolean(value);
       else if (input.type === 'range') {
         input.value = String(key === 'angle' ? asDegrees(value) : value);
         query(`[data-readout="${key}"]`).textContent = Number(key === 'angle' ? asDegrees(value) : value).toFixed(allFields.find(f => f[0] === key)[5]);
       } else input.value = String(value);
     }
+    const irisButton = query('[data-toggle-iris]');
+    irisButton.textContent = options.irisOpening >= 50 ? 'Close iris' : 'Open iris';
+    irisButton.disabled = !options.cabinetEnabled || !options.dummyIrisEnabled;
     if (plateSelect.options.length !== options.plateCount) {
       plateSelect.replaceChildren(...Array.from({length: options.plateCount}, (_, index) => {
         const option = document.createElement('option');
@@ -267,6 +364,7 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     plateActions.querySelector('[data-next-plate]').disabled = !canSelect;
     plateSelect.disabled = !canSelect;
     displaySelector();
+    displayDoor();
   }
   function apply(value) {
     pictureGenerations.clear(); closePicker();
@@ -276,10 +374,20 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
   const unregisterArchive = archive.register(OWNER, {page: PAGE, read: () => board.getOptions(), apply,
     validate: value => Boolean(value && typeof value === 'object' && !Array.isArray(value)), restore: true});
   const unsubscribe = board.subscribe(display);
+  const unsubscribeDoors = board.subscribeDoors(state => {
+    if (state.id === selectedDoor) {
+      query('[data-door-status]').textContent = state.moving ? `${Math.round(state.openAmount * 100)}% open` :
+        state.openTarget ? 'Open' : 'Closed';
+    }
+  });
+  const unsubscribeButterfly = board.butterfly.subscribe(state => {
+    query('[data-butterfly-status]').textContent = state === 'load failed' ? 'Could not load butterfly' :
+      state === 'gone' ? 'Flown away' : state[0].toUpperCase() + state.slice(1);
+  });
   const unsubscribeSelector = board.subscribeSelector(displaySelector);
   const shell = initPanelShell();
-  const unregisterGeneral = shell.registerContext('refs', 'Refs', generalRoot);
-  const unregisterConstructor = shell.registerConstructorContext('refs', 'Refs', root);
+  const unregisterGeneral = shell.registerContext('refs', 'About', generalRoot);
+  const unregisterConstructor = shell.registerConstructorContext('refs', 'About', root);
   display(board.getOptions());
   function numericEntry(button) {
     const key = button.dataset.readout ?? button.dataset.frameReadout;
@@ -293,9 +401,13 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
       if (commit) {
         const number = Number(input.value.trim());
         if (!input.value.trim() || !Number.isFinite(number)) { status.textContent = 'Enter a finite number'; input.focus(); return; }
+        const before = board.getOptions();
         if (isFrame) board.patchElement(editor.selected, {[key]: number});
         else if (key === 'imageScale') board.updatePlate(board.getOptions().plateIndex, {imageScale: number});
+        else if (['apertureRadius', 'portraitRadius', 'bayWidth', 'baySpacing'].includes(key))
+          board.setOptions(patchRefsSizeOption(before, key, number));
         else board.setOptions({[key]: key === 'angle' ? fromDegrees(number) : number});
+        if (key !== 'imageScale') record(before);
         capture();
       }
       closed = true; entry.abort(); entryEvents.delete(entry);
@@ -311,12 +423,22 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     const button = event.target.closest('[data-readout],[data-frame-readout]');
     if (button) numericEntry(button);
     if (event.target.closest('[data-focus]')) onFocus();
+    if (event.target.closest('[data-undo]')) travel(undoStack, redoStack);
+    if (event.target.closest('[data-redo]')) travel(redoStack, undoStack);
     if (event.target.closest('[data-reset]')) {
-      pictureGenerations.clear(); closePicker(); editor.finish(false); board.setOptions(REFS_DEFAULT_OPTIONS); capture();
+      const before = board.getOptions();
+      pictureGenerations.clear(); closePicker(); editor.finish(false); board.setOptions(REFS_DEFAULT_OPTIONS); record(before); capture();
     }
     if (event.target.closest('[data-previous-plate]')) { board.previousPlate(); capture(); }
     if (event.target.closest('[data-next-plate]')) { board.nextPlate(); capture(); }
     if (event.target.closest('[data-add-plate]')) { board.addPlate(); capture(); }
+    if (event.target.closest('[data-toggle-iris]')) {
+      const before = board.getOptions(); board.setOptions({irisOpening: before.irisOpening >= 50 ? 0 : 100}); record(before); capture();
+    }
+    if (event.target.closest('[data-door-toggle]')) { board.toggleDoor(selectedDoor); capture(); }
+    if (event.target.closest('[data-butterfly-reset]')) board.butterfly.reset();
+    const quickDoor = event.target.closest('[data-door-quick]');
+    if (quickDoor) { selectedDoor = quickDoor.dataset.doorQuick; board.toggleDoor(selectedDoor); capture(); }
     if (event.target.closest('[data-choose-picture]')) pictureFile.click();
     if (event.target.closest('[data-remove-picture]')) {
       const slot = board.getOptions().plateIndex;
@@ -336,13 +458,21 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     if (hinge) editor.choose(hinge.dataset.selectHinge);
   };
   for (const panel of roots) panel.addEventListener('click', onClick, {signal: events.signal});
-  const edit = event => {
+  const pendingRanges = new WeakMap();
+  const edit = (event, completed = false) => {
     const input = event.target.closest('[data-option]');
     if (!input || !roots.some(panel => panel.contains(input))) return;
     const key = input.dataset.option;
     const value = input.type === 'checkbox' ? input.checked : input.type === 'range' ?
       (key === 'angle' ? fromDegrees(Number(input.value)) : Number(input.value)) : input.value;
-    board.setOptions({[key]: value}); capture();
+    const before = board.getOptions();
+    if (input.type === 'range' && !pendingRanges.has(input)) pendingRanges.set(input, before);
+    if (['apertureRadius', 'portraitRadius', 'bayWidth', 'baySpacing'].includes(key))
+      board.setOptions(patchRefsSizeOption(before, key, value));
+    else board.setOptions({[key]: value});
+    if (input.type !== 'range') record(before);
+    else if (completed) { record(pendingRanges.get(input) ?? before); pendingRanges.delete(input); }
+    capture();
   };
   for (const panel of roots) panel.addEventListener('input', event => { if (event.target.matches('input[type=range],input[type=color]')) edit(event); }, {signal: events.signal});
   generalRoot.addEventListener('input', event => {
@@ -353,7 +483,32 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
         {[event.target.dataset.plateColor]: event.target.value}); capture();
     }
   }, {signal: events.signal});
-  for (const panel of roots) panel.addEventListener('change', event => { if (event.target.matches('select[data-option],input[type=checkbox][data-option]')) edit(event); }, {signal: events.signal});
+  for (const panel of roots) panel.addEventListener('change', event => { if (event.target.matches('select[data-option],input[type=checkbox][data-option],input[type=range][data-option]')) edit(event, true); }, {signal: events.signal});
+  for (const panel of roots) panel.addEventListener('change', event => {
+    const target = event.target;
+    if (target.matches('[data-door-select]')) { selectedDoor = target.value; displayDoor(); return; }
+    if (target.matches('[data-door-field]')) {
+      const key = target.dataset.doorField;
+      const value = key === 'angle' ? Number(target.value) : target.value;
+      board.updateDoor(selectedDoor, {[key]: value}); capture();
+    } else if (target.matches('[data-door-speed]')) {
+      board.setOptions({doorSpeed: Number(target.value)}); capture();
+    }
+  }, {signal: events.signal});
+  // The settings panel stops key events before they reach document; listen
+  // inside this Constructor context so shortcuts stay local to Refs.
+  root.addEventListener('keydown', event => {
+    if (!root.isConnected || root.hidden || root.inert ||
+        root.closest('.review-panel')?.classList.contains('is-closed') ||
+        !root.classList.contains('review-context-active') ||
+        !(event.ctrlKey || event.metaKey) || event.altKey) return;
+    const target = event.target;
+    if (target.closest('input,textarea,select,[contenteditable="true"]')) return;
+    if (event.key.toLowerCase() === 'z') {
+      if (event.shiftKey) travel(redoStack, undoStack); else travel(undoStack, redoStack);
+      event.preventDefault();
+    } else if (event.key.toLowerCase() === 'y') { travel(redoStack, undoStack); event.preventDefault(); }
+  }, {signal: events.signal});
   plateSelect.addEventListener('change', () => { board.selectPlate(Number(plateSelect.value)); capture(); }, {signal: events.signal});
   gemText.addEventListener('input', () => {
     board.updatePlate(board.getOptions().plateIndex, {text: gemText.value}); capture();
@@ -472,10 +627,10 @@ export function createRefsControls({board, onFocus = () => {}} = {}) {
     } finally { if (url) URL.revokeObjectURL(url); }
   }, {signal: events.signal});
   status.textContent = archive.getPersistenceStatus().ok ? 'Saved locally' : 'Local save failed';
-  return {root, generalRoot, dispose() {
+  return {root, generalRoot, capture, dispose() {
     if (!alive) return; alive = false; closePicker(); previewArtwork?.dispose(); pictureGenerations.clear(); editor.dispose(); events.abort();
     for (const entry of entryEvents) entry.abort();
-    entryEvents.clear(); unsubscribe(); unsubscribeSelector();
+    entryEvents.clear(); unsubscribe(); unsubscribeSelector(); unsubscribeDoors(); unsubscribeButterfly();
     unregisterConstructor(); unregisterGeneral(); unregisterArchive(); root.remove(); generalRoot.remove();
   }};
 }

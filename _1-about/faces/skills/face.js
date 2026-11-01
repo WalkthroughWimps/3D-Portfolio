@@ -58,7 +58,8 @@ export function createSkillsFace() {
       binding.attach(context);
       ({cube, camera, controls} = context);
       const {gltf, manifest, renderer, canvas} = context;
-      assembly = createCardAssembly({model: cube, gltf, manifest, renderer, camera, autoFocus: true, interactive: true,
+      assembly = createCardAssembly({model: cube, gltf, manifest, renderer, camera, physicalCube: context.physicalCube,
+        autoFocus: true, interactive: true,
         onSelect: id => settingsControls?.selectPanel(id)});
       for (const node of [assembly.faceCarrier?.group || assembly.rig.deployNode, ...['V16 Concealed Stationary Bearing Stator GLB', 'V16 Eight Fixed Mounting Spokes GLB', 'V16 Recessed Cube Mounting Ring GLB'].map(context.findNode)].filter(Boolean)) visibility.set(node, node.visible);
       applySettings(snapshot);
@@ -67,7 +68,7 @@ export function createSkillsFace() {
       inset = createFilamentInset({renderer, stage: canvas, field: assembly.field,
         element: document.getElementById('about-filament-inset'), title: document.getElementById('about-filament-inset-title')});
       visuals=createBeanBagVisuals();
-      beanBags=createBeanBagThrower({assembly,camera,controls,canvas,getBacking:()=>binding.backing,getSettings:()=>snapshot||{},getContainer:()=>container,supply,visuals,
+      beanBags=createBeanBagThrower({assembly,poseCube:context.physicalCube,findNode:context.findNode,camera,controls,canvas,getBacking:()=>binding.backing,getSettings:()=>snapshot||{},getContainer:()=>container,supply,visuals,
         getRecoveryTarget:(id,position)=>container?.getRecoveryTarget?.(id%4,position),
         onCatch:id=>container?.onCatch?.(id),onDestroy:id=>container?.onDestroy?.(id)});
       container=createBeanBagContainer({assembly,camera,canvas,supply,visuals,getSettings:()=>snapshot||{}});

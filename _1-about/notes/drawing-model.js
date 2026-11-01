@@ -1,4 +1,4 @@
-import { restoreGears } from './gear-model.js';
+import { restoreGears, validateGearRecipe } from './gear-model.js';
 export const SIZE = 1000;
 export const RADIUS = 496;
 export const PALETTE = [
@@ -324,7 +324,8 @@ export function restoreDocument(value) {
       Math.abs(raw.x) > 6000 || Math.abs(raw.y) > 6000 || raw.width < 4 || raw.height < 4 || raw.width > 6000 || raw.height > 6000 ||
       raw.strokeWidth < .5 || raw.strokeWidth > 100 || raw.stroke !== null && !colors.has(raw.stroke) || raw.fill !== null && !colors.has(raw.fill)) continue;
     if (['pencil', 'line'].includes(type) && (!Array.isArray(raw.points) || raw.points.length < (type === 'line' ? 2 : 1) || raw.points.length > 4000 || !raw.points.every(pointOK))) continue;
-    if (raw.anchors && (!Array.isArray(raw.anchors) || raw.anchors.length > 200 || !raw.anchors.every(a => pointOK(a) && pointOK(a.in) && pointOK(a.out)))) continue;
+    const generatedGear = type === 'path' && raw.closed && ['large','small'].includes(validateGearRecipe(raw.gearRecipe, { type })?.kind);
+    if (raw.anchors && (!Array.isArray(raw.anchors) || raw.anchors.length > (generatedGear ? 2200 : type === 'path' && raw.closed ? 1024 : 200) || !raw.anchors.every(a => pointOK(a) && pointOK(a.in) && pointOK(a.out)))) continue;
     if (type === 'path' && !raw.anchors?.length) continue;
     if (raw.points && (!Array.isArray(raw.points) || !raw.points.every(pointOK))) continue;
     const shape = { id: raw.id.slice(0, 80), name: String(raw.name || type[0].toUpperCase() + type.slice(1)).slice(0, 60), type,
@@ -334,6 +335,8 @@ export function restoreDocument(value) {
       depth: clamp(Number.isFinite(raw.depth) ? raw.depth : .5, 0, 1), smoothing: clamp(Number.isFinite(raw.smoothing) ? raw.smoothing : .45, 0, 1), closed: Boolean(raw.closed) };
     if (raw.points) shape.points = raw.points.slice(0, type === 'line' ? 2 : 4000).map(p => ({ x: p.x, y: p.y }));
     if (raw.anchors) shape.anchors = clone(raw.anchors);
+    const gearRecipe = validateGearRecipe(raw.gearRecipe, shape);
+    if (gearRecipe) shape.gearRecipe = gearRecipe;
     ids.add(raw.id); doc.objects.push(shape);
   }
   if (value.version === 2 && Array.isArray(value.groups)) {

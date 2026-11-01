@@ -1,4 +1,7 @@
+import { GAME_SPLASH_IMAGES, paintGameSplash } from './game-splash.js';
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { registerPageSummaryPoints } from '../_7-shared-scripts/core/page-summary.js';
+import { prefersReducedMotion } from '../_7-shared-scripts/core/motion-preference.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { getSyncOffsetMs, setSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { getEffectiveAudioSettings, patchAudioSettings } from '../_7-shared-scripts/audio-settings.js';
@@ -10,6 +13,10 @@ import VideoPlayer from '../_7-shared-scripts/video-player-controls.js';
 import { createVideoControlsUI, createAudioSyncState, syncAudioToVideo as pllSyncAudioToVideo, setPreservePitchFlag, getStoredPreservePitch, setStoredPreservePitch, showVideoKeyboardShortcuts } from '../_7-shared-scripts/shared-video-controls.js';
 import { createGameAudioBridge } from './game-audio-bridge.js';
 import { createGamesVideoAdapter } from './games-video-adapter.js';
+import { installGameMouseGestures } from './game-mouse-gestures.js';
+import { createGameInstructionZoom } from './game-instruction-zoom.js';
+import { createCabinetCameraCollision } from './cabinet-camera-collision.js';
+import { createSceneStickyAdapter, createSceneInputOwnership } from '../_7-shared-scripts/sticky-notes/scene-adapter.js';
 import { GAME_LIST, VIDEO_LIST, MENU_LAYOUT, getMenuAction, getMenuRects } from './games-layout.js';
 import { assetUrl, safeDrawImage, markBroken, isBroken, corsProbe, isLocalDev } from '../_7-shared-scripts/assets-config.js';
 import { ensureAudioConsentPrompt, isAudioAllowed, onAudioConsentChange } from '../_7-shared-scripts/audio-consent.js';
@@ -37,13 +44,6 @@ const GAME_SPLASH_DURATIONS_MS = {
   plinko: 7000,
   'pick-a-square': 15000,
   'you-be-the-server': 7000
-};
-const GAME_SPLASH_IMAGES = {
-  battleship: '../games/battleship.png',
-  'train-mania': '../games/train-mania.png',
-  plinko: '../games/plinko.png',
-  'pick-a-square': '../games/pick-a-square.png',
-  'you-be-the-server': '../games/you-be-the-server.png'
 };
 const GAME_THUMBS = {
   battleship: '../games/images/battleship.png',
@@ -290,6 +290,8 @@ let centerProjection = null;
 let centerProjectionCamera = null;
 let defaultOrbitTarget = new THREE.Vector3(0, 1.1, 0);
 let cabinetRoot = null;
+let stickyAdapter = null;
+let cameraCollision = null;
 let centerOnViewport = false;
 const cabinetLocalCenter = new THREE.Vector3();
 let screenMesh = null;
@@ -311,6 +313,11 @@ let reelAudio = null;
 let reelVideoId = null;
 let reelReady = false;
 let reelSource = '';
+let reelLauncher = null;
+let reelBackButton = null;
+let gameLauncher = null;
+let childGameKeyTarget = null;
+let childGameKeyHandler = null;
 const audioSyncStateByEl = new WeakMap();
 let sharedControlsUi = null;
 let sharedControlsAdapter = null;
@@ -318,6 +325,8 @@ let sharedControlsActive = null;
 let lastControlsDrawLog = 0;
 let lastVideoControlsActivityTs = performance.now();
 let gameUiLayout = null;
+let gameMouseGestures = null;
+const instructionZoom = createGameInstructionZoom();
 
 let gameContainer = null;
 let gameIframe = null;
@@ -427,6 +436,18 @@ void bootstrapPage({
     if (scope.disposed) return;
     scope.defer(disposeScene);
     if (init(scope) === false) return;
+    scope.defer(registerPageSummaryPoints('games', [
+      ...GAME_LIST.map(entry => ({
+        label: entry.label,
+        ready: () => !sceneDisposed && !sceneSuspended && Boolean(screenCanvas),
+        run: motion => startGame(entry.url, entry.renderMode, motion)
+      })),
+      ...VIDEO_LIST.map(entry => ({
+        label: entry.label,
+        ready: () => !sceneDisposed && !sceneSuspended && Boolean(screenCanvas),
+        run: motion => startVideoReel(entry, motion)
+      }))
+    ]));
     scope.defer(onAudioConsentChange(allowed => {
       if (allowed) return;
       for (const media of [reelAudio, playerAudio]) {
@@ -447,6 +468,8 @@ void bootstrapPage({
     return {
       suspend() {
         sceneSuspended = true;
+        stickyAdapter?.suspend();
+        if (reelBackButton) reelBackButton.hidden = true;
         setVideoPresentation(false);
         if (sceneFrameId !== null) cancelAnimationFrame(sceneFrameId);
         sceneFrameId = null;
@@ -465,7 +488,9 @@ void bootstrapPage({
       resume() {
         if (sceneDisposed || !sceneSuspended) return;
         sceneSuspended = false;
-        setVideoPresentation(contentMode === 'video' && !!reelVideo);
+        stickyAdapter?.resume();
+        setExitControlVisible(contentMode === 'video' && !!reelVideo);
+        setVideoPresentation((contentMode === 'video' && !!reelVideo) || (contentMode === 'game' && !!gameIframe));
         const { muted, volume } = getStoredAudioSettings();
         gameAudioBridge.setVolume01(volume);
         gameAudioBridge.setMuted(muted);
@@ -503,6 +528,7 @@ function init(scope) {
   renderer.domElement.style.background = 'transparent';
   const glCanvas = renderer.domElement;
   glCanvas.id = 'glCanvas';
+  glCanvas.setAttribute('aria-label', 'Interactive games cabinet');
   glCanvas.style.position = 'absolute';
   glCanvas.style.top = '0';
   glCanvas.style.left = '0';
@@ -546,10 +572,38 @@ function init(scope) {
   fallbackCamera.position.set(0, 1.4, 2.8);
   activeCamera = fallbackCamera;
 
+  // Install before the shared capture handlers and OrbitControls. Short game
+  // clicks never enter their reset/rotation handlers; drags are replayed there.
+  gameMouseGestures = installGameMouseGestures({
+    element: renderer.domElement,
+    hitGame: ev => {
+      if (!isGameActive() || !screenMesh || !screenCanvas) return null;
+      const hit = raycastScreen(ev);
+      return hit && mapHitToClient(hit) ? hit : null;
+    },
+    clickGame: (hit, button) => {
+      dispatchGameMouseMove(hit);
+      dispatchGamePointerDown(hit, button);
+      dispatchGamePointerUp(hit, button);
+    },
+    downGame: dispatchGamePointerDown,
+    upGame: dispatchGamePointerUp,
+    pressOverlay: ev => {
+      if (!isGameActive() || currentGameId !== 'pick-a-square') return false;
+      const hit = raycastScreen(ev);
+      if (!hit || !instructionZoom.press(getUiPointFromHit(hit), ev.button)) return false;
+      renderer.domElement.focus({ preventScroll: true });
+      return true;
+    },
+    onCameraStart: () => instructionZoom.move(null)
+  });
   controls = new OrbitControls(activeCamera, renderer.domElement);
   controls.enableDamping = true;
   applyStandardGlbMouseControlMode(controls, { enabled: true, allowRotate: true, allowZoom: true });
   controls.target.set(0, 1.1, 0);
+  stickyAdapter = createSceneStickyAdapter({pageId: 'games', scene, canvas: renderer.domElement, getCamera: () => activeCamera,
+    getRoot: () => scene, scope, onInputOwnership: createSceneInputOwnership(() => controls)});
+  scope.defer(() => stickyAdapter?.dispose());
 
   raycaster = new THREE.Raycaster();
   pointerNDC = new THREE.Vector2();
@@ -567,12 +621,17 @@ function init(scope) {
   scope.listen(renderer.domElement, 'pointerup', handlePointerUp, { capture: true });
   scope.listen(renderer.domElement, 'pointercancel', handlePointerUp, { capture: true });
   scope.listen(renderer.domElement, 'pointerleave', () => {
+    instructionZoom.move(null);
     if (sharedControlsUi && sharedControlsUi.clearHoverPreview) sharedControlsUi.clearHoverPreview();
     if (contentMode === 'menu') clearMenuHover();
   });
   scope.listen(renderer.domElement, 'wheel', handleWheel, { capture: true, passive: false });
   scope.listen(renderer.domElement, 'contextmenu', handleContextMenu, { capture: true });
   scope.listen(window, 'resize', onResize);
+  for (const entry of GAME_LIST) {
+    const link = document.querySelector(`.scene-alternative a[href="${entry.url}"]`);
+    if (link) link.textContent = entry.label;
+  }
 scope.listen(window, 'keydown', handleKeyDown, { capture: true });
 scope.listen(window, 'syncOffsetChanged', () => {
   const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
@@ -619,8 +678,10 @@ function bindSharedMouseControls() {
   renderer.domElement.__gamesSharedMouse = installStandardGlbMouseControls({
     controls,
     domElement: renderer.domElement,
-    canInteract: () => !!(controls && controls.enabled && contentMode !== 'video' && !isGameActive())
+    canInteract: () => !!(controls && controls.enabled && !cameraAnimId && !pointerCaptured)
   });
+  controls.addEventListener('start', () => { sharedControlsUi?.setCameraGestureActive?.(true); player?.setCameraGestureActive?.(true); });
+  controls.addEventListener('end', () => { sharedControlsUi?.setCameraGestureActive?.(false); player?.setCameraGestureActive?.(false); });
 }
 
 function toggleCameraZoom() {
@@ -696,8 +757,12 @@ function loadCabinet() {
       }
 
       applyDefaultCameraTransform();
+      screenMesh.getWorldPosition(screenCenter);
+      controls.target.copy(screenCenter);
       captureDefaultOrbitTarget();
       startIntroAnimation();
+      cameraCollision = createCabinetCameraCollision(cabinetRoot);
+      cameraCollision.constrain(activeCamera);
 
       setupScreenCanvas(screenMesh);
       setupMenu();
@@ -793,7 +858,7 @@ function setupScreenCanvas(mesh) {
     toggleFullscreen: () => toggleCameraZoom(),
     exit: exitSharedControls
   });
-  sharedControlsUi = createVideoControlsUI({ unlimitedSyncDrag: false });
+  sharedControlsUi = createVideoControlsUI({ unlimitedSyncDrag: false, shortcutCapabilities: { playerView: true } });
   sharedControlsUi.setViewportRectProvider(sharedControlsAdapter.getViewportRect);
   sharedControlsUi.onAction = (action) => sharedControlsAdapter.dispatch(action);
   console.log('%c[games] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
@@ -835,6 +900,7 @@ function getDefaultCameraSnapshot() {
     : DEFAULT_CAMERA.quat.clone();
   return {
     position: DEFAULT_CAMERA.pos.clone(),
+    target: defaultOrbitTarget.clone(),
     quaternion: quat,
     fov: DEFAULT_CAMERA.fov
   };
@@ -851,7 +917,7 @@ function getAlternateCameraSnapshot() {
     'XYZ'
   );
   const quat = new THREE.Quaternion().setFromEuler(rot);
-  return { position: pos, quaternion: quat, fov: 22.9 };
+  return { position: pos, quaternion: quat, fov: 22.9, target: screenMesh.getWorldPosition(new THREE.Vector3()) };
 }
 
 function easeCameraAnim(t) {
@@ -868,26 +934,23 @@ function animateCameraTo(target, durationMs = CAMERA_ZOOM_DURATION, opts = {}) {
   const onComplete = typeof opts.onComplete === 'function' ? opts.onComplete : null;
 
   const step = (now) => {
-    const t = Math.min(1, (now - cameraAnimStart) / durationMs);
+    const t = prefersReducedMotion() ? 1 : Math.min(1, (now - cameraAnimStart) / durationMs);
     const ease = easeCameraAnim(t, easing);
     const pos = cameraAnimFrom.position.clone().lerp(cameraAnimTo.position, ease);
     const quat = cameraAnimFrom.quaternion.clone().slerp(cameraAnimTo.quaternion, ease);
-    activeCamera.position.copy(pos);
-    activeCamera.quaternion.copy(quat);
-    activeCamera.rotation.setFromQuaternion(quat, 'XYZ');
-    if (activeCamera.isPerspectiveCamera && typeof cameraAnimTo.fov === 'number') {
-      const fov = cameraAnimFrom.fov + (cameraAnimTo.fov - cameraAnimFrom.fov) * ease;
-      activeCamera.fov = fov;
-      activeCamera.updateProjectionMatrix();
-    }
+    applyCameraSnapshot({ position: pos, quaternion: quat,
+      fov: cameraAnimFrom.fov + (cameraAnimTo.fov - cameraAnimFrom.fov) * ease,
+      target: cameraAnimFrom.target.clone().lerp(cameraAnimTo.target, ease) });
     if (t < 1) {
       cameraAnimId = requestAnimationFrame(step);
     } else {
       cameraAnimId = null;
+      updateControlsForContent(contentMode);
       if (onComplete) onComplete();
     }
   };
-  cameraAnimId = requestAnimationFrame(step);
+  if (prefersReducedMotion()) step(cameraAnimStart);
+  else cameraAnimId = requestAnimationFrame(step);
 }
 
 function captureDefaultOrbitTarget() {
@@ -898,9 +961,9 @@ function captureDefaultOrbitTarget() {
 function applyCameraMode(altView, opts = {}) {
   cameraZoomAlt = altView;
   const animate = opts.animate !== false;
-  const target = cameraZoomAlt ? getAlternateCameraSnapshot() : getDefaultCameraSnapshot();
+  const target = opts.snapshot || (cameraZoomAlt ? getAlternateCameraSnapshot() : getDefaultCameraSnapshot());
   if (animate) {
-    animateCameraTo(target, CAMERA_ZOOM_DURATION);
+    animateCameraTo(target, opts.duration || CAMERA_ZOOM_DURATION);
   } else {
     applyCameraSnapshot(target);
   }
@@ -923,6 +986,7 @@ function captureCameraSnapshot() {
   activeCamera.getWorldQuaternion(quat);
   return {
     position: pos,
+    target: controls.target.clone(),
     quaternion: quat,
     fov: activeCamera.isPerspectiveCamera ? activeCamera.fov : null
   };
@@ -949,6 +1013,7 @@ function setDefaultCameraFromActive() {
 
 function applyCameraSnapshot(snapshot) {
   if (!snapshot || !activeCamera) return;
+  if (snapshot.target && controls) controls.target.copy(snapshot.target);
   // snapshot is expected to be world-space; convert to local if camera has a parent.
   const worldPos = snapshot.position.clone();
   const worldQuat = snapshot.quaternion.clone();
@@ -1056,6 +1121,7 @@ function bindPlayerToVideo(video, showControls = true) {
 
 function setupMenu() {
   contentMode = 'menu';
+  setVideoPresentation(false);
   cssGameActive = false;
   if (cssGameElement) cssGameElement.innerHTML = '';
   cssRenderer.domElement.style.pointerEvents = 'none';
@@ -1066,7 +1132,7 @@ function setupMenu() {
   needsRedraw = true;
 }
 
-  function startGame(url, renderMode = GAME_RENDER_MODE) {
+  function startGame(url, renderMode = GAME_RENDER_MODE, poiMotion = null) {
     // DevTools check for Construct audio bridge:
     // document.querySelector('#gameFrame')?.contentWindow?.C3Audio_DOMInterface
     try {
@@ -1077,6 +1143,7 @@ function setupMenu() {
     } catch  { /* ignore */ }
   stopVideoReel();
   destroyGameIframe();
+  gameLauncher = document.activeElement;
   setHoveredVideo(null);
   gameReady = false;
   gameCanvas = null;
@@ -1090,6 +1157,7 @@ function setupMenu() {
   loggedGameRect = false;
   currentGameId = gameMeta ? gameMeta.id : null;
   contentMode = 'game';
+  setVideoPresentation(true);
   if (gameMeta && gameMeta.id && GAME_SPLASH_DURATIONS_MS[gameMeta.id]) {
     splashDurationMs = GAME_SPLASH_DURATIONS_MS[gameMeta.id];
   } else {
@@ -1100,7 +1168,7 @@ function setupMenu() {
   // Capture the current view as the return transform immediately before entering content.
   userReturnTransform = captureCameraSnapshot();
   console.log('[camera] startGame() preset userReturnTransform=', userReturnTransform);
-  enterContentView();
+  enterContentView(poiMotion);
   overlayActive = false;
   cssGameActive = renderMode === 'css3d';
   if (cssGameActive) {
@@ -1115,12 +1183,27 @@ function setupMenu() {
     gameIframe.src = url;
     gameIframe.addEventListener('load', () => {
       if (gameIframe !== frame || !frame.isConnected) return;
+      try {
+        childGameKeyTarget = frame.contentWindow;
+        childGameKeyHandler = event => {
+          if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing ||
+              event.ctrlKey || event.altKey || event.metaKey || sceneSuspended || gameIframe !== frame ||
+              frame.contentDocument?.querySelector('dialog[open], [aria-modal="true"]:not([hidden])') ||
+              event.target?.closest?.('input, textarea, select, [contenteditable], [role="textbox"]')) return;
+          event.preventDefault();
+          exitGameImmediate();
+        };
+        childGameKeyTarget.addEventListener('keydown', childGameKeyHandler);
+      } catch { childGameKeyTarget = null; childGameKeyHandler = null; }
       applyGameMediaSettings(true);
       gameAudioBridge.attach(frame);
       const { muted, volume } = getStoredAudioSettings();
       gameAudioBridge.setVolume01(volume);
       gameAudioBridge.setMuted(sceneSuspended || muted);
       updateGameAudioControlsState();
+    }, { once: true });
+    gameIframe.addEventListener('error', () => {
+      if (gameIframe === frame) exitGameImmediate();
     }, { once: true });
     gameIframe.allow = 'fullscreen; gamepad; autoplay';
     gameIframe.referrerPolicy = 'no-referrer-when-downgrade';
@@ -1530,7 +1613,7 @@ function changeOwnedMediaSound(audio, video, change) {
   const { volume, muted } = change;
   const wantsSound = muted === false || (Number.isFinite(volume) && volume > 0.001);
   if (wantsSound && !isAudioAllowed()) {
-    void ensureAudioConsentPrompt({ signal: sceneAbortSignal }).then(state => {
+    void ensureAudioConsentPrompt({ signal: sceneAbortSignal, requestAfterDeny: true }).then(state => {
       if (!state.allowed || sceneDisposed || sceneSuspended) return;
       if ((audio && audio !== reelAudio && audio !== playerAudio) || (video && video !== reelVideo && video !== playerVideo)) return;
       changeOwnedMediaSound(audio, video, change);
@@ -1547,7 +1630,11 @@ function changeOwnedMediaSound(audio, video, change) {
 function setSharedPlaybackRate(rate) {
   const video = getSharedActiveVideo();
   if (!video || !Number.isFinite(rate)) return;
+  const index = SPEED_RATES.indexOf(rate);
+  if (index >= 0) speedIndex = index;
   video.playbackRate = rate;
+  const audio = getSharedActiveAudio();
+  if (audio) audio.playbackRate = rate;
   needsRedraw = true;
 }
 
@@ -1579,7 +1666,12 @@ function getUiPointFromHit(hit) {
 }
 
   function destroyGameIframe() {
+    gameMouseGestures?.cancel();
+    instructionZoom.reset();
     gameAudioBridge.detach();
+    childGameKeyTarget?.removeEventListener('keydown', childGameKeyHandler);
+    childGameKeyTarget = null;
+    childGameKeyHandler = null;
     if (gameIframe) {
       gameIframe.src = 'about:blank';
       gameIframe.remove();
@@ -1614,16 +1706,23 @@ function getUiPointFromHit(hit) {
 
 function exitGameImmediate() {
   if (!gameIframe) return;
+  const shouldRestore = [reelBackButton, gameIframe, renderer?.domElement, document.body].includes(document.activeElement);
+  const returnTarget = gameLauncher !== document.body && gameLauncher?.isConnected && gameLauncher.getClientRects().length
+    ? gameLauncher : renderer?.domElement;
   destroyGameIframe();
+  gameLauncher = null;
   contentMode = 'menu';
+  setVideoPresentation(false);
   setExitControlVisible(false);
   restoreViewAfterContent();
+  if (shouldRestore && returnTarget?.isConnected) returnTarget.focus({ preventScroll: true });
   needsRedraw = true;
 }
 
-function startVideoReel(entry) {
+function startVideoReel(entry, poiMotion = null) {
   if (!screenCanvas) return;
   stopVideoReel();
+  reelLauncher = document.activeElement;
   setHoveredVideo(null);
   contentMode = 'video';
   setVideoPresentation(true);
@@ -1636,7 +1735,7 @@ function startVideoReel(entry) {
   setDefaultCameraFromActive();
   userReturnTransform = captureCameraSnapshot();
   console.log('[camera] startVideoReel() preset userReturnTransform=', userReturnTransform);
-  enterContentView();
+  enterContentView(poiMotion);
   reelVideo = document.createElement('video');
   reelVideo.crossOrigin = 'anonymous';
   reelVideo.preload = 'metadata';
@@ -1700,6 +1799,12 @@ function stopVideoReel() {
   releaseOwnedMedia(video);
   releaseOwnedMedia(audio);
   setExitControlVisible(false);
+  const returnTarget = reelLauncher !== document.body && reelLauncher?.isConnected && reelLauncher.getClientRects().length
+    ? reelLauncher : renderer?.domElement;
+  reelLauncher = null;
+  if (returnTarget?.isConnected && [reelBackButton, renderer?.domElement, document.body].includes(document.activeElement)) {
+    returnTarget.focus({ preventScroll: true });
+  }
   setScreenMeshHidden(false);
   restoreViewAfterContent();
   needsRedraw = true;
@@ -1708,11 +1813,8 @@ function stopVideoReel() {
 function animate() {
   if (sceneDisposed || sceneSuspended) return;
   sceneFrameId = requestAnimationFrame(animate);
-  if (controls && screenMesh) {
-    screenMesh.getWorldPosition(screenCenter);
-    controls.target.copy(screenCenter);
-  }
   if (controls) controls.update();
+  if (cameraCollision?.constrain(activeCamera) && !cameraAnimId) activeCamera.lookAt(controls.target);
   updateCameraPanel();
 
   if (contentMode === 'menu' && hoveredVideoId) {
@@ -1731,7 +1833,7 @@ function animate() {
 
   if (centerProjectionCamera !== activeCamera) {
     centerProjectionCamera = activeCamera;
-    centerProjection = createPanAwareCenterProjection(activeCamera);
+    centerProjection = createPanAwareCenterProjection(activeCamera, { viewportElement: renderer.domElement });
   }
   centerProjection.update({ enabled: centerOnViewport && !!cabinetRoot,
     panned: !!renderer.domElement.__gamesSharedMouse?.isPanned?.(),
@@ -1740,6 +1842,7 @@ function animate() {
       cabinetRoot.updateWorldMatrix(true, false);
       return cabinetRoot.localToWorld(cabinetLocalCenter.clone());
     } });
+  stickyAdapter?.update();
   renderer.render(scene, activeCamera);
   updateCssGameObject();
   updateOverlayPosition();
@@ -1779,6 +1882,19 @@ function disposeCabinetResources(root) {
 function disposeScene() {
   if (sceneDisposed) return;
   sceneDisposed = true;
+  stickyAdapter?.dispose(); stickyAdapter = null;
+  reelBackButton?.remove();
+  reelBackButton = null;
+  reelLauncher = null;
+  gameLauncher = null;
+  childGameKeyTarget?.removeEventListener('keydown', childGameKeyHandler);
+  childGameKeyTarget = null;
+  childGameKeyHandler = null;
+  gameMouseGestures?.dispose();
+  gameMouseGestures = null;
+  instructionZoom.reset();
+  cameraCollision?.dispose();
+  cameraCollision = null;
   setVideoPresentation(false);
   sceneSuspended = true;
   sceneAbortSignal = null;
@@ -1868,15 +1984,9 @@ function drawScreen() {
     contentRect = surface;
   } else {
     contentRect = surface;
-    // Reserve genuine top and bottom frame areas for the player chrome.  The
-    // movie is fitted into the remaining aperture rather than being painted
-    // underneath a large translucent lower panel.
-    const mediaAperture = {
-      x: surface.x,
-      y: surface.y + Math.round(surface.h * 0.11),
-      w: surface.w,
-      h: Math.max(1, surface.h - Math.round(surface.h * 0.11) - Math.round(surface.h * 0.13))
-    };
+    // Let the feathered chrome overlap the picture slightly, giving the reel
+    // more of the screen while retaining the entire 16:9 frame.
+    const mediaAperture = getReelVideoAperture(surface);
     if (contentMode === 'video' && reelReady && reelVideo) {
       videoRect = rectRound(fitRectContain(16, 9, mediaAperture));
     } else {
@@ -2012,6 +2122,7 @@ function drawScreen() {
           ctx.fillText('Volume controls unavailable for this embed.', uiLayout.sliderRect.x, uiLayout.bottom.y + uiLayout.bottom.h / 2);
           ctx.restore();
         }
+      if (currentGameId === 'pick-a-square') instructionZoom.draw(ctx, uiLayout, theme);
       if (!loggedGameRect) {
         loggedGameRect = true;
         const gw = gameCanvas.width || GAME_FRAME_WIDTH;
@@ -2089,58 +2200,10 @@ function drawScreen() {
 
 
 function drawGameSplash(ctx, rect, nowMs) {
-  const progress = getSplashProgress(nowMs);
-  const ready = progress >= 0.999;
-  const pad = Math.min(rect.w, rect.h) * 0.04;
-  const box = {
-    x: rect.x + pad,
-    y: rect.y + pad,
-    w: rect.w - pad * 2,
-    h: rect.h - pad * 2
-  };
-
-  ctx.save();
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
-  ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-
-  if (splashImage && splashImage.complete) {
-    const imgAspect = splashImage.naturalWidth && splashImage.naturalHeight
-      ? splashImage.naturalWidth / splashImage.naturalHeight
-      : 16 / 9;
-    const targetRect = rectRound(fitRectContain(16, 9, box));
-    const imgRect = fitRectToAspect(targetRect, imgAspect);
-    safeDrawImage(ctx, splashImage, imgRect.x, imgRect.y, imgRect.w, imgRect.h);
-  }
-
-  const barW = rect.w * 0.72;
-  const barH = Math.max(12, Math.round(rect.h * 0.04));
-  const barX = rect.x + (rect.w - barW) / 2;
-  const barY = rect.y + rect.h * 0.78;
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  ctx.fillRect(barX, barY, barW, barH);
-  ctx.fillStyle = getCssVar('--tertiary-color', '#7e3ccf');
-  ctx.fillRect(barX, barY, barW * progress, barH);
-
-  const btnR = Math.min(rect.w, rect.h) * 0.07;
-  const btnX = rect.x + rect.w / 2;
-  const btnY = rect.y + rect.h / 2;
-  splashPlayRect = { x: btnX, y: btnY, r: btnR };
-
-  ctx.globalAlpha = ready ? 1 : 0.3;
-  ctx.fillStyle = getCssVar('--tertiary-color', '#7e3ccf');
-  ctx.beginPath();
-  ctx.arc(btnX, btnY, btnR, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = '#f2e6ff';
-  const triR = btnR * 0.5;
-  ctx.beginPath();
-  ctx.moveTo(btnX + triR * 0.5, btnY);
-  ctx.lineTo(btnX - triR * 0.4, btnY - triR * 0.7);
-  ctx.lineTo(btnX - triR * 0.4, btnY + triR * 0.7);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.restore();
+  splashPlayRect = paintGameSplash(ctx, rect, {
+    image: splashImage, title: getCurrentGameTitle(), progress: getSplashProgress(nowMs),
+    accent: getCssVar('--tertiary-color', '#d6a7ff')
+  });
 }
 
 function drawMenu(ctx, rect) {
@@ -2321,11 +2384,24 @@ function drawMenu(ctx, rect) {
 }
 
 function ensureExitControl() {
-  return null;
+  if (reelBackButton?.isConnected) return reelBackButton;
+  reelBackButton = document.createElement('button');
+  reelBackButton.type = 'button';
+  reelBackButton.textContent = 'Back to games';
+  reelBackButton.setAttribute('aria-label', 'Back to games');
+  reelBackButton.hidden = true;
+  reelBackButton.style.cssText = 'position:fixed;left:1rem;bottom:1rem;z-index:10020;min-height:44px;padding:.65rem 1rem;border:2px solid var(--hl-secondary-color,#1ca36b);border-radius:.6rem;background:#16111f;color:#fff;font:inherit;cursor:pointer;outline-offset:3px;';
+  reelBackButton.addEventListener('click', () => {
+    if (contentMode === 'game') exitGameImmediate();
+    else if (contentMode === 'video') stopVideoReel();
+  });
+  document.body.append(reelBackButton);
+  return reelBackButton;
 }
 
 function setExitControlVisible() {
-  if (!ensureExitControl()) return;
+  const button = ensureExitControl();
+  button.hidden = sceneSuspended || !(contentMode === 'game' && gameIframe || contentMode === 'video' && reelVideo);
 }
 
 function updateCameraPanel() {
@@ -2348,6 +2424,7 @@ function updateCameraPanel() {
 }
 
 function handlePointerMove(ev) {
+  if (gameMouseGestures?.isCameraGesture()) return;
   if (contentMode === 'video') {
     lastVideoControlsActivityTs = performance.now();
     renderer.domElement.style.cursor = '';
@@ -2355,11 +2432,17 @@ function handlePointerMove(ev) {
   if (!screenMesh || !screenCanvas) return;
   const hit = raycastScreen(ev);
   if (!hit) {
+    instructionZoom.move(null);
     if (sharedControlsUi && sharedControlsUi.clearHoverPreview) sharedControlsUi.clearHoverPreview();
     if (contentMode === 'menu') clearMenuHover();
     return;
   }
   lastScreenHit = hit;
+  if (isGameActive() && currentGameId === 'pick-a-square') {
+    const overInstructions = instructionZoom.move(getUiPointFromHit(hit));
+    renderer.domElement.style.cursor = overInstructions ? 'pointer' : '';
+    if (overInstructions) return;
+  }
   if (contentMode === 'menu') {
     updateHoveredVideo(hit.x, hit.y);
     return;
@@ -2383,7 +2466,10 @@ function handlePointerMove(ev) {
       sharedControlsUi.handlePointerMove({
         canvasX: screenPt.x,
         canvasY: screenPt.y,
-        type: ev?.type || 'pointermove'
+        type: ev?.type || 'pointermove',
+        buttons: ev?.buttons,
+        button: ev?.button,
+        pointerType: ev?.pointerType
       }, {
         canvasWidth: screenCanvas.width,
         canvasHeight: screenCanvas.height
@@ -2397,7 +2483,7 @@ function handlePointerMove(ev) {
     return;
   }
   if (player) {
-    const event = toCanvasEvent(hit.x, hit.y);
+    const event = toCanvasEvent(hit.x, hit.y, ev);
     player.handlePointerMove(event);
   }
 }
@@ -2405,7 +2491,7 @@ function handlePointerMove(ev) {
 function handlePointerDown(ev) {
   if (ev.button !== 0 && ev.button !== 1 && ev.button !== 2) return;
   if (!screenMesh || !screenCanvas) return;
-  if (ev.button !== 0 && !isGameActive() && contentMode !== 'video') return;
+  if (ev.button !== 0 && contentMode !== 'video') return;
   if (sharedControlsUi && screenCanvas && contentMode === 'video' && getSharedActiveVideo()) {
     lastVideoControlsActivityTs = performance.now();
     renderer.domElement.style.cursor = '';
@@ -2433,6 +2519,7 @@ function handlePointerDown(ev) {
         console.log('[games] shared-controls click px:', Math.round(screenPt.x), Math.round(screenPt.y), 'handled:', true);
         ev.preventDefault();
         ev.stopPropagation();
+        ev.stopImmediatePropagation();
         return;
       }
       const wasPaused = !!reelVideo?.paused;
@@ -2444,11 +2531,9 @@ function handlePointerDown(ev) {
       return;
     }
   }
+  if (ev.button !== 0) return;
   const hit = raycastScreen(ev);
-  if (!hit) {
-    controls.enabled = (contentMode === 'menu');
-    return;
-  }
+  if (!hit) return;
   lastScreenHit = hit;
 
     if (contentMode === 'game' && gameUiLayout) {
@@ -2615,25 +2700,28 @@ function handlePointerUp(ev) {
     ev.preventDefault();
     ev.stopPropagation();
     pointerCaptured = false;
-    if (controls) controls.enabled = (contentMode === 'menu');
+    updateControlsForContent(contentMode);
     try { renderer.domElement.releasePointerCapture(ev.pointerId); } catch  { /* ignore */ }
   }
   gameVolumeDrag = false;
-  if (isGameActive() && lastScreenHit) {
+  if (ev.button === 0 && isGameActive() && lastScreenHit) {
     dispatchGamePointerUp(lastScreenHit, ev.button);
   }
 }
 
 function handleKeyDown(ev) {
+  if (ev.defaultPrevented || ev.isComposing || ev.ctrlKey || ev.altKey || ev.metaKey ||
+      document.querySelector('dialog[open], [aria-modal="true"]:not([hidden])') ||
+      ev.target?.closest?.('input, textarea, select, [contenteditable], [role="textbox"]')) return;
   const key = (ev.key || '').toLowerCase();
+  if (key === 'escape' && instructionZoom.close()) { ev.preventDefault(); return; }
   if (key === 'escape') {
+    if (contentMode === 'menu') return;
+    ev.preventDefault();
     if (contentMode === 'game') {
       exitGameImmediate();
     } else if (contentMode === 'video') {
       stopVideoReel();
-    } else {
-      contentMode = 'menu';
-      needsRedraw = true;
     }
     return;
   }
@@ -2642,11 +2730,12 @@ function handleKeyDown(ev) {
   const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
   const activeAudio = (contentMode === 'video' && reelVideo) ? reelAudio : playerAudio;
   if (!activeVideo) return;
+  if (key === ' ' && ev.target?.closest?.('button, a, [role="button"]')) return;
 
     const shift = ev.shiftKey;
     const prevent = () => { try { ev.preventDefault(); } catch  { /* ignore */ } };
 
-  if (shift && key === '?') { prevent(); showVideoKeyboardShortcuts(); return; }
+  if (shift && (key === '?' || ev.code === 'Slash')) { prevent(); showVideoKeyboardShortcuts({ playerView: true }); return; }
   if (key === 'f') { prevent(); toggleCameraZoom(); return; }
   const seekBy = (delta) => {
     if (!activeVideo.duration || !isFinite(activeVideo.duration)) return;
@@ -2689,11 +2778,11 @@ function handleKeyDown(ev) {
       changeOwnedMediaSound(activeAudio, activeVideo, { volume: next });
       return;
     }
-    if (key === ',' && shift) { prevent(); speedIndex = Math.max(0, speedIndex - 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; needsRedraw = true; return; }
-    if (key === '.' && shift) { prevent(); speedIndex = Math.min(SPEED_RATES.length - 1, speedIndex + 1); if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex]; needsRedraw = true; return; }
-    if (key === ',' && activeVideo.paused) { prevent(); seekBy(-1 / 30); needsRedraw = true; return; }
-    if (key === '.' && activeVideo.paused) { prevent(); seekBy(1 / 30); needsRedraw = true; return; }
-    if ('0123456789'.includes(key)) {
+    if (shift && (key === '<' || ev.code === 'Comma' || key === ',')) { prevent(); setSharedPlaybackRate(SPEED_RATES[Math.max(0, speedIndex - 1)]); needsRedraw = true; return; }
+    if (shift && (key === '>' || ev.code === 'Period' || key === '.')) { prevent(); setSharedPlaybackRate(SPEED_RATES[Math.min(SPEED_RATES.length - 1, speedIndex + 1)]); needsRedraw = true; return; }
+    if (!shift && (key === ',' || ev.code === 'Comma') && activeVideo.paused) { prevent(); seekBy(-1 / 30); needsRedraw = true; return; }
+    if (!shift && (key === '.' || ev.code === 'Period') && activeVideo.paused) { prevent(); seekBy(1 / 30); needsRedraw = true; return; }
+    if (/^[0-9]$/.test(key)) {
       prevent();
       const digit = parseInt(key, 10);
       if (activeVideo.duration && isFinite(activeVideo.duration)) {
@@ -2705,7 +2794,7 @@ function handleKeyDown(ev) {
     }
   }
 
-function enterContentView() {
+function enterContentView(poiMotion = null) {
   if (!cameraZoomUserEnabled) {
     previousCameraZoomAlt = cameraZoomAlt;
     autoZoomActive = true;
@@ -2719,18 +2808,14 @@ function enterContentView() {
     console.log('[camera] enterContentView() using pre-set userReturnTransform=', userReturnTransform);
   }
   if (!cameraZoomAlt) {
-    applyCameraMode(true);
+    applyCameraMode(true, poiMotion ? {animate: poiMotion.animate, duration: Math.max(1, poiMotion.duration(CAMERA_ZOOM_DURATION))} : {});
   }
   updateControlsForContent('content');
 }
 
 function restoreViewAfterContent() {
   if (!cameraZoomUserEnabled && autoZoomActive) {
-    applyCameraMode(previousCameraZoomAlt);
-    if (userReturnTransform) {
-      console.log('[camera] restoreViewAfterContent() applying userReturnTransform=', userReturnTransform);
-      applyCameraSnapshot(userReturnTransform);
-    }
+    applyCameraMode(previousCameraZoomAlt, { snapshot: userReturnTransform });
   }
   autoZoomActive = false;
   userReturnTransform = null;
@@ -2739,7 +2824,7 @@ function restoreViewAfterContent() {
 
 function updateControlsForContent(mode) {
   if (!controls) return;
-  const allowTransform = !cameraZoomAlt && contentMode !== 'video';
+  const allowTransform = !cameraAnimId && !pointerCaptured;
   applyStandardGlbMouseControlMode(controls, { enabled: allowTransform, allowRotate: allowTransform, allowZoom: allowTransform });
   setGameAudioControlsVisible(mode === 'game');
 }
@@ -3125,11 +3210,11 @@ function raycastScreen(ev) {
 
 
 
-function toCanvasEvent(x, y) {
+function toCanvasEvent(x, y, sourceEvent = null) {
   const rect = screenCanvas.getBoundingClientRect();
   const clientX = rect.left + (x / screenCanvas.width) * rect.width;
   const clientY = rect.top + (y / screenCanvas.height) * rect.height;
-  return { clientX, clientY, canvasX: x, canvasY: y };
+  return { clientX, clientY, canvasX: x, canvasY: y, buttons: sourceEvent?.buttons, button: sourceEvent?.button, pointerType: sourceEvent?.pointerType };
 }
 
 
@@ -3138,8 +3223,7 @@ function toCanvasEvent(x, y) {
 
 function cycleSpeed() {
   speedIndex = (speedIndex + 1) % SPEED_RATES.length;
-  const activeVideo = (contentMode === 'video' && reelVideo) ? reelVideo : playerVideo;
-  if (activeVideo) activeVideo.playbackRate = SPEED_RATES[speedIndex];
+  setSharedPlaybackRate(SPEED_RATES[speedIndex]);
   needsRedraw = true;
 }
 
@@ -3166,7 +3250,7 @@ if (typeof window !== 'undefined' && !window.__dumpMenuLayout) {
 function getCurrentGameTitle() {
   if (!currentGameId) return 'Game';
   const entry = GAME_LIST.find((g) => g.id === currentGameId);
-  return entry && entry.title ? entry.title : currentGameId;
+  return entry ? entry.label : 'Game';
 }
 
 function computeGameUiLayout(screenRect, gameAspect = 16 / 9) {
@@ -3200,6 +3284,12 @@ function computeGameUiLayout(screenRect, gameAspect = 16 / 9) {
 
   return { top, bottom, backRect, titleRect, muteRect, sliderRect, gameRect, singlePanel: false };
 }
+function getReelVideoAperture(surface) {
+  const top = Math.round(surface.h * .065);
+  const bottom = Math.round(surface.h * .095);
+  return {x:surface.x,y:surface.y+top,w:surface.w,h:Math.max(1,surface.h-top-bottom)};
+}
+
 function fitRectContain(srcW, srcH, dst) {
   const srcAR = srcW / srcH;
   const dstAR = dst.w / dst.h;

@@ -5,9 +5,13 @@ import vm from 'node:vm';
 const base=new URL('./',import.meta.url),THREE=await import('data:text/javascript;base64,'+fs.readFileSync(new URL('vendor/three.module.js',base)).toString('base64'));
 const context=vm.createContext({console,performance,setTimeout,clearTimeout,queueMicrotask,requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{}}),modules=new Map(),three=new vm.SyntheticModule(Object.keys(THREE),function(){for(const [key,value] of Object.entries(THREE))this.setExport(key,value);},{context});
 async function get(url){if(modules.has(url.href))return modules.get(url.href);const m=new vm.SourceTextModule(fs.readFileSync(url,'utf8'),{context,identifier:url.href});modules.set(url.href,m);return m;}
-async function load(name){const m=await get(new URL(name,base));await m.link((name,from)=>name==='three'?three:get(new URL(name,from.identifier)));await m.evaluate();return m.namespace;}
+async function load(name){const m=await get(new URL(name,base));if(m.status==='unlinked')await m.link((name,from)=>name==='three'?three:get(new URL(name,from.identifier)));if(m.status!=='evaluated')await m.evaluate();return m.namespace;}
 const {createGradePendants}=await load('grade-pendants.mjs'),{resetPose,arcCamera,shelfView}=await load('view-reset.mjs'),{installItemViewControls}=await load('item-view-controls.mjs'),{easelFrame,easelVideoPolicy,createEaselVideo}=await load('easel-video.mjs');
 const {shelfRotationPolicy}=await load('view-policy.mjs'),{createSettingsStore}=await load('../../_7-shared-scripts/core/settings.js');
+const {gridView,gridPoses,focusPoses,poseBox,readerFrame,tightView,GridPages}=await load('book-layout.mjs');
+const {createMarkerSampler}=await load('marker-player-model.mjs');
+const {createSourceBook}=await load('source-book-rig.mjs');
+const {createPageControls,pageControlPlacements,overviewPageControlPlacements,pageControlsFrame}=await load('page-controls.mjs');
 const data=JSON.parse(fs.readFileSync(new URL('assets/navigation/grade-meshes.json',base))),binary=fs.readFileSync(new URL('assets/navigation/grade-meshes.bin',base)),values=new Float32Array(binary.buffer,binary.byteOffset,binary.byteLength/4);
 test('all six pendants retain finite, normalized original relief geometry and normals',()=>{
  assert.equal(data.grades.length,6);assert.equal(values.length,data.floats);
@@ -70,4 +74,121 @@ test('Graphics opt-in detects both double-click buttons and leaves single clicks
  const send=(type,button,x=10)=>{const e=new Event(type,{cancelable:true});for(const [key,value] of Object.entries({button,clientX:x,clientY:10}))Object.defineProperty(e,key,{value});dom.dispatchEvent(e);};
  for(const button of [1,2]){send('pointerdown',button);send('pointerup',button);assert.equal(resets.length,button===1?0:1);send('pointerdown',button);send('pointerup',button);await Promise.resolve();}
  assert.deepEqual(resets,['pan','rotation']);send('pointerdown',2);send('pointermove',2,100);send('pointerup',2,100);await Promise.resolve();assert.equal(resets.length,2);input.dispose();
+});
+
+function actualBookLayout(aspect){
+ const meta=JSON.parse(fs.readFileSync(new URL('marker-motion.json',base))),binary=fs.readFileSync(new URL('presentation-motion.bin',base));
+ const Motion=vm.runInContext('Float32Array',context),motion=new Motion(binary.byteLength/4);motion.set(new Float32Array(binary.buffer,binary.byteOffset,binary.byteLength/4));
+ const sampler=createMarkerSampler(meta,motion);
+ const surface={makeMaterial:()=>new THREE.MeshBasicMaterial()},book=createSourceBook({grade:1,pageSurface:surface,coverSurface:surface,texture:()=>null});
+ const bounds=book.update(4),closedBounds=book.closedBounds(1),poses=gridPoses(sampler.frame(2713,{imperfection:0}).poses,aspect);
+ book.dispose();return {bounds,closedBounds,poses,sampler,meta};
+}
+function actualPageBounds(progress){
+ const surface={makeMaterial:()=>new THREE.MeshBasicMaterial()},book=createSourceBook({grade:1,pageSurface:surface,coverSurface:surface,texture:()=>null});
+ const bounds=book.update(progress);book.dispose();return bounds;
+}
+test('real grid and focused reader project below measured header bands without excessive shrink',()=>{
+ for(const [width,height,safeTop] of [[1440,950,165],[820,600,155],[900,360,168],[390,760,155]]){
+  const aspect=width/height,{bounds,poses}=actualBookLayout(aspect),reader=focusPoses(3,bounds,'grid',poses,poses,aspect)[2];
+  for(const extraBox of [null,poseBox(reader,bounds)]){
+   const view=gridView(poses,bounds,aspect,{safeTop,viewportHeight:height,extraBox}),camera=new THREE.PerspectiveCamera(35,aspect,.08,2500);
+   camera.position.copy(view.position);camera.lookAt(view.target);camera.updateMatrixWorld(true);
+   const box=new THREE.Box3();poses.forEach(p=>box.union(poseBox(p,bounds)));if(extraBox)box.union(extraBox);
+   for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z]){
+    const projected=new THREE.Vector3(x,y,z).project(camera),screenY=(1-projected.y)*height/2;
+    assert.ok(screenY>=safeTop+1,`grid clears header at ${width}×${height}: ${screenY}`);
+    assert.ok(screenY<=height-8,`grid remains visible at ${width}×${height}: ${screenY}`);
+    assert.ok(Math.abs(projected.x)<.98);
+   }
+   assert.ok(view.position.distanceTo(view.target)<80,'camera remains near the books');
+  }
+ }
+});
+test('page discs choose symmetric real-layout gaps and remain physical, occludable, and endpoint-safe',()=>{
+ for(const aspect of [1.8,.8]){
+  const {bounds,poses}=actualBookLayout(aspect),focused=focusPoses(3,bounds,'grid',poses,poses,aspect);
+  for(const [state,arr,selected] of [['grid',poses,''],['book',focused,'book-3']]){
+   const grade=selected?3:aspect>=1.6?3:2,locations=selected?pageControlPlacements(arr,bounds,grade):overviewPageControlPlacements(arr,bounds),boxes=arr.map(p=>poseBox(p,bounds));
+   if(selected)assert.ok(Math.abs(locations.previous.position.x+locations.next.position.x-2*boxes[grade-1].getCenter(new THREE.Vector3()).x)<1e-8);
+   else for(const placement of Object.values(locations))assert.ok(placement.position.x>Math.min(...boxes.map(b=>b.min.x))&&placement.position.x<Math.max(...boxes.map(b=>b.max.x)),'overview arrows use interior book gaps');
+   if(selected)for(const placement of Object.values(locations))assert.ok(placement.position.x>Math.min(...boxes.map(b=>b.min.x))&&placement.position.x<Math.max(...boxes.map(b=>b.max.x)),'focused grid arrows occupy internal row gaps');
+   for(const placement of Object.values(locations))for(const box of boxes){const p=placement.position,r=placement.radius;assert.ok(p.x+r<box.min.x||p.x-r>box.max.x||p.y+r<box.min.y||p.y-r>box.max.y,'disc clears every book silhouette');}
+   const view=gridView(poses,bounds,aspect,{safeTop:155,viewportHeight:850,extraBox:selected?boxes[grade-1]:null}),camera=new THREE.PerspectiveCamera(35,aspect,.08,2500);
+   camera.position.copy(view.position);camera.lookAt(view.target);camera.updateMatrixWorld(true);
+   for(const placement of Object.values(locations)){const projected=placement.position.clone().project(camera);assert.ok(Math.abs(projected.x)<.95&&Math.abs(projected.y)<.9,'physical page control stays on screen');}
+   const rig=createPageControls(),scene=new THREE.Scene();scene.add(rig.root);
+   rig.update({poses:arr,bounds,selected,state,layout:'grid',page:-1,target:-1,busy:false});scene.updateMatrixWorld(true);
+   for(const [side,entry] of rig.entries){
+    assert.equal(entry.group.visible,true);assert.equal(entry.group.userData.enabled,side==='next');assert.ok(entry.group.children.every(mesh=>mesh.isMesh&&!mesh.isSprite&&mesh.material.depthTest));
+    const badge=entry.group.children[0].geometry.attributes.position;
+    let actualRadius=0;for(let i=0;i<badge.count;i++)actualRadius=Math.max(actualRadius,Math.hypot(badge.getX(i),badge.getY(i)));
+    assert.ok(actualRadius*entry.group.scale.x<=locations[side].radius+.001,'collision radius covers rendered bevel');
+    const ray=new THREE.Raycaster(),point=entry.group.getWorldPosition(new THREE.Vector3());ray.set(camera.position,point.clone().sub(camera.position).normalize());
+    assert.ok(ray.intersectObject(entry.group,true).length,'physical relief is ray-pickable');
+    const blocker=new THREE.Mesh(new THREE.BoxGeometry(.3,.3,.03),new THREE.MeshBasicMaterial());blocker.position.copy(camera.position).lerp(point,.7);scene.add(blocker);scene.updateMatrixWorld(true);
+    assert.equal(ray.intersectObjects([entry.group,blocker],true)[0]?.object,blocker,'scene depth can occlude the control');
+    blocker.removeFromParent();blocker.geometry.dispose();blocker.material.dispose();
+   }
+   rig.update({poses:arr,bounds,selected,state,layout:'grid',page:10,target:10,busy:false});assert.equal(rig.entries.get('next').group.userData.enabled,false);
+   rig.dispose();assert.equal(rig.root.parent,null);
+  }
+ }
+ const {bounds,closedBounds,sampler,meta}=actualBookLayout(1.8),spreadRig=createPageControls();
+ let spread,spreadBounds;
+ for(let grade=1;grade<=6;grade++){
+  const marker=meta.markers.find(item=>item.name===`spread_select_g${grade}`);
+  spread=focusPoses(grade,bounds,'spread',sampler.frame(marker.endFrame,{imperfection:0}).poses,null,1.8);
+  spreadBounds=Array(6).fill(closedBounds);spreadBounds[grade-1]=bounds;
+  const locations=pageControlPlacements(spread,spreadBounds,grade),boxes=spread.map((pose,i)=>poseBox(pose,spreadBounds[i]));
+  for(const placement of Object.values(locations))for(const box of boxes){const p=placement.position,r=placement.radius;assert.ok(p.x+r<box.min.x||p.x-r>box.max.x||p.y+r<box.min.y||p.y-r>box.max.y,`spread grade ${grade} arrow clears actual books`);}
+  for(const aspect of [.5,.8,1,1.8,2.4]){
+   const frame=pageControlsFrame(readerFrame(spread[grade-1],bounds),spread,spreadBounds,grade),view=tightView(frame,aspect,{fillX:.96,fillY:.86}),camera=new THREE.PerspectiveCamera(35,aspect,.08,2500);
+   camera.position.copy(view.position);camera.lookAt(view.target);camera.updateMatrixWorld(true);
+   for(const {position,radius} of Object.values(locations))for(const x of [-radius,radius])for(const y of [-radius,radius]){
+    const point=position.clone().add(new THREE.Vector3(x,y,0)).project(camera);
+    assert.ok(Math.abs(point.x)<.97&&Math.abs(point.y)<.9,`focused spread grade ${grade} arrow bevel fits aspect ${aspect}`);
+   }
+  }
+ }
+ spreadRig.update({poses:spread,bounds:spreadBounds,selected:'book-6',state:'book',layout:'spread',page:4,target:4,busy:false});
+ for(const entry of spreadRig.entries.values())assert.equal(entry.group.visible,true,'focused spread keeps page controls');
+ spreadRig.update({poses:spread,bounds,selected:'',state:'spread',layout:'spread',page:-1,target:-1,busy:false});
+ for(const entry of spreadRig.entries.values())assert.equal(entry.group.visible,false,'closed spread has no invented shared-page action');
+ spreadRig.dispose();
+ const gridPages=new GridPages();gridPages.follow(2.35);assert.equal(gridPages.focus(),2.35);
+});
+test('stationary page-control envelopes stay clear across cover, intermediate leaves, and back',()=>{
+ for(const aspect of [1.8,.8]){
+  const {poses,bounds}=actualBookLayout(aspect),focused=focusPoses(3,bounds,'grid',poses,poses,aspect);
+  for(const progress of [-1,0,2.5,9,10]){
+   const current=actualPageBounds(progress);
+   for(const [arr,grade] of [[poses,0],[focused,3]]){
+    const locations=grade?pageControlPlacements(arr,bounds,grade):overviewPageControlPlacements(arr,bounds),boxes=arr.map(p=>poseBox(p,current));
+    for(const placement of Object.values(locations))for(const box of boxes){const p=placement.position,r=placement.radius;assert.ok(p.x+r<box.min.x||p.x-r>box.max.x||p.y+r<box.min.y||p.y-r>box.max.y,`page ${progress} gap remains clear`);}
+   }
+  }
+ }
+});
+test('wide grid gaps are balanced and every focused reader keeps page discs clear',()=>{
+ for(const aspect of [1.8,.8]){
+  const {bounds,poses}=actualBookLayout(aspect),boxes=poses.map(p=>poseBox(p,bounds));
+  const overview=overviewPageControlPlacements(poses,bounds);
+  if(aspect>=1.6){
+   assert.ok(Math.abs(overview.previous.radius-overview.next.radius)<1e-8);
+   assert.ok(overview.previous.radius>=.12,'left overview gap retains a readable badge');
+   assert.ok(overview.next.radius>=.12,'right overview gap retains a readable badge');
+   const columns=[...new Set(poses.map(p=>p.position[0].toFixed(3)))].map(Number).sort((a,b)=>a-b);
+   assert.equal(columns.length,3);
+   assert.ok(Math.abs((columns[1]-columns[0])-(columns[2]-columns[1]))<.06,'grid columns spread evenly about authored center');
+  }
+  for(let grade=1;grade<=6;grade++){
+   const focused=focusPoses(grade,bounds,'grid',poses,poses,aspect);
+   const locations=pageControlPlacements(focused,bounds,grade),focusedBoxes=focused.map(p=>poseBox(p,bounds));
+   for(const [side,{position,radius}] of Object.entries(locations))for(const box of focusedBoxes){
+    assert.ok(position.x+radius<box.min.x||position.x-radius>box.max.x||position.y+radius<box.min.y||position.y-radius>box.max.y,`grid grade ${grade} ${side} arrow clears books`);
+   }
+  }
+  assert.equal(boxes.length,6);
+ }
 });

@@ -171,3 +171,9 @@ body.item-active .temporary-controls{top:auto;bottom:64px}.accessible-items{bott
 .groovy-navigation button.grade-pendant:focus-visible{left:50%!important;top:auto!important;bottom:60px;width:auto;height:auto;clip-path:none;overflow:visible;translate:-50% 0;padding:12px 18px;background:#ffdab0;color:#58374f;font:700 14px Georgia;pointer-events:auto;border-radius:16px}
 
 #easel-controls{position:fixed;left:50%;bottom:68px;transform:translateX(-50%);z-index:12;display:flex;align-items:center;justify-content:center;gap:10px;max-width:calc(100vw - 36px);padding:10px 14px;border:1px solid #edcda3;border-radius:18px;background:#392337ed;color:#ffedcf;font:13px Arial;box-shadow:0 4px 16px #170e2266}#easel-controls[hidden]{display:none}#easel-controls button{border:1px solid #f2d7b7;border-radius:10px;padding:8px 12px;background:#ffdab0;color:#58374f;white-space:nowrap;cursor:pointer}#easel-controls label{font-size:0}#easel-controls input{width:clamp(80px,22vw,300px);accent-color:#f7bc85}#easel-controls output{font-variant-numeric:tabular-nums;white-space:nowrap}@media(max-width:650px){#easel-controls{gap:6px;padding:8px;bottom:75px;flex-wrap:wrap}#easel-controls button{padding:7px 9px}}
+
+/* The persistent navbar owns the left edge; preview frames have no navbar. */
+html:not([data-work-preview="true"]) body[data-navbar-layout="modern"] :is(.accessible-items, .temporary-controls) {
+    left: calc(var(--site-nav-rail-width, 150px) + 16px);
+    max-width: calc(100vw - var(--site-nav-rail-width, 150px) - 50px) !important;
+}

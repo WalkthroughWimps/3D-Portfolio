@@ -1,10 +1,11 @@
 import { disableDebug, DEBUG_VISIBILITY_EVENT } from './debug-loader.js';
+import { mountCollapsibleSections } from '../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
 
 const HOOK_CATEGORIES = ['actions', 'flags', 'metrics'];
 const EXTERNAL_CONTROL_TABS = [
   { id: 'controls-overview', label: 'Available Controls', slotId: null },
   { id: 'emissiveListPanel', label: 'Emissive Control', slotId: 'emissiveListPanel' },
-  { id: 'startPageControls', label: 'Start Page Controls', slotId: 'startPageControls' },
+  { id: 'debugCameraPanel', label: 'Controller camera', slotId: 'debugCameraPanel' },
   { id: 'instrumentLevelPanel', label: 'Instrument Levels', slotId: 'instrumentLevelPanel' },
   { id: 'uvModeControls', label: 'UV / Lighting Modes', slotId: 'uvModeControls' },
 ];
@@ -14,6 +15,7 @@ const emitVisibilityEvent = (show) => {
 };
 
 let panel = null;
+let hookSections = null;
 let collapsed = false;
 let hidden = false;
 let rafId = null;
@@ -522,14 +524,14 @@ function createStyles() {
     }
     #debug-panel .debug-panel__external-slot .instrument-level-panel,
     #debug-panel .debug-panel__external-slot .uv-mode-controls,
-    #debug-panel .debug-panel__external-slot #startPageControls,
+    #debug-panel .debug-panel__external-slot #debugCameraPanel,
     #debug-panel .debug-panel__external-slot #emissiveListPanel {
       width: 100%;
       margin: 0;
       border-radius: 8px;
     }
     #emissiveListPanel:not(.debug-panel__external),
-    #startPageControls:not(.debug-panel__external),
+    #debugCameraPanel:not(.debug-panel__external),
     #instrumentLevelPanel:not(.debug-panel__external),
     #uvModeControls:not(.debug-panel__external) {
       display: none !important;
@@ -683,10 +685,12 @@ function renderHookSection(container, category, entries) {
   const keys = Object.keys(entries);
   if (!keys.length) return false;
 
-  const section = document.createElement('div');
+  const section = document.createElement('details');
   section.className = 'debug-panel__hooks-section';
+  section.dataset.sectionId = category;
+  section.open = true;
 
-  const title = document.createElement('div');
+  const title = document.createElement('summary');
   title.className = 'debug-panel__section-heading';
   title.textContent = category.charAt(0).toUpperCase() + category.slice(1);
   section.appendChild(title);
@@ -791,6 +795,8 @@ function renderHooks() {
 
   if (!hooksContainer || !actionsContainer) return;
 
+  hookSections?.dispose();
+  hookSections = null;
   hooksContainer.innerHTML = '';
   actionsContainer.innerHTML = '';
 
@@ -804,6 +810,12 @@ function renderHooks() {
     empty.textContent = 'No flags or metrics registered yet.';
     hooksContainer.appendChild(empty);
   }
+  hookSections = mountCollapsibleSections(hooksContainer, {
+    scope: 'debug:registered-values',
+    group: 'hooks',
+    headings: false,
+    reorder: false,
+  });
 
   const actionEntries = hookStore.actions || {};
   const actionKeys = Object.keys(actionEntries).filter((key) => typeof actionEntries[key] === 'function');
@@ -855,7 +867,7 @@ const attachExternalSection = (selectorId) => {
 };
 
 const attachExternalSections = () => {
-  ['emissiveListPanel', 'startPageControls', 'instrumentLevelPanel', 'uvModeControls'].forEach((id) => attachExternalSection(id));
+  ['emissiveListPanel', 'debugCameraPanel', 'instrumentLevelPanel', 'uvModeControls'].forEach((id) => attachExternalSection(id));
   updateRightTabAvailability();
   renderControlStatus();
 };
@@ -1056,7 +1068,7 @@ function buildPanelMarkup() {
           <div class="debug-panel__tabs debug-panel__tabs--right" role="tablist" aria-label="Control tabs">
             <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="controls-overview">Available Controls</button>
             <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="emissiveListPanel">Emissive Control</button>
-            <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="startPageControls">Start Page Controls</button>
+            <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="debugCameraPanel">Controller camera</button>
             <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="instrumentLevelPanel">Instrument Levels</button>
             <button class="debug-panel__tab" type="button" role="tab" data-tab-group="right" data-tab-target="uvModeControls">UV / Lighting Modes</button>
           </div>
@@ -1077,11 +1089,11 @@ function buildPanelMarkup() {
                 </div>
               </div>
             </section>
-            <section class="debug-panel__pane" data-pane-group="right" data-pane-id="startPageControls">
+            <section class="debug-panel__pane" data-pane-group="right" data-pane-id="debugCameraPanel">
               <div class="debug-panel__stack debug-panel__stack--single">
                 <div class="debug-panel__card">
-                  <div class="debug-panel__card-title">Start Page Controls</div>
-                  <div class="debug-panel__external-slot" data-external-slot="startPageControls"></div>
+                  <div class="debug-panel__card-title">Controller camera</div>
+                  <div class="debug-panel__external-slot" data-external-slot="debugCameraPanel"></div>
                 </div>
               </div>
             </section>

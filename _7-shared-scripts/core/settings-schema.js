@@ -1,8 +1,10 @@
+import { TRANSFORM_RESET_EASINGS } from './transform-easing.js';
+
 export const SCHEMA_VERSION = 2;
 export const A11Y_KEY = 'site.a11y.settings';
 export const SCHEMA_KEY = 'site.settings.schemaVersion';
 // Declare new faces here so their persistent fields and common controls agree.
-export const ABOUT_FACES = Object.freeze({about: 'About', skills: 'Skills', notes: 'Notes', clock: 'Clock', refs: 'Refs', odd: 'Oddio'});
+export const ABOUT_FACES = Object.freeze({about: 'Fish', skills: 'Skills', notes: 'Notes', clock: 'Clock', refs: 'About', odd: 'Oddio'});
 export const VIDEO_EXPLAINER_DEFAULTS = Object.freeze({
   'online-classes': { title: 'Online Classes', text: 'Remote learning cuts and overlays.' },
   'a-list-videos': { title: 'A-List Videos', text: 'Promo edits and highlights.' },
@@ -19,10 +21,29 @@ const numeric = (min, max, snap = false) => value => {
   const clamped = Math.max(min, Math.min(max, n));
   return snap ? Math.round(clamped / 5) * 5 : clamped;
 };
+const steppedNumeric = (min, max, step) => value => {
+  const parsed = numeric(min, max)(value);
+  if (parsed === undefined) return undefined;
+  const precision = Math.max(0, String(step).split('.')[1]?.length || 0);
+  const snapped = Math.round(parsed / step) * step;
+  return Number(Math.max(min, Math.min(max, snapped)).toFixed(precision));
+};
 const bool = value => value === true || value === 'true' ? true : value === false || value === 'false' ? false : undefined;
 const choice = (...values) => value => values.includes(value) ? value : undefined;
+const resetEasing = value => value === null || value === '' || value === 'null' ? null : choice(...TRANSFORM_RESET_EASINGS.map(([id]) => id))(value);
 const explainerText = value => typeof value === 'string' && value.length <= 1200 ? value.replace(/\r\n?/g, '\n') : undefined;
 const color = value => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value) ? value.toLowerCase() : undefined;
+const musicMidiSyncOffsets = value => {
+  if (typeof value !== 'string' || value.length > 8000) return undefined;
+  try {
+    const data = JSON.parse(value);
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined;
+    const entries = Object.entries(data);
+    if (entries.some(([song, ms]) => !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(song) || song.length > 64 ||
+      typeof ms !== 'number' || !Number.isFinite(ms) || Math.abs(ms) > 3000)) return undefined;
+    return JSON.stringify(Object.fromEntries(entries.sort(([a], [b]) => a.localeCompare(b)).map(([song, ms]) => [song, Math.round(ms / 5) * 5])));
+  } catch { return undefined; }
+};
 const clockFinishes = value => {
   if (typeof value !== 'string' || value.length > 6000) return undefined;
   try {
@@ -49,12 +70,17 @@ const podConfig = value => {
 };
 export const SETTINGS_FIELDS = Object.freeze({
   'header.useLegacy': { key: 'site.header.useLegacy', default: false, parse: bool },
+  'header.useLegacyNavbar': { key: 'site.header.useLegacyNavbar', default: false, parse: bool },
   'about.centerOnViewport': { key: 'site.about.centerOnViewport', default: false, parse: bool },
   'music.centerOnViewport': { key: 'site.music.centerOnViewport', default: false, parse: bool },
   'graphics.centerOnViewport': { key: 'site.graphics.centerOnViewport', default: false, parse: bool },
   'graphics.shelfRotation': { key: 'site.graphics.shelfRotation', default: false, parse: bool },
   'graphics.videoRotation': { key: 'site.graphics.videoRotation', default: false, parse: bool },
   'graphics.videoZoom': { key: 'site.graphics.videoZoom', default: false, parse: bool },
+  'graphics.pageSurfaceType': { key: 'site.graphics.pageSurfaceType', default: 'paper', parse: choice('paper', 'felt', 'woven', 'smooth') },
+  'graphics.pageSurfaceStrength': { key: 'site.graphics.pageSurfaceStrength', default: .18, parse: numeric(0, 2) },
+  'graphics.pageSurfaceScale': { key: 'site.graphics.pageSurfaceScale', default: 1, parse: numeric(.5, 3) },
+  'graphics.pageSurfaceInk': { key: 'site.graphics.pageSurfaceInk', default: .35, parse: numeric(0, 1) },
   'games.centerOnViewport': { key: 'site.games.centerOnViewport', default: false, parse: bool },
   'videos.centerOnViewport': { key: 'site.videos.centerOnViewport', default: false, parse: bool },
   ...Object.fromEntries(Object.entries(VIDEO_EXPLAINER_DEFAULTS).map(([id, item]) => [
@@ -67,6 +93,10 @@ export const SETTINGS_FIELDS = Object.freeze({
   'videos.explainerPlacement': { key: 'site.videos.explainerPlacement', default: 'center', parse: choice('center', 'follow', ...Object.keys(VIDEO_EXPLAINER_DEFAULTS)) },
   'docs.centerOnViewport': { key: 'site.docs.centerOnViewport', default: false, parse: bool },
   'cube.faceSnap': { key: 'site.cube.faceSnap', default: false, parse: bool },
+  'cube.lockedRotation': { key: 'site.cube.lockedRotation', default: false, parse: bool },
+  'cube.faceRotation': { key: 'site.cube.faceRotation', default: false, parse: bool },
+  'cube.faceArrows': { key: 'site.cube.faceArrows', default: false, parse: bool },
+  'cube.arrowSpeed': { key: 'site.cube.arrowSpeed', default: 1, parse: numeric(.25, 3) },
   'cube.uprightFaces': { key: 'site.cube.uprightFaces', default: true, parse: bool },
   'cube.showShell': { key: 'site.cube.showShell', default: true, parse: bool },
   ...Object.fromEntries(Object.keys(ABOUT_FACES).flatMap(face => [
@@ -163,6 +193,26 @@ export const SETTINGS_FIELDS = Object.freeze({
   'accessibility.highContrast': { key: A11Y_KEY, prop: 'highContrast', default: false, parse: bool },
   'accessibility.textScale': { key: A11Y_KEY, prop: 'textScale', default: 1, parse: numeric(1, 1.25) },
   'accessibility.focusOutline': { key: A11Y_KEY, prop: 'focusOutline', default: 'auto', parse: choice('auto', 'always') },
+  'accessibility.shortcutHints': { key: A11Y_KEY, prop: 'shortcutHints', default: 'auto', parse: choice('auto', 'always', 'hidden') },
+  'interaction.animateResets': { key: 'site.interaction.animate-resets', default: true, parse: bool },
+  'interaction.focusUiMoveAway': { key: 'site.interaction.focus-ui-move-away', default: true, parse: bool },
+  'interaction.focusUiAnimate': { key: 'site.interaction.focus-ui-animate', default: true, parse: bool },
+  // Retained for older archives; focused site chrome now always stays behind media.
+  'interaction.focusUiKeepBehind': { key: 'site.interaction.focus-ui-keep-behind', default: true, parse: bool },
+  'interaction.focusUiHideHeader': { key: 'site.interaction.focus-ui-hide-header', default: true, parse: bool },
+  'interaction.focusUiHideNavbar': { key: 'site.interaction.focus-ui-hide-navbar', default: true, parse: bool },
+  'interaction.focusUiHideGear': { key: 'site.interaction.focus-ui-hide-gear', default: false, parse: bool },
+  'interaction.focusUiHideTopRight': { key: 'site.interaction.focus-ui-hide-top-right', default: true, parse: bool },
+  'interaction.focusUiOutSpeedMs': { key: 'site.interaction.focus-ui-out-speed-ms', default: 460, parse: numeric(0, 2000) },
+  'interaction.focusUiSeparateInSpeed': { key: 'site.interaction.focus-ui-separate-in-speed', default: true, parse: bool },
+  'interaction.focusUiInSpeedMs': { key: 'site.interaction.focus-ui-in-speed-ms', default: 460, parse: numeric(0, 2000) },
+  'interaction.poiAnimate': { key: 'site.interaction.poi-animate', default: true, parse: bool },
+  'interaction.poiSpeed': { key: 'site.interaction.poi-speed', default: 1, parse: numeric(.25, 3) },
+  'stickyNotes.preview': { key: 'site.sticky-notes.preview', default: true, parse: bool },
+  'interaction.panResetSpeed': { key: 'site.interaction.pan-reset-speed', default: 1, parse: numeric(.25, 3) },
+  'interaction.rotationResetSpeed': { key: 'site.interaction.rotation-reset-speed', default: 1, parse: numeric(.25, 3) },
+  'interaction.panResetEasing': { key: 'site.interaction.pan-reset-easing', default: null, parse: resetEasing },
+  'interaction.rotationResetEasing': { key: 'site.interaction.rotation-reset-easing', default: null, parse: resetEasing },
   'scene.lighting': { key: 'site.scene.lighting', default: null, parse: numeric(0, 1) },
   'start.animationAllowed': { key: 'site.start.animation.allowed', default: null, parse: bool },
   'start.centerOnViewport': { key: 'site.start.centerOnViewport', default: false, parse: bool },
@@ -173,7 +223,21 @@ export const SETTINGS_FIELDS = Object.freeze({
   'start.backgroundContrast': { key: 'site.start.background.contrast', default: 0.5, parse: numeric(0, 1) },
   'start.look.underlight': { key: 'site.start.look.underlight', default: 0.65, parse: numeric(0, 3) },
   'start.look.speakerPurple': { key: 'site.start.look.speaker-purple', default: 0.65, parse: numeric(0, 3) },
-  'music.masterGain': { key: 'music.instrument.master', default: 0.85, parse: numeric(0.2, 3) }
+  'music.masterGain': { key: 'music.instrument.master', default: 0.85, parse: numeric(0.2, 3) },
+  'music.midiSyncOffsets': { key: 'site.music.midi-sync-offsets', default: '{}', parse: musicMidiSyncOffsets },
+  'music.trackIconSize': { key: 'site.music.track-icon-size', default: .27, parse: numeric(.16, .32) },
+  'music.trackIconSpacing': { key: 'site.music.track-icon-spacing', default: .26, parse: numeric(.12, .36) },
+  'music.trackIconVerticalOffset': { key: 'site.music.track-icon-vertical-offset', default: .22, parse: numeric(0, .34) },
+  'music.screenGrid': { key: 'site.music.screen-grid', default: false, parse: bool },
+  'music.showGridButton': { key: 'site.music.show-grid-button', default: false, parse: bool },
+  'music.featherControls': { key: 'site.music.feather-controls', default: true, parse: bool },
+  'music.highlightsEnabled': { key: 'site.music.highlights-enabled', default: true, parse: bool },
+  'music.tabletTitleIdleTimeout': { key: 'site.music.tablet-title-idle-timeout', default: 1200, parse: steppedNumeric(0, 3000, 50) },
+  'music.trackNameHoverDelay': { key: 'site.music.track-name-hover-delay', default: 100, parse: steppedNumeric(0, 500, 25) },
+  'music.tabletTitleFadeDuration': { key: 'site.music.tablet-title-fade-duration', default: 180, parse: steppedNumeric(0, 600, 20) },
+  'music.tabletTitleTransitionGap': { key: 'site.music.tablet-title-transition-gap', default: 80, parse: steppedNumeric(0, 400, 20) },
+  'music.accidentalWidth': { key: 'site.music.accidental-width', default: 1.45, parse: steppedNumeric(1, 2.4, .05) },
+  'music.instrumentPanelAnimationDuration': { key: 'site.music.instrument-panel-animation-duration', default: 480, parse: steppedNumeric(0, 1200, 20) }
 });
 export const SETTINGS_KEYS = new Set([SCHEMA_KEY, A11Y_KEY, ...Object.values(SETTINGS_FIELDS).flatMap(field => [field.key, ...(field.legacy || []).filter(key => !key.startsWith('a11y:'))])]);
 export function flattenPatch(input, prefix = '') {

@@ -7,6 +7,7 @@ import {Tabletop} from './tabletop-model.mjs';
 import {FreeformSession} from './freeform-session.mjs';
 import {navigationActions} from './groovy-navigation.mjs';
 import {characterSettings} from './token-settings.mjs';
+import {bookClickIntent,gridBlankClickReturns} from './book-action-model.mjs';
 const base=new URL('./',import.meta.url),data=JSON.parse(fs.readFileSync(new URL('global-conquest-pieces.json',base))),map=JSON.parse(fs.readFileSync(new URL('global-conquest-map.json',base)));
 const THREE=await import('data:text/javascript;base64,'+fs.readFileSync(new URL('vendor/three.module.js',base)).toString('base64'));
 const context=vm.createContext({console,performance,setTimeout,clearTimeout,requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{}}),modules=new Map();
@@ -49,6 +50,15 @@ test('navigation is contextual, with adjacent book actions separate from the rig
  for(const page of [-1,0,9,10])assert.equal(navigationActions({...state,layout:'grid',page}).filter(a=>a.grade).length,0);
  assert.equal(navigationActions({...state,page:2}).filter(a=>a.grade).length,0);assert.equal(navigationActions({...state,page:-.5}).filter(a=>a.grade).length,0);assert.equal(navigationActions({...state,turning:true}).filter(a=>a.grade).length,0);assert.deepEqual(navigationActions({...state,page:10}).filter(a=>a.grade).map(a=>[a.id,a.grade,a.side]),[['next-book',4,'right']]);
  for(const selected of ['game-0','game-1'])assert.ok(navigationActions({...state,state:'game-open',selected}).some(a=>a.id==='play-game'));
+});
+test('only a blank grid-reader click returns; book, navigation, and spread clicks retain their actions',()=>{
+ assert.equal(gridBlankClickReturns('book','grid',null,null),true);
+ for(const [state,layout,start,end] of [['book','spread',null,null],['grid','grid',null,null],['book','grid','book-3',null],['book','grid',null,'book-2'],['book','grid','page-next','page-next'],['book','grid','grade-2','grade-2']])assert.equal(gridBlankClickReturns(state,layout,start,end),false);
+ assert.equal(bookClickIntent('book','book-3','book-3'),'page');
+ assert.equal(bookClickIntent('book','book-4','book-3'),'choose-book');
+ const source=fs.readFileSync(new URL('graphics-preview.mjs',base),'utf8');
+ assert.match(source,/p\.id!==e\.pointerId\|\|p\.moved/);
+ assert.match(source,/performance\.now\(\)-p\.time>450/);
 });
 test('character overrides preserve transparent artwork and independent silhouette settings',()=>{
  const settings={artwork:null,outline:true,stroke:'#fff2db',strokeWidth:4,characters:{2:{artwork:'data:image/png;base64,transparent',strokeWidth:9}}};

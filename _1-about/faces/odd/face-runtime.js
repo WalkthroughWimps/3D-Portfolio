@@ -95,7 +95,8 @@ export function createOddFace({stage,focusFace=()=>{},onInputOwnership=()=>{}}={
     if(action==='mute'){const lane=deck.lane;deck.engine.setLane(lane,{muted:!deck.engine.lanes[lane].muted});return;}
     deck.resume();deck.root.querySelector('[data-action="'+action+'"]')?.click();
   }
-  return {id:binding.id,backingName:binding.backingName,get backing(){return binding.backing;},get components(){return binding.components;},get runtime(){return deck;},get gestureActive(){return Boolean(controls?.active);},get mechanism(){return rig;},attach,detach,endGesture,
+  return {id:binding.id,backingName:binding.backingName,get backing(){return binding.backing;},get components(){return binding.components;},get runtime(){return deck;},get gestureActive(){return Boolean(controls?.active);},get mechanism(){return rig;},
+    get travelPart(){return group;},get travelMount(){return ODD_MOUNT;},get travelSupportDepth(){return 1.203;},attach,detach,endGesture,
     update(dt){
       if(!host||suspended||disposed)return;syncLaunchers();controls.tick(dt);deck.tick();rig.syncClips(deck.engine.clips);
       if(deck.engine.loading&&!feedback.hidden){const text=Math.floor((performance.now()-deck.engine.loading.startedAt)/1000)+'s',node=feedback.querySelector('[data-feedback-time]');if(node.textContent!==text)node.textContent=text;}

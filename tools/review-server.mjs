@@ -2,6 +2,8 @@ import http from 'node:http';
 import { createReadStream } from 'node:fs';
 import { stat, readFile, writeFile, rename } from 'node:fs/promises';
 import path from 'node:path';
+import {ARTWORK_CATALOG_URL, collectAboutArtwork} from './about-artwork-catalog.mjs';
+import { handleDocsAdmin } from './local-admin/docs-library.mjs';
 
 const host = '127.0.0.1';
 const port = Number.parseInt(process.env.REVIEW_PORT || '8878', 10);
@@ -10,6 +12,7 @@ const rootPrefix = `${path.resolve(root).toLowerCase()}${path.sep}`;
 
 const contentTypes = new Map([
   ['.css', 'text/css; charset=utf-8'],
+  ['.gif', 'image/gif'],
   ['.glb', 'model/gltf-binary'],
   ['.gltf', 'model/gltf+json'],
   ['.html', 'text/html; charset=utf-8'],
@@ -19,8 +22,10 @@ const contentTypes = new Map([
   ['.json', 'application/json'],
   ['.mjs', 'text/javascript; charset=utf-8'],
   ['.mp4', 'video/mp4'],
+  ['.pdf', 'application/pdf'],
   ['.opus', 'audio/ogg'],
   ['.png', 'image/png'],
+  ['.webp', 'image/webp'],
   ['.svg', 'image/svg+xml'],
   ['.wav', 'audio/wav'],
   ['.webm', 'video/webm'],
@@ -48,6 +53,16 @@ async function resolveRequestPath(requestUrl) {
 }
 
 const server = http.createServer(async (request, response) => {
+  if (await handleDocsAdmin(request, response, root, port)) return;
+  if (new URL(request.url || '/', `http://${host}:${port}`).pathname === ARTWORK_CATALOG_URL) {
+    if (request.method !== 'GET') { sendText(response, 405, 'GET required'); return; }
+    try {
+      const catalog = await collectAboutArtwork(root);
+      response.writeHead(200, {'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store'});
+      response.end(JSON.stringify(catalog));
+    } catch { sendText(response, 503, 'Artwork catalog unavailable'); }
+    return;
+  }
   if (request.url === '/__admin/video-filter') {
     if (request.method !== 'POST') { sendText(response, 405, 'POST required'); return; }
     if (request.headers.origin !== `http://${host}:${port}` && request.headers.origin !== `http://localhost:${port}`) {

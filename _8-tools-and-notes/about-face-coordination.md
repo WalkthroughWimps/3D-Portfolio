@@ -12,12 +12,14 @@ Implemented October 17, 2026. Applies to the About cube only; it does not advanc
 
 | Chat / face | Entry | Borrowed GLTF backing | Existing implementation owned by that chat |
 | --- | --- | --- | --- |
-| About Face | `_1-about/faces/about/face.js` | `back.about` | Add About-specific components under its face folder |
+| Fish Face | `_1-about/faces/about/face.js` | `back.about` | Add Fish-specific components under its face folder |
 | Skills Face | `_1-about/faces/skills/face.js` | `back.skills` | `_7-shared-scripts/panel-assembly/` |
 | Notes Face | `_1-about/faces/notes/face.js` | `back.art` | `_1-about/notes/` |
 | Clock Face | `_1-about/faces/clock/face.js` | `back.clock` | Add Clock-specific components under its face folder |
-| Refs Face | `_1-about/faces/refs/face.js` | `back.refs` | Add Refs-specific components under its face folder |
+| About Face | `_1-about/faces/refs/face.js` | `back.refs` | Add Refs-specific components under its face folder |
 | Odd Face | `_1-about/faces/odd/face.js` | `back.odd` | Add Odd-specific components under its face folder |
+
+Fish Face is the user-facing name for the existing `about` face. Its internal ID, folder, `back.about` backing, selectors, and saved settings keys remain unchanged for compatibility.
 
 The four currently static faces expose their existing model backings through the same lifecycle as the two interactive faces. No new content, animation, or geometry has been invented for those static faces. The GLTF's ` Export` source-name suffix is resolved by the registry.
 
@@ -109,6 +111,20 @@ Final acceptance — October 18, 2026: the Odd registry entry now loads `face.js
 
 Seven-route Debug evidence is `output/about-cube/shared-debug-pages.txt`. The final integrated scene passes 53 controls/projector/magnet/lifecycle checks (`output/about-cube/shared-controls-and-projector.txt`), including face-scoped transfer sections and Notes' popup Escape handling. Notes' finished panel/rear-glass evidence is under `output/notes-face/revision-12/`. All 88 repository tests, targeted ESLint and generated HTML checks pass. The local review server returns HTTP 200 and the live Odd face was refreshed and captured in `output/about-cube/final-live-preview.png`. Source reservations were released after the integration slice. Remaining required phases/steps for these requests: none. Optional future work remains user microphone/device verification, supplied surprise artwork, session save/export, splice/effects tools, fuller cloth collisions and moving deployment/fabrication audits. The broader architecture program remains under its existing handoffs. Nothing committed, pushed, published or deployed.
 
+## About runtime face layout — October 28, 2026
+
+The host now owns reversible layout spaces in `faces/face-layout.js`. Skills maps from +Z to −X (viewer-right of Refs), Notes from −X to +Y, Oddio from +Y to +Z; Fish, Refs and Clock keep their slots. Refs is the default entrance target. Original GLB geometry, names, indices and manifests remain unchanged. The 29 original assembly branches are restored before model disposal.
+
+Face context `cube`/`authoredSpace` is the face's authored-coordinate group. Keep existing mount constants and local geometry calculations there. `physicalCube` is the full shared GLTF scene for whole-cube poses and global occlusion. `findNode` resolves original parser names before partitioning, including names sanitized by GLTFLoader. Per-face `focusFace` converts authored mounts once; host summary navigation uses registry physical mounts. Face modules never reparent borrowed nodes; only the host layout owner does so reversibly.
+
+`faces/face-travel.js` reads `travelPart`, `travelMount`, optional `travelAxis`, and `travelSupportDepth` from face entries. Only moving content travels; backings and rim seats stay fixed. Skills retains its own deployment. Entry/exit dwell and a damped spring keep retreat visible from the side. Fish's explicit open/close mechanism is separate from approach travel. Support meshes and Fish frames declare semantic sticky surface IDs; topology-changing parts must not pretend their triangle IDs are stable. Clock's magnetic target follows its moving root; Notes' projector uses the live glass carrier. All new support/projector highlights follow shared contrast, and decorative movement respects site/OS reduced motion.
+
+Evidence and remaining work are tracked in `about-layout-sticky-handoff.md` and `output/about-layout-sticky/`. Reserve the complete shared/face write set before future edits. This change does not advance the broader site architecture program.
+
 ## About rigid ring framing — October 19, 2026
 
 About Face now supplies an optional `frameLayout({bounds, availableRight})` zoom proposal while its sixty-ring carrier is focused. The proposal encloses the full rigid flip sweep at the focused extension, including a narrow-screen margin, without changing ring geometry, camera position, or manual orbit distance. The shared host takes Notes' active layout first; otherwise it uses About's zoom proposal and the existing settings-drawer offset. This small host hook is limited to responsive framing after a viewport resize. About Face owns its ring geometry, plan, controls and assets under `faces/about/`; `back.about` and other faces remain untouched. Evidence and remaining steps are listed in `faces/about/README.md` and `output/about-rigid-rings/`.
+
+## About face name — October 30, 2026
+
+The former Refs face now displays About. Its owning chat is About Face. Existing `refs` module IDs, backing names, URL face parameter, archive owner `about.refs.sketch`, selectors and saved settings remain unchanged. Fish continues to use its existing internal `about` ID. Human-facing labels in Settings/Constructor, backing switches, focus controls, Page summary, shortcuts and the site directory now distinguish About from Fish. This is a naming change, not a face-ID or layout migration.

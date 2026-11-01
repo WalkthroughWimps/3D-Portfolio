@@ -8,12 +8,12 @@ const slider = (kind, key, label, min, max, step) => `<label>${label} <output da
 const styles = [['baton','Baton'],['tapered','Tapered'],['skeleton','Skeleton'],['slim-arrow','Slim arrow · modern'],['chevron','Chevron · modern'],['art-deco','Art deco · vintage'],['spade','Spade · ornate'],['breguet','Breguet · vintage'],['rocket','Rocket split arrow · futuristic']];
 
 /** Face-owned settings content; backing switches remain pinned by the shell. */
-export function createClockControls({onChange, onWind, onResetTime, onFocus, secondsLocked = false} = {}) {
+export function createClockControls({onChange, onFocus, secondsLocked = false} = {}) {
   const store = getSharedSettings(), events = new AbortController();
   const root = document.createElement('div'); root.className = 'clock-settings';
-  root.innerHTML = `<input type="hidden" data-setting="${field('timeOffsetSeconds')}"><input type="hidden" data-setting="${field('markerPhase')}"><input type="hidden" data-setting="${field('gearFinishes')}"><section class="clock-settings-intro"><h3>Clock time</h3><p data-clock-time></p><p data-clock-offset></p><p data-clock-announcement class="clock-visually-hidden" role="status" aria-live="polite"></p><div class="clock-actions"><button type="button" data-clock-focus>Focus clock</button><button type="button" data-clock-wind="-1">${secondsLocked ? '−1 minute' : '−5 seconds'}</button><button type="button" data-clock-wind="1">${secondsLocked ? '+1 minute' : '+5 seconds'}</button><button type="button" data-clock-reset-time>Reset to browser time</button></div>${secondsLocked ? '<p>Drag the hour or minute hand to set the displayed time. Hands and the seconds ring follow your computer; the gear train uses the visual speed below.</p>' : ''}</section>
+  root.innerHTML = `<input type="hidden" data-setting="${field('gearFinishes')}"><section class="clock-settings-intro"><h3>Clock time</h3><p data-clock-time></p><p data-clock-announcement class="clock-visually-hidden" role="status" aria-live="polite"></p><div class="clock-actions"><button type="button" data-clock-focus>Focus clock</button></div><p>Hands and the seconds ring show your computer time.</p></section>
     ${secondsLocked ? `<section class="clock-gear-settings"><h3>Gear motion and finish</h3><label>Gear speed <select data-setting="${field('gearSpeed')}"><option value="1">Real time · 1×</option><option value="30">Calm · 30×</option><option value="60">Display · 60×</option><option value="120">Lively · 120×</option><option value="150">Ring matched · 150×</option></select></label><p data-clock-motion></p><p>The gear train is visual. At 150×, its ratio matches the computer-synced 60-second ring; hands stay at clock time.</p><label>Finish target <select data-clock-gear-target><option value="all">All gears</option><option value="clock-drive">Rear drive</option>${Array.from({length: 9}, (_, i) => `<option value="clock-minute-${i + 1}">Minute spiral ${i + 1}</option>`).join('')}${Array.from({length: 6}, (_, i) => `<option value="clock-second-${i + 1}">Second spiral ${i + 1}</option>`).join('')}<option value="clock-ring">Seconds ring</option></select></label><label>Finish preset <select data-clock-gear-preset><option value="brass">Brass</option><option value="steel">Brushed steel</option><option value="copper">Copper</option><option value="antique">Antique dark</option><option value="custom">Custom</option></select></label><label>Color <input type="color" data-clock-gear-color></label><label>Metalness <output data-clock-metal-value></output><input type="range" min="0" max="1" step=".01" data-clock-gear-metalness></label><label>Roughness <output data-clock-rough-value></output><input type="range" min="0" max="1" step=".01" data-clock-gear-roughness></label><button type="button" data-clock-clear-override>Clear this gear’s override</button></section>` : ''}
-    <section><h3>Seconds groove</h3><label><input type="checkbox" data-setting="${field('showGroove')}"> Show groove</label><label>Groove color <input type="color" data-setting="${field('grooveColor')}"></label><p>${secondsLocked ? 'You can drag the seconds baton to preview a position. It returns to computer seconds on release.' : 'Drag the seconds baton around the groove to wind the clock. A clockwise third-turn winds the displayed time back 20 seconds.'}</p></section>
+    <section><h3>Seconds groove</h3><label><input type="checkbox" data-setting="${field('showGroove')}"> Show groove</label><label>Groove color <input type="color" data-setting="${field('grooveColor')}"></label></section>
     ${kinds.map((kind, i) => `<section><h3>${kind[0].toUpperCase() + kind.slice(1)} hand</h3><label><input type="checkbox" data-setting="${field(`${kind}Visible`)}"> Show ${kind} hand</label><label>Style <select data-setting="${field(`${kind}Style`)}">${styles.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></label>${slider(kind, 'Length', 'Length', i === 2 ? .04 : i === 1 ? .45 : .18, i === 2 ? .55 : i === 1 ? .82 : .7, .01)}${slider(kind, 'Girth', 'Girth', .008, .07, .002)}<label>Color <input type="color" data-setting="${field(`${kind}Color`)}"></label>${kind === 'minute' && secondsLocked ? '<p>The minute hand begins beyond the hour hand, leaving its inner reach clear.</p>' : ''}</section>`).join('')}
     <button type="button" data-clock-reset-hands>Reset hands</button>`;
   const unregister = initPanelShell().registerContext('clock', 'Clock', root);
@@ -81,20 +81,17 @@ export function createClockControls({onChange, onWind, onResetTime, onFocus, sec
   }, {signal: events.signal});
   root.addEventListener('click', event => {
     const button = event.target.closest('button'); if (!button) return;
-    if (button.hasAttribute('data-clock-wind')) onWind?.(secondsLocked ? Number(button.dataset.clockWind) : Number(button.dataset.clockWind) * 5);
     if (button.hasAttribute('data-clock-focus')) onFocus?.();
-    if (button.hasAttribute('data-clock-reset-time')) onResetTime?.();
     if (button.hasAttribute('data-clock-reset-hands')) store.reset(fields.filter(node => /(?:hour|minute|second)(?:Visible|Style|Length|Girth|Color)$/.test(node.dataset.setting)).map(node => node.dataset.setting));
     if (button.hasAttribute('data-clock-clear-override') && target) {
       const entries = readFinishes(store.get().about.clock.gearFinishes);
       delete entries[target.value]; store.patch({[field('gearFinishes')]: JSON.stringify(entries)});
     }
   }, {signal: events.signal});
-  let lastSecond = null, lastOffset = null;
-  return {root, show(date, offset) {
-    const second = Math.floor(date.getTime() / 1000), roundedOffset = secondsLocked ? String(offset / 60) : offset.toFixed(1);
-    if (second !== lastSecond) {root.querySelector('[data-clock-time]').textContent = `Displayed time: ${date.toLocaleTimeString()}`; lastSecond = second;}
-    if (roundedOffset !== lastOffset) {root.querySelector('[data-clock-offset]').textContent = secondsLocked ? `Hand offset: ${offset >= 0 ? '+' : ''}${roundedOffset} minutes` : `Browser offset: ${offset >= 0 ? '+' : ''}${roundedOffset} seconds`; lastOffset = roundedOffset;}
+  let lastSecond = null;
+  return {root, show(date) {
+    const second = Math.floor(date.getTime() / 1000);
+    if (second !== lastSecond) {root.querySelector('[data-clock-time]').textContent = `Computer time: ${date.toLocaleTimeString()}`; lastSecond = second;}
   }, setContrast(value) {root.style.setProperty('--clock-contrast-strength', String(value));},
   showMotion(message) {const status = root.querySelector('[data-clock-motion]'); if (status) status.textContent = `Motion: ${message}`;},
   announce(message) {root.querySelector('[data-clock-announcement]').textContent = message;},

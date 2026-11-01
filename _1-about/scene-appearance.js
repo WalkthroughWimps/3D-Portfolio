@@ -1,10 +1,14 @@
 import * as THREE from 'three';
 import {getSharedSettings} from '../_7-shared-scripts/core/settings.js';
 import {getLightScaleForValue} from '../_7-shared-scripts/scene-lighting-sync.js';
+import {createAboutSurfacePilot} from './surface-materials.js';
 
 /** Theme colors and Start's intentional-highlight contrast curve. */
 export function bindAboutAppearance(model,lights){
   const materials=new Set();model.traverse(node=>{for(const material of [node.material].flat().filter(Boolean))materials.add(material);});
+  const surfaces=createAboutSurfacePilot(model);
+  for(const material of surfaces.materials)materials.add(material);
+  if(location.hostname==='127.0.0.1' && new URLSearchParams(location.search).has('review'))window.__aboutMaterialPilot=surfaces;
   const lightBases=lights.map(light=>[light,light.intensity]);
   function apply(snapshot=getSharedSettings().get()){
     const css=getComputedStyle(document.documentElement);
@@ -28,5 +32,5 @@ export function bindAboutAppearance(model,lights){
   const stop=getSharedSettings().subscribe(apply,{immediate:true});
   const observer=new MutationObserver(()=>apply());observer.observe(document.documentElement,{attributes:true,attributeFilter:['class','data-theme','style']});
   const scheme=matchMedia('(prefers-color-scheme: dark)'),onScheme=()=>apply();scheme.addEventListener('change',onScheme);
-  return{apply,dispose(){stop();observer.disconnect();scheme.removeEventListener('change',onScheme);}};
+  return{apply,dispose(){stop();observer.disconnect();scheme.removeEventListener('change',onScheme);surfaces.dispose();if(window.__aboutMaterialPilot===surfaces)delete window.__aboutMaterialPilot;}};
 }

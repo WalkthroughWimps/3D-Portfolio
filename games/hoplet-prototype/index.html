@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Hoplet — standalone gameplay prototype</title>
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.168.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.168.0/examples/jsm/"}}</script>
+</head>
+<body>
+  <main>
+    <header class="game-header">
+      <a class="game-back-link" href="../../_6-docs/docs.html" aria-label="Back to Documents" title="Back to Docs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5m7 7-7-7 7-7" /></svg>
+      </a>
+      <div class="game-header-copy">
+        <h1>HOPLET</h1>
+        <div class="header-details">
+          <div>Game prototype. Full model implementation coming soon</div>
+          <div>LMB play · RMB drag rotate · MMB drag pan · wheel zoom · double-click reset</div>
+        </div>
+      </div>
+      <div id="status" role="status">Preparing board…</div>
+    </header>
+    <div class="layout">
+      <aside class="left-panel"><h2>Starting layouts</h2>
+        <div id="placementOptions"></div>
+        <p class="muted" id="placementChosen" aria-live="polite"></p>
+        <div class="legend"><h3>Computer personalities</h3>
+          <div class="personality-header-options"><label class="check personality-reveal"><input id="showPersonalities" type="checkbox" checked> Reveal CP personalities</label><label class="check human-knight-option"><input id="humanKnightEnabled" type="checkbox" checked> Human Knight (1 in 14)</label></div>
+          <div class="personality-actions"><button type="button" id="selectAllPersonalities">Select all</button><button type="button" id="selectNoPersonalities">Select none</button></div>
+          <div id="personalityOptions" role="group" aria-label="Computer personality choices"></div>
+        </div>
+      </aside>
+      <section class="stage"><div class="hint" id="hint">Choose your color and start.</div><div id="scene" aria-label="Interactive 3D Hoplet board"></div><div class="player-dock" id="playerDock" aria-label="Players and computer personalities"></div></section>
+      <aside>
+        <h2>Test controls</h2>
+        <button id="restart">New game</button><button id="skip">Skip animations</button>
+        <label><span>CP think min <output id="thinkMinVal"></output></span><input id="thinkMin" type="range" min="0" max="2000" step="50" value="450"></label>
+        <label><span>CP think max <output id="thinkMaxVal"></output></span><input id="thinkMax" type="range" min="0" max="3000" step="50" value="1150"></label>
+        <label><span>Stump motion <output id="motionVal"></output></span><input id="motion" type="range" min="0" max="900" step="25" value="250"></label>
+        <label><span>Elimination step <output id="clearStepVal"></output></span><input id="clearStep" type="range" min="0" max="500" step="10" value="110"></label>
+        <label><span>Trail speed change (both directions) <output id="clearExpVal"></output></span><input id="clearExp" type="range" min="-30" max="30" step="5" value="-15"></label>
+        <label><span>Blocked warning <output id="warningVal"></output></span><input id="warning" type="range" min="0" max="1600" step="50" value="650"></label>
+        <div class="flash-options" role="group" aria-label="Flashing and reduced motion">
+          <label class="check"><input id="enableFlashing" type="checkbox" checked> Enable flashing effects</label>
+          <label><span>Flash intensity <output id="flashIntensityVal">10%</output></span><input id="flashIntensity" type="range" min="0" max="100" step="5" value="10"></label>
+        </div>
+        <label><span>Starting lights flash interval <output id="startFlashVal"></output></span><input id="startFlash" type="range" min="120" max="1200" step="20" value="580"></label>
+        <label><span>Trail flash <output id="trailFlashVal"></output></span><input id="trailFlash" type="range" min="0" max="1800" step="50" value="250"></label>
+        <label><span>Ending display <output id="endingVal"></output></span><input id="ending" type="range" min="750" max="7500" step="250" value="3000"></label>
+        <label class="check"><input id="autoplay" type="checkbox" checked> Automatically begin new game</label>
+        <label class="check"><input id="showIndices" type="checkbox"> Show tile coordinates</label>
+        <div class="legend"><h3>Stump appearance</h3>
+          <label class="check"><input id="squareStumps" type="checkbox" checked> Rounded square stumps (off = circular)</label>
+          <h3>Current player positions</h3>
+          <label class="check"><input id="highlightCurrent" type="checkbox" checked> Light up entire occupied button</label>
+          <label class="check"><input id="raiseCurrent" type="checkbox" checked> Raise occupied stumps</label>
+          <label class="check"><input id="lowerPossible" type="checkbox" checked> Lower available-move stumps</label>
+        </div>
+
+      </aside>
+    </div>
+  </main>
+  <script type="module" src="./src.js"></script>
+</body>
+</html>

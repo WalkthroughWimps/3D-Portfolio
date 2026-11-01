@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { createDrawingEditor } from './drawing-editor.js';
+import { createDrawingRewards } from './drawing-rewards.js';
 import { SIZE, RADIUS, onGlass } from './drawing-model.js';
 import { getSharedSettings } from '../../_7-shared-scripts/core/settings.js';
 import { initPanelShell } from '../../debug/panel-shell.js';
@@ -11,9 +12,11 @@ const wrap = angle => Math.atan2(Math.sin(angle), Math.cos(angle));
 const outlineOpacity = contrast => { const eased = contrast * contrast * (3 - 2 * contrast); return .12 + .22 * eased; };
 
 export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => {}, onInputOwnership = () => {} }) {
+  // Re-enable here when inventory is connected; retain recognition hooks and saved receipts.
+  const discoveriesEnabled = false;
   const input = new AbortController(), resources = [], captures = new Set(), hiddenBacking = [];
   let canvasInput = null;
-  let host = null, group = null, carrier = null, texture = null, glass = null, ring = null, editor = null, overflow = null, dynamicOverflow = null, rearArt = null, contrast = .5;
+  let host = null, group = null, carrier = null, texture = null, glass = null, ring = null, editor = null, rewards = null, overflow = null, dynamicOverflow = null, rearArt = null, contrast = .5;
   let focused = false, tabletFocused = false, suspended = false, disposed = false, activePointer = null, turnPointer = null, turnMode = false;
   let upright = true, reduced = false, roll = 0, rollTarget = 0, rollVelocity = 0, lastRoll = null;
   let showBacking = false, enabled = true, rearArtwork = true, fitInterior = false;
@@ -22,14 +25,49 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
   const adminSides = {left:false,right:false};
   const previousOverflows = new WeakMap();
   const rearPanes = [];
-  const dock = document.createElement('nav'); dock.className = 'notes-dock'; dock.hidden = true; dock.setAttribute('aria-label', 'Notes views');
-  dock.innerHTML = '<button type="button" data-notes-view="face" aria-label="Notes face" aria-keyshortcuts="Z" title="Notes face (Z)" disabled>Notes face<kbd aria-hidden="true">Z</kbd></button><button type="button" data-notes-view="turn" aria-label="Turn cube" aria-keyshortcuts="C" title="Turn cube (C)" aria-pressed="false" disabled>Turn cube<kbd aria-hidden="true">C</kbd></button>';
+  const dock = document.createElement('nav'); dock.className = 'notes-dock'; dock.dataset.rimLayout = 'true'; dock.dataset.panelsOpen = 'false'; dock.setAttribute('aria-label', 'Notes utilities');
+  dock.innerHTML = '<button type="button" data-notes-view="face" aria-label="Notes face" aria-keyshortcuts="Z" title="Focus the Notes face (Z)" disabled hidden>Notes face<kbd aria-hidden="true">Z</kbd></button><button type="button" data-notes-view="turn" aria-label="Turn cube" aria-keyshortcuts="C" title="Turn the cube (C)" aria-pressed="false" disabled hidden>Turn cube<kbd aria-hidden="true">C</kbd></button>';
   const ui = document.createElement('div'); ui.className = 'notes-ui notes-2d-mode'; ui.hidden = true;
   const artTablet = document.createElement('div'); artTablet.className = 'notes-side-panel notes-art-tablet'; artTablet.setAttribute('aria-label', 'Drawing tools tablet'); artTablet.setAttribute('role', 'region');
   const gearTablet = document.createElement('div'); gearTablet.className = 'notes-side-panel notes-gear-tablet'; gearTablet.setAttribute('aria-label', 'Gear art and Layers tablet'); gearTablet.setAttribute('role', 'region');
-  editor = createDrawingEditor({ layersInitiallyOpen: true,
+  const shortcutsSlot = document.createElement('div'); shortcutsSlot.className = 'notes-shortcuts-slot';
+  dock.append(shortcutsSlot);
+  const compactTabs = document.createElement('nav'); compactTabs.className = 'notes-workspace-tabs'; compactTabs.setAttribute('aria-label', 'Notes workspace');
+  compactTabs.innerHTML = '<button type="button" data-notes-tab="layers">Workspace</button><button type="button" data-notes-tab="drawing">Drawing</button>';
+  let compactTab = 'drawing';
+  editor = createDrawingEditor({ discoveriesEnabled,
+    onDiscovery: (receipt, bounds, fit) => rewards?.award(receipt, bounds, fit),
     onChange: () => { if (texture) texture.needsUpdate = true; if (editor) { syncLayers(); syncOverflow(); } } });
-  editor.panel.inert = true; artTablet.append(editor.panel); gearTablet.append(editor.gearsPanel, editor.layersPanel); ui.append(artTablet, gearTablet); document.body.append(ui, dock);
+  editor.panel.inert = true;
+  const gearToggle = editor.panel.querySelector('[data-action="gears"]');
+  gearToggle.hidden = true;
+  const modeBar = document.createElement('div'); modeBar.className = 'notes-mode-bar';
+  modeBar.innerHTML = '<button type="button" data-notes-mode="layers" aria-pressed="true" title="Show Layers">Layers</button><button type="button" data-notes-mode="gears" aria-pressed="false" title="Show Gear art (G)" aria-keyshortcuts="G">Gear art</button>';
+  const gearHeader = editor.gearsPanel.querySelector('header');
+  gearHeader.insertAdjacentHTML('beforeend', '<div class="notes-gear-header-actions" aria-label="Gear art tools"></div>');
+  gearHeader.querySelector('.notes-gear-header-actions').append(gearHeader.querySelector('.notes-gear-add'));
+  modeBar.addEventListener('click', event => { const mode = event.target.closest('[data-notes-mode]')?.dataset.notesMode; if (mode) editor.setGearView(mode === 'gears'); }, {signal:input.signal});
+  artTablet.append(editor.panel); gearTablet.append(modeBar, editor.layersPanel, editor.toolStrip, editor.gearsPanel); ui.append(artTablet, gearTablet, compactTabs); document.body.append(ui, dock);
+  compactTabs.addEventListener('click', event => { const tab = event.target.closest('[data-notes-tab]')?.dataset.notesTab; if (tab) { compactTab = tab; syncLayers(); } }, {signal:input.signal});
+  if (discoveriesEnabled) rewards = createDrawingRewards({ project: projectDiscovery, getReducedMotion: () => reduced || matchMedia('(prefers-reduced-motion: reduce)').matches });
+  function projectDiscovery(bounds, fit) {
+    if (!host || !carrier || !focused || !enabled || suspended) return null;
+    carrier.updateWorldMatrix(true, false); host.camera.updateMatrixWorld(true);
+    const rect = host.canvas.getBoundingClientRect(), units = NOTES_MOUNT.radius / RADIUS;
+    const corners = [[bounds.x, bounds.y], [bounds.x + bounds.width, bounds.y], [bounds.x, bounds.y + bounds.height], [bounds.x + bounds.width, bounds.y + bounds.height]];
+    const projectPoint = ({x,y}) => new THREE.Vector3((x - SIZE / 2) * units, (SIZE / 2 - y) * units, .002).applyMatrix4(carrier.matrixWorld).project(host.camera);
+    const points = corners.map(([x,y]) => projectPoint({x,y}));
+    if (points.some(point => point.z < -1 || point.z > 1)) return null;
+    const xs = points.map(point => rect.left + (point.x + 1) * rect.width / 2), ys = points.map(point => rect.top + (1 - point.y) * rect.height / 2);
+    const projected = { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+    if (fit) {
+      projected.fit = Object.fromEntries(['head','end','side'].map(name => {
+        const p = projectPoint(fit[name]);
+        return [name,{x:rect.left+(p.x+1)*rect.width/2,y:rect.top+(1-p.y)*rect.height/2}];
+      }));
+    }
+    return projected;
+  }
   for (const panel of [artTablet, gearTablet]) {
     for (const type of ['pointerdown','pointermove','pointerup','click','wheel'])
       panel.addEventListener(type, event => event.stopPropagation(), {signal:input.signal});
@@ -60,7 +98,26 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
   const rimPoints = Array.from({ length: 32 }, (_, i) => new THREE.Vector3(Math.cos(i * Math.PI / 16) * .9, Math.sin(i * Math.PI / 16) * .9, 0));
   const projectedRim = new THREE.Vector3();
   const rimCache = {camera:new THREE.Matrix4(),projection:new THREE.Matrix4(),carrier:new THREE.Matrix4()};
-  let safeTop = 110, safeLeft = 0;
+  let safeTop = 110, safeLeftTop = 110, safeLeft = 0;
+  let presentationActive = false, presentationStartedAt = 0, panelReady = false, focusOutMs = 460, shortcutHints = 'auto';
+  const keyboardHintObserver = new MutationObserver(syncUtility);
+  keyboardHintObserver.observe(document.documentElement, { attributes:true, attributeFilter:['data-shortcut-hints-keyboard'] });
+  function syncUtility() {
+    const keyboardMode = shortcutHints === 'always' || shortcutHints === 'auto' && document.documentElement.dataset.shortcutHintsKeyboard === 'true';
+    for (const button of dock.querySelectorAll('[data-notes-view]')) button.hidden = !keyboardMode;
+    dock.querySelector('[data-notes-view="face"]').disabled = !enabled || suspended || !host;
+    dock.querySelector('[data-notes-view="turn"]').disabled = !enabled || suspended || !focused;
+  }
+  function setPresentation(active) {
+    if (presentationActive === active) return;
+    if (!active && !ui.hidden) ui.dataset.presence = 'leaving';
+    presentationActive = active;
+    presentationStartedAt = active ? performance.now() : 0;
+    panelReady = false;
+    window.dispatchEvent(new CustomEvent('site:video-presentation-change', {
+      detail: { source: 'notes-panels', active }
+    }));
+  }
   function readPanelMargin() {
     const gear = document.querySelector('.header-gear') || document.querySelector('.head-pic-container');
     const portrait = document.querySelector('.head-pic-container');
@@ -72,8 +129,12 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     const leftTop = Math.max(safeTop,
       portrait?.getClientRects().length ? portrait.getBoundingClientRect().bottom + 12 : 0,
       title?.getClientRects().length ? title.getBoundingClientRect().bottom + 12 : 0);
+    safeLeftTop = leftTop;
     const navigation = document.querySelector('.header .navigation-bg') || document.querySelector('.header .navigation');
-    safeLeft = navigation?.getClientRects().length ? Math.max(0, navigation.getBoundingClientRect().right) : 0;
+    const navRect = navigation?.getClientRects().length ? navigation.getBoundingClientRect() : null;
+    const horizontalNav = navRect && navRect.width > navRect.height * 2 && navRect.height < 110;
+    safeLeft = horizontalNav ? 0 : navRect ? Math.max(0, navRect.right) : 0;
+    layoutStyle(ui, '--notes-desktop-top', Math.max(12, gearBottom + 12, horizontalNav ? navRect.bottom + 12 : 0));
     layoutStyle(ui, '--notes-safe-top', safeTop);
     layoutStyle(ui, '--notes-left-top', leftTop);
     layoutStyle(ui, '--notes-safe-left', safeLeft);
@@ -92,7 +153,7 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     if (node.style.getPropertyValue(property) !== pixels) node.style.setProperty(property, pixels);
   }
   function data(node, key, value) { const text = String(value); if (node.dataset[key] !== text) node.dataset[key] = text; }
-  function frameLayout({ bounds, availableRight }) {
+  function frameLayout({ bounds, availableLeft = 0, availableRight }) {
     if (!enabled || !focused || suspended || !carrier || !tabletFocused || !panelState.visible) return null;
     readPanelMargin();
     const width = bounds.width, oldOffset = host.camera.view?.enabled ? host.camera.view.offsetX : 0;
@@ -110,21 +171,24 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     }
     left=rimCache.left;right=rimCache.right;
     const margin = matchMedia('(max-width: 520px)').matches ? 10 : 12;
-    const compactAt = 1050, compactPanels = width <= compactAt;
-    const layout = drawingLayout({width, left, right, availableLeft:safeLeft, availableRight,
-      leftPanelWidth:compactPanels ? 0 : editor.layersOpen ? 520 : 264, compactAt,
-      layersOpen:false, margin, fitInterior: !showBacking && fitInterior});
+    const compactAt = 1160, compactPanels = width <= compactAt;
+    const layout = drawingLayout({width, left, right, availableLeft, availableRight,
+      leftPanelWidth:compactPanels ? 0 : 352, compactAt,
+      layersOpen:false, margin, fitInterior:fitInterior && !showBacking, height:bounds.height, safeTop:compactPanels ? Math.max(safeTop,safeLeftTop) : safeTop, workspaceMode:true});
     data(ui,'layout',layout.compact?'compact':'rim'); data(ui,'narrow',width<680);
+    if (!layout.compact) { layoutStyle(ui, '--notes-gears-left', layout.gearsLeft); layoutStyle(ui, '--notes-art-right', width - layout.uiLeft - 352); }
     data(ui,'layers',editor.layersOpen); occluded = width < 300;
     data(ui,'occluded',occluded); ui.inert = occluded || ui.hidden;
-    data(dock,'rimLayout',true); data(dock,'occluded',occluded);
-    layoutStyle(dock, '--notes-dock-left', bounds.left + layout.dockLeft);
+    data(dock,'rimLayout',true); data(dock,'compactLayout',layout.compact); data(dock,'occluded',occluded);
+    if (!layout.compact) layoutStyle(dock, '--notes-art-right', width - layout.uiLeft - 352);
     return layout;
   }
   function afterRender() {}
   const stopSettings = getSharedSettings().subscribe(snapshot => {
     contrast = snapshot.accessibility?.highContrast ? 1 : snapshot.start?.contrast ?? .5;
     upright = snapshot.cube?.uprightFaces !== false; reduced = Boolean(snapshot.accessibility?.reducedMotion);
+    shortcutHints = snapshot.accessibility?.shortcutHints || 'auto';
+    focusOutMs = reduced || snapshot.interaction?.focusUiAnimate === false ? 0 : Math.max(0, Number(snapshot.interaction?.focusUiOutSpeedMs) || 460);
     ui.classList.toggle('notes-reduced-motion', reduced);
     const notes = snapshot.about?.notes || {};
     const wasEnabled = enabled;
@@ -133,24 +197,43 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     settings.querySelector('[data-setting="about.notes.fitInterior"]').disabled = showBacking;
     settings.querySelector('[data-interior-hint]').hidden = !showBacking;
     editor.setClippedArt(notes.showClippedArt !== false);
-    if (group) group.visible = enabled; dock.hidden = !enabled || !focused || suspended;
+    if (group) group.visible = enabled;
+    syncUtility();
     if (rearArt) rearArt.visible = rearArtwork;
     if (wasEnabled && !enabled) {
+      setPresentation(false);
       releaseDrawing(); editor.tick(0, false); editor.finishPath(); focused = false;
       panelState = presence.reset(); presenceTime = null; showTools(false);
+      data(dock,'panelsOpen',false); syncUtility();
       if (host) { host.canvas.style.cursor = ''; host.canvas.setAttribute('aria-label', host.baseLabel); }
     }
     hiddenBacking.forEach(([node]) => { node.visible = enabled && showBacking; });
     ui.style.setProperty('--notes-highlight-strength', `${Math.round(20 + contrast * 65)}%`);
     dock.style.setProperty('--notes-highlight-strength', `${Math.round(20 + contrast * 65)}%`);
+    rewards?.setContrast(contrast);
+    if (reduced) rewards?.settle();
     editor.setAppearance({ contrast, brightness: snapshot.start?.brightness ?? .5 });
     if (glass) { glass.material.opacity = .045; ring.material.opacity = .18 + contrast * .22; overflow.material.opacity = outlineOpacity(contrast); }
   }, { immediate: true });
   function syncLayers() {
+    const wasGearMode = ui.dataset.gearMode === 'true', gearMode = editor.gearsOpen;
+    const focusWithin = gearTablet.contains(document.activeElement);
+    if (gearMode && ui.dataset.layout === 'compact') compactTab = 'layers';
+    data(ui,'gearMode',editor.gearsOpen);
+    data(ui,'compactTab',compactTab);
+    modeBar.querySelectorAll('[data-notes-mode]').forEach(button => { const pressed = (button.dataset.notesMode === 'gears') === gearMode; if (button.getAttribute('aria-pressed') !== String(pressed)) button.setAttribute('aria-pressed', String(pressed)); });
+    compactTabs.hidden = ui.hidden || ui.dataset.layout !== 'compact';
+    compactTabs.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.notesTab === compactTab)));
     for (const [name,panel] of [['layers',editor.layersPanel],['gears',editor.gearsPanel]]) {
-      const hidden = ui.hidden || name === 'layers' && !editor.layersOpen;
+      const hidden = ui.hidden || name === 'layers' && !editor.layersOpen || name === 'gears' && !editor.gearsOpen;
       if (panel.hidden !== hidden) panel.hidden = hidden;
-      const inert = hidden || ui.inert || adminSides.left; if (panel.inert !== inert) panel.inert = inert;
+      const inert = hidden || ui.inert || adminSides.left || name === 'layers' && gearMode;
+      if (panel.inert !== inert) panel.inert = inert;
+    }
+    editor.toolStrip.inert = ui.hidden || ui.inert || adminSides.left;
+    modeBar.inert = ui.hidden || ui.inert || adminSides.left;
+    if (wasGearMode !== gearMode && focusWithin) {
+      modeBar.querySelector(`[data-notes-mode="${gearMode ? 'gears' : 'layers'}"]`).focus({preventScroll:true});
     }
     data(ui,'layers',editor.layersOpen);
   }
@@ -183,7 +266,10 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
   }
   function showTools(value, interactive = value) {
     const show = value && enabled && !suspended;
-    if (!interactive && ui.contains(document.activeElement)) (enabled && focused ? dock.querySelector('[data-notes-view="face"]') : host?.canvas)?.focus({ preventScroll: true });
+    if (!interactive && ui.contains(document.activeElement)) {
+      const faceButton = dock.querySelector('[data-notes-view="face"]');
+      (enabled && focused && !faceButton.hidden ? faceButton : host?.canvas)?.focus({ preventScroll: true });
+    }
     ui.hidden = !show; ui.inert = !interactive || occluded; editor.panel.hidden = !show; editor.panel.inert = !interactive || adminSides.right;
     gearTablet.inert = !interactive || occluded || adminSides.left; artTablet.inert = !interactive || occluded || adminSides.right; syncLayers();
     if (show && interactive && !adminSides.left && !adminSides.right) {
@@ -196,12 +282,12 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     if (view === 'face') { setTurnMode(false); onFocusFace(NOTES_MOUNT); }
     if (view === 'turn') setTurnMode(!turnMode);
   }, { signal: input.signal });
-  function setTurnMode(value) { turnMode = value; const b = dock.querySelector('[data-notes-view="turn"]'); b.setAttribute('aria-pressed', String(turnMode)); b.setAttribute('aria-label', turnMode ? 'Done turning' : 'Turn cube'); b.innerHTML = `${turnMode ? 'Done turning' : 'Turn cube'}<kbd aria-hidden="true">C</kbd>`; }
-  function attach({ cube, camera, canvas }) {
+  function setTurnMode(value) { turnMode = value; const b = dock.querySelector('[data-notes-view="turn"]'); b.setAttribute('aria-pressed', String(turnMode)); b.setAttribute('aria-label', turnMode ? 'Done turning' : 'Turn cube'); b.title = turnMode ? 'Done turning (C)' : 'Turn the cube (C)'; b.innerHTML = `${turnMode ? 'Done turning' : 'Turn cube'}<kbd aria-hidden="true">C</kbd>`; }
+  function attach({ cube, physicalCube, camera, canvas }) {
     if (disposed) return;
     if (host) detach();
-    host = { cube, camera, canvas, baseLabel: canvas.getAttribute('aria-label') };
-    dock.querySelectorAll('button').forEach(b => { b.disabled = false; });
+    host = { cube, physicalCube: physicalCube || cube, camera, canvas, baseLabel: canvas.getAttribute('aria-label') };
+    syncUtility();
     cube.traverse(node => { if (node.userData?.source_object_name === NOTES_MOUNT.source || node.name === 'back.art Export') { hiddenBacking.push([node, node.visible]); node.visible = enabled && showBacking; } });
     group = new THREE.Group(); group.name = 'Notes glass mount'; group.visible = enabled; group.position.fromArray(NOTES_MOUNT.center);
     group.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(new THREE.Vector3(...NOTES_MOUNT.right), new THREE.Vector3(...NOTES_MOUNT.up), new THREE.Vector3(...NOTES_MOUNT.normal)));
@@ -238,6 +324,17 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     plane.setFromNormalAndCoplanarPoint(worldNormal, worldCenter); const hit = raycaster.ray.intersectPlane(plane, new THREE.Vector3()); if (!hit) return null;
     carrier.worldToLocal(hit); const units = RADIUS / NOTES_MOUNT.radius; return { x: SIZE / 2 + hit.x * units, y: SIZE / 2 - hit.y * units };
   }
+  function hitsPhysicalCube(event) {
+    if (!host) return false;
+    const rect = host.canvas.getBoundingClientRect();
+    ndc.set((event.clientX - rect.left) / rect.width * 2 - 1, 1 - (event.clientY - rect.top) / rect.height * 2);
+    raycaster.setFromCamera(ndc, host.camera);
+    host.physicalCube.updateWorldMatrix(true, true);
+    return raycaster.intersectObject(host.physicalCube, true).some(hit => {
+      for (let node = hit.object; node && node !== host.physicalCube; node = node.parent) if (!node.visible) return false;
+      return true;
+    });
+  }
   function releaseDrawing(cancel = false) {
     editor.finishGesture(cancel); activePointer = null; turnPointer = null;
     for (const [element, id] of captures) if (element.hasPointerCapture?.(id)) element.releasePointerCapture(id);
@@ -247,12 +344,14 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
   function bindInput(canvas) {
     canvasInput?.abort(); canvasInput = new AbortController();
     const signal = canvasInput.signal;
+    let backgroundClick = null;
     canvas.addEventListener('dragover', event => { if (focused && event.dataTransfer.types.includes('application/x-notes-gear')) { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; } }, { signal });
     canvas.addEventListener('drop', event => {
       if (!focused) return; const point = mapCube(event); if (!onGlass(point)) return;
       try { if (editor.dropGear(point, JSON.parse(event.dataTransfer.getData('application/x-notes-gear')))) { event.preventDefault(); event.stopPropagation(); } } catch { /* Ignore unrelated or malformed drops. */ }
     }, { signal });
     canvas.addEventListener('pointerdown', event => {
+      backgroundClick = event.button === 0 && activePointer === null && !turnPointer ? { id:event.pointerId, x:event.clientX, y:event.clientY, released:false } : null;
       if (suspended || !enabled || !host) return; if (event.button !== 0) { if (event.button === 2) editor.pointerLeave(); return; }
       if (activePointer !== null || turnPointer) { releaseDrawing(true); return; }
       if (turnMode || event.pointerType === 'touch' && !focused) {
@@ -262,6 +361,7 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
       if (editor.pointerDown(point, event)) { activePointer = event.pointerId; capture(canvas, event); onInputOwnership(true); canvas.focus({ preventScroll: true }); event.stopImmediatePropagation(); }
     }, { capture: true, signal });
     canvas.addEventListener('pointermove', event => {
+      if (backgroundClick?.id === event.pointerId && Math.hypot(event.clientX - backgroundClick.x, event.clientY - backgroundClick.y) > 6) backgroundClick = null;
       if (turnPointer?.id === event.pointerId) {
         onRotate(event.clientX - turnPointer.x, event.clientY - turnPointer.y); turnPointer.x = event.clientX; turnPointer.y = event.clientY; event.preventDefault(); event.stopImmediatePropagation(); return;
       }
@@ -272,10 +372,16 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     }, { capture: true, signal });
     canvas.addEventListener('pointerleave', () => { if (activePointer === null) editor.pointerLeave(); }, { signal });
     canvas.addEventListener('pointerup', event => {
+      if (backgroundClick?.id === event.pointerId) {
+        if (Math.hypot(event.clientX - backgroundClick.x, event.clientY - backgroundClick.y) > 6) backgroundClick = null;
+        else backgroundClick.released = true;
+      }
       if (activePointer !== event.pointerId && turnPointer?.id !== event.pointerId) return;
       if (activePointer === event.pointerId) editor.pointerMove(mapCube(event), event); releaseDrawing(); event.stopImmediatePropagation();
     }, { capture: true, signal });
-    for (const name of ['pointercancel', 'lostpointercapture']) canvas.addEventListener(name, event => { if (activePointer === event.pointerId || turnPointer?.id === event.pointerId) releaseDrawing(name === 'pointercancel'); }, { signal });
+    // OrbitControls releases capture after pointerup, before the completed click.
+    for (const name of ['pointercancel', 'lostpointercapture']) canvas.addEventListener(name, event => { if (backgroundClick?.id === event.pointerId && (name === 'pointercancel' || !backgroundClick.released)) backgroundClick = null; if (activePointer === event.pointerId || turnPointer?.id === event.pointerId) releaseDrawing(name === 'pointercancel'); }, { signal });
+    canvas.addEventListener('click', event => { if (backgroundClick?.released && event.button === 0 && activePointer === null && !turnPointer && enabled && !suspended && !hitsPhysicalCube(event)) editor.selectTool(true); backgroundClick = null; }, { capture:true, signal });
     canvas.addEventListener('dblclick', event => { if (focused && !turnMode) { const point = mapCube(event); if (onGlass(point) || point && editor.tool === 'select') { editor.doubleClick(point); event.preventDefault(); event.stopImmediatePropagation(); } } }, { capture: true, signal });
     for (const name of ['mousedown', 'mouseup', 'click']) canvas.addEventListener(name, event => { if (focused && !turnMode && event.button === 0 && (onGlass(mapCube(event)) || editor.tool === 'select')) event.stopImmediatePropagation(); }, { capture: true, signal });
   }
@@ -319,15 +425,20 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
       host.canvas.setAttribute('aria-label', focused ? 'Notes drawing glass. V Select, N Pencil, P Pen, L Line, R Rectangle, E Ellipse, O Polygon, D Diamond, H Heart, S Star, U Arc, I Torus, J Pacman.' : host.baseLabel);
     }
     if (!focused && !turnPointer && turnMode) setTurnMode(false);
-    dock.hidden = !focused;
+    syncUtility();
     // UI dwell and CSS timing use elapsed time even when the host caps physics steps.
     const now = performance.now(), elapsed = presenceTime === null ? 0 : (now - presenceTime) / 1000; presenceTime = now;
     const facing=-local.x/local.length();
     tabletFocused=focused && facing>(tabletFocused?.86:.92);
-    const previousPhase = panelState.phase; panelState = presence.update(gainedFocus ? 0 : elapsed, tabletFocused);
+    setPresentation(tabletFocused);
+    const ready = tabletFocused && now - presentationStartedAt >= Math.max(1500, focusOutMs);
+    const previousPhase = panelState.phase;
+    panelState = presence.update(ready && !panelReady ? 1.5 : gainedFocus ? 0 : elapsed, ready);
+    panelReady = ready;
     if (panelState.phase !== previousPhase) ui.dataset.presence = panelState.phase;
     const showPanels = panelState.visible;
     if (ui.hidden !== !showPanels || ui.inert !== !panelState.interactive) showTools(showPanels, panelState.interactive);
+    data(dock,'panelsOpen',showPanels);
     if (focused) {
       const a = carrier.localToWorld(new THREE.Vector3(-NOTES_MOUNT.radius, 0, 0)).project(host.camera), b = carrier.localToWorld(new THREE.Vector3(NOTES_MOUNT.radius, 0, 0)).project(host.camera);
       editor.setHandleUnit(SIZE * 7 / Math.max(120, Math.abs(b.x - a.x) * host.canvas.clientWidth / 2));
@@ -338,20 +449,24 @@ export function createNotesWorkspace({ onFocusFace = () => {}, onRotate = () => 
     if (host.canvas.style.cursor !== cursor) host.canvas.style.cursor = cursor;
   }
   function detach() {
+    setPresentation(false);
     editor.tick(0, false);
+    rewards?.settle();
     canvasInput?.abort(); canvasInput = null;
     if (host) { host.canvas.style.cursor = ''; if (host.baseLabel) host.canvas.setAttribute('aria-label', host.baseLabel); }
     releaseDrawing(); editor.finishPath(); group?.removeFromParent(); hiddenBacking.splice(0).forEach(([node, visible]) => { node.visible = visible; });
     resources.splice(0).forEach(r => r.dispose()); rearPanes.length = 0; host = group = carrier = texture = glass = ring = overflow = dynamicOverflow = rearArt = null; focused = tabletFocused = false; panelState = presence.reset(); presenceTime = null; showTools(false);
-    dock.hidden = true; dock.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    data(dock,'panelsOpen',false); syncUtility();
   }
   return { attach, update, frameLayout, afterRender, editor, detach,
+    get travelPart() { return group; }, get travelMount() { return NOTES_MOUNT; },
+    get travelSupportDepth() { return .966; },
     get projectionSource() { return texture && carrier ? {texture,carrier,radius:NOTES_MOUNT.radius} : null; },
     endGesture() { releaseDrawing(); editor.finishPath(); },
     get focused() { return focused; }, get blockingPanel() { return ui.hidden ? null : ui; },
     get gestureActive() { return activePointer !== null; }, get rotating() { return Boolean(turnPointer); },
     get rollState() { return { angle: roll, target: rollTarget, enabled: upright }; },
-    suspend() { suspended = true; editor.tick(0, false); releaseDrawing(); focused = tabletFocused = false; dock.hidden = true; setTurnMode(false); panelState = presence.reset(); presenceTime = null; showTools(false); if (host) { host.canvas.style.cursor = ''; host.canvas.setAttribute('aria-label', host.baseLabel); } }, resume() { suspended = false; },
-    dispose() { if (disposed) return; detach(); disposed = true; input.abort(); headerLayoutObserver.disconnect(); stopSettings(); unregisterAdminInterlock(); unregisterSettings(); editor.dispose(); ui.remove(); dock.remove(); }
+    suspend() { suspended = true; setPresentation(false); rewards?.settle(); editor.tick(0, false); releaseDrawing(); focused = tabletFocused = false; setTurnMode(false); panelState = presence.reset(); presenceTime = null; showTools(false); data(dock,'panelsOpen',false); syncUtility(); if (host) { host.canvas.style.cursor = ''; host.canvas.setAttribute('aria-label', host.baseLabel); } }, resume() { suspended = false; syncUtility(); },
+    dispose() { if (disposed) return; detach(); disposed = true; input.abort(); headerLayoutObserver.disconnect(); keyboardHintObserver.disconnect(); stopSettings(); unregisterAdminInterlock(); unregisterSettings(); editor.dispose(); rewards?.dispose(); ui.remove(); const trigger = shortcutsSlot.querySelector('.site-shortcuts-trigger'); if (trigger) document.body.append(trigger); dock.remove(); }
   };
 }

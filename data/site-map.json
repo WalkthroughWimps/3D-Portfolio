@@ -1,0 +1,499 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-10-26",
+  "scope": "Visitor-facing rooms and named entries. In-page items link to their parent section with instructions; no direct destination is implied for an unsupported action.",
+  "rooms": [
+    {
+      "id": "start",
+      "label": "Start",
+      "description": "Welcome & comfort settings",
+      "path": "index.html",
+      "entries": [
+        {
+          "id": "start",
+          "label": "Start — Welcome & settings",
+          "path": "index.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "welcome",
+          "label": "3D welcome / settings controller",
+          "path": "index.html",
+          "action": "Use the 3D welcome choice on Start.",
+          "inPage": true
+        },
+        {
+          "id": "introduction",
+          "label": "Text introduction",
+          "path": "index.html",
+          "action": "Use the Text introduction choice on Start.",
+          "inPage": true
+        },
+        {
+          "id": "calibration",
+          "label": "Audio sync and visual preferences",
+          "path": "index.html",
+          "action": "Use the controller or native settings on Start.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "about",
+      "label": "About",
+      "description": "Interactive cube studio",
+      "path": "_1-about/about.html",
+      "entries": [
+        {
+          "id": "about",
+          "label": "About — Interactive About cube",
+          "path": "_1-about/about.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "face-about",
+          "label": "Fish",
+          "path": "_1-about/about.html",
+          "action": "Choose the Fish face through the cube or Page summary.",
+          "inPage": true
+        },
+        {
+          "id": "face-refs",
+          "label": "About",
+          "path": "_1-about/about.html",
+          "action": "Choose the About face through the cube or Page summary.",
+          "inPage": true
+        },
+        {
+          "id": "face-skills",
+          "label": "Skills",
+          "path": "_1-about/about.html",
+          "action": "Choose the Skills face through the cube or Page summary.",
+          "inPage": true
+        },
+        {
+          "id": "face-clock",
+          "label": "Clock",
+          "path": "_1-about/about.html",
+          "action": "Choose the Clock face through the cube or Page summary.",
+          "inPage": true
+        },
+        {
+          "id": "face-odd",
+          "label": "Oddio",
+          "path": "_1-about/about.html",
+          "action": "Choose the Oddio face through the cube or Page summary.",
+          "inPage": true
+        },
+        {
+          "id": "face-notes",
+          "label": "Notes",
+          "path": "_1-about/about.html",
+          "action": "Choose the Notes face through the cube or Page summary.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "videos",
+      "label": "Videos",
+      "description": "Video & animation studio",
+      "path": "_2-videos/videos.html",
+      "entries": [
+        {
+          "id": "videos",
+          "label": "Videos — Video tablet",
+          "path": "_2-videos/videos.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "video-online-classes",
+          "label": "Online Classes",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        },
+        {
+          "id": "video-a-list-videos",
+          "label": "A-List Videos",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        },
+        {
+          "id": "video-news-broadcast",
+          "label": "News Broadcast",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        },
+        {
+          "id": "video-neotube-studios",
+          "label": "NeoTube Studios",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        },
+        {
+          "id": "video-music-videos",
+          "label": "Music Videos",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        },
+        {
+          "id": "video-random-vids",
+          "label": "Random Vids",
+          "path": "_2-videos/videos.html",
+          "action": "Choose the matching tablet category or current Page summary action.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "graphics",
+      "label": "Graphics",
+      "description": "Books & board-game workshop",
+      "path": "_3-graphics/graphics.html",
+      "entries": [
+        {
+          "id": "graphics",
+          "label": "Graphics — Books, games & easel",
+          "path": "_3-graphics/graphics.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "book-spread",
+          "label": "Just Speak — closed-book spread",
+          "path": "_3-graphics/graphics.html?preview=coursebooks",
+          "action": "Open the six closed coursebooks in their spread overview.",
+          "inPage": false
+        },
+        {
+          "id": "book-grid",
+          "label": "Just Speak — grid layout",
+          "path": "_3-graphics/graphics.html",
+          "action": "Switch the coursebook layout to Grid.",
+          "inPage": true
+        },
+        {
+          "id": "grade-1",
+          "label": "Just Speak — Grade 1",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 1 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "grade-2",
+          "label": "Just Speak — Grade 2",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 2 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "grade-3",
+          "label": "Just Speak — Grade 3",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 3 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "grade-4",
+          "label": "Just Speak — Grade 4",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 4 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "grade-5",
+          "label": "Just Speak — Grade 5",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 5 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "grade-6",
+          "label": "Just Speak — Grade 6",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose Grade 6 on the shelf or from the set.",
+          "inPage": true
+        },
+        {
+          "id": "table-global",
+          "label": "Global Conquest — freeform tabletop",
+          "path": "_3-graphics/shelf/tabletop.html?game=global-conquest",
+          "action": "Open directly, or use Global Conquest on the shelf.",
+          "inPage": false
+        },
+        {
+          "id": "table-manor",
+          "label": "Manor Mayhem — freeform tabletop",
+          "path": "_3-graphics/shelf/tabletop.html?game=manor-mayhem",
+          "action": "Open directly, or use Manor Mayhem on the shelf.",
+          "inPage": false
+        },
+        {
+          "id": "great-race",
+          "label": "The Great Race — easel video",
+          "path": "_3-graphics/graphics.html",
+          "action": "Choose the easel or The Great Race video item.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "games",
+      "label": "Games",
+      "description": "The arcade",
+      "path": "_4-games/games.html",
+      "entries": [
+        {
+          "id": "games",
+          "label": "Games — Arcade cabinet",
+          "path": "_4-games/games.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "game-battleship",
+          "label": "Ships, Avoid!",
+          "path": "games/battleship/index.html",
+          "action": "Open directly, or choose it on the arcade cabinet.",
+          "inPage": false
+        },
+        {
+          "id": "game-plinko",
+          "label": "Go Plunky, Go!",
+          "path": "games/plinko/index.html",
+          "action": "Open directly, or choose it on the arcade cabinet.",
+          "inPage": false
+        },
+        {
+          "id": "game-train-mania",
+          "label": "Train Mania!",
+          "path": "games/train-mania/index.html",
+          "action": "Open directly, or choose it on the arcade cabinet.",
+          "inPage": false
+        },
+        {
+          "id": "game-pick-a-square",
+          "label": "Pick a Square!",
+          "path": "games/pick-a-square/index.html",
+          "action": "Open directly, or choose it on the arcade cabinet.",
+          "inPage": false
+        },
+        {
+          "id": "game-you-be-the-server",
+          "label": "You Be the Waiter!",
+          "path": "games/you-be-the-server/index.html",
+          "action": "Open directly, or choose it on the arcade cabinet.",
+          "inPage": false
+        },
+        {
+          "id": "reel-reel",
+          "label": "Game Reel",
+          "path": "_4-games/games.html",
+          "action": "Choose the matching Game reels entry.",
+          "inPage": true
+        },
+        {
+          "id": "reel-christmas",
+          "label": "Christmas",
+          "path": "_4-games/games.html",
+          "action": "Choose the matching Game reels entry.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "music",
+      "label": "Music",
+      "description": "Piano & composition room",
+      "path": "_5-music/music.html",
+      "entries": [
+        {
+          "id": "music",
+          "label": "Music — Interactive piano",
+          "path": "_5-music/music.html",
+          "action": "Open the section.",
+          "inPage": false
+        },
+        {
+          "id": "play-piano",
+          "label": "Play the 3D piano",
+          "path": "_5-music/music.html",
+          "action": "Use the interactive piano and its keyboard controls.",
+          "inPage": true
+        },
+        {
+          "id": "instruments",
+          "label": "Instrument selection",
+          "path": "_5-music/music.html",
+          "action": "Open the instrument chooser on the piano.",
+          "inPage": true
+        },
+        {
+          "id": "piano-2d",
+          "label": "2D piano & recorder",
+          "path": "_5-music/music-2d.html",
+          "action": "Open the existing 2D piano and recording page.",
+          "inPage": false
+        },
+        {
+          "id": "track-baby",
+          "label": "Baby",
+          "path": "_5-music/music.html",
+          "action": "Choose the named composition on the piano.",
+          "inPage": true
+        },
+        {
+          "id": "track-woods",
+          "label": "Woods",
+          "path": "_5-music/music.html",
+          "action": "Choose the named composition on the piano.",
+          "inPage": true
+        },
+        {
+          "id": "track-raisins",
+          "label": "Raisins",
+          "path": "_5-music/music.html",
+          "action": "Choose the named composition on the piano.",
+          "inPage": true
+        },
+        {
+          "id": "track-forests",
+          "label": "Forests",
+          "path": "_5-music/music.html",
+          "action": "Choose the named composition on the piano.",
+          "inPage": true
+        },
+        {
+          "id": "sunil",
+          "label": "Sunil video",
+          "path": "_5-music/music.html",
+          "action": "Choose the Sunil video on the piano.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "label": "Docs",
+      "description": "Teaching resources · presentations",
+      "path": "_6-docs/docs.html",
+      "entries": [
+        {
+          "id": "docs",
+          "label": "Docs — Teaching resources & presentations",
+          "path": "_6-docs/docs.html",
+          "action": "Open the Docs room and choose a presentation or document from the library.",
+          "inPage": false
+        },
+        {
+          "id": "pretty-pets",
+          "label": "Pretty Pets — 31-slide presentation",
+          "path": "_6-docs/docs.html",
+          "action": "Choose Pretty Pets in the Docs library to open the hosted slideshow and advance its slides.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "selected-work",
+      "label": "Selected work",
+      "description": "Featured-project gallery",
+      "path": "index.html",
+      "entries": [
+        {
+          "id": "preview-coursebooks",
+          "label": "Just Speak",
+          "path": "index.html",
+          "action": "Open Start and choose Just Speak in Selected work to view it with the other previews.",
+          "inPage": true
+        },
+        {
+          "id": "preview-neotube",
+          "label": "NeoTube Studios",
+          "path": "index.html",
+          "action": "Open Start and choose NeoTube Studios in Selected work to view it with the other previews.",
+          "inPage": true
+        },
+        {
+          "id": "preview-global-conquest",
+          "label": "Global Conquest",
+          "path": "index.html",
+          "action": "Open Start and choose Global Conquest in Selected work to view it with the other previews.",
+          "inPage": true
+        },
+        {
+          "id": "preview-plunky",
+          "label": "Go Plunky, Go!",
+          "path": "index.html",
+          "action": "Open Start and choose Go Plunky, Go! in Selected work to view it with the other previews.",
+          "inPage": true
+        }
+      ]
+    },
+    {
+      "id": "shared-utilities",
+      "label": "Hiring & help",
+      "description": "Entrance desk",
+      "path": null,
+      "entries": [
+        {
+          "id": "resume",
+          "label": "Résumé PDF",
+          "path": "assets/documents/matt-hall-resume.pdf",
+          "action": "Download the supplied résumé.",
+          "inPage": false
+        },
+        {
+          "id": "email",
+          "label": "Email me",
+          "path": "mailto:MattHall.JMH@gmail.com",
+          "action": "Open an email draft using the visitor’s email application.",
+          "inPage": false
+        },
+        {
+          "id": "settings",
+          "label": "General Settings & accessibility",
+          "path": "index.html",
+          "action": "Use the Settings gear; sound, sync, appearance and accessibility preferences are shared.",
+          "inPage": true
+        },
+        {
+          "id": "summary",
+          "label": "Page summary / points of interest",
+          "path": "index.html",
+          "action": "Use Page summary on a main page.",
+          "inPage": true
+        },
+        {
+          "id": "shortcuts",
+          "label": "Keyboard shortcut guide",
+          "path": "index.html",
+          "action": "Use the shortcut guide or its keyboard action.",
+          "inPage": true
+        },
+        {
+          "id": "sticky",
+          "label": "Sticky notes / annotations",
+          "path": "index.html",
+          "action": "Use the shared note tools; saved private note text is not included here.",
+          "inPage": true
+        },
+        {
+          "id": "sitemap",
+          "label": "Sitemap — building directory",
+          "path": "sitemap.html",
+          "action": "Browse the building map or the searchable complete list.",
+          "inPage": false
+        }
+      ]
+    }
+  ]
+}

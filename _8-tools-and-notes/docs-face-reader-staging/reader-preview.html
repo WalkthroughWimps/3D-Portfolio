@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Docs reader staging preview</title>
+  <link rel="stylesheet" href="./reader.css">
+  <style>
+    :root { --controls-bg: #171819; --controls-fg: #f8f5ec; }
+    body { margin: 0; min-height: 100dvh; display: grid; place-items: center; background: #33383b; font: 16px "Segoe UI",sans-serif; }
+    #launch { padding: .8rem 1.2rem; }
+    #document-dialog { position: fixed; inset: auto 2vw 2vh auto; margin: 0; }
+  </style>
+</head>
+<body>
+  <button id="launch">Open Pretty Pets</button>
+  <dialog id="document-dialog" class="docs-reader" aria-labelledby="document-title">
+    <header><div><h2 id="document-title"></h2><p id="document-description"></p></div><button id="document-close" type="button">Close</button></header>
+    <iframe id="document-frame" title="Selected document" allowfullscreen></iframe>
+    <pre id="document-text" hidden></pre>
+    <p id="document-fallback" hidden>This file opens in its original format. Use the link below to read or download it.</p>
+    <a id="document-open" target="_blank" rel="noopener noreferrer">Open original document</a>
+  </dialog>
+  <script type="module">
+    import { createDocumentReader } from './reader.js';
+    const sourceUrl = 'https://1drv.ms/p/c/f747edb114afa405/IQTs_qJa-ZktSI1UUDdAu1tzAZL9weST4VV5sw633AkWFzU?wdAr=1.7777777777777777';
+    const slides = Array.from({ length: 31 }, (_, index) => ({
+      title: `Slide ${index + 1}`,
+      previewUrl: `/_6-docs/assets/pretty-pets-slides/slide-${String(index + 1).padStart(2, '0')}.png`
+    }));
+    const item = { id: 'pretty-pets', type: 'presentation', title: 'Pretty Pets', description: '1st Grade Unit 3 Week 1 · 31 slides', sourceUrl, slides };
+    const reader = createDocumentReader({
+      dialog: document.querySelector('#document-dialog'), frame: document.querySelector('#document-frame'),
+      title: document.querySelector('#document-title'), description: document.querySelector('#document-description'),
+      openLink: document.querySelector('#document-open'), close: document.querySelector('#document-close'),
+      text: document.querySelector('#document-text'), fallback: document.querySelector('#document-fallback')
+    });
+    const launch = document.querySelector('#launch');
+    launch.addEventListener('click', () => reader.open(item, launch));
+    window.readerPreview = { reader, item };
+  </script>
+</body>
+</html>

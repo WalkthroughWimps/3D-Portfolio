@@ -7,10 +7,11 @@
 - Keep the Videos intro repair bounded unless the user explicitly asks to continue the broader architecture work.
 - Treat phase routing as guidance for subagent model selection. The coordinator owns sequencing, shared-workspace coordination, review, and the final handoff.
 - Never commit, push, publish, or deploy unless the user explicitly asks.
+- Shared settings menus across the site, including Constructor controls, must follow `_8-tools-and-notes/settings-menu-gestures.md`. Reuse the shared section/transfer helpers for future menus; do not advertise the hidden transfer gestures in the UI.
 
 ## Cube and face work planning
 
-- Cube Chat's scope is the About cube and its faces. Requests in Cube Chat to notify "all chats" mean Cube Chat and the About, Refs, Skills, Clock, Oddio and Notes face chats, unless the user explicitly expands that scope. Do not broadcast Cube Chat's instructions to other page, architecture or historical task chats.
+- Cube Chat's scope is the About cube and its faces. Requests in Cube Chat to notify "all chats" mean Cube Chat and the Fish, Refs, Skills, Clock, Oddio and Notes face chats, unless the user explicitly expands that scope. Do not broadcast Cube Chat's instructions to other page, architecture or historical task chats.
 - For the About cube and its faces, all applied glows and highlights must respond live to the shared site contrast control (`start.contrast`), including saved and cross-page updates. Use the established contrast mapping rather than a separate fixed intensity. Each cube/face chat should integrate this into its next assignment for its owned features; this notice alone does not start an implementation pass or interrupt current work. This instruction does not assign work to other pages.
 - Cube and Face chats must receive coordination-only messages from Cube Chat silently. Do not send acknowledgement replies, return messages, or user-facing progress/final updates solely to confirm receipt. Silently queue the instruction for the appropriate assignment. Direct human requests and required approval questions still receive their normal responses.
 - Cube and Face chats implement the user's requested work. For bounded subtasks, delegate to the lowest-cost available model and reasoning effort likely to finish correctly when practical; the coordinating chat owns sequencing and reviews the diff, results, and appropriate evidence before accepting work.

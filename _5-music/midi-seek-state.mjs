@@ -1,5 +1,7 @@
 // Reconstruct the transport state immediately after every event at the target.
-// Matching by channel keeps overlapping notes and independent pedal lanes intact.
+// Parts may reuse MIDI channels. Keep their note and pedal lanes independent.
+export const midiEventKey = event => `${event.part || ''}:${Number(event.chan) || 0}:${event.note}`;
+
 export function getMidiStateAtElapsed(events, elapsedMs, adjustTime) {
   const heldByChannel = new Map();
   const pedalByChannel = new Map();
@@ -7,13 +9,13 @@ export function getMidiStateAtElapsed(events, elapsedMs, adjustTime) {
   for (; nextIndex < events.length; nextIndex++) {
     const event = events[nextIndex];
     if (adjustTime(event.timeMs) > elapsedMs) break;
-    const channel = Number(event.chan) || 0;
+    const channel = `${event.part || ''}:${Number(event.chan) || 0}`;
     if (event.type === 'cc64') {
       pedalByChannel.set(channel, (event.value | 0) >= 64);
       continue;
     }
     if (event.type !== 'on' && event.type !== 'off') continue;
-    const key = `${channel}:${event.note}`;
+    const key = midiEventKey(event);
     const held = heldByChannel.get(key) || [];
     if (event.type === 'on') held.push(event);
     else held.shift();

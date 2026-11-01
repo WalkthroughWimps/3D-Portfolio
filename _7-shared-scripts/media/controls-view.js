@@ -1,6 +1,8 @@
 import { snapSyncMs } from '../global-sync.js';
 import { createControlsInput } from './controls-input.js';
 import { createVideoShortcutGuide } from '../core/page-shortcuts.js';
+import { formatTime } from './time-format.js';
+import { drawBackControl } from './back-control.js';
 
 const syncDragPreferenceKey = 'video-sync-unlimited-drag';
 let syncDragPreference = null;
@@ -49,16 +51,8 @@ function getControlsTheme() {
   return { bg, fg, bgAlpha };
 }
 
-export function drawBackButton(ctx, rect, color) {
-  ctx.strokeStyle = color || '#fff';
-  ctx.lineWidth = 2;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.beginPath();
-  ctx.moveTo(rect.x + rect.w * 0.68, rect.y + rect.h * 0.22);
-  ctx.lineTo(rect.x + rect.w * 0.32, rect.y + rect.h * 0.50);
-  ctx.lineTo(rect.x + rect.w * 0.68, rect.y + rect.h * 0.78);
-  ctx.stroke();
+export function drawBackButton(ctx, rect, appearance) {
+  drawBackControl(ctx, rect, typeof appearance === 'object' ? appearance : undefined);
 }
 
 export function drawPlayButton(ctx, rect, paused, color) {
@@ -104,11 +98,15 @@ export function drawMuteButton(ctx, rect, muted, color) {
   }
 }
 
-export function drawProgressBar(ctx, rect, video, color, alpha = 1) {
+export function drawProgressBar(ctx, rect, video, color, alpha = 1, railColor = null, railOutline = null) {
   const fg = color || '#fff';
   ctx.save();
-  ctx.globalAlpha = alpha * 0.35;
-  ctx.fillStyle = fg;
+  ctx.globalAlpha = alpha * (railColor ? 1 : 0.35);
+  if(railOutline){
+    ctx.fillStyle = railOutline;
+    ctx.fillRect(rect.x-1,rect.y-1,rect.w+2,rect.h+2);
+  }
+  ctx.fillStyle = railColor || fg;
   ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   ctx.restore();
 
@@ -121,13 +119,6 @@ export function drawProgressBar(ctx, rect, video, color, alpha = 1) {
   ctx.beginPath();
   ctx.arc(dotX, rect.y + rect.h / 2, 6, 0, Math.PI * 2);
   ctx.fill();
-}
-
-function formatTime(t) {
-  if (!isFinite(t) || t < 0) return '0:00';
-  const minutes = Math.floor(t / 60);
-  const seconds = Math.floor(t % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export function drawTransportFlashOverlay(ctx, rect, kind, color, alpha = 1, scale = 1) {
@@ -229,6 +220,24 @@ export function createVideoControlsUI(options = {}) {
     seekToken: 0,
     video: null
   };
+  let cameraGestureActive = false;
+  let cameraGestureEndsAt = 0;
+
+  function clearHoverPreview() {
+    if (speedExpanded && !speedOutsideSince) speedOutsideSince = performance.now();
+    hoverPreview.visible = false;
+    hoverPreview.lastRatio = -1;
+    hoverPreview.seekToken++;
+    previewSeekTarget?.removeEventListener?.('seeked', previewSeekHandler);
+    previewSeekTarget = null;
+    previewSeekHandler = null;
+  }
+
+  function setCameraGestureActive(active) {
+    cameraGestureActive = !!active;
+    cameraGestureEndsAt = active ? 0 : performance.now() + 120;
+    clearHoverPreview();
+  }
 
   function getControlAvailability(s) {
     const incoming = (s && s.controls) || {};
@@ -261,30 +270,49 @@ export function createVideoControlsUI(options = {}) {
   }
 
   function getLayout(cw, ch) {
-    const barH = Math.max(24, Math.round(ch * 0.11));
-    const icon = Math.round(barH * 0.46);
-    const pad = Math.round(barH * 0.28);
+    const controlScale = Number.isFinite(options.controlScale) ? Math.max(1, Math.min(options.solidBars ? 2 : 1.6, options.controlScale)) : 1;
+    const compact = options.compact === true;
+    const barH = Math.max(24, Math.round(ch * (compact ? .125 : .11 * controlScale)));
+    const icon = Math.round(barH * (compact ? .58 : .46));
+    const pad = Math.round(barH * (compact ? .22 : .28));
     const topY = 0;
     const bottomY = ch - barH;
-    const progressH = Math.max(4, Math.round(barH * 0.08));
+    const progressH = compact ? Math.max(4, Math.round(barH * .07)) : Math.max(controlScale > 1 ? 7 : 4, Math.round(barH * 0.08 * controlScale));
     const iconRowY = bottomY + Math.round(barH * 0.60);
     const iconTop = Math.round(iconRowY - icon / 2);
-    const boxW = Math.round(icon * 1.42);
+    const boxW = Math.round(icon * (options.solidBars ? 1.24 : 1.42));
     const boxH = Math.round(icon * 0.95);
-    const sliderW = speedExpanded ? cw * 0.08 : Math.max(Math.round(cw * 0.13), Math.round(icon * 2.3));
+    const sliderW = speedExpanded ? cw * 0.08 : Math.max(Math.round(cw * (compact ? .10 : .13)), Math.round(icon * (compact ? 2 : 2.3)));
     const timeW = speedExpanded ? cw * 0.14 : Math.max(Math.round(cw * 0.20), Math.round(icon * 3.6));
-    const rightGap = Math.max(8, Math.round(pad * 0.8));
+    const rightGap = Math.max(8, Math.round(pad * (options.solidBars ? .65 : .8)));
     const dividerW = Math.max(2, Math.round(pad * 0.16));
 
     let cursor = cw - pad;
-    const fullscreen = { x: cursor - icon, y: iconTop, w: icon, h: icon };
+    let fullscreen, tablet, help;
+    if(compact){
+      const available = getControlAvailability(state.current);
+      const takeIcon = enabled => {
+        if(!enabled) return { x: -1, y: -1, w: 0, h: 0 };
+        const rect = { x: cursor - icon, y: iconTop, w: icon, h: icon };
+        if(enabled) cursor = rect.x - rightGap;
+        return rect;
+      };
+      fullscreen = takeIcon(available.fullscreen);
+      tablet = takeIcon(available.tablet);
+      help = takeIcon(available.fullscreen || available.tablet);
+    } else {
+    fullscreen = { x: cursor - icon, y: iconTop, w: icon, h: icon };
     cursor = fullscreen.x - rightGap;
-    const tablet = { x: state.current?.controls?.fullscreen ? cursor - icon : fullscreen.x, y: iconTop, w: icon, h: icon };
-    const help = { x: tablet.x - rightGap - icon, y: iconTop, w: icon, h: icon };
-    cursor = help.x - rightGap;
-    const pitch = { x: cursor - boxW, y: Math.round(iconRowY - boxH / 2), w: boxW, h: boxH };
+    tablet = { x: state.current?.controls?.fullscreen ? cursor - icon : fullscreen.x, y: iconTop, w: icon, h: icon };
+    help = { x: tablet.x - rightGap - icon, y: iconTop, w: icon, h: icon };
+    }
+    if(!compact) cursor = help.x - rightGap;
+    const hasPitch = !compact || getControlAvailability(state.current).pitch;
+    const pitch = hasPitch
+      ? { x: cursor - boxW, y: Math.round(iconRowY - boxH / 2), w: boxW, h: boxH }
+      : { x:-1,y:-1,w:0,h:0 };
     const dividerLeft = { x: pitch.x - Math.round(rightGap * 0.55) - Math.floor(dividerW / 2), y: iconTop + Math.round(icon * 0.14), w: dividerW, h: Math.round(icon * 0.72) };
-    cursor = dividerLeft.x - Math.round(rightGap * 0.55);
+    if(hasPitch) cursor = dividerLeft.x - Math.round(rightGap * 0.55);
     const speed = { x: cursor - boxW, y: iconTop, w: boxW, h: icon };
     const dividerRight = { x: tablet.x - Math.round(rightGap * 0.5) - Math.floor(dividerW / 2), y: iconTop + Math.round(icon * 0.14), w: dividerW, h: Math.round(icon * 0.72) };
     const speedStops = speedChoices.map((rate,i)=>({x:speed.x + speed.w - (6-i)*boxW*.95,y:iconTop,w:boxW*.95,h:icon,rate}));
@@ -293,9 +321,9 @@ export function createVideoControlsUI(options = {}) {
     const mute = { x: play.x + play.w + Math.round(pad * 0.55), y: iconTop, w: icon, h: icon };
     const volumeSlider = {
       x: mute.x + mute.w + Math.round(pad * 0.95),
-      y: Math.round(iconRowY - (barH * 0.16) / 2),
+      y: Math.round(iconRowY - (barH * (compact ? .07 : .16)) / 2),
       w: sliderW,
-      h: Math.max(4, Math.round(barH * 0.16))
+      h: Math.max(3, Math.round(barH * (compact ? .07 : .16)))
     };
     const progress = {
       x: pad,
@@ -308,7 +336,7 @@ export function createVideoControlsUI(options = {}) {
     };
     const back = { x: pad, y: topY + Math.round((barH - icon) / 2), w: icon, h: icon };
     const sync = { x: cw - pad - icon, y: topY + Math.round((barH - icon) / 2), w: icon, h: icon };
-    const syncArrowSize = Math.max(18, Math.round(icon * 0.72));
+    const syncArrowSize = Math.max(16, Math.round(icon * (compact ? .62 : .72)));
     const syncArrowGap = Math.max(6, Math.round(pad * 0.28));
     const syncIncrease = {
       x: cw - pad - syncArrowSize,
@@ -316,12 +344,12 @@ export function createVideoControlsUI(options = {}) {
       w: syncArrowSize,
       h: syncArrowSize
     };
-    const syncSliderW = Math.max(Math.round(cw * 0.23), Math.round(icon * 3.6));
+    const syncSliderW = Math.max(Math.round(cw * (compact ? .16 : .23)), Math.round(icon * (compact ? 2.8 : 3.6)));
     const syncSlider = {
       x: syncIncrease.x - syncArrowGap - syncSliderW,
       y: topY + Math.round(barH * 0.58),
       w: syncSliderW,
-      h: Math.max(7, Math.round(barH * 0.17))
+      h: Math.max(4, Math.round(barH * (compact ? .08 : .17)))
     };
     const syncDecrease = {
       x: syncSlider.x - syncArrowGap - syncArrowSize,
@@ -467,14 +495,22 @@ export function createVideoControlsUI(options = {}) {
     ctx.save();
     ctx.globalAlpha = enabled ? alpha : alpha * 0.25;
     ctx.lineCap = 'round';
-    ctx.strokeStyle = theme.fg;
+    ctx.strokeStyle = theme.rail || theme.fg;
     ctx.lineWidth = trackH;
-    ctx.globalAlpha = enabled ? alpha * 0.22 : alpha * 0.10;
+    ctx.globalAlpha = enabled ? alpha * (theme.rail ? 1 : 0.22) : alpha * 0.10;
+    if(theme.railOutline){
+      ctx.strokeStyle = theme.railOutline;
+      ctx.lineWidth = trackH + 2;
+      ctx.beginPath();ctx.moveTo(trackX,trackY);ctx.lineTo(trackX+trackW,trackY);ctx.stroke();
+      ctx.strokeStyle = theme.rail;
+      ctx.lineWidth = trackH;
+    }
     ctx.beginPath();
     ctx.moveTo(trackX, trackY);
     ctx.lineTo(trackX + trackW, trackY);
     ctx.stroke();
     ctx.globalAlpha = enabled ? alpha : alpha * 0.25;
+    ctx.strokeStyle = theme.fg;
     ctx.beginPath();
     ctx.moveTo(trackX, trackY);
     ctx.lineTo(knobX, trackY);
@@ -509,10 +545,10 @@ export function createVideoControlsUI(options = {}) {
     if (!hoverPreview.visible || !s || !s.canSeek) return;
     const previewVideo = s.previewVideo || s.lqVideo || null;
     if (!previewVideo) return;
-    const previewW = Math.max(190, Math.min(Math.round(ui.videoRect.w * 0.46), 360));
+    const previewW = Math.max(1, Math.min(Math.round(ui.videoRect.w * 0.24), 240, ui.videoRect.w - 12));
     const aspect = previewVideo.videoWidth && previewVideo.videoHeight ? previewVideo.videoWidth / previewVideo.videoHeight : 16 / 9;
     const previewH = Math.round(previewW / aspect);
-    const labelH = Math.max(24, Math.round(previewH * 0.18));
+    const labelH = Math.max(14, Math.min(24, Math.round(previewH * 0.18)));
     const dotX = ui.progress.x + ui.progress.w * hoverPreview.ratio;
     const x = Math.max(6, Math.min(ui.videoRect.w - previewW - 6, Math.round(dotX - previewW / 2)));
     const y = Math.max(6, Math.round(ui.progress.y - previewH - labelH - 10));
@@ -532,7 +568,7 @@ export function createVideoControlsUI(options = {}) {
     ctx.fillStyle = theme.fg;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `700 ${Math.max(15, Math.round(previewH * 0.16))}px "Source Sans 3","Segoe UI",sans-serif`;
+    ctx.font = `700 ${Math.max(11, Math.min(15, Math.round(previewH * 0.16)))}px "Source Sans 3","Segoe UI",sans-serif`;
     ctx.fillText(formatTime(hoverPreview.time), x + previewW / 2, y + previewH + labelH / 2);
     ctx.restore();
   }
@@ -555,26 +591,50 @@ export function createVideoControlsUI(options = {}) {
     const pitchLabel = s.preservePitch === false ? ['Time', 'Stretch'] : ['Pitch', 'Shift'];
     const title = String(s.title || '').trim();
 
-    const theme = getControlsTheme();
+    const theme = { ...getControlsTheme(), ...options.theme };
+    const readableFeather = options.featherProfile === 'readable';
     ctx.save();
     ctx.globalAlpha = alpha * theme.bgAlpha;
+    const solidBars = typeof s.feather === 'boolean' ? !s.feather : options.solidBars;
+    if(solidBars){
+      ctx.fillStyle = theme.bg;
+      ctx.fillRect(ui.topBar.x, ui.topBar.y, ui.topBar.w, ui.topBar.h);
+      ctx.fillRect(ui.bottomBar.x, ui.bottomBar.y, ui.bottomBar.w, ui.bottomBar.h);
+      if(options.feather && s.feather !== false){
+        const edge = Math.max(4, Math.round(ui.barH * .22));
+        const topFade = ctx.createLinearGradient(0, ui.topBar.h, 0, ui.topBar.h + edge);
+        topFade.addColorStop(0, theme.bg); topFade.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = topFade; ctx.fillRect(0, ui.topBar.h, cw, edge);
+        const bottomFade = ctx.createLinearGradient(0, ui.bottomBar.y - edge, 0, ui.bottomBar.y);
+        bottomFade.addColorStop(0, 'rgba(0,0,0,0)'); bottomFade.addColorStop(1, theme.bg);
+        ctx.fillStyle = bottomFade; ctx.fillRect(0, ui.bottomBar.y - edge, cw, edge);
+      }
+    } else {
     const topGradient = ctx.createLinearGradient(0, ui.topBar.y, 0, ui.topBar.y + ui.topBar.h);
     topGradient.addColorStop(0, theme.bg);
+    if(s.feather === true) topGradient.addColorStop(readableFeather ? .62 : .25, theme.bg);
     topGradient.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = topGradient;
     ctx.fillRect(ui.topBar.x, ui.topBar.y, ui.topBar.w, ui.topBar.h);
     const bottomGradient = ctx.createLinearGradient(0, ui.bottomBar.y, 0, ui.bottomBar.y + ui.bottomBar.h);
     bottomGradient.addColorStop(0, 'rgba(0,0,0,0)');
-    bottomGradient.addColorStop(0.18, theme.bg);
+    bottomGradient.addColorStop(s.feather === true ? (readableFeather ? .3 : .75) : .18, theme.bg);
     bottomGradient.addColorStop(1, theme.bg);
     ctx.fillStyle = bottomGradient;
     ctx.fillRect(ui.bottomBar.x, ui.bottomBar.y - Math.max(0, Math.round(ui.barH * 0.35)), ui.bottomBar.w, ui.bottomBar.h + Math.max(0, Math.round(ui.barH * 0.35)));
+    }
     ctx.restore();
 
+    ctx.save();
+    if(readableFeather){
+      ctx.shadowColor = theme.railOutline || '#03130c';
+      ctx.shadowBlur = Math.max(1,ui.barH*.035);
+      ctx.shadowOffsetY = 1;
+    }
     if (controls.exit) {
       ctx.save();
       ctx.globalAlpha = alpha;
-      drawBackButton(ctx, ui.back, theme.fg);
+      drawBackButton(ctx, ui.back, options.backAccent ? { accent: options.backAccent } : undefined);
       ctx.restore();
     }
 
@@ -584,8 +644,15 @@ export function createVideoControlsUI(options = {}) {
       ctx.fillStyle = theme.fg;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `${Math.round(ui.barH * 0.42)}px "Source Sans 3","Segoe UI",sans-serif`;
-      ctx.fillText(title, ui.titleRect.x + ui.titleRect.w / 2, ui.titleRect.y + ui.titleRect.h / 2 + 1);
+      const titleFont = Math.round(ui.barH * (options.compact ? .48 : .42));
+      ctx.font = options.solidBars ? `500 ${titleFont}px "Segoe UI",sans-serif` : `${titleFont}px "Source Sans 3","Segoe UI",sans-serif`;
+      const centerX = ui.titleRect.x + ui.titleRect.w / 2;
+      if(options.headerLabel){
+        ctx.font = `500 ${Math.round(ui.barH * .23)}px "Segoe UI",sans-serif`;
+        ctx.fillText(options.headerLabel, centerX, ui.topBar.y + ui.barH * .24, ui.titleRect.w);
+        ctx.font = options.solidBars ? `500 ${titleFont}px "Segoe UI",sans-serif` : `${titleFont}px "Source Sans 3","Segoe UI",sans-serif`;
+        ctx.fillText(title, centerX, ui.topBar.y + ui.barH * .64, ui.titleRect.w);
+      } else ctx.fillText(title, centerX, ui.titleRect.y + ui.titleRect.h / 2 + 1, ui.titleRect.w);
       ctx.restore();
     }
 
@@ -599,8 +666,15 @@ export function createVideoControlsUI(options = {}) {
 
       drawStepArrow(ctx, ui.syncDecrease, -1, theme.fg, alpha);
       drawStepArrow(ctx, ui.syncIncrease, 1, theme.fg, alpha);
+      ctx.globalAlpha = alpha * (theme.rail ? 1 : 0.22);
+      if(theme.railOutline){
+        ctx.fillStyle = theme.railOutline;
+        ctx.fillRect(ui.syncSlider.x-1,ui.syncSlider.y-1,ui.syncSlider.w+2,ui.syncSlider.h+2);
+      }
+      ctx.fillStyle = theme.rail || theme.fg;
       ctx.fillRect(ui.syncSlider.x, ui.syncSlider.y, ui.syncSlider.w, ui.syncSlider.h);
-      ctx.globalAlpha = alpha * 0.45;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = theme.fg;
       ctx.fillRect(ui.syncSlider.x, ui.syncSlider.y, ui.syncSlider.w * syncRatio, ui.syncSlider.h);
       ctx.globalAlpha = alpha;
       ctx.beginPath();
@@ -608,14 +682,14 @@ export function createVideoControlsUI(options = {}) {
       ctx.fill();
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      ctx.font = `${Math.round(ui.barH * 0.28)}px "Source Sans 3","Segoe UI",sans-serif`;
+      ctx.font = `${Math.round(ui.barH * (options.compact ? .23 : .28))}px "Source Sans 3","Segoe UI",sans-serif`;
       ctx.fillText(`SYNC ${syncMs} ms`, ui.syncSlider.x + ui.syncSlider.w / 2, ui.syncTextY);
       ctx.restore();
     }
 
     ctx.save();
     ctx.globalAlpha = controls.play ? alpha : alpha * 0.4;
-    drawPlayButton(ctx, ui.play, !s.playing, theme.fg);
+    drawPlayButton(ctx, ui.play, !s.playing, theme.accent || theme.fg);
     ctx.restore();
     if (!controls.play) drawDisabledOverlay(ctx, ui.play, alpha);
 
@@ -625,12 +699,14 @@ export function createVideoControlsUI(options = {}) {
     ctx.restore();
     if (!controls.mute) drawDisabledOverlay(ctx, ui.mute, alpha);
 
-    drawVolumeSlider(ctx, ui.volumeSlider, volume, theme, alpha, controls.volume, sliderDrag === 'volume' ? 1.25 : 1);
-    if (!controls.volume) drawDisabledOverlay(ctx, ui.volumeSlider, alpha);
+    if (options.showVolumeSlider !== false) {
+      drawVolumeSlider(ctx, ui.volumeSlider, volume, theme, alpha, controls.volume, sliderDrag === 'volume' ? 1.25 : 1);
+      if (!controls.volume) drawDisabledOverlay(ctx, ui.volumeSlider, alpha);
+    }
 
     ctx.save();
     ctx.globalAlpha = controls.seek ? alpha : alpha * 0.3;
-    drawProgressBar(ctx, ui.progress, { currentTime: s.currentTime || 0, duration: s.duration || 0 }, theme.fg, controls.seek ? alpha : alpha * 0.35);
+    drawProgressBar(ctx, ui.progress, { currentTime: s.currentTime || 0, duration: s.duration || 0 }, theme.accent || theme.fg, controls.seek ? alpha : alpha * 0.35, theme.rail, theme.railOutline);
     ctx.restore();
     if (!controls.seek) drawDisabledOverlay(ctx, ui.progress, alpha);
     drawHoverPreview(ctx, ui, s, theme, alpha);
@@ -684,12 +760,14 @@ export function createVideoControlsUI(options = {}) {
         drawTransportFlashOverlay(ctx, ui.videoRect, transportFlash.kind, theme.fg, flashAlpha, flashScale);
       }
     }
+    ctx.restore();
   }
 
   const { getPointerPosition, inspectPointerEvent } = createControlsInput({
     getState: () => state.current, getLayout, getControlAvailability,
     getViewportRect: () => viewportProvider?.(), isSpeedExpanded: () => speedExpanded,
-    snapSyncMs
+    snapSyncMs, seekHitPadding: Number.isFinite(options.seekHitPadding) ? options.seekHitPadding : 6,
+    showVolumeSlider: options.showVolumeSlider !== false
   });
 
   function handlePointerEvent(ev, meta = {}) {
@@ -702,6 +780,7 @@ export function createVideoControlsUI(options = {}) {
     }
     const result = inspectPointerEvent(ev, meta);
     if (!result.hit) return false;
+    if(result.control === 'seek' && eventType === 'click' && ev.detail !== 0) return true;
     if (result.control === 'speedStop' && eventType === 'click') return true;
     // Only a press can begin slider ownership. A browser fires `click` after
     // pointerup (including after a long drag); treating that trailing click as
@@ -729,8 +808,16 @@ export function createVideoControlsUI(options = {}) {
         durationMs: 500
       };
     }
-    if (result.action?.type === 'expandSpeed') { if(eventType !== 'click'){speedExpanded=!speedExpanded;speedOutsideSince=0;} return true; }
-    if (result.action?.type === 'shortcutHelp') { if(eventType !== 'click')showVideoKeyboardShortcuts(); return true; }
+    if (result.action?.type === 'expandSpeed') {
+      if(options.speedMode !== 'list') {
+        if(beginsPointerGesture || (eventType === 'click' && ev.detail === 0)) onAction?.({ type: 'cyclePlaybackRate' });
+      } else if(eventType !== 'click') {
+        speedExpanded = !speedExpanded;
+        speedOutsideSince = 0;
+      }
+      return true;
+    }
+    if (result.action?.type === 'shortcutHelp') { if(eventType !== 'click')showVideoKeyboardShortcuts(options.shortcutCapabilities); return true; }
     if (result.handled && onAction && result.action && !(result.control === 'sync' && eventType === 'click')) onAction(result.action);
     return !!result.handled;
   }
@@ -757,8 +844,7 @@ export function createVideoControlsUI(options = {}) {
     }
     const ui = getLayout(pos.cw, pos.ch);
     if (sliderDrag) {
-      hoverPreview.visible = false;
-      hoverPreview.lastRatio = -1;
+      clearHoverPreview();
       if (sliderDrag === 'sync' && syncDrag) {
         const x = Number.isFinite(ev.clientX) ? ev.clientX : pos.x * 800 / pos.cw;
         const value = snapSyncMs(syncDrag.value + Math.round((x - syncDrag.x) / 2) * 5);
@@ -777,12 +863,17 @@ export function createVideoControlsUI(options = {}) {
       }
       return true;
     }
+    if (cameraGestureActive || performance.now() < cameraGestureEndsAt || ev?.pointerType === 'touch' || (typeof ev?.buttons === 'number' && ev.buttons !== 0)) {
+      clearHoverPreview();
+      return false;
+    }
     if (speedExpanded) {
       const first=ui.speedStops[0], last=ui.speedStops[5];
       const inside=pos.x>=first.x-10 && pos.x<=last.x+last.w+10 && pos.y>=first.y-10 && pos.y<=first.y+first.h+10;
       if(inside)speedOutsideSince=0;else if(!speedOutsideSince)speedOutsideSince=performance.now();
     }
-    const yHit = pos.y >= ui.progress.y - 10 && pos.y <= ui.progress.y + ui.progress.h + 10;
+    const hoverPadding = Number.isFinite(options.seekHitPadding) ? Math.max(10, options.seekHitPadding) : 10;
+    const yHit = pos.y >= ui.progress.y - hoverPadding && pos.y <= ui.progress.y + ui.progress.h + hoverPadding;
     const xHit = pos.x >= ui.progress.x && pos.x <= ui.progress.x + ui.progress.w;
     if (!xHit || !yHit) {
       hoverPreview.visible = false;
@@ -807,7 +898,7 @@ export function createVideoControlsUI(options = {}) {
         previewVideo.currentTime = Math.max(0, Math.min(dur || time, time));
         previewSeekTarget = previewVideo;
         previewSeekHandler = () => {
-          if (hoverPreview.seekToken !== token) return;
+          if (hoverPreview.seekToken !== token || cameraGestureActive || performance.now() < cameraGestureEndsAt) return;
           hoverPreview.visible = true;
           previewSeekTarget = null;
           previewSeekHandler = null;
@@ -823,11 +914,8 @@ export function createVideoControlsUI(options = {}) {
     setState,
     draw,
     handlePointerMove,
-    clearHoverPreview() {
-      if(speedExpanded && !speedOutsideSince)speedOutsideSince=performance.now();
-      hoverPreview.visible = false;
-      hoverPreview.lastRatio = -1;
-    },
+    clearHoverPreview,
+    setCameraGestureActive,
     endPointerInteraction() {
       endSyncDrag?.();
       sliderDrag = null;
@@ -865,12 +953,13 @@ export function createVideoControlsUI(options = {}) {
 
 // Pages call this while a player is active, so piano and menu controls remain
 // discoverable in their own contexts.
-export function showVideoKeyboardShortcuts() {
+export function showVideoKeyboardShortcuts(options = {}) {
   const existing = document.getElementById('shared-video-shortcuts');
   if (existing) { existing.close(); return; }
   const invokingElement = document.activeElement;
   let openingSyncPreference = false;
   const guide = createVideoShortcutGuide({
+    ...options,
     id: 'shared-video-shortcuts',
     onClose: () => {
       guide.remove();

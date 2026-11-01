@@ -6,9 +6,9 @@ export function getEffectiveAudioSettings() {
   const saved = getSavedAudioSettings();
   return { ...saved, muted: saved.muted || !isAudioAllowed() };
 }
-export function patchAudioSettings(values) {
+export function patchAudioSettings(values, { requestAfterDeny = false } = {}) {
   if (!isAudioAllowed() && (values?.muted === false || Number(values?.volume) > 0)) {
-    void ensureAudioConsentPrompt();
+    void ensureAudioConsentPrompt({ requestAfterDeny });
   }
   return getSharedSettings().patch({ audio: values });
 }

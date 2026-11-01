@@ -14,7 +14,7 @@ import {createFastPassSurprises} from './FastPassSurprise.mjs';
 const finite=Number.isFinite;
 
 /** Attach the skills mechanism to a host-owned GLTF scene, camera, renderer, and loop. */
-export function createPanelAssembly({model,gltf,manifest,renderer,camera,interactive=true,autoFocus=false,onSelect=()=>{}}){
+export function createPanelAssembly({model,gltf,manifest,renderer,camera,physicalCube=null,interactive=true,autoFocus=false,onSelect=()=>{}}){
   if(!model||!gltf?.parser||!manifest||!renderer||!camera)throw new TypeError('Model, GLTF parser, manifest, renderer and camera required');
   const rawNodes=new Map(),nameMap={},morphPanels=new Set();
   model.traverse(object=>{const association=gltf.parser.associations.get(object);
@@ -27,6 +27,7 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
   const rig=new RigVisuals(model,manifest,findRawNode),motion=new PanelMotion(rig,manifest,findRawNode),ripple=new PanelRipple(manifest);
   motion.setRippleGraph(ripple);
   const graphics=new PanelGraphicOrientation(motion);
+  motion.visibleUpScore=(id,quaternion)=>graphics.visibleUpScore(id,quaternion);
   const nameFrames=new CardNameFrame({motion,graphics});
   const surprise=createFastPassSurprises({artwork:nameFrames,motion,isIncomingHidden:(id,cycle)=>{
     const panel=motion.panels.get(id);
@@ -49,17 +50,9 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
   let cornerAction=null;
   let pendingFocus=null,focusAge=0,contactSerial=0;
   motion.canRetract=()=>((rippleReview.active&&!rippleReview.influenceCards)||ripple.canRetract())&&pendingPulses.size===0&&(!faceCarrier||faceCarrier.canRetract());
-  motion.onFlipStart=({panelId,axis})=>{graphics.prepareFlip(panelId,axis);};
   motion.onFlipEnd=({panelId})=>nameFrames.clearPlaceholder(panelId);
   motion.onFlipProgress=({panelId,axis,angle,previousAngle})=>{
     const p=motion.panels.get(panelId);
-    // Each further half-turn exposes the other print. Prepare it while it is
-    // hidden, including when a corner action extends an existing turn.
-    if(p?.turn)for(let boundary=Math.floor(previousAngle/Math.PI)+1;boundary*Math.PI<angle;boundary++){
-      if(boundary<1)continue;
-      const start=motion._turnQuaternion(p.turn,boundary*Math.PI,new THREE.Quaternion());
-      graphics.prepareFlip(panelId,axis,{start,desired:motion.getLogicalSide(panelId)});
-    }
     if(!p || !ripple.index.has(panelId))return;
     const morph=p.morphs[0],w=morph?.morphTargetInfluences?.[morph.morphTargetDictionary.Clicked]||0;
     const size=p.record.geometry?.neutralSize?.[0]||p.record.energyPolicy?.flipPullWidthM||.2;
@@ -109,7 +102,7 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
     'show-names-or-icons':()=>motion.toggleDisplayBaselineAnimated(),'toggle-clicked':()=>motion.invertClicked()};
   assembly.getCornerActions=getCornerActions;motion.getCornerActions=getCornerActions;
   const cornerArtwork=new CornerActionArtwork({motion,manifest,getCornerActions,onChange:()=>assembly.requestRender?.()});assembly.cornerArtwork=cornerArtwork;
-  if(interactive)assembly.input=mountPanelInput({renderer,camera,motion,model,manifest,findRawNode,onSelect,onFastPass:surprise,
+  if(interactive)assembly.input=mountPanelInput({renderer,camera,motion,model,physicalCube,manifest,findRawNode,onSelect,onFastPass:surprise,
     onClick:(id,hit)=>{
       const corner=Boolean(getCornerActions()[id]);
       // Consume rejected corner presses before they can inject contacts or fall
@@ -172,15 +165,15 @@ export function createPanelAssembly({model,gltf,manifest,renderer,camera,interac
     const worldCamera=camera.getWorldPosition(new THREE.Vector3());
     const inFront=worldCamera.clone().sub(face).dot(normal)>0;
     const local=worldCamera.clone().applyMatrix4(new THREE.Matrix4().copy(model.matrixWorld).invert());
-    const side=Math.max(Math.abs(local.x),Math.abs(local.y));
-    const dominant=motion.focused?local.z>side*.94:local.z>side*1.08;
-    const next=inFront&&dominant;
+    local.normalize();
+    const facing=local.z,threshold=motion.focused?.35:.5;
+    const next=inFront&&facing>threshold;
     if(next===motion.focused){pendingFocus=null;focusAge=0;return;}
     if(pendingFocus!==next){pendingFocus=next;focusAge=0;}
     focusAge+=Math.max(0,dt);
     // Brief edge crossings should not pump deployment in and out. Roll tracks
     // screen orientation independently and already starts during this dwell.
-    if(hostReduced||userReduced||focusAge>=(next ? .16 : .45)){motion.setFocused(next);pendingFocus=null;focusAge=0;}
+    if(hostReduced||userReduced||focusAge>=(next ? .06 : .45)){motion.setFocused(next);pendingFocus=null;focusAge=0;}
   }
   function nonfocalSettled(){return Boolean(motion.autoFocus&&!motion.focused&&rig.deployment===0&&
     motion.active.size===0&&motion.queue.size===0&&ripple.canRetract()&&pendingFocus===null&&(!faceCarrier||faceCarrier.isSettled()));}

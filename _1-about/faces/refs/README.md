@@ -269,3 +269,545 @@ Remaining phases and steps:
 7. Optional later feature, only when requested: key/unlock interaction, window opening and plate access.
 
 No commit, push, publication or deployment was requested. Live preview: http://127.0.0.1:8878/_1-about/about.html?review=1&face=refs&refs=20261022-smooth.
+# Spherical iris integration — October 2026
+
+The main cabinet aperture now holds the six curved leaves from the latest twisting
+spherical iris specimen. The shared 48×24 leaf mesh keeps the specimen's planar
+section, six 60° mounts and sweep/retract/counter-twist transforms. The normal
+Refs settings section has a persistent opening slider (0–100%) and Open/Close
+button. Constructor persists uniform physical Iris size (.35–1 of the smaller
+aperture radius) and the existing Iris door switch. A filled surround
+joins the edited elliptical cutout to the circular outer collar at one plane.
+
+The iris collar/frame meets the cabinet's front trim plane; the curved closed
+crown projects outward. The fitted surround lies flat at that plane. The
+cabinet's full rear outline remains a wood panel at rearY + .003. Its local
+iris mound rises smoothly and tangentially from that panel only as far as the
+measured leaf sweep requires. Wallpaper remains flat in other compartments at
+rearY + .001 and follows the identical mound with continuous X/Z UVs. Its
+liner is .002 local units inside the wood. At greater cabinet depth the mound
+shrinks, then vanishes. The skin probe includes the whole iris and mound and
+deploys the assembly when needed. Cabinet depth remains user controlled from
+.04 to .45 and is not automatically reduced to the earlier fit estimate.
+The six leaves have a longer fixed curved rear edge (cap 60.4°) and retract
+63.5° at full opening. A fixed relieved return keeps the original round 82.2
+bore at every opening without intersecting the moving leaves.
+The old placeholder module and saved bulge key remain only for archive
+compatibility.
+
+Browser review passed at 0/25/50/75/100% opening and .35/1 Iris size. The
+wide 330×220 and tall 220×330 edited cutouts kept a continuous surround and
+circular iris; size 1 and 100% opening survived a reload. Close iris returned
+the opening to 0. Shared contrast at 0/1 changed the iris and surround live.
+No console warnings or errors were captured. The reviewer then restored the
+284×284 aperture, .8 size and .5 contrast.
+
+Disposable numerical checks used the actual iris module and local Three.js.
+At default aperture, .35/.8/1 size and cabinet depths .04/.22/.45, 101 opening
+samples per combination found at least .005 local rear clearance. The fixed
+return's minimum native norm is 102.064 versus the leaf maximum 101.100;
+the fully open leaf triangle's minimum projected radius is 82.561 versus the
+82.2 bore. At size .8, mound height above the rear panel is .242/.062/0
+for those depths. Wood and wallpaper share the mound profile with .002 local
+separation and the same outer hole radius. These are sampled local geometry
+checks, supplemented by the final browser review below.
+
+Earlier live review passed: an angled closed view showed the collar flush with
+the cabinet front and the crown projecting outward; at 50% opening no frame
+cut through the leaves was visible; fully open retained a clear round 82.2
+bore. An isolated rear view showed the complete cabinet panel continuing
+below the earlier local bulb. The reviewer restored visibility for all six faces,
+backings and the cube to their original enabled state.
+
+Final browser review accepted cabinet depth .22, moved the slider to .45,
+confirmed .45 persisted after reload, then restored the exact previous value
+.0866012347941732. The isolated side view showed a broad, flat-crested mound
+tangent to the full rear panel at the old shallow depth, while .22 showed a
+thicker cabinet and a visibly shallower mound. The closed oblique view had no
+visible wallpaper crescent at the iris rim; fully open retained the round 82.2
+front aperture. All six faces, backings and the cube shell were restored to
+their original enabled state.
+
+Remaining phases and steps for this bounded correction: none. The separate
+Iris size, hole sizing, undo and snapping editor phase is complete below.
+No commit, push, publication or deployment was requested.
+
+## Iris sizing and 2D editor acceptance — October 23, 2026
+
+Constructor → Refs starts with Iris geometry: Main opening radius controls the cabinet hole, and Iris door size controls the spherical iris independently. Normal Refs settings point to that section. Deliberate opening, portrait and bay size edits update existing custom planner frames; the displayed opening radius follows the resolved frame. The default aperture remains 284×284 with iris size .8.
+
+Constructor keeps up to 30 local undo steps for completed curio construction edits. A drag is one step, while a canceled drag adds none. Undo and Redo buttons and Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y work within the active Refs Constructor panel; text inputs retain normal editing shortcuts. Restored construction state is saved through the existing archive. Plate artwork and playback are outside this history.
+
+The 2D planner starts with snapping on: dragging uses a 10-unit grid and nearby part centers/edges, including the drawing center. Hold Alt during a drag to bypass snapping, or turn it off with the checkbox. Numeric frame entries stay exact; arrow keys still move one unit, or ten with Shift.
+
+Live browser acceptance confirmed main radius 142→160 changed a custom aperture 284→320 and one Undo restored 284; iris size .8→.5 changed the visible door. Ctrl+Z with Undo focused restored size .6→.8, Ctrl+Shift+Z with Redo focused returned .6, and button Undo returned .8. A snapped drag moved the aperture center (365,459)→(410,490), then one Undo restored it. With snapping off, the same pointer movement produced approximately (407.9,485.4), and Undo restored it. Numeric frame entry 368.3 remained exact and undoable. Alt bypass is implemented in source; the visual browser check covered the snap toggle. Focused syntax, ESLint and diff checks passed. The local preview returned HTTP 200.
+
+Remaining phases and steps for this bounded editor request: none. The separate Refs feature phases listed above remain under their existing handoff. Nothing was committed, pushed, published or deployed. Live preview: http://127.0.0.1:8878/_1-about/about.html?review=1&face=refs.
+
+## Glass display behind the iris — October 24, 2026
+
+The iris now carries a circular display on its native rear mount. An opaque blue backing supports the fixed placeholder “This is text”; a shallow tinted glass surface and rounded polished rim sit in front of it. The display inherits iris position and size, and the leaves occlude it as they close. Its center rises at most 2.93 native units from the mount, within the iris's 3-unit front clearance. The display owns its geometry, materials and one text texture, disposing them before the borrowed iris mount.
+
+Normal Refs settings provide Show glass display, backing color, glass tint, clarity and polish. Constructor → Refs → Iris geometry provides lens curve. These options persist in the existing Refs archive; the lens curve participates in Constructor undo. The display's glow and highlights follow the shared live contrast mapping. The literal text is deliberately fixed for this phase; plate text and other future content are separate work.
+
+Focused source syntax, ESLint and diff checks pass, and the local preview returns HTTP 200. Remaining phases and steps for this glass display phase: live browser visual acceptance and any focused tuning it reveals. Other Refs cabinet and architecture phases remain under their existing handoffs. Nothing was committed, pushed, published or deployed. Live preview: http://127.0.0.1:8878/_1-about/about.html?review=1&face=refs.
+
+## Cabinet rim position and iris display well — October 24, 2026
+
+Constructor now saves a signed **Cabinet position** from −.5 to +.5. Zero puts
+the cabinet front on the measured outer rim of the borrowed Refs backing;
+negative moves it inward and positive moves it outward. This placement is
+calculated from the actual cabinet front and overall scale, so changing
+cabinet depth does not move that front at a fixed position. Camera focus,
+selector movement and reduced motion do not alter the chosen position. The
+earlier automatic focus/tuck behavior and backing-limited depth described
+above are historical; this manual setting supersedes them. The backing
+clearance profile remains available as advisory data, without clamping the
+user's signed placement.
+
+The iris has a fixed opaque dark inner well joined to the relieved 82.2 bore
+and an opaque rear seat. The well follows a spherical radius of 102.064 native
+units, outside the moving leaf maximum of 101.10, and ends at native Z −62.
+The full leaf sweep ends at native Z −55.82, leaving at least 6.18 native units
+behind it. The local wood and wallpaper mound includes the well and seat.
+`iris.getDisplayMount()` returns a group at native Z −62; its local XY plane
+is the future display plane. `iris.getDisplayMetrics()` returns the native and
+scaled seat radius, native plane/front-limit Z, face-local plane Y, and leaf
+rear Y. The future lens may rise at most three native units from that plane
+without entering the sampled leaf sweep; its own geometry and disposal remain
+the next phase's responsibility.
+
+Focused actual-module checks covered position −.1/0/+.1 at depths .04/.22/.45
+and scales .6/1/1.4: the computed front plane differed from the requested rim
+plane by at most 5.6e−17 local units. Across 101 opening samples at iris sizes
+.35/.8/1 and those three cabinet depths, the well radius exceeded the leaf
+norm by at least .964 native units before triangle interpolation; the well stayed at least .005 local units
+ahead of the wood/wallpaper mound, and the rear seat stayed at least .00727
+local units behind the leaves. Targeted ESLint passed. Browser review is
+pending for visual occlusion, signed control persistence and undo.
+
+Closed-angle QA found a dark tooth-like overlap where the first well ring met
+the relieved return. The shared inner circle now lies at native radius 82.2,
+Z 60.5 on both meshes. Their 129 edge vertices coincide exactly. Sampling
+the actual return triangles against the faceted well found only −5.8e−7
+native units of floating-point overlap; sampled well triangles remain at
+least .930 native units outside the leaf mesh. The display mount remains at
+Z −62 and its updated native radius is 81.075. Browser confirmation of the
+closed oblique view and fully open aperture remains pending.
+
+Remaining phase: add the requested blue-backed “This is text” glass display
+and lens using the iris mount, then perform integrated browser review of
+position, oblique occlusion, display and persistence. No commit, push,
+publication or deployment was requested.
+
+## Final cabinet position, iris well and glass review — October 24, 2026
+
+The integrated live browser review passed. Cabinet position −.1 moved the front inward as intended; Undo restored 0. Position +.1 persisted across a reload, after which it was restored to 0 with the existing cabinet depth retained. The repaired inner well and relieved return now meet cleanly: the closed oblique view shows no earlier jagged overlap and no wallpaper or display text leaking through the leaves.
+
+At full opening, the blue-backed circular display shows a legible “This is text” behind a shallow lens with a subtle polished reflection. Backing color, glass tint and clarity changes persisted across a reload, then were restored to the default blue colors, .9 clarity and .8 polish. Lens curvature 1 was undone to .55. Shared contrast at 0 and 1 changed glass highlights live; the review restored .5. The final preview is left open for inspection.
+
+Remaining required phases and steps for this bounded request: none. The older Refs feature backlog in this document remains separate. Nothing was committed, pushed, published or deployed. Live preview: http://127.0.0.1:8878/_1-about/about.html?review=1&face=refs.
+
+## Forward rounded gem with displayed plate text — October 24, 2026
+
+The blue display is now a full, smoothly rolled cylinder gem rather than a
+shallow rear disc. Its native body spans Z 19–46, reaches radius about 81 at
+its bulging side, and has a broad flatter face. The lens/reflection rises to
+at most Z 47.488, leaving 1.012 native units behind the fixed frame plane at
+Z 48.5. It remains inside the empty center of the rotating spherical leaves;
+the smallest sampled difference between any gem vertex and the inner leaf
+radius is 9.612 native units across iris sizes .35/.8/1 and lens curves
+0/.55/1. The well, opaque rear seat and cabinet position are unchanged.
+
+Gem text now comes from the saved `.text` of `selector.currentIndex`, the plate
+physically on display. The quote stays in place during an exchange and changes
+when that index settles. Edits to the currently displayed plate update live;
+empty text renders empty. The text texture redraws only when its content
+changes. Multiline quotes wrap and fit to a circular, gently italic face.
+The existing backing color, glass tint, clarity, polish, lens curve and shared
+contrast controls still apply. The earlier “This is text” paragraph above
+documents the prior placeholder, which this section supersedes.
+
+Focused module geometry and text-state checks passed for size and curvature
+endpoints, including repeated disposal. Targeted ESLint passed. The text layer
+was raised after live review exposed depth fighting on a longer short quote:
+the actual body front is native Z 27.03698 in gem-local coordinates, text is
+at 27.35, and the lens edge is at least 27.38. The outermost reflection still
+stops at native Z 47.488, behind the cabinet frame.
+
+Final browser review passed. Editing the physically displayed plate's quote
+updated the gem live. During a plate 2 exchange it kept “First plate” until
+arrival, then showed “Second plate” in full after the layer correction. A
+rapid queued 0→1→0 selection ended with “First plate” and plate 1 physically
+current. “The quiet work\nbecomes a story.” wrapped and fit; the angled view
+showed a raised broad face and rounded cylinder side. Original empty text on
+plates 0 and 1 and selection 0 were restored. Appearance settings and cabinet
+position 0 were left unchanged. The requested swirl/dissolve effect was
+discussed as a possible later animation and deliberately not implemented.
+
+Remaining required phases and steps for this request: none. The older Refs
+backlog elsewhere in this document remains separate. No commit, push,
+publication or deployment was requested.
+
+## Seven small-pocket cupboard doors — October 25, 2026
+
+The Refs face now owns closures for the two tall bays, two crescents, two lower arches and bottom plaque. Tall bays use a curved, open-back rotating cabinet with a floral front and a 180-degree vertical turn. The narrow side crescents start open and swing outward on mirrored outer hinges. Lower arches start closed; `leftArch` is reserved as the phase 3 butterfly host. The plaque starts closed and folds outward from its bottom hinge. The portrait and center iris are outside this controller. The door leaves use the cabinet's material maps and finish settings without owning its cached textures; the floral front borrows the already loaded rear wallpaper texture. Shared contrast changes copy the cabinet material response and tint the paper with the backing's mapping.
+
+Normal Refs settings select, open/close and set angle/speed for a door, with seven keyboard-accessible quick buttons. Constructor → Refs selects the same door and sets type, hinge, axis and direction. Configuration persists in the existing `about.refs.sketch` archive; older archives gain the new default door states. A tap on a visible 3D leaf or its open portal toggles that door and captures the archive once. Right/middle pointer controls remain with the cube.
+
+`board.doors` owns the runtime geometry. `board.getDoorState(id)`, `getDoorStates()`, `subscribeDoors(listener)`, `getDoorOptions(id)`, `updateDoor(id, patch)`, `setDoorOpen(id, bool)`, `toggleDoor(id)` and `getPortal(id)` are the public integration surface. A portal supplies its face-local frame, exact contour, front/rear Y planes, stable `interiorRoot` and the moving door root. Subscribe events include opening progress. Interior roots remain mounted across open/close changes; phase 2 may attach ornaments there and phase 3 may observe `leftArch` transitions.
+
+Focused source ESLint and diff checks passed. An actual Three.js sweep sampled 291,564 finite door vertices across both rotating bays, 0–180 degrees, depths .04/.22/.45 and default plus edited tall/wide bay frames. The sweep found no rear wallpaper penetration or bay-surround X overrun. The shallow-depth cam moves the rotating section outward through its own aperture at mid-turn; cabinet depth and position preferences are untouched. The local preview returned HTTP 200. Live browser review of the doors, pointer drag threshold, occlusion, finishes and archive reload remains for the coordinating chat.
+
+Remaining phases and steps: (1) coordinator review and live visual/input acceptance of these seven doors, with focused fixes if needed; (2) add the tiny shelves and figurines to the two open crescent compartments; (3) source and implement the faithful butterfly behind `leftArch`, using the stable interior root and door-progress events; (4) integrated Refs QA of all doors, interiors, butterfly, settings, persistence, contrast and lifecycle. The earlier original-picture picker QA, further appearance and extreme-boolean checks, final integration and key/window access checks remain future work in their existing handoff. The iris and glass gem are already implemented. No commit, push, publication or deployment was requested.
+
+## Crescent cupboard interiors — October 25, 2026
+
+Both outer crescent portals now contain three fitted shelves with tiny vases,
+figurines and books. The shelf widths and object silhouettes are clipped to
+the actual opening contour at their heights. Their depth follows the cabinet
+depth, including the .04 minimum, with a front recess placement that keeps
+them readable while doors open. Contents attach to the stable portal interior
+roots, so opening a door does not move them. Shelf finish borrows the cabinet
+side material's shared maps through a disposable wrapper; ornaments own their
+geometry and materials. Shared contrast adjusts their subtle highlights live.
+Layout/depth changes rebuild only the interior geometry; material changes do
+not. Hidden cabinet/front or cutaway states hide the interior groups.
+
+Source ESLint and focused geometry checks cover default and edited crescent
+outlines at .04, .22 and .45 depths. The coordinating chat owns live visual
+review and any focused fixes.
+
+Remaining phases and steps: (1) coordinator live visual/input acceptance of
+doors and crescent contents, with focused fixes; (2) source and implement the
+faithful butterfly behind `leftArch` and connect it to door progress; (3)
+integrated Refs QA of all doors, contents, butterfly, settings, persistence,
+contrast and lifecycle. The earlier original-picture picker QA, further
+appearance and extreme-boolean checks, final integration and key/window access
+checks remain future work in their existing handoff. No commit, push,
+publication or deployment was requested.
+
+## Door-triggered butterfly — October 25, 2026
+
+The selected cupboard door now hosts one butterfly. Its default is the closed
+left lower arch. Normal Refs settings enable or disable the butterfly, choose
+the host door, show its state, and reset it for another flight. Enable and host
+are captured in the existing Refs archive; the in-progress flight is transient.
+Once the door reaches 55% open, the butterfly moves clear of the aperture,
+turns toward the viewer, flaps about three times, and flies past the borrowed
+camera's upper outside edge. Closing before launch returns it behind the door;
+closing fully after escape rearms it. Reduced motion skips the flight and hides
+the visitor. Suspend pauses it. The GLB is loaded once and its skinned scene,
+textures, materials, geometry, skeletons and mixer state are released on face
+disposal. Flight geometry is excluded from the cabinet clearance estimate.
+
+Focused source lint and diff checks passed. Remaining phases and steps:
+(1) coordinator live visual/input acceptance of the butterfly, including
+open/close, rapid reopen, host selection, reduced motion, off-screen escape,
+despawn and archive reload; (2) integrated Refs QA of doors, crescent contents,
+butterfly, settings, persistence, contrast and lifecycle, with focused fixes.
+The earlier original-picture picker QA, further appearance and extreme-boolean
+checks, final integration and key/window access checks remain future work in
+their existing handoff. No commit, push, publication or deployment was requested.
+
+The first live view showed the wing plane almost edge-on and the .052-wide
+exported rig difficult to read. The runtime now fits the actual GLB wing span
+to .08 face units (about 55% of the default lower arch width), pitching it
+40° toward the viewer while it emerges. The source wing depth then contributes
+about .035 face units of visible vertical silhouette instead of nearly zero.
+After leaving the opening it grows gently to 1.35× by the off-screen edge.
+A focused mock-loader state check passed loading, early close, turn, flight,
+despawn, rearm, reduced motion, suspend, host change and late disposal.
+Live visual acceptance of the adjusted pose remains with the coordinator.
+
+## Cabinet doors and butterfly acceptance — October 25, 2026
+
+The coordinating live review passed direct tall-bay opening/closing, the
+bottom-hinged plaque, side-crescent closure over the ornaments, reopening,
+settings-driven opening, saved open state after reload, and rejection of a
+left drag as a door tap. Constructor selection exposes the expected bottom
+hinge and allows it to be changed and restored. Live review caught missing
+material shader invalidation when a previously untextured leaf acquired wood;
+the owned door and shelf wrappers now invalidate on map changes while retaining
+the cabinet's ownership of those textures.
+
+The adjusted butterfly is visible turning and fluttering in the open lower-left
+arch, then crosses the upper-left view and despawns. Captures are under
+`output/refs-doors/live/visible-*.jpg`: 01–04 show its changing wing pose, 05
+shows it in flight above/left of the cabinet, and 06 onward show its absence.
+The GLB check in `output/refs-doors/butterfly-asset.json` covers all four baked
+wing tracks, seamless endpoints, finite data, normalized skin weights, and the
+unchanged original source. Targeted ESLint and diff checks pass. Lifecycle
+edge cases were exercised with the focused mock loader; these are separate
+from the live visual evidence.
+
+The user's existing layout tab must remain open and must not be refreshed or
+reset while its layout backup is unresolved. Verification moved to a separate
+temporary `qa=cupboard-doors` tab. About Page chat was explicitly asked by the
+user to own the site-wide settings interaction repair: preserve/export that
+layout, suppress browser context menus, make Constructor sections collapsible,
+use right-click headings for "Toggle all", middle-click section bodies for
+scoped import/export, and middle-click headings/tabs for full settings download.
+
+Remaining phases and steps: About Page owns layout backup, shared gesture
+changes, Constructor section integration, and cross-page verification. There
+are no further required implementation phases for this bounded Refs doors,
+contents and butterfly request. Later work remains door decoration, the older
+original-picture picker QA, further appearance and extreme-boolean checks,
+broader final integration, and optional key/window access. No commit, push,
+publication or deployment was requested.
+
+## Physical face operation controls — October 29, 2026
+
+Refs now has a curved right-side iris rail with a draggable thumb and click-to-position track. Raised left/right chevrons flank the portrait and cycle the requested plate with wrapping. Tiny unnumbered pilot lights follow the portrait's lower elliptical arc and select their corresponding requested plate. The light count follows `plateCount` from 1 through 32; all lights share one normal Refs Settings color. The selected bulb has a bright glass lens and halo while the others remain very dim in the same hue. Selection indicates `plateIndex` immediately, while gem text continues to follow the actual displayed plate.
+
+The controls are face-local under the existing placement, so manual layout, roll, cabinet depth and travel remain inherited. Input uses the full physical cube for occlusion and excludes back-side rays. Slider movement clamps at its two ends, uses the existing iris option, and captures the Settings archive on pointer release. A full clearance probe runs at release instead of on every slider step. Capture, blur, cancel, suspend and detach end the gesture. All new geometry, textures and materials are disposed by the Refs face.
+
+Targeted ESLint and Git whitespace checks pass. Remaining steps for this bounded change: coordinator live visual and pointer acceptance in a fresh Refs preview tab, including 1/7/32 lights, front/back occlusion, slider endpoints, arrow wrap, and contrast/color/archive reload. Earlier original-picture picker, appearance and extreme-geometry checks, broader integration, and optional key/window access remain in their existing backlog. Nothing was committed, pushed, published or deployed.
+
+### Final operation-control acceptance
+
+Live review passed both arrow wraps (1→7 and 7→1), clicking the middle light
+to select plate 4, closing the iris at the lower rail endpoint, dragging to
+50%, and dragging to full opening. The plate 4 selection, blue pilot color
+`#56a8ff`, and 50% iris setting all survived a reload of the separate QA tab.
+Shared contrast 0 and 1 changed the selected bulb halo and metal highlights
+live. The review restored green `#43ed73`, plate 1, opening 100%, and contrast
+.5. The original layout tab was not refreshed or reset.
+
+The focused fixture `tmp/refs-cabinet-review/face-operations-check.mjs` passed
+1/7/32 bulbs, wide elliptical frames, finite symmetric positions, front-ray
+hits, rear-ray rejection, endpoint/midpoint arc mapping, unchanged geometry
+on appearance edits, and disposal on rebuild/detach. These module checks do
+not claim a continuous collision audit of arbitrary user-edited layouts.
+Targeted ESLint and whitespace checks pass. Final live evidence is
+`output/refs-face-operations/live-final.jpg`.
+
+Remaining required phases and steps for these physical controls: none.
+Existing separate follow-ups are confirming recovery of the older screenshot
+layout, cabinet/door decoration, original-picture picker QA, further appearance
+and extreme-geometry/boolean checks, broader integration, and optional
+key/window access. The shared menu gestures and Constructor folding were
+completed by About Cube; the earlier paragraphs are historical handoffs.
+No commit, push, publication or deployment occurred.
+
+### Resumed checkpoint review — October 29, 2026
+
+The coordinator confirmed that the refinement and iris-state plumbing were
+already saved before the interruption. The stopped agent's outstanding file
+reservation was released after confirming its errored status. Targeted ESLint,
+whitespace checks, and the existing focused fixture were rerun successfully:
+lower-arc endpoint/midpoint mapping, equal frame-band spacing, full button-cap
+picking, front/rear rays, 1/7/32 lights, appearance reuse, iris-size rebuild,
+and resource disposal. The local review server returns HTTP 200.
+
+Live acceptance could not resume: the browser tool reports that local browser
+use is disabled in Work settings. No user tab was refreshed or reset. Required
+remaining step: inspect the new button housings and lower centered slider in
+a fresh preview, exercise both buttons and the lower rail, and fix any issue
+that review reveals. This visual/pointer gate remains open; source checks are
+not a substitute for it. Separate backlogs listed above remain unchanged.
+No commit, push, publication or deployment occurred.
+
+## Larger polished quote stone — October 29, 2026
+
+The quote face now uses a broad smooth stone with a 78-unit front and 76-unit
+text disk, replacing the small 64/58-unit face and extra colored trim. The
+2048-pixel quote canvas fits upright semibold type to circular line widths:
+the middle lines use the wider chords, with room reserved for each line's
+glyph height. Quotes remain complete rather than being truncated. The body
+and shallow lens use one saved stone color, with polish on the rounded
+shoulder and a restrained edge reflection. The General Settings control is
+now Stone color; the former tint field remains archive-compatible. Text
+continues to follow the plate physically on display.
+
+The default iris size is now 1, filling its compartment. An unversioned
+archive using the previous exact .8 default migrates once to 1 under
+`quoteDisplayVersion: 2`. Custom sizes and versioned .8 choices are preserved.
+The fitted surround and fixed outer collar borrow the cabinet face finish
+and matching face-local UVs; the relieved inner return remains an opaque
+recess. Iris leaves, their movement, plate content and layout coordinates
+retain their existing behavior. Borrowed cabinet textures are not disposed
+by the iris.
+
+The interrupted worker's manual normal averaging used the wrong lathe vertex
+order and produced a specular streak. The coordinator removed that step and
+retained Three.js's analytic lathe normals. A GPT-6 Sol worker at low effort
+reviewed the geometry and offline renders; the coordinator owns the final
+source integration. Disposable review evidence is in
+`output/refs-stone-review/`. These Blender views reconstruct the actual module
+geometry and canvas textures with approximate lighting; they are not browser
+screenshots or proof of live appearance.
+
+Verification: focused source lint, whitespace checks, and the existing
+button/slider fixture pass. Offline text-fit checks cover 250 and 2,000
+characters, explicit newlines, and a 2,000-character unbroken word, without
+dropping text or exceeding each line's circular chord. Native geometry fits
+inside the fixed 82.2 bore and spherical leaf envelope and remains behind the
+48.5 collar plane. These native clearances are unchanged by uniform iris
+scale. Temporary normalizer checks confirm the one-time migration, custom
+sizes, versioned .8, and a JSON roundtrip retaining plate picture/text; those
+checks extracted the normalizer with unrelated imports stubbed. The final
+offline render no longer has the radial streak. The necessary inner return
+is darkened to read as an inset rather than a decorative gray frame.
+
+Remaining phases and steps: inspect the stone and longer quotes in a fresh live Refs tab and
+check iris motion, saved colors, and the previous button/slider refinements.
+Browser automation currently reports local browser use disabled in Work
+settings, so that live acceptance remains open. Existing separate follow-ups
+are confirming the older screenshot layout backup, cabinet/door decoration,
+original-picture picker QA, extreme geometry/boolean checks, broader final
+integration, and optional key/window access. No commit, push, publication or
+deployment was requested.
+
+## Paused Refs control refinement — October 29, 2026
+
+The portrait chevrons now sit on raised round buttons with a bezel, dark dome and full-disc hit area. The iris slider follows the lower half of the opening from left to right. Its rail is centered between the outer aperture ellipse and the spherical iris's relieved return radius from the live iris state; iris size edits rebuild that geometry. Existing plate lights, shared color, selection, contrast and input persistence remain unchanged.
+
+Focused module checks pass for lower-arc endpoints and midpoint, frame-band spacing, button-cap clicks, front/rear rays, 1/7/32 lights, appearance updates without rebuild, iris-size rebuild and disposal. Targeted ESLint passes. Work is safely paused here. Remaining required step: coordinator live visual and pointer acceptance in a fresh preview tab after the user resumes, with any fixes that review reveals. The existing screenshot-layout recovery, cabinet decoration, original-picture picker, extreme-geometry, broader integration and optional key/window checks remain separate backlog. Nothing was committed, pushed, published or deployed.
+
+## Original reference quotes and hidden key illustration — October 29, 2026
+
+Plates 1–3 now carry the original References-section text and attributions in
+source order: Jinny Jeon (Manager of Foreign Language Department), Ashley Kim
+(Head Teacher), and Matt Stone (Native English Teacher). The wording was
+verified against `about.html` in commit `4857de0`, lines 127–142, also present
+in `4f8761c^`. Only incidental spaces before closing quote marks were removed.
+The curated content is retained in `reference-quotes.js`.
+
+`originalQuotesVersion: 1` assigns these texts once when earlier saved Refs
+settings are restored, preserving images, source IDs, colors, picture scales,
+layout and plates 4 onward. At least three plate slots are made available for
+the requested assignment. Fresh defaults also contain the quotes. Later edits
+or blank text survive normalization and saved-settings roundtrips. The
+existing archive restore captures the normalized result, including its marker.
+
+The actual three quotes, including attribution, are the crystal readability
+examples. Offline canvas review caught and fixed ordinary words splitting at
+narrow top chords; the fitter now retries its size/line count before splitting
+only genuinely oversized unbroken strings. Full text and circular bounds pass
+for all three originals (242/176/181 characters), alongside 2,000-character
+text, line breaks and an unbroken string. Temporary evidence is
+`output/refs-stone-review/original-quote-1.png` through `original-quote-3.png`.
+The source normalizer was checked directly with only the unused GLTF loader
+import stubbed; photos/colors/crop/source IDs, other plates, fresh defaults,
+and later edits all survive. Focused ESLint and whitespace checks pass.
+
+The lower plaque key illustration is disabled with
+`PLAQUE_KEY_CLUE_ENABLED = false` in `doors.js`. Its geometry helper, shared
+stroke source and mounting code remain for future use. The portrait lock and
+cupboard door behavior are unaffected.
+
+Remaining phases and steps: live visual/input/persistence review of the
+original quotes, iris, buttons/slider, and hidden key in a fresh Refs tab
+(browser access remains disabled); older screenshot-layout backup confirmation;
+cabinet/door decoration; original-picture picker QA; extreme geometry/boolean
+checks; broader final integration; optional key/window access. No commit,
+push, publication or deployment was requested.
+
+## Quote stone vertical centering — October 29, 2026
+
+The quote fitter now centers the occupied glyph bounds measured with the same
+center alignment and middle baseline used for drawing. It checks every shifted
+line against the circular text area before accepting a size and updates the
+reported chord width for the final positions. This also centers quote-only
+edits that have no attribution; saved plate text and appearance are untouched.
+
+Native Canvas checks passed the three original quotes with and without
+attribution, short and uneven phrases, explicit line breaks, 2,000 characters,
+and a 2,000-character unbroken word. Each layout retained its text, kept glyphs
+inside the circle, and had a visible top/bottom midpoint at the canvas center.
+Disposable 480-pixel previews are in `tmp/refs-stone-review/vertical-center/`.
+
+The coordinator reviewed the source and all three quote-only previews: the
+visible text has balanced top/bottom space and no clipped or missing words.
+The local review server returns HTTP 200. Live browser acceptance is still
+unavailable because local browser use is disabled in Work settings.
+
+Remaining phases and steps: live visual/input/persistence review of the quotes, iris, buttons,
+slider, and hidden key in a fresh Refs tab when browser access is available;
+older screenshot-layout backup confirmation; cabinet/door decoration;
+original-picture picker QA; extreme geometry/boolean checks; broader final
+integration; optional key/window access. No commit, push, publication or
+deployment was requested.
+
+## About name and distance-readable crystal — October 30, 2026
+
+The former Refs face now displays About in normal Settings, Constructor,
+face/backing switches, focus buttons, the 2D editor, Page summary, shortcuts
+and site directory. The chat is now About Face. Fish retains its visible name
+and internal `about` ID; this face retains internal `refs`, archive owner
+`about.refs.sketch`, module paths, URL face parameter and saved layout/content.
+No geometry, images, quotes or authored face transforms were migrated.
+
+The quote uses upright semibold Segoe UI with Arial/sans-serif fallback,
+tighter leading and a wider circular reading field. Every row follows its
+circle chord, measured with an explicit alphabetic baseline, then the actual
+ink block is centered and checked again. Whole words and full text are
+retained; oversized unbroken strings retain their fallback. Short quotes
+can use larger type. A final paragraph beginning with an em dash is treated
+as attribution at 82% of the quote font size, giving priority to the quote
+without changing the stored text. Each line's measured font size is reused
+when drawing it. The fitter only runs when quote text changes.
+
+A GPT-6 Sol worker at medium effort implemented the typography; the
+coordinator reviewed the source, reran focused ESLint, and verified About/Fish
+labels live in normal Settings, Constructor/editor and Page summary. Native
+Canvas checks cover all three originals with and without attribution, custom
+text, line breaks, 2,000 characters and an unbroken 2,000-character word,
+checking complete text, circular bounds, centering and repeated-call stability.
+At a 220-pixel reading diameter, the longest attributed original fits at about
+15px rather than the prior 11px; the others fit at about 17px. These are Canvas
+fit figures, not a universal legibility guarantee for every viewport/font.
+Disposable evidence is under `tmp/refs-stone-review/readability/`.
+
+Live browser access is available again. Review is in a separate fresh tab,
+preserving the user's original tab. The coordinator matched the supplied
+1894×960 view and approximately 210–220px crystal diameter and inspected all
+three original quotes live. The selector's physical right button selected
+plate 3 correctly. Plate 1 was restored through normal Settings and confirmed
+physically displayed before finishing. The Settings drawer is closed and the
+temporary viewport override reset. The original user tab was not refreshed.
+Live evidence is `output/about-crystal-readability/plate-1-final.jpg`,
+`plate-2.jpg`, and `plate-3.jpg`. Browser access verified the local preview;
+the terminal HTTP probe was unavailable because local socket access was denied.
+
+Remaining phases and steps for this bounded naming/readability request: none.
+Existing separate follow-ups remain older layout backup confirmation,
+cabinet/door decoration, original-picture picker QA, extreme geometry/boolean
+checks, broader integration and optional key/window access. Earlier iris,
+contrast/archive and broader controls acceptance should be treated separately
+from these quote views; this pass does not claim to repeat all older checks.
+No commit, push, publication or deployment was performed.
+
+## Authored defaults from the supplied export — October 30, 2026
+
+`site-settings(7).json` is a whole-site archive (`scope.kind: site`) with 14
+owners. Only `about.refs.sketch`, the current About face, was adopted as
+script defaults. `exported-defaults.js` is the frozen, face-only source of
+startup/reset values; the full-site archive, unrelated preferences, other
+faces and sticky notes were not copied into source or imported into storage.
+
+The preset includes the supplied mahogany materials, trim/stain/grain/sheen,
+hidden construction guides/anchors/opening guide, iris open at 100%, plate 5
+selected, exact seven plate texts and metadata, and exact seven door states.
+Plate text punctuation was preserved as supplied. Missing plate data uses
+authored defaults, while explicit saved blank/custom text, photos, source IDs,
+crops, colors and door edits remain authoritative. Fresh normalization no
+longer seeds the older original-reference text over this authored content.
+No valid existing saved settings are forced to the new defaults; the existing
+Reset sketch defaults action uses the new preset.
+
+A GPT-6 Sol worker at low effort implemented the preset and normalizer changes.
+Coordinator review removed the superseded inline defaults so there is one
+source of truth, froze the nested preset, and reran the focused checks.
+`REFS_DEFAULT_OPTIONS`, `normalizeRefsOptions({})`, and normalized supplied
+About data match the exported owner exactly. Custom/blank/photo metadata and
+door changes survive normalization roundtrips; focused ESLint passes.
+
+Remaining phases and steps: finish the newly requested shared transfer-scope
+change and verify section, page, face, Cube and General boundaries. The
+source-default task is complete. Separate existing follow-ups remain older
+layout backup confirmation, cabinet/door decoration, original-picture picker
+QA, extreme geometry/boolean checks, broader integration and optional
+key/window access. No commit, push, publication or deployment was performed.

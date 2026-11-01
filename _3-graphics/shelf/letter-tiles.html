@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Letter tiles | Matt Hall</title>
+  <meta name="description" content="Move wooden letter tiles around a green desktop to make words.">
+  <link rel="icon" href="data:,"><link rel="stylesheet" href="letter-tiles.css">
+  <script type="importmap">{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/"}}</script>
+  <script type="module" src="letter-tiles.mjs"></script>
+</head>
+<body>
+  <header class="desk-toolbar">
+    <div class="desk-title"><a href="../graphics.html" aria-label="Back to Graphics">← Graphics</a><h1>Letter tiles</h1></div>
+    <div class="desk-actions"><label class="snap"><input type="checkbox" id="snap" checked>Snap tiles</label><button id="top-view" aria-pressed="true">Top view</button><button id="table-view" aria-pressed="false">Table view</button><button id="tidy">Tidy tiles</button><button id="reset">Reset desk</button></div>
+  </header>
+  <main id="desktop" tabindex="0" role="region" aria-label="Word area. Drag a first letter anywhere, then place new letters beside existing letters. Drag any tile to move its connected word cluster. Right-click removes a tile. Arrow keys move the selected cluster. Delete removes the selected tile. Q and E rotate it. Escape cancels a drag."></main>
+  <div id="loading" role="status">Setting out the letters…</div>
+  <footer class="letter-tray" aria-label="Letter draw area">
+    <div id="alphabet" class="alphabet" role="group" aria-label="Reusable alphabet. Drag a letter to the word area or press Enter to draw a copy."></div>
+  </footer>
+  <script id="letter-tiles-diagnostics" type="application/json">{}</script>
+</body>
+</html>
+

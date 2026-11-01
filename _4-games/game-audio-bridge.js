@@ -99,7 +99,7 @@ export function createGameAudioBridge(options = {}) {
       setMuted(true);
       notify('consent-required');
       const generation = bindGeneration;
-      void ensureAudioConsentPrompt().then(state => {
+      void ensureAudioConsentPrompt({ requestAfterDeny: true }).then(state => {
         if (!disposed && state.allowed && generation === bindGeneration && boundFrame?.isConnected) setMuted(false);
       });
       return false;

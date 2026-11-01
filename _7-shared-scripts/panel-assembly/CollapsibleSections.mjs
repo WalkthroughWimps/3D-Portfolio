@@ -2,77 +2,149 @@ import { reorderSlot } from './StableReorder.mjs';
 const KEY='site.settings.section-expansion.v1';
 const ORDER_KEY='site.settings.section-order.v1';
 let serial=0;
+const detailOwners=new WeakMap();
 const slug=value=>value.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 
-/** Enhance settings headings only; control nodes and their listeners retain identity. */
-export function mountCollapsibleSections(root,{scope='settings',storage}={}){
+/** Enhance section headings and native details without replacing their controls. */
+export function mountCollapsibleSections(root,{scope='settings',storage,headings=true,headingLevels=[2,3,4],reorder=true,defaultExpanded=true,group,detailsSelector='details',disclosures=[]}={}){
   if(storage===undefined)try{storage=globalThis.localStorage;}catch{storage=null;}
-  let saved={};try{saved=JSON.parse(storage?.getItem(KEY)||'{}')||{};}catch{}
-  let orders={};try{orders=JSON.parse(storage?.getItem(ORDER_KEY)||'{}')||{};}catch{}
-  const controller=new AbortController(),records=[];
-  const persist=()=>{try{storage?.setItem(KEY,JSON.stringify(saved));}catch{}};
+  const readState=key=>{try{const value=JSON.parse(storage?.getItem(key)||'{}');return value&&typeof value==='object'&&!Array.isArray(value)?value:{};}catch{return {};}};
+  let saved=readState(KEY),orders=readState(ORDER_KEY),pendingSaved={},pendingOrders={};
+  const controller=new AbortController(),records=[],nativeDetails=new WeakSet(),ownedDetails=new Set(),disclosureRecords=new Map();
+  let disposed=false;
+  const tabOf=node=>group??node.closest('[data-panel]')?.dataset.panel??(root.id||'general');
+  const isHeading=node=>/^H[2-4]$/.test(node.tagName)&&headingLevels.includes(Number(node.tagName[1]))&&!node.hasAttribute('data-section-static')&&!node.closest('summary')&&!node.querySelector('button,a,input,select,textarea,[contenteditable]');
+  function persistExpansion(key,value){
+    saved[key]=value;pendingSaved[key]=value;
+    if(!storage)return;
+    try{storage.setItem(KEY,JSON.stringify({...readState(KEY),...pendingSaved}));pendingSaved={};}catch{}
+  }
+  function persistOrder(key,value){
+    orders[key]=value;pendingOrders[key]=value;
+    if(!storage)return;
+    try{storage.setItem(ORDER_KEY,JSON.stringify({...readState(ORDER_KEY),...pendingOrders}));pendingOrders={};}catch{}
+  }
   function set(record,expanded){
+    if(!expanded&&record.body.contains(record.button.ownerDocument.activeElement))record.button.focus({preventScroll:true});
     record.button.setAttribute('aria-expanded',String(expanded));record.body.hidden=!expanded;
-    saved[record.key]=expanded;persist();
+    persistExpansion(record.key,expanded);
   }
   function enhance(container,tab){
     const nodes=[...container.childNodes];
-    if(!nodes.some(node=>node.nodeType===1&&/^H[2-4]$/.test(node.tagName)))return;
+    if(!nodes.some(node=>node.nodeType===1&&isHeading(node)))return;
     const stack=[],counts=new Map();
     for(const node of nodes){
-      if(node.nodeType===1&&/^H[2-4]$/.test(node.tagName)&&!node.querySelector('button')){
+      if(node.nodeType===1&&isHeading(node)){
         const level=Number(node.tagName[1]);while(stack.length&&stack.at(-1).level>=level)stack.pop();
         const parent=stack.at(-1)?.body||container,section=document.createElement('section'),body=document.createElement('div'),button=document.createElement('button');
-        const title=node.textContent.trim(),base=slug(title),index=counts.get(base)||0;counts.set(base,index+1);
-        const key=`${scope}:${tab}:${base}:${index}`;
+        const title=node.textContent.trim(),base=slug(title);let index=counts.get(base)||0;
+        while(records.some(record=>record.key===`${scope}:${tab}:${base}:${index}`))index++;
+        counts.set(base,index+1);
+        const key=node.dataset.sectionId?`${scope}:${tab}:id:${node.dataset.sectionId}`:`${scope}:${tab}:${base}:${index}`;
         section.className='settings-fold';section.dataset.sectionKey=key;section.dataset.sectionLevel=String(level);body.className='settings-fold-body';body.id=`settings-fold-${++serial}`;
         button.type='button';button.className='settings-fold-heading';button.textContent=title;button.setAttribute('aria-label',title);button.setAttribute('aria-controls',body.id);
-        button.draggable=false;button.title='Click: collapse · Middle-click: toggle all · Drag: reorder · Right-click: import/export · Alt+↑/↓: move';
+        button.draggable=false;
         const originalHeading=[...node.childNodes];node.replaceChildren(button);section.append(node,body);parent.append(section);
-        const record={key,tab,body,button,heading:node,section,originalHeading};records.push(record);set(record,saved[key]!==false);
+        const record={key,tab,body,button,heading:node,section,originalHeading};records.push(record);set(record,Object.hasOwn(saved,key)?saved[key]:defaultExpanded);
         button.addEventListener('click',()=>{if(!suppressClick)set(record,body.hidden);},{signal:controller.signal});
-        button.addEventListener('pointerdown',event=>{if(event.button===1){event.preventDefault();toggleTab(record.tab);}},{signal:controller.signal});
-        button.addEventListener('auxclick',event=>{if(event.button===1)event.preventDefault();},{signal:controller.signal});
+        button.addEventListener('pointerdown',event=>{if(event.button===2){event.preventDefault();toggleTab(record.tab);}},{signal:controller.signal});
+        button.addEventListener('contextmenu',event=>event.preventDefault(),{signal:controller.signal});
         stack.push({level,body});
       }else if(stack.length)stack.at(-1).body.append(node);
     }
   }
-  const tabs=[...root.querySelectorAll('[data-panel]')];
   function enhanceTree(tab,name){
-    const containers=[tab,...tab.querySelectorAll('*')].filter(node=>[...node.children].some(child=>/^H[2-4]$/.test(child.tagName)));
+    const containers=[tab,...tab.querySelectorAll('*')].filter(node=>[...node.children].some(child=>isHeading(child)));
     for(const container of containers)enhance(container,name);
   }
-  if(tabs.length)for(const tab of tabs)enhanceTree(tab,tab.dataset.panel);
-  else enhanceTree(root,root.id||'general');
-  // Existing <details> keep native semantics; middle-click follows the same tab rule.
-  for(const details of root.querySelectorAll('details')){
-    const summary=details.querySelector(':scope > summary');if(!summary)continue;
-    const tab=details.closest('[data-panel]')?.dataset.panel||root.id||'general';
-    const key=`${scope}:${tab}:details:${slug(summary.textContent)}`;
-    details.dataset.sectionKey=key;summary.draggable=false;summary.title='Drag: reorder · Right-click: import/export · Alt+↑/↓: move';
-    if(Object.hasOwn(saved,key))details.open=saved[key];
-    details.addEventListener('toggle',()=>{saved[key]=details.open;persist();},{signal:controller.signal});
-    summary.addEventListener('pointerdown',event=>{if(event.button!==1)return;event.preventDefault();toggleTab(tab);},{signal:controller.signal});
-    summary.addEventListener('auxclick',event=>{if(event.button===1)event.preventDefault();},{signal:controller.signal});
+  function enhanceDetails(){
+    // Existing <details> keep native left-click semantics.
+    for(const details of [root.matches?.(detailsSelector)?root:null,...root.querySelectorAll(detailsSelector)].filter(Boolean)){
+      if(nativeDetails.has(details)||detailOwners.has(details))continue;
+      const summary=details.querySelector(':scope > summary');if(!summary)continue;
+      nativeDetails.add(details);detailOwners.set(details,controller);ownedDetails.add(details);
+      const tab=tabOf(details);
+      const key=`${scope}:${tab}:details:${details.dataset.sectionId||slug(summary.textContent)}`;
+      details.dataset.sectionKey=key;summary.draggable=false;
+      if(Object.hasOwn(saved,key))details.open=saved[key];
+      details.addEventListener('toggle',()=>{if(!details.open&&details.contains(details.ownerDocument.activeElement)&&details.ownerDocument.activeElement!==summary)summary.focus({preventScroll:true});persistExpansion(key,details.open);},{signal:controller.signal});
+      summary.addEventListener('pointerdown',event=>{if(event.button!==2||event.target.closest('.settings-fold-heading,summary')!==summary)return;event.preventDefault();toggleTab(tab);},{signal:controller.signal});
+      summary.addEventListener('contextmenu',event=>event.preventDefault(),{signal:controller.signal});
+    }
+  }
+  function disclosureExpanded(record){return record.getExpanded?.()??record.bodies.every(body=>!body.hidden);}
+  function connectDisclosure(record){
+    const doc=record.heading.ownerDocument;
+    const previousControls=record.heading.getAttribute('aria-controls');
+    const bodyIds=record.bodies.map(body=>{
+      if(body.id)return null;
+      const previousId=body.getAttribute('id');
+      let id;
+      do{id=`section-disclosure-${++serial}`;}while(doc.getElementById(id));
+      body.id=id;
+      return{id,body,previousId};
+    }).filter(Boolean);
+    const ids=record.bodies.map(body=>body.id);
+    const validExisting=(previousControls||'').split(/\s+/).filter(id=>id&&doc.getElementById(id));
+    const controls=[...new Set([...validExisting,...ids])].join(' ');
+    if(controls!==previousControls)record.heading.setAttribute('aria-controls',controls);
+    record.generatedBodyIds=bodyIds;
+    record.previousControls=previousControls;
+    record.assignedControls=controls;
+    record.heading.addEventListener('contextmenu',event=>event.preventDefault(),{signal:controller.signal});
+  }
+  function setDisclosure(record,expanded){
+    if(!expanded&&record.bodies.some(body=>body.contains(record.heading.ownerDocument.activeElement)))record.heading.focus({preventScroll:true});
+    if(disclosureExpanded(record)!==expanded)record.setExpanded?.(expanded);
+    for(const body of record.bodies)body.hidden=!expanded;
+    record.heading.setAttribute('aria-expanded',String(expanded));
+    persistExpansion(record.key,expanded);
+  }
+  function toggleDisclosure(id,expanded){
+    const record=disclosureRecords.get(id);if(!record)return false;
+    setDisclosure(record,expanded??!disclosureExpanded(record));return true;
   }
   function toggleTab(tab,expanded){
-    const group=records.filter(record=>record.tab===tab),native=[...root.querySelectorAll('details')].filter(item=>(item.closest('[data-panel]')?.dataset.panel||root.id||'general')===tab);
-    expanded??=group.some(item=>item.body.hidden)||native.some(item=>!item.open);
-    for(const record of group)set(record,expanded);for(const details of native)details.open=expanded;
+    const recordsInTab=records.filter(record=>record.tab===tab),native=[...ownedDetails].filter(item=>root.contains(item)&&tabOf(item)===tab),external=[...disclosureRecords.values()].filter(item=>item.heading.isConnected&&item.tab===tab);
+    expanded??=recordsInTab.some(item=>item.body.hidden)||native.some(item=>!item.open)||external.some(item=>!disclosureExpanded(item));
+    for(const record of recordsInTab)set(record,expanded);for(const details of native){if(!expanded&&details.contains(details.ownerDocument.activeElement)&&details.ownerDocument.activeElement!==details.querySelector(':scope > summary'))details.querySelector(':scope > summary')?.focus({preventScroll:true});details.open=expanded;}
+    for(const record of external)setDisclosure(record,expanded);
   }
   let dragged=null,suppressClick=false;
   const siblings=node=>[...node.parentElement.children].filter(item=>item.matches('.settings-fold,details[data-section-key]'));
-  const orderKey=node=>`${scope}:${node.closest('[data-panel]')?.dataset.panel||root.id||'general'}:${node.parentElement.closest('[data-section-key]')?.dataset.sectionKey||'root'}`;
-  function saveOrder(node){orders[orderKey(node)]=siblings(node).map(item=>item.dataset.sectionKey);try{storage?.setItem(ORDER_KEY,JSON.stringify(orders));}catch{}}
-  const sections=[...root.querySelectorAll('.settings-fold,details[data-section-key]')];
-  const parents=new Set(sections.map(node=>node.parentElement));
-  for(const parent of parents){const items=[...parent.children].filter(node=>node.dataset.sectionKey),order=items.length&&orders[orderKey(items[0])];if(order)for(const key of order){const node=items.find(item=>item.dataset.sectionKey===key);if(node)parent.append(node);}}
+  const orderKey=node=>`${scope}:${tabOf(node)}:${node.parentElement.closest('[data-section-key]')?.dataset.sectionKey||'root'}`;
+  function saveOrder(node){persistOrder(orderKey(node),siblings(node).map(item=>item.dataset.sectionKey));}
+  function restoreRecord(record){record.heading.replaceChildren(...record.originalHeading);record.section.before(record.heading,...record.body.childNodes);record.section.remove();}
+  function refresh(){
+    if(disposed)return;
+    for(let i=records.length-1;i>=0;i--)if(!root.contains(records[i].section)){restoreRecord(records[i]);records.splice(i,1);}
+    const tabs=group?[]:[...root.querySelectorAll('[data-panel]')];
+    if(headings){if(tabs.length)for(const tab of tabs)enhanceTree(tab,tab.dataset.panel);
+    else enhanceTree(root,tabOf(root));}
+    enhanceDetails();
+    if(!reorder)return;
+    const sections=[...records.map(record=>record.section),...ownedDetails].filter(node=>root.contains(node));
+    const parents=new Set(sections.map(node=>node.parentElement));
+    for(const parent of parents){const items=[...parent.children].filter(node=>node.dataset.sectionKey),order=items.length&&orders[orderKey(items[0])];if(order)for(const key of order){const node=items.find(item=>item.dataset.sectionKey===key);if(node)parent.append(node);}}
+  }
+  refresh();
+  for(const item of disclosures){
+    const bodies=(Array.isArray(item.body)?item.body:[item.body]).filter(Boolean);
+    if(!item.id||!root.contains(item.heading)||!bodies.length||bodies.some(body=>!root.contains(body)))continue;
+    const tab=tabOf(item.heading),key=`${scope}:${tab}:disclosure:${item.id}`;
+    const record={...item,tab,key,bodies};disclosureRecords.set(item.id,record);
+    connectDisclosure(record);
+    setDisclosure(record,Object.hasOwn(saved,key)?saved[key]:item.defaultExpanded??disclosureExpanded(record));
+    if(item.manageClick!==false)item.heading.addEventListener('click',()=>toggleDisclosure(item.id),{signal:controller.signal});
+    item.heading.addEventListener('pointerdown',event=>{if(event.button!==2)return;event.preventDefault();toggleTab(tab);},{signal:controller.signal});
+  }
+  root.addEventListener('settings-sections-refresh',refresh,{signal:controller.signal});
   function move(source,target){const before=new Map(siblings(source).map(node=>[node,node.getBoundingClientRect()])),list=siblings(source),forward=list.indexOf(source)<list.indexOf(target);target[forward?'after':'before'](source);
     if(!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches)for(const [node,rect]of before){if(node===source)continue;const dy=rect.top-node.getBoundingClientRect().top;if(dy)node.animate?.([{transform:`translateY(${dy}px)`},{transform:'none'}],{duration:170,easing:'ease-out'});}
   }
   let pointer=null;
-  root.addEventListener('pointerdown',event=>{if(event.button!==0)return;const handle=event.target.closest('.settings-fold-heading,summary');if(!handle)return;pointer={id:event.pointerId,handle,node:handle.closest('.settings-fold,details'),x:event.clientX,y:event.clientY};},{signal:controller.signal});
-  root.addEventListener('pointermove',event=>{
+  if(reorder)root.addEventListener('pointerdown',event=>{if(event.button!==0)return;const handle=event.target.closest('.settings-fold-heading,summary');if(!handle)return;pointer={id:event.pointerId,handle,node:handle.closest('.settings-fold,details'),x:event.clientX,y:event.clientY};},{signal:controller.signal});
+  if(reorder)root.addEventListener('pointermove',event=>{
     if(!pointer||event.pointerId!==pointer.id||!(event.buttons&1))return;
     if(!dragged&&Math.hypot(event.clientX-pointer.x,event.clientY-pointer.y)<6)return;
     if(!dragged){
@@ -105,11 +177,25 @@ export function mountCollapsibleSections(root,{scope='settings',storage}={}){
     if(current?.handle.hasPointerCapture?.(current.id))current.handle.releasePointerCapture(current.id);
     setTimeout(()=>{suppressClick=false;},0);
   }
-  root.addEventListener('pointerup',finishPointer,{signal:controller.signal});root.addEventListener('pointercancel',finishPointer,{signal:controller.signal});
-  root.addEventListener('lostpointercapture',event=>{if(pointer?.id===event.pointerId)finishPointer({type:'pointercancel'});},{signal:controller.signal});
-  root.addEventListener('click',event=>{if(suppressClick){event.preventDefault();event.stopImmediatePropagation();}},{capture:true,signal:controller.signal});
-  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&pointer){finishPointer({type:'pointercancel'});event.preventDefault();return;}if(!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key)||!event.target.matches('.settings-fold-heading,summary'))return;const node=event.target.closest('.settings-fold,details'),items=siblings(node),index=items.indexOf(node),target=items[index+(event.key==='ArrowDown'?1:-1)];if(target){event.preventDefault();move(node,target);saveOrder(node);event.target.focus();}},{signal:controller.signal});
-  return{toggleTab,records,dispose(){finishPointer({type:'pointercancel'});controller.abort();
-    for(const record of [...records].reverse()){record.heading.replaceChildren(...record.originalHeading);record.section.before(record.heading,...record.body.childNodes);record.section.remove();}
+  if(reorder){
+    root.addEventListener('pointerup',finishPointer,{signal:controller.signal});root.addEventListener('pointercancel',finishPointer,{signal:controller.signal});
+    root.addEventListener('lostpointercapture',event=>{if(pointer?.id===event.pointerId)finishPointer({type:'pointercancel'});},{signal:controller.signal});
+    root.addEventListener('click',event=>{if(suppressClick){event.preventDefault();event.stopImmediatePropagation();}},{capture:true,signal:controller.signal});
+    root.addEventListener('keydown',event=>{if(event.key==='Escape'&&pointer){finishPointer({type:'pointercancel'});event.preventDefault();return;}if(!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key)||!event.target.matches('.settings-fold-heading,summary'))return;const node=event.target.closest('.settings-fold,details'),items=siblings(node),index=items.indexOf(node),target=items[index+(event.key==='ArrowDown'?1:-1)];if(target){event.preventDefault();move(node,target);saveOrder(node);event.target.focus();}},{signal:controller.signal});
+  }
+  return{toggleTab,toggleDisclosure,records,refresh,dispose(){if(disposed)return;disposed=true;finishPointer({type:'pointercancel'});controller.abort();
+    for(const record of disclosureRecords.values()){
+      if(record.heading.getAttribute('aria-controls')===record.assignedControls){
+        if(record.previousControls===null)record.heading.removeAttribute('aria-controls');
+        else record.heading.setAttribute('aria-controls',record.previousControls);
+      }
+      for(const {id,body,previousId}of record.generatedBodyIds||[])if(body.id===id){
+        if(previousId===null)body.removeAttribute('id');
+        else body.setAttribute('id',previousId);
+      }
+    }
+    disclosureRecords.clear();
+    for(const details of ownedDetails)detailOwners.delete(details);ownedDetails.clear();
+    for(const record of [...records].reverse())restoreRecord(record);records.length=0;
   }};
 }

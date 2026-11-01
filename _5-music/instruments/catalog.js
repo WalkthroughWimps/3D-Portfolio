@@ -1,6 +1,6 @@
 // One catalog per Music session. Configs stay mutable: loaders attach sample ranges
 // and dynamic pickers register additional IDs in the same map. No audio or storage.
-export function createInstrumentCatalog({ SOUND_FONT_BASE, LOCAL_SOUNDFONT_BASES, SF2_HYPERSOUND_URL, SALAMANDER_DRUM_RANGE }) {
+export function createInstrumentCatalog({ SOUND_FONT_BASE, LOCAL_SOUNDFONT_BASES, SALAMANDER_DRUM_RANGE }) {
 const SOUND_LIBRARY_CONFIG = {
   keys: {
     id: 'keys',
@@ -56,9 +56,9 @@ const INSTRUMENT_CONFIG = [
   { id: 'solo_wind', tab: 'solo', label: 'Solo Wind', library: 'solo', patch: 'flute', wafProgram: 74, minNote: 60, maxNote: 103, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.02, decay: 0.22, sustain: 0.7, release: 0.35 },
   { id: 'solo_lead', tab: 'solo', label: 'Lead Synth', library: 'solo', patch: 'lead_1_square', wafProgram: 81, minNote: 36, maxNote: 108, outOfRangeBehavior: 'clamp', mono: true, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.015, decay: 0.18, sustain: 0.6, release: 0.25 },
   { id: 'fx_drums', tab: 'fx', label: 'Drums', library: 'fx', patch: 'synth_drum', wafProgram: 119, minNote: SALAMANDER_DRUM_RANGE.min, maxNote: SALAMANDER_DRUM_RANGE.max, outOfRangeBehavior: 'ignore', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, gainScale: 1.05, attack: 0.005, decay: 0.12, sustain: 0.4, release: 0.16, isDrums: true, drumNoteRange: SALAMANDER_DRUM_RANGE, engine: 'sample', drumSampleSet: 'salamander' },
-  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'bird_tweet', wafProgram: 124, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.05, attack: 0.008, decay: 0.12, sustain: 0.4, release: 0.18, engine: 'sf2', sf2Url: SF2_HYPERSOUND_URL, sf2PresetName: 'DOGBW60', sf2ProgramFallback: 0, oneShotMs: 160 },
+  { id: 'fx_steel_drum', tab: 'fx', label: 'Steel Drum', library: 'fx', patch: 'steel_drums', minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.01, decay: 0.18, sustain: 0.65, release: 0.28 },
   { id: 'fx_telephone', tab: 'fx', label: 'Telephone', library: 'fx', patch: 'telephone_ring', wafProgram: 125, minNote: 48, maxNote: 84, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, gainScale: 1.05, attack: 0.01, decay: 0.18, sustain: 0.55, release: 0.2 },
-  { id: 'fx_odd', tab: 'fx', label: 'Odd FX', library: 'fx', patch: 'fx_8_scifi', wafProgram: 122, minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: true, localBase: LOCAL_SOUNDFONT_BASES.fluidr3_gm, gainScale: 1.0, attack: 0.02, decay: 0.2, sustain: 0.6, release: 0.25, isFxKeyZone: true, keyZoneMap: { 48: 'toy-pop', 50: 'cartoon-blip', 52: 'vocal-yip', 53: 'spring-boing', 55: 'metal-clank', 57: 'bubble-pop', 59: 'odd-hit' } }
+  { id: 'fx_dog', tab: 'fx', label: 'Dog', library: 'fx', patch: 'dog_bark', minNote: 36, maxNote: 96, outOfRangeBehavior: 'clamp', mono: false, stub: false, allowWebAudioFont: false, localSoundfont: false, dogBarkSet: true, gainScale: 0.62, attack: 0.012, decay: 0.02, sustain: 1, release: 0.35, engine: 'sample' }
 ];
 const INSTRUMENT_BUTTONS = INSTRUMENT_CONFIG.map(item => ({ id: item.id, label: item.label }));
 const instrumentById = new Map(INSTRUMENT_BUTTONS.map(btn => [btn.id, btn]));
@@ -121,7 +121,8 @@ const RANDOM_POOLS = {
   ],
   fx: [
     { id: 'fx_drums', label: 'Drums' },
-    { id: 'fx_dog', label: 'WappyDog' },
+    { id: 'fx_steel_drum', label: 'Steel Drum' },
+    { id: 'fx_dog', label: 'Dog' },
     { patch: 'applause', label: 'Applause' },
     { patch: 'whistle', label: 'Whistle' },
     { patch: 'tinkle_bell', label: 'Tinkle Bell' },

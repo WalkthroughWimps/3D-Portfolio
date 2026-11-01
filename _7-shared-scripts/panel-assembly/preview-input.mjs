@@ -1,9 +1,10 @@
 import * as THREE from 'three';
+import {createPointerTrail,panelAtSlot,tracePanelSlotSegment} from './pointer-slot-traversal.mjs';
+export {createPointerTrail,crossedPanelSlots,panelAtSlot,tracePanelSlotSegment} from './pointer-slot-traversal.mjs';
 
 const POINTS = {N:[0,1], NE:[1,1], E:[1,0], SE:[1,-1], S:[0,-1], SW:[-1,-1], W:[-1,0], NW:[-1,1]};
-
 /** Ray based invisible compass zones. Orbit drags are excluded before any click action. */
-export function mountPanelInput({renderer, camera, motion, model, manifest, findRawNode, onSelect, onClick=()=>false,canHover=()=>true,onFastPass=()=>{}}) {
+export function mountPanelInput({renderer, camera, motion, model, physicalCube=null, manifest, findRawNode, onSelect, onClick=()=>false,canHover=()=>true,onFastPass=()=>{}}) {
   const canvas = renderer.domElement;
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
@@ -13,8 +14,14 @@ export function mountPanelInput({renderer, camera, motion, model, manifest, find
     if(!node)return[];
     const result=[];node.traverse(o=>{if(o.isMesh)result.push(o);});return result;
   });
+  if (physicalCube) {
+    const panels = new Set([...motion.panels.values()].flatMap(panel => panel.meshes));
+    physicalCube.traverse(node => { if (node.isMesh && !panels.has(node) &&
+      !node.material?.transparent && !fixedMeshes.includes(node)) fixedMeshes.push(node); });
+  }
   const visible = object => {for(let o=object;o;o=o.parent)if(!o.visible)return false;return true;};
-  let down = null, lastHover = null, lastPlane = null, lastMotion = null, pointerEntry = true;
+  let down = null, lastHover = null, lastPlane = null, pointerEntry = true;
+  const trail=createPointerTrail();
   let pointerSample = null, hoverStarted = 0, hoverSpeed = 0;
   let throwHandler=null;
   const plane = new THREE.Plane();
@@ -65,46 +72,58 @@ export function mountPanelInput({renderer, camera, motion, model, manifest, find
     }
     return null;
   };
-  const directions=['E','NE','N','NW','W','SW','S','SE'];
-  const recordMotion=(from,to)=>{
-    if(!from||!to)return;
-    const delta=to.clone().sub(from);
-    if(Math.hypot(delta.x,delta.y)>1e-8)lastMotion=delta;
-  };
   const movementDirection=(id,entering)=>{
-    if(!motion.panels.get(id)?.record.axes||!lastMotion)return undefined;
+    if(!motion.panels.get(id)?.record.axes)return undefined;
     // Entry presses away from the approaching pointer; exit tips toward its
     // departing path. Position within the card does not choose the hinge.
-    const sign=entering?-1:1;
-    return directions[(Math.round(Math.atan2(lastMotion.y*sign,lastMotion.x*sign)/(Math.PI/4))+8)%8];
+    return trail.direction(entering);
   };
   const exitHover=(point,event)=>{
-    recordMotion(lastPlane,point);
+    if(point&&event)trail.push(point,event.timeStamp);
     if(lastHover){const flipped=motion.hoverExit(lastHover,movementDirection(lastHover,false));if(flipped&&event)onFastPass(lastHover,{speed:hoverSpeed,duration:event.timeStamp-hoverStarted});}
     lastHover=null;hoverSpeed=0;
   };
-  const onDown = e => {if(e.button!==0){exitHover(carriagePoint(e));lastPlane=null;lastMotion=null;return;}down = {id:e.pointerId,x:e.clientX,y:e.clientY,drag:false,hit:hitAt(e)};};
+  const enterHover=(panel,point,event,speed)=>{
+    const id=panel.record.panelId;
+    if(lastHover===id)return;
+    if(lastHover)exitHover(point,event);
+    motion.hoverEnter(id,movementDirection(id,true));
+    hoverStarted=event.timeStamp;hoverSpeed=speed;
+    onSelect(id);lastHover=id;
+  };
+  const onDown = e => {if(e.button!==0){exitHover(carriagePoint(e),e);lastPlane=null;trail.clear();return;}down = {id:e.pointerId,x:e.clientX,y:e.clientY,drag:false,hit:hitAt(e)};};
   const onMove = e => {
     if (down?.id === e.pointerId && Math.hypot(e.clientX-down.x,e.clientY-down.y) > 5) down.drag = true;
-    if (throwHandler || !pointerEntry || !canHover() || e.pointerType !== 'mouse' || e.buttons || down) {pointerSample=null;return;}
-    const elapsed=pointerSample?e.timeStamp-pointerSample.time:0;
-    const speed=elapsed>0&&elapsed<=100?Math.hypot(e.clientX-pointerSample.x,e.clientY-pointerSample.y)/elapsed*1000:0;
+    if(!motion.focused||motion.paused){
+      exitHover(lastPlane);lastPlane=null;pointerSample=null;trail.clear();return;
+    }
+    if (throwHandler || !pointerEntry || !canHover() || e.pointerType !== 'mouse' || e.buttons || down) {exitHover(lastPlane);lastPlane=null;pointerSample=null;trail.clear();return;}
+    const previousSample=pointerSample;
+    const elapsed=previousSample?e.timeStamp-previousSample.time:0;
+    const speed=elapsed>0&&elapsed<=100?Math.hypot(e.clientX-previousSample.x,e.clientY-previousSample.y)/elapsed*1000:0;
     pointerSample={x:e.clientX,y:e.clientY,time:e.timeStamp};hoverSpeed=Math.max(hoverSpeed,speed);
     const facePoint = carriagePoint(e);
     const previous=lastPlane||((e.movementX||e.movementY)?carriagePoint({clientX:e.clientX-e.movementX,clientY:e.clientY-e.movementY}):null);
-    recordMotion(previous,facePoint);
-    const hit = hitAt(e);
-    if (hit) {
-      const id = hit.panel.record.panelId;
-      if(lastHover!==id){
-        exitHover(facePoint,e);
-        motion.hoverEnter(id,movementDirection(id,true));
-        hoverStarted=e.timeStamp;hoverSpeed=speed;
-        onSelect(id);
+    const slots=[...motion.panels.values()].filter(panel=>motion.rig.isPanelVisible(panel.record.panelId)&&panel.meshes.some(visible))
+      .map(panel=>({panel,center:panel.center,width:panel.record.geometry?.neutralSize?.[0]||Math.min(.29,panel.radius*1.45)}));
+    if(!lastPlane&&previous)trail.push(previous,e.timeStamp);
+    if(previous&&facePoint){
+      const at=t=>previous.clone().lerp(facePoint,t);
+      const when=t=>({...e,timeStamp:previousSample?previousSample.time+(e.timeStamp-previousSample.time)*t:e.timeStamp});
+      for(const transition of tracePanelSlotSegment(previous,facePoint,slots,panelAtSlot)){
+        const point=at(transition.t),event=when(transition.t);
+        // Add path points in travel order so each card gets the approach or
+        // departure heading at its own crossing, not the segment's endpoint.
+        trail.push(point,event.timeStamp);
+        if(transition.type==='enter')enterHover(transition.panel,point,event,speed);
+        else exitHover(point,event);
       }
-      lastHover = id;
-    } else exitHover(facePoint,e);
-    if (facePoint) lastPlane = facePoint;
+    }
+    if(facePoint)trail.push(facePoint,e.timeStamp);else trail.clear();
+    const endpoint=panelAtSlot(facePoint,slots);
+    if(endpoint)enterHover(endpoint,facePoint,e,speed);
+    else if(lastHover)exitHover(facePoint,e);
+    lastPlane=facePoint;
   };
   const onUp = e => {
     if (!down || e.pointerId !== down.id) return;
@@ -127,14 +146,14 @@ export function mountPanelInput({renderer, camera, motion, model, manifest, find
       else if (hit.zone) motion.flip(id,hit.zone);
     } else motion.flip(id);
   };
-  const onLeave = e => {exitHover(e?.type==='pointerleave'?carriagePoint(e):lastPlane,e?.type==='pointerleave'?e:null);lastPlane = null;lastMotion=null;down = null;pointerSample=null;};
+  const onLeave = e => {exitHover(e?.type==='pointerleave'?carriagePoint(e):lastPlane,e?.type==='pointerleave'?e:null);lastPlane = null;trail.clear();down = null;pointerSample=null;};
   canvas.addEventListener('pointerdown',onDown);
   canvas.addEventListener('pointermove',onMove);
   canvas.addEventListener('pointerup',onUp);
   canvas.addEventListener('pointercancel',onLeave);
   canvas.addEventListener('pointerleave',onLeave);
-  return {setPointerEntry(value){exitHover(lastPlane);pointerEntry = Boolean(value);lastPlane = null;lastMotion=null;pointerSample=null;},get pointerEntry(){return pointerEntry;},
-    setThrowHandler(handler){exitHover(lastPlane);throwHandler=typeof handler==='function'?handler:null;},
+  return {setPointerEntry(value){exitHover(lastPlane);pointerEntry = Boolean(value);lastPlane = null;trail.clear();pointerSample=null;},get pointerEntry(){return pointerEntry;},
+    setThrowHandler(handler){exitHover(lastPlane);trail.clear();throwHandler=typeof handler==='function'?handler:null;},
     hitAt,dispose(){throwHandler=null;canvas.removeEventListener('pointerdown',onDown);canvas.removeEventListener('pointermove',onMove);
       canvas.removeEventListener('pointerup',onUp);canvas.removeEventListener('pointercancel',onLeave);canvas.removeEventListener('pointerleave',onLeave);}};
 }

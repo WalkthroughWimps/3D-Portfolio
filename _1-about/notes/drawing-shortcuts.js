@@ -1,4 +1,4 @@
-const ACTIONS = { 'shape-edit': ['A', 'A'], layers: ['F7', 'F7'], gears: ['G', 'G'], undo: ['Ctrl+Z', 'Control+Z Meta+Z'], redo: ['Ctrl+Shift+Z', 'Control+Shift+Z Meta+Shift+Z'], duplicate: ['Shift+D', 'Shift+D Control+J Meta+J'], delete: ['Del', 'Delete Backspace'] };
+const ACTIONS = { 'shape-edit': ['A', 'A'], gears: ['G', 'G'], undo: ['Ctrl+Z', 'Control+Z Meta+Z'], redo: ['Ctrl+Shift+Z', 'Control+Shift+Z Meta+Shift+Z'], duplicate: ['Shift+D', 'Shift+D Control+J Meta+J'], delete: ['Del', 'Delete Backspace'] };
 export function installShortcutLabels(panel) {
   for (const [name, [text, aria]] of Object.entries(ACTIONS)) {
     const button = panel.querySelector(`[data-action="${name}"]`); if (!button) continue;
@@ -25,7 +25,7 @@ export function handleEditorShortcut(event, api) {
   if (command && event.altKey && key === 'n') { layerAction('add'); return true; }
   if (event.altKey && !event.shiftKey && /^[1-3]$/.test(key)) { const layer = doc.layers[Number(key) - 1]; if (layer) layerAction(command ? 'move-layer' : 'activate', { id: layer.id }); return true; }
   if (command && ['[', ']'].includes(key)) { for (const node of layers.selectedRoots()) layerAction('reorder', { node, direction: key === ']' ? 1 : -1 }); return true; }
-  if (event.key === 'F2') { if (panel.querySelector('[data-action="layers"]').getAttribute('aria-pressed') !== 'true') action('layers'); layers.rename(selection); return true; }
+  if (event.key === 'F2') { if (panel.querySelector('[data-action="gears"]').getAttribute('aria-pressed') === 'true') action('gears'); layers.rename(selection); return true; }
   if (!command && !event.altKey && event.shiftKey && key === 'k') { if (active) layerAction('lock', { id: active.id }); return true; }
   if (!command && !event.altKey && event.shiftKey && key === 'v') { if (active) layerAction('visibility', { id: active.id }); return true; }
   if (!command && !event.altKey && event.shiftKey && ['w', 'h'].includes(key)) {

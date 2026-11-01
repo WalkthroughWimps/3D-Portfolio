@@ -1,0 +1,323 @@
+{
+  "source": "assets/.blend/Puzzle Box Assets/.BL/Puzzle_Box_Assets/Singing_Fish/Fishing Sing.blend",
+  "asset": "fish-mount.glb",
+  "root": "FishMountRoot",
+  "coordinate_contract": "Same as fish-rig.glb: runtime X=Blender X, Y=Blender Z, outward Z=negative Blender Y; trim diameter 1.7.",
+  "parts": {
+    "Fish_Wall": {
+      "node": "Mount_Wall",
+      "role": "part of the rigid fish mount; travels and flips with fish and hover rings",
+      "source_y": [
+        -5.7660088539123535,
+        5.766007900238037
+      ],
+      "depth_factor": 0.3,
+      "runtime_bounds": {
+        "x": [
+          -0.839970588684082,
+          0.8399705290794373
+        ],
+        "y": [
+          -0.8399702906608582,
+          0.8399708271026611
+        ],
+        "z": [
+          0.016456592828035355,
+          0.04114147648215294
+        ]
+      },
+      "vertices": 1154,
+      "triangles": 2304,
+      "materials": [
+        "FishMount_Cloudy_Wallpaper",
+        "FishMount_Tiles_(Green,_Fish_Tiles)"
+      ],
+      "source_material_groups": [
+        {
+          "material": "FishMount_Cloudy_Wallpaper",
+          "polygons": 576,
+          "triangles": 1152
+        },
+        {
+          "material": "FishMount_Tiles_(Green,_Fish_Tiles)",
+          "polygons": 576,
+          "triangles": 1152
+        }
+      ]
+    },
+    "Fish_Gold_Trim": {
+      "node": "Mount_GoldTrim",
+      "role": "part of the rigid fish mount; travels and flips with fish and hover rings",
+      "source_y": [
+        -11.135531425476074,
+        11.135528564453125
+      ],
+      "depth_factor": 0.25,
+      "runtime_bounds": {
+        "x": [
+          -0.8499996066093445,
+          0.8499996662139893
+        ],
+        "y": [
+          -0.8499994277954102,
+          0.8500000238418579
+        ],
+        "z": [
+          0.03972698003053665,
+          0.0794539600610733
+        ]
+      },
+      "vertices": 1124,
+      "triangles": 2248,
+      "materials": [
+        "FishMount_Old_Gold.002"
+      ],
+      "source_material_groups": [
+        {
+          "material": "FishMount_Old_Gold.002",
+          "polygons": 880,
+          "triangles": 2248
+        }
+      ]
+    },
+    "Board": {
+      "node": "Mount_Board",
+      "role": "part of the rigid fish mount; travels and flips with fish and hover rings",
+      "source_y": [
+        -15.329240798950195,
+        -5.795967102050781
+      ],
+      "depth_factor": 0.45,
+      "runtime_bounds": {
+        "x": [
+          -0.6723359227180481,
+          0.7079809904098511
+        ],
+        "y": [
+          -0.4634588956832886,
+          0.5054445862770081
+        ],
+        "z": [
+          0.07876709848642349,
+          0.10937680304050446
+        ]
+      },
+      "vertices": 268,
+      "triangles": 532,
+      "materials": [
+        "FishMount_Board"
+      ],
+      "source_material_groups": [
+        {
+          "material": "FishMount_Board",
+          "polygons": 269,
+          "triangles": 532
+        }
+      ]
+    },
+    "Plaque": {
+      "node": "Mount_Plaque",
+      "role": "part of the rigid fish mount; travels and flips with fish and hover rings",
+      "source_y": [
+        -19.41248893737793,
+        -17.285287857055664
+      ],
+      "depth_factor": 1.0,
+      "runtime_bounds": {
+        "x": [
+          -0.12432043999433517,
+          0.2425197958946228
+        ],
+        "y": [
+          -0.4108488857746124,
+          -0.262948215007782
+        ],
+        "z": [
+          0.12333354353904724,
+          0.13851149380207062
+        ]
+      },
+      "vertices": 303,
+      "triangles": 602,
+      "materials": [
+        "FishMount_Nameplate"
+      ],
+      "source_material_groups": [
+        {
+          "material": "FishMount_Nameplate",
+          "polygons": 285,
+          "triangles": 602
+        }
+      ]
+    }
+  },
+  "exported_wall_material_groups": [
+    {
+      "material": "FishMount_Cloudy_Wallpaper",
+      "triangles": 1152
+    },
+    {
+      "material": "FishMount_Tiles_(Green,_Fish_Tiles)",
+      "triangles": 1152
+    }
+  ],
+  "source_image_copies": [
+    {
+      "name": "FishMount_Clouds Wallpaper.jpg",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "FishMount_Fish_Tiles_height.jpg.001",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Fish_Tiles_basecolor.jpg.001",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Fish_Tiles_metallic.jpg.001",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Fish_Tiles_roughness.jpg.001",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Fish_Tiles_normal.jpg.001",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Base Color_Old Gold",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "FishMount_DISPLACEMENT_Old gold",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_METALLIC_Old gold",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_NORMAL_Old gold",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_ROUGHNESS_Old gold",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_Specural tint_ gold.jpg",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Board_BaseColor.png",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Board_Normal.png",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Board_Roughness.png",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Board_Metallic.png",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Nameplate_BaseColor.png",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Nameplate_Normal.png",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Nameplate_Roughness.png",
+      "size": [
+        512,
+        512
+      ]
+    },
+    {
+      "name": "FishMount_SingingFish_Nameplate_Metallic.png",
+      "size": [
+        512,
+        512
+      ]
+    }
+  ],
+  "embedded_images": [
+    "13",
+    "12",
+    "FishMount_SingingFish_Board_Metallic-FishMount_SingingFish_Board_Roughness",
+    "09",
+    "06",
+    "FishMount_METALLIC_Old gold-FishMount_ROUGHNESS_Old gold",
+    "17",
+    "16",
+    "FishMount_SingingFish_Nameplate_Metallic-FishMount_SingingFish_Nameplate_Roughness",
+    "00",
+    "05",
+    "02",
+    "FishMount_Fish_Tiles_metallic.jpg-FishMount_Fish_Tiles_roughness.jpg"
+  ],
+  "note": "Original authored front cloudy wallpaper and reverse green Fish Tiles surfaces, UVs, and packed maps retained. Depth-only compression removes unseen bulk. The four parts form one rigid mount that travels and flips with fish and hover rings.",
+  "bytes": 5079876
+}

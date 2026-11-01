@@ -80,7 +80,7 @@ export function toggleMute(media, uiState = createDefaultUiState()) {
   if (media.muted || media.volume <= 0.0001) {
     const target = uiState.lastVolume > 0.001 ? uiState.lastVolume : 0.5;
     if (!isAudioAllowed()) {
-      void ensureAudioConsentPrompt().then(state => {
+      void ensureAudioConsentPrompt({ requestAfterDeny: true }).then(state => {
         if (!state.allowed) return;
         media.muted = false;
         try { media.volume = target; } catch { /* ignore */ }

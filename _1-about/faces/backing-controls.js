@@ -1,5 +1,6 @@
 import {initPanelShell} from '../../debug/panel-shell.js';
 import {getSharedSettings} from '../../_7-shared-scripts/core/settings.js';
+import {mountSettingsControls} from '../../_7-shared-scripts/core/settings-controls.js';
 import {ABOUT_FACES} from '../../_7-shared-scripts/core/settings-schema.js';
 
 const labels = ABOUT_FACES;
@@ -8,55 +9,48 @@ const range = (name, label, min, max, step) => `<label>${label} <output data-sph
 
 /** Adds controls to existing face tabs, leaving their own controls and listeners intact. */
 export function createBackingControls(faces) {
-  let events = null, snapshot = null, clockRoot = null, spheroidSection = null;
-  const nodes = new Map(), controls = [], added = [], unregister = [];
+  let events = null, settingsControls = null, snapshot = null, clockRoot = null, spheroidSection = null, interaction = null;
+  const nodes = new Map(), controlRoots = [], added = [], unregister = [];
   const store = getSharedSettings();
   function remember(node, id) {
     if (node && !nodes.has(node)) nodes.set(node, {id, visible: node.visible});
   }
-  function sync() {
+  function syncModel() {
     if (!snapshot) return;
     for (const [node, {id, visible}] of nodes) node.visible = visible && snapshot.about?.[id]?.showBacking !== false;
-    for (const control of controls) {
-      const value = control.dataset.setting.split('.').reduce((item, key) => item?.[key], snapshot);
-      if (control.type === 'checkbox') control.checked = Boolean(value);
-      else if (control.dataset.setting === field('bridgeCount')) {
-        const spheroid = snapshot.about?.spheroid || {};
-        const directions = spheroid.pattern === 'crossed' ? 2 : 1;
-        const maximum = Math.round(spheroid.strands ?? 9) * directions;
-        control.max = String(maximum);
-        control.value = String(Math.min(value ?? 4, maximum));
-      } else control.value = String(value);
+  }
+  function refreshDerived(next) {
+    if (interaction) {
+      const faceRotation = Boolean(next.cube?.faceRotation);
+      const arrows = faceRotation && Boolean(next.cube?.faceArrows);
+      interaction.querySelector('[data-setting="cube.faceArrows"]').disabled = !faceRotation;
+      interaction.querySelector('[data-setting="cube.arrowSpeed"]').disabled = !arrows;
+      interaction.querySelector('[data-arrow-speed-value]').value = `${Number(next.cube?.arrowSpeed ?? 1).toFixed(2)}×`;
+    }
+    if (!spheroidSection) return;
+    for (const control of spheroidSection.querySelectorAll('input[type="range"][data-setting]')) {
       const output = control.parentElement.querySelector('output');
-      if (output) output.value = control.dataset.setting === field('bridgeCount') ? `${control.value} of ${control.max} possible` : String(value);
+      if (output) output.value = control.dataset.setting === field('bridgeCount')
+        ? `${control.value} of ${control.max} possible` : String(control.value);
     }
     if (spheroidSection) {
-      const independent = snapshot.about?.spheroid?.rotationMode === 'independent';
+      const independent = next.about?.spheroid?.rotationMode === 'independent';
       spheroidSection.querySelector('[data-independent-rotation]').hidden = !independent;
       spheroidSection.querySelector('[data-shared-rotation]').hidden = independent;
     }
-  }
-  function bind(root) {
-    controls.push(...root.querySelectorAll('[data-setting]'));
-    const change = event => {
-      const control = event.target.closest('[data-setting]');
-      if (!control || !root.contains(control)) return;
-      store.patch({[control.dataset.setting]: control.type === 'checkbox' ? control.checked : control.type === 'range' ? Number(control.value) : control.value});
-    };
-    root.addEventListener('input', change, {signal: events.signal});
-    root.addEventListener('change', change, {signal: events.signal});
   }
   function switches(id, label) {
     const row = document.createElement('div');
     row.className = 'face-backing-controls';
     row.innerHTML = `<label><input type="checkbox" data-setting="about.${id}.enabled"> ${label} face</label><label><input type="checkbox" data-setting="about.${id}.showBacking"> ${label} backing</label>`;
-    bind(row);
+    controlRoots.push(row);
     return row;
   }
   function detach() {
     events?.abort(); events = null;
+    settingsControls?.dispose(); settingsControls = null;
     for (const [node, {visible}] of nodes) node.visible = visible;
-    nodes.clear(); controls.length = 0; clockRoot = null; spheroidSection = null;
+    nodes.clear(); controlRoots.length = 0; clockRoot = null; spheroidSection = null; interaction = null;
     added.splice(0).forEach(node => node.remove());
     unregister.splice(0).reverse().forEach(remove => remove());
   }
@@ -78,6 +72,28 @@ export function createBackingControls(faces) {
       }
       const allFaces = document.createElement('section');
       allFaces.className = 'all-face-controls';
+      interaction = document.createElement('div');
+      interaction.innerHTML = `<h3>Cube interaction</h3>
+        <label><input type="checkbox" data-setting="cube.faceSnap"> Snap cube to faces after rotating</label>
+        <label><input type="checkbox" data-setting="cube.lockedRotation"> Locked rotation (spin and top/bottom tilt)</label>
+        <label><input type="checkbox" data-setting="cube.faceRotation"> Face rotation</label>
+        <label><input type="checkbox" data-setting="cube.faceArrows"> Show face arrows</label>
+        <label>Arrow rotation speed <output data-arrow-speed-value></output><input type="range" data-setting="cube.arrowSpeed" min="0.25" max="3" step="0.05" aria-label="Arrow rotation speed"></label>
+        <label><input type="checkbox" data-setting="cube.uprightFaces"> Keep raised cube face upright</label>
+        <label><input type="checkbox" data-setting="cube.showShell"> Show cube shell</label>
+        <label><input type="checkbox" data-setting="about.centerOnViewport"> Center on viewport</label>`;
+      interaction.addEventListener('change', event => {
+        if (!event.target.checked) return;
+        const other = event.target.dataset.setting === 'cube.faceRotation' ? 'cube.lockedRotation' :
+          event.target.dataset.setting === 'cube.lockedRotation' ? 'cube.faceRotation' : null;
+        if (other) {
+          event.stopImmediatePropagation();
+          store.patch({[event.target.dataset.setting]: true, [other]: false});
+        }
+      }, {signal: events.signal});
+      allFaces.append(interaction);
+      allFaces.insertAdjacentHTML('beforeend', '<h3>Faces and backings</h3>');
+      controlRoots.push(interaction);
       for (const [id, label] of Object.entries(labels)) allFaces.append(switches(id, label));
       allFaces.insertAdjacentHTML('beforeend', '<div class="face-backing-actions"><div class="face-action-stack"><button type="button" data-faces="hide">Hide all faces</button><button type="button" data-faces="show">Show all faces</button></div><div class="face-action-stack"><button type="button" data-backings="hide">Hide all backings</button><button type="button" data-backings="show">Show all backings</button></div></div>');
       allFaces.addEventListener('click', event => {
@@ -88,11 +104,11 @@ export function createBackingControls(faces) {
         const shown = (facesAction ? action.dataset.faces : action.dataset.backings) === 'show';
         store.patch(Object.fromEntries(Object.keys(labels).map(face => [`about.${face}.${field}`, shown])));
       }, {signal: events.signal});
-      unregister.push(shell.registerContext('faces', 'Faces', allFaces));
+      unregister.push(shell.registerContext('faces', 'Cube', allFaces));
       const lattice = document.querySelector('#review-settings-context-skills [data-panel="Lattice"]');
       if (lattice) {
         const section = document.createElement('details'); section.open = true;
-        section.className = 'spheroid-lattice-controls'; spheroidSection = section;
+        section.className = 'spheroid-lattice-controls'; section.dataset.sharedSettings = ''; spheroidSection = section;
         section.innerHTML = `<summary>Spheroid lattice</summary><p>Energy woven behind the Skills bowl. Hide its backing to see the lattice from the Skills face as well as from inside the cube.</p>
           <label><input type="checkbox" data-setting="${field('enabled')}"> Show spheroid lattice</label>
           <label>Spiral pattern <select data-setting="${field('pattern')}" aria-label="Spiral pattern"><option value="crossed">Crossed spirals</option><option value="ascending">Ascending spiral</option><option value="descending">Descending spiral</option></select></label>
@@ -104,9 +120,26 @@ export function createBackingControls(faces) {
           <h4>Descending spiral</h4><label>Direction <select data-setting="${field('descendingRotationDirection')}" aria-label="Descending spiral direction"><option value="counterclockwise">Counterclockwise</option><option value="clockwise">Clockwise</option></select></label>${range('descendingRotationSpeed', 'Speed (turns/s)', 0, .25, .005)}</div>
           <h3>Control-arm energy bridge</h3><label><input type="checkbox" data-setting="${field('bridgeEnabled')}"> Show zap bridges to spiral origins</label>${range('bridgeCount', 'Total zap beams', 1, 36, 1)}${range('bridgeGlow', 'Bridge glow', 0, 1.5, .05)}${range('bridgeSpeed', 'Zap speed', 0, 3, .05)}
           <h3>Rear projection shape</h3><label><input type="checkbox" data-setting="${field('rearPullEnabled')}"> Bend rear spiral rings toward Skills arm</label>${range('rearPull', 'Pull spiral backs toward arm (m)', 0, .08, .002)}${range('rearPullInfluence', 'Pull influence radius (m)', .10, .85, .01)}<p>The influence radius controls how far from the rear crown the bend extends; the pull controls its strength. Rotation pauses with reduced motion. The origin bridges follow the rotating spirals; speaker vibration follows the backing surface.</p>`;
-        lattice.prepend(section); added.push(section); bind(section);
+        lattice.prepend(section); section.dispatchEvent(new CustomEvent('settings-sections-refresh',{bubbles:true})); added.push(section); controlRoots.push(section);
       }
-      sync();
+      settingsControls = mountSettingsControls(controlRoots, {
+        store,
+        signal: events.signal,
+        valueAdapters: {
+          [field('bridgeCount')]: {
+            write(control, value, next) {
+              const spheroid = next.about?.spheroid || {};
+              const directions = spheroid.pattern === 'crossed' ? 2 : 1;
+              const maximum = Math.round(spheroid.strands ?? 9) * directions;
+              control.max = String(maximum);
+              control.value = String(Math.min(value ?? 4, maximum));
+            }
+          }
+        },
+        afterRefresh: refreshDerived
+      });
+      settingsControls.refresh();
+      syncModel();
     },
     // The Clock loads asynchronously and owns a second, private backing in its asset.
     update() {
@@ -114,10 +147,10 @@ export function createBackingControls(faces) {
       if (next && next !== clockRoot) {
         clockRoot = next;
         next.traverse(node => { if (/private[ _](?:navy[ _])?backing/i.test(node.name)) remember(node, 'clock'); });
-        sync();
+        syncModel();
       }
     },
-    applySettings(next) { snapshot = next; sync(); },
+    applySettings(next) { snapshot = next; syncModel(); },
     detach, dispose: detach
   };
 }

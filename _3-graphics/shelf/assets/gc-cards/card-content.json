@@ -1,0 +1,207 @@
+{
+  "vehicles:001": {
+    "text": "Move 1 space\nBicycle",
+    "svg": "masters/vehicles-001.svg",
+    "detail": "faces/vehicles-001.webp"
+  },
+  "vehicles:002": {
+    "text": "Move 2, 3 or 4 spaces\nTaxi",
+    "svg": "masters/vehicles-002.svg",
+    "detail": "faces/vehicles-002.webp"
+  },
+  "vehicles:003": {
+    "text": "Move 3 spaces\nBus",
+    "svg": "masters/vehicles-003.svg",
+    "detail": "faces/vehicles-003.webp"
+  },
+  "vehicles:004": {
+    "text": "Move anywhere  \nin the circle\nHot Air Balloon",
+    "svg": "masters/vehicles-004.svg",
+    "detail": "faces/vehicles-004.webp"
+  },
+  "vehicles:005": {
+    "text": "Move 5 spaces\nMotorcycle",
+    "svg": "masters/vehicles-005.svg",
+    "detail": "faces/vehicles-005.webp"
+  },
+  "vehicles:006": {
+    "text": "Move 6 spaces\nTrain",
+    "svg": "masters/vehicles-006.svg",
+    "detail": "faces/vehicles-006.webp"
+  },
+  "vehicles:007": {
+    "text": "Move anywhere  \nin the circle\nHelicopter",
+    "svg": "masters/vehicles-007.svg",
+    "detail": "faces/vehicles-007.webp"
+  },
+  "vehicles:008": {
+    "text": "Move up to 3 seaports\nShip",
+    "svg": "masters/vehicles-008.svg",
+    "detail": "faces/vehicles-008.webp"
+  },
+  "vehicles:009": {
+    "text": "Move from airport  \nto airport\nAirplane",
+    "svg": "masters/vehicles-009.svg",
+    "detail": "faces/vehicles-009.webp"
+  },
+  "vehicles:010": {
+    "text": "Steal a landmark card \nfrom another player\nLANDMARK CARD\nThief",
+    "svg": "masters/vehicles-010.svg",
+    "detail": "faces/vehicles-010.webp"
+  },
+  "vehicles:011": {
+    "text": "Move to any space\nTeleporter",
+    "svg": "masters/vehicles-011.svg",
+    "detail": "faces/vehicles-011.webp"
+  },
+  "vehicles:012": {
+    "text": "Move to any space\nTeleporter",
+    "svg": "masters/vehicles-012.svg",
+    "detail": "faces/vehicles-012.webp"
+  },
+  "landmarks:001": {
+    "text": "Arctic\nNorth Pole\nA",
+    "svg": "masters/landmarks-001.svg",
+    "detail": "faces/landmarks-001.webp"
+  },
+  "landmarks:002": {
+    "text": "Canada\nChateau \nFrontenac\nB",
+    "svg": "masters/landmarks-002.svg",
+    "detail": "faces/landmarks-002.webp"
+  },
+  "landmarks:003": {
+    "text": "USA\nGolden Gate \nBridge\nC",
+    "svg": "masters/landmarks-003.svg",
+    "detail": "faces/landmarks-003.webp"
+  },
+  "landmarks:004": {
+    "text": "USA\nStatue of \nLiberty\nD",
+    "svg": "masters/landmarks-004.svg",
+    "detail": "faces/landmarks-004.webp"
+  },
+  "landmarks:005": {
+    "text": "Mexico\nChichen Itza\nE",
+    "svg": "masters/landmarks-005.svg",
+    "detail": "faces/landmarks-005.webp"
+  },
+  "landmarks:006": {
+    "text": "Panama\nPanama Canal\nF",
+    "svg": "masters/landmarks-006.svg",
+    "detail": "faces/landmarks-006.webp"
+  },
+  "landmarks:007": {
+    "text": "Peru\nMachu Picchu\nG",
+    "svg": "masters/landmarks-007.svg",
+    "detail": "faces/landmarks-007.webp"
+  },
+  "landmarks:008": {
+    "text": "Chile\nEaster Island\nH",
+    "svg": "masters/landmarks-008.svg",
+    "detail": "faces/landmarks-008.webp"
+  },
+  "landmarks:009": {
+    "text": "Brazil\nChrist the \nRedeemer\nI",
+    "svg": "masters/landmarks-009.svg",
+    "detail": "faces/landmarks-009.webp"
+  },
+  "landmarks:010": {
+    "text": "England\nStonehenge\nJ",
+    "svg": "masters/landmarks-010.svg",
+    "detail": "faces/landmarks-010.webp"
+  },
+  "landmarks:011": {
+    "text": "France\nEiffel Tower\nK",
+    "svg": "masters/landmarks-011.svg",
+    "detail": "faces/landmarks-011.webp"
+  },
+  "landmarks:012": {
+    "text": "Italy\nIl Duomo\nL",
+    "svg": "masters/landmarks-012.svg",
+    "detail": "faces/landmarks-012.webp"
+  },
+  "landmarks:013": {
+    "text": "Bulgaria\nCastle in Love \nwith the Wind\nM",
+    "svg": "masters/landmarks-013.svg",
+    "detail": "faces/landmarks-013.webp"
+  },
+  "landmarks:014": {
+    "text": "Russia\nSt Basil’s \nCathedral\nN",
+    "svg": "masters/landmarks-014.svg",
+    "detail": "faces/landmarks-014.webp"
+  },
+  "landmarks:015": {
+    "text": "Mali\nTimbuktu\nO",
+    "svg": "masters/landmarks-015.svg",
+    "detail": "faces/landmarks-015.webp"
+  },
+  "landmarks:016": {
+    "text": "Egypt\nGreat  \nPyramids\nP",
+    "svg": "masters/landmarks-016.svg",
+    "detail": "faces/landmarks-016.webp"
+  },
+  "landmarks:017": {
+    "text": "Jordan\nPetra\nQ",
+    "svg": "masters/landmarks-017.svg",
+    "detail": "faces/landmarks-017.webp"
+  },
+  "landmarks:018": {
+    "text": "Tanzania\nMount \nKilimanjaro\nR",
+    "svg": "masters/landmarks-018.svg",
+    "detail": "faces/landmarks-018.webp"
+  },
+  "landmarks:019": {
+    "text": "Zambia\nVictoria Falls\nS",
+    "svg": "masters/landmarks-019.svg",
+    "detail": "faces/landmarks-019.webp"
+  },
+  "landmarks:020": {
+    "text": "Russia\nOymyakon\nT",
+    "svg": "masters/landmarks-020.svg",
+    "detail": "faces/landmarks-020.webp"
+  },
+  "landmarks:021": {
+    "text": "China\nGreat Wall of \nChina\nU",
+    "svg": "masters/landmarks-021.svg",
+    "detail": "faces/landmarks-021.webp"
+  },
+  "landmarks:022": {
+    "text": "Korea\nGyeongbok \nPalace\nV",
+    "svg": "masters/landmarks-022.svg",
+    "detail": "faces/landmarks-022.webp"
+  },
+  "landmarks:023": {
+    "text": "Japan\nMount Fuji\nW",
+    "svg": "masters/landmarks-023.svg",
+    "detail": "faces/landmarks-023.webp"
+  },
+  "landmarks:024": {
+    "text": "India\nTaj Mahal\nX",
+    "svg": "masters/landmarks-024.svg",
+    "detail": "faces/landmarks-024.webp"
+  },
+  "landmarks:025": {
+    "text": "Cambodia\nAngkor Wat\nY",
+    "svg": "masters/landmarks-025.svg",
+    "detail": "faces/landmarks-025.webp"
+  },
+  "landmarks:026": {
+    "text": "Singapore\nGardens by \n the Bay\nZ",
+    "svg": "masters/landmarks-026.svg",
+    "detail": "faces/landmarks-026.webp"
+  },
+  "landmarks:027": {
+    "text": "Australia\nSydney Opera \nHouse\n!",
+    "svg": "masters/landmarks-027.svg",
+    "detail": "faces/landmarks-027.webp"
+  },
+  "landmarks:028": {
+    "text": "New Zealand\nBeehive\n?",
+    "svg": "masters/landmarks-028.svg",
+    "detail": "faces/landmarks-028.webp"
+  },
+  "landmarks:029": {
+    "text": "Antarctica\nBlood Falls\n%",
+    "svg": "masters/landmarks-029.svg",
+    "detail": "faces/landmarks-029.webp"
+  }
+}

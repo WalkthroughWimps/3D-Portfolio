@@ -60,6 +60,7 @@ Videos/
 soundfonts/
 soundfont-staging/
 Combiners/
+**/_archive/
 
 ########################################
 # Common large media file types (repo-wide)
@@ -111,6 +112,7 @@ dist-labs-root/
 /tmp/face-file-reservations/
 
 # Local validation evidence, caches, and native Blender studies
+/assets/.blend/
 /tmp/
 /output/
 /outputs/
@@ -126,3 +128,16 @@ assets/about-cube/glb/*
 !assets/about-cube/glb/mechanism.glb
 !assets/about-cube/glb/orbit-v8.glb
 !assets/about-cube/glb/spirals-v9.glb
+
+# Local board-game authoring packages and native desktop export; web demo stays tracked.
+/games/world-map-game/City Cards 2025 Mergled Folder/
+/games/world-map-game/Vehicle Cards Revamped Folder/
+/games/world-map-game/card-rework/
+/games/world-map-game/*.indd
+/games/world-map-game/*.idlk
+/games/world-map-game/*.exe
+/games/world-map-game/*.dll
+
+# Generated combined source files, anywhere in the repository
+combined_files.txt
+combined_files(*).txt

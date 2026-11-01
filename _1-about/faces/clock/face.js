@@ -1,4 +1,5 @@
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import * as THREE from 'three';
 import {getSharedSettings} from '../../../_7-shared-scripts/core/settings.js';
 import {createModelFace} from '../model-face.js';
 import {gearAngles, orbitMotion, SPEED_FACTORS, TEETH, MAIN_ORBIT_FACTORS, RETURN_FACTORS} from './motion.js';
@@ -7,8 +8,6 @@ import {addSpiralMagneticInput} from './magnetic-v9.js';
 import {spiralMotion, validateSpiralManifest, V9_NAMES} from './spiral-motion.js';
 import {createClockHands} from './hands.js';
 import {createClockControls} from './controls.js';
-import {createClockGesture} from './gesture.js';
-import {offsetForWinding, handAngles, TAU} from './winding.js';
 import {createGearAppearance} from './gear-appearance.js';
 
 export const CLOCK_MOUNT = Object.freeze({normal: [0, -1, 0], right: [1, 0, 0], up: [0, 0, 1]});
@@ -23,10 +22,11 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
   let host = null, root = null, rotors = [], returnRotors = [], carrier = null, request = null;
   let magnetic = null;
   let appearance = null, contrast = .5, visualSeconds = null, lastVisualAt = null;
-  let spiralPivots = null, spiralManifest = null, handPreview = null, dragBaseMinutes = 0, dragBaseAngle = 0;
-  let hands = null, gesture = null, controls = null, clockSettings = getSharedSettings().get().about.clock;
+  let spiralPivots = null, spiralManifest = null;
+  let upright = true, roll = 0, baseQuaternion = null;
+  const inverse = new THREE.Matrix4(), cameraRight = new THREE.Vector3(), faceNormal = new THREE.Vector3(0, -1, 0);
+  let hands = null, controls = null, clockSettings = getSharedSettings().get().about.clock;
   visualSeconds = Date.now() / 1000 * clockSettings.gearSpeed;
-  let previewDelta = 0, animation = null, heldDate = null, shownOffset = clockSettings.timeOffsetSeconds;
   let launcher = null, pauseButton = null, toolbar = null, stylesheet = null;
   let suspended = false, disposed = false, reduced = false, enabled = true, generation = 0;
   const events = new AbortController();
@@ -48,10 +48,22 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     materials.forEach(material => material.dispose());
     geometries.forEach(geometry => geometry.dispose());
   }
-  function sync() {
+  function sync(dt = 0) {
     if (!root) return;
+    if (host && baseQuaternion) {
+      if (upright) {
+        inverse.copy(host.cube.matrixWorld).invert();
+        cameraRight.setFromMatrixColumn(host.camera.matrixWorld, 0).transformDirection(inverse);
+        if (cameraRight.x * cameraRight.x + cameraRight.z * cameraRight.z > .01) {
+          const angle = Math.atan2(cameraRight.z, cameraRight.x);
+          const delta = Math.atan2(Math.sin(angle - roll), Math.cos(angle - roll));
+          roll += reduced ? delta : THREE.MathUtils.clamp(delta * (1 - Math.exp(-dt * 7)), -dt * 2.6, dt * 2.6);
+        }
+        root.quaternion.copy(baseQuaternion).premultiply(new THREE.Quaternion().setFromAxisAngle(faceNormal, roll));
+      } else { roll = 0; root.quaternion.copy(baseQuaternion); }
+    }
     if (v9) {
-      const browserDate = new Date(), handDate = new Date(browserDate.getTime() + clockSettings.timeOffsetSeconds * 1000);
+      const browserDate = new Date();
       const now = performance.now();
       if (lastVisualAt !== null && !state.paused && !reduced && !suspended && enabled)
         visualSeconds += Math.max(0, (now - lastVisualAt) / 1000) * clockSettings.gearSpeed;
@@ -60,18 +72,13 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
       for (const name of V9_NAMES) spiralPivots.get(name).rotation.y = motion.angles[name];
       state.angles = V9_NAMES.map(name => motion.angles[name]);
       state.carrierAngle = motion.ring; state.motorAngle = motion.input;
-      hands?.update(handDate, 0, handPreview);
-      controls?.show(handDate, clockSettings.timeOffsetSeconds);
-      state.updatedAt = handDate.getTime();
+      hands?.update(browserDate, 0);
+      hands?.updateSupportLinks();
+      controls?.show(browserDate);
+      state.updatedAt = browserDate.getTime();
       return;
     }
-    if (animation) {
-      const elapsed = Math.max(0, (performance.now() - animation.start) / 550);
-      const t = Math.min(1, elapsed), eased = 1 - (1 - t) ** 3;
-      shownOffset = animation.from + (animation.to - animation.from) * eased;
-      if (t >= 1) animation = null;
-    } else shownOffset = clockSettings.timeOffsetSeconds;
-    const date = new Date((heldDate ?? Date.now()) + shownOffset * 1000);
+    const date = new Date();
     if (legacy) state.angles = gearAngles(date);
     else {
       const motion = orbitMotion(date);
@@ -81,16 +88,14 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
       returnRotors.forEach((rotor, i) => { rotor.rotation.y = motion.returning[i]; });
     }
     rotors.forEach((rotor, i) => { rotor.rotation.y = state.angles[i]; });
-    hands?.update(date, clockSettings.markerPhase + previewDelta);
-    controls?.show(date, shownOffset);
+    hands?.update(date, 0);
+    hands?.updateSupportLinks();
+    controls?.show(date);
     state.updatedAt = date.getTime();
   }
   function changeSettings(settings) {
     if (v9) {
       const correction = {};
-      const offset = Math.max(-999999960, Math.min(999999960, Math.round(settings.timeOffsetSeconds / 60) * 60));
-      if (offset !== settings.timeOffsetSeconds) correction['about.clock.timeOffsetSeconds'] = offset;
-      if (settings.markerPhase !== 0) correction['about.clock.markerPhase'] = 0;
       if (settings.minuteLength < settings.hourLength + .06)
         correction['about.clock.minuteLength'] = Number((settings.hourLength + .06).toFixed(3));
       if (Object.keys(correction).length) {getSharedSettings().patch(correction); return;}
@@ -99,45 +104,6 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     appearance?.apply(settings.gearFinishes, contrast);
     controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${settings.gearSpeed}×`);
     hands?.configure(settings);
-    if (!animation && !previewDelta) sync();
-  }
-  function commitWinding(delta) {
-    heldDate = null;
-    const oldOffset = clockSettings.timeOffsetSeconds;
-    const nextOffset = offsetForWinding(oldOffset, delta);
-    const nextPhase = ((clockSettings.markerPhase + delta) % TAU + TAU) % TAU;
-    previewDelta = 0;
-    if (Math.abs(delta) < 1e-7) return;
-    animation = reduced ? null : {from: shownOffset, to: nextOffset, start: performance.now()};
-    getSharedSettings().patch({'about.clock.timeOffsetSeconds': nextOffset, 'about.clock.markerPhase': nextPhase});
-    controls?.announce(`Clock wound ${Math.abs(nextOffset - oldOffset).toFixed(1)} seconds ${nextOffset < oldOffset ? 'backward' : 'forward'}.`);
-    if (reduced || state.paused) {animation = null; sync();}
-  }
-  function commitHand(kind, delta) {
-    handPreview = null;
-    if (kind === 'second') {sync(); return;}
-    const periodMinutes = kind === 'hour' ? 720 : 60;
-    const nextMinutes = Math.round(dragBaseMinutes + delta * periodMinutes / TAU);
-    getSharedSettings().patch({'about.clock.timeOffsetSeconds': nextMinutes * 60});
-    controls?.announce(`Clock set ${nextMinutes >= 0 ? '+' : ''}${nextMinutes} minutes from browser time. Seconds remain synchronized.`);
-    sync();
-  }
-  function windByMinutes(minutes) {
-    getSharedSettings().patch({'about.clock.timeOffsetSeconds': clockSettings.timeOffsetSeconds + minutes * 60});
-    controls?.announce(`Clock set ${minutes > 0 ? 'forward' : 'back'} ${Math.abs(minutes)} minute${Math.abs(minutes) === 1 ? '' : 's'}. Seconds remain synchronized.`);
-    sync();
-  }
-  function windBySeconds(seconds) {
-    const nextOffset = clockSettings.timeOffsetSeconds + seconds;
-    animation = reduced || state.paused ? null : {from: shownOffset, to: nextOffset, start: performance.now()};
-    getSharedSettings().patch({'about.clock.timeOffsetSeconds': nextOffset});
-    controls?.announce(`Clock wound ${Math.abs(seconds)} seconds ${seconds < 0 ? 'backward' : 'forward'}.`);
-    if (!animation) sync();
-  }
-  function resetTime() {
-    gesture?.cancel(); previewDelta = 0; animation = null; heldDate = null; handPreview = null;
-    getSharedSettings().patch({'about.clock.timeOffsetSeconds': 0, 'about.clock.markerPhase': 0});
-    controls?.announce('Clock reset to browser time.');
     sync();
   }
   function initializeUI() {
@@ -153,7 +119,6 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     pauseButton.textContent = v9 ? 'Pause gears' : 'Pause motion'; pauseButton.setAttribute('aria-pressed', 'false'); pauseButton.disabled = true;
     pauseButton.addEventListener('click', () => {
       state.paused = !state.paused;
-      if (state.paused) animation = null;
       pauseButton.textContent = state.paused ? (v9 ? 'Resume gears' : 'Resume motion') : (v9 ? 'Pause gears' : 'Pause motion');
       pauseButton.setAttribute('aria-pressed', String(state.paused));
       controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${clockSettings.gearSpeed}×`);
@@ -163,7 +128,6 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
     toolbar.setAttribute('aria-label', 'Clock preview'); toolbar.append(launcher, pauseButton);
     (stage || host.canvas.parentElement).append(toolbar);
     controls = createClockControls({onChange: changeSettings, secondsLocked: v9,
-      onWind: v9 ? windByMinutes : windBySeconds, onResetTime: resetTime,
       onFocus: () => {if (!suspended && enabled && state.ready) focusFace(CLOCK_MOUNT);}});
     const strength = .08 + 2.32 * contrast * contrast * (3 - 2 * contrast);
     toolbar.style.setProperty('--clock-contrast-strength', String(strength));
@@ -171,15 +135,19 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
   }
   function detach() {
     generation += 1; request?.abort(); request = null;
-    gesture?.dispose(); gesture = null; hands?.dispose(); hands = null;
+    hands?.dispose(); hands = null;
     appearance?.dispose(); appearance = null;
     if (toolbar) { toolbar.hidden = true; launcher.disabled = true; pauseButton.disabled = true; }
-    release(root); root = null; rotors = []; returnRotors = []; carrier = null; magnetic = null; host = null;
-    previewDelta = 0; animation = null; heldDate = null; handPreview = null;
+    release(root); root = null; baseQuaternion = null; roll = 0; rotors = []; returnRotors = []; carrier = null; magnetic = null; host = null;
     spiralPivots = null; spiralManifest = null;
     lastVisualAt = null;
     state.ready = false; state.angles = []; state.returnAngles = []; state.updatedAt = null;
     binding.detach();
+  }
+  function liveMagnetic(value) {
+    if (!value || !root || !host) return value ?? null;
+    root.updateWorldMatrix(true, false);
+    return {...value, center: host.cube.worldToLocal(root.localToWorld(value.center.clone()))};
   }
   function attach(context) {
     if (disposed) return;
@@ -208,7 +176,7 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
         const returning = legacy || v9 ? [] : RETURN_FACTORS.map((_, i) => loaded.getObjectByName(`clock-return-${i}`));
         const moving = v9 ? pivots.get('clock-ring') : legacy ? null : loaded.getObjectByName('clock-carrier');
         if (!legacy && (!moving || returning.some(node => !node))) throw new Error('Clock asset is missing its ring or return train');
-        root = loaded; rotors = axes; returnRotors = returning; carrier = moving;
+        root = loaded; baseQuaternion = root.quaternion.clone(); rotors = axes; returnRotors = returning; carrier = moving;
         spiralPivots = pivots; spiralManifest = manifest;
         if (v9) {appearance = createGearAppearance(pivots, V9_NAMES); appearance.apply(clockSettings.gearFinishes, contrast);}
         if (v9) {
@@ -217,34 +185,15 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
           state.ringTargetPeriodSeconds = manifest.ringTargetPeriodSeconds;
         }
         magnetic = v9 ? addSpiralMagneticInput(root, pivots.get('clock-drive'), manifest) : legacy ? null : addMagneticInput(root, returning[0], moving);
-        hands = legacy ? null : createClockHands(root, moving, manifest?.handAdapter);
+        hands = legacy ? null : createClockHands(root, moving, manifest?.handAdapter, manifest, context.cube, context.camera);
         hands?.configure(clockSettings);
         root.name = legacy ? 'Clock V7 supported mechanism' : v9 ? 'Clock V9 fixed spiral train' : 'Clock V8 orbit mechanism';
-        root.visible = enabled; context.cube.add(root); sync(); state.ready = true;
-        if (hands) gesture = createClockGesture({host: context, hands,
-          kinds: v9 ? ['hour', 'minute', 'second'] : ['second'],
-          canInteract: () => !suspended && !disposed && enabled && state.ready && root?.visible && !animation,
-          onStart: kind => {
-            if (v9) {
-              dragBaseMinutes = clockSettings.timeOffsetSeconds / 60;
-              if (kind !== 'second') dragBaseAngle = handAngles(new Date(Date.now() + clockSettings.timeOffsetSeconds * 1000))[kind];
-            }
-            else {heldDate = state.updatedAt - clockSettings.timeOffsetSeconds * 1000; animation = null; sync();}
-          },
-          onPreview: (kind, delta) => {
-            if (v9) {
-              if (kind === 'second') handPreview = {kind, angle: delta};
-              else handPreview = {kind, angle: dragBaseAngle + delta};
-            } else previewDelta = delta;
-            sync();
-          },
-          onCommit: (kind, delta) => v9 ? commitHand(kind, delta) : commitWinding(delta),
-          onCancel: () => {heldDate = null; previewDelta = 0; handPreview = null; sync();}});
+        root.visible = enabled; context.cube.add(root); hands?.setVisible(enabled); sync(); state.ready = true;
         launcher.disabled = suspended; pauseButton.disabled = suspended; launcher.textContent = 'Clock face';
         if (new URLSearchParams(location.search).get('face') === 'clock' && !suspended && enabled) focusFace(CLOCK_MOUNT);
       } catch (error) {
         if (generation !== version || disposed || error.name === 'AbortError') return;
-        gesture?.dispose(); gesture = null; hands?.dispose(); hands = null; appearance?.dispose(); appearance = null;
+        hands?.dispose(); hands = null; appearance?.dispose(); appearance = null;
         release(loaded); root = null; rotors = []; returnRotors = []; carrier = null; magnetic = null; spiralPivots = null; spiralManifest = null;
         state.error = error.message; launcher.textContent = 'Clock unavailable'; launcher.disabled = true;
         console.warn('[clock] Mechanism could not load; original backing retained.', error);
@@ -253,19 +202,23 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
   }
   return {
     id: binding.id, backingName: binding.backingName,
-    get backing() { return binding.backing; }, get components() { return root ? [root] : []; },
+    get backing() { return binding.backing; }, get components() { return root ? [root, ...(hands?.components || [])] : []; },
+    get travelPart() { return root; }, get travelMount() { return CLOCK_MOUNT; },
+    get travelSupportDepth() { return .962; },
     get runtime() { return {root, rotors, returnRotors, carrier, state,
-      hands, spiralManifest, magneticInput: magnetic?.magneticInput ?? null, magneticDriveTarget: magnetic?.magneticDriveTarget ?? null}; },
-    get gestureActive() { return Boolean(gesture?.active); },
-    endGesture() { gesture?.cancel(); },
+      hands, spiralManifest, magneticInput: liveMagnetic(magnetic?.magneticInput),
+      magneticDriveTarget: liveMagnetic(magnetic?.magneticDriveTarget)}; },
+    get gestureActive() { return false; },
+    endGesture() {},
     attach, detach,
-    update() { if (!suspended && !disposed && enabled && (v9 || (!reduced && !state.paused) || animation)) sync(); },
+    update(dt) { if (!suspended && !disposed && enabled) sync(dt); },
     applySettings(snapshot) {
       enabled = snapshot.about?.clock?.enabled !== false;
-      if (!enabled) gesture?.cancel();
       if (root) root.visible = enabled; if (toolbar) toolbar.hidden = !enabled;
+      hands?.setVisible(enabled);
       const next = Boolean(snapshot?.accessibility?.reducedMotion);
-      if (next !== reduced) { reduced = next; if (next) animation = null; lastVisualAt = performance.now(); }
+      if (next !== reduced) { reduced = next; lastVisualAt = performance.now(); }
+      upright = snapshot.cube?.uprightFaces !== false;
       const nextContrast = Number(snapshot?.start?.contrast ?? .5);
       if (nextContrast !== contrast) { contrast = nextContrast; appearance?.apply(clockSettings.gearFinishes, contrast); }
       const strength = .08 + 2.32 * contrast * contrast * (3 - 2 * contrast);
@@ -273,7 +226,7 @@ export function createClockFace({stage, focusFace = () => {}} = {}) {
       controls?.setContrast(strength);
       controls?.showMotion(state.paused ? 'Paused' : reduced ? 'Reduced motion: gears paused' : `Running at ${clockSettings.gearSpeed}×`);
     },
-    suspend() { gesture?.cancel(); suspended = true; lastVisualAt = null; if (launcher) { launcher.disabled = true; pauseButton.disabled = true; } },
+    suspend() { suspended = true; lastVisualAt = null; if (launcher) { launcher.disabled = true; pauseButton.disabled = true; } },
     resume() { if (disposed) return; suspended = false; lastVisualAt = performance.now(); sync(); if (launcher) { launcher.disabled = !state.ready; pauseButton.disabled = !state.ready; } },
     dispose() { if (disposed) return; detach(); disposed = true; events.abort(); controls?.dispose(); controls = null; toolbar?.remove(); stylesheet?.remove(); binding.dispose(); }
   };

@@ -9,6 +9,7 @@ export class GridPages{
   progress=0;
   commit(progress){this.progress=restingPage(progress);return this.progress;}
   focus(){return this.progress;}
+  follow(progress){this.progress=progress;return this.progress;}
 }
 export function poseBox(p,bounds){
   return new THREE.Box3(new THREE.Vector3().fromArray(bounds.min),new THREE.Vector3().fromArray(bounds.max)).applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3().fromArray(p.position),new THREE.Quaternion().fromArray(p.quaternion),new THREE.Vector3().fromArray(p.scaleVector)));
@@ -23,15 +24,35 @@ export function overviewPoses(poses,layout){
 }
 export function gridPoses(poses,aspect=2){
   const home=overviewPoses(poses,'grid');
-  if(aspect>=1.6)return home;
+  if(aspect>=1.6){
+    const xs=home.map(p=>p.position[0]),ys=home.map(p=>p.position[1]);
+    const centerX=(Math.min(...xs)+Math.max(...xs))/2,centerY=(Math.min(...ys)+Math.max(...ys))/2;
+    return home.map(p=>{
+      const dx=p.position[0]-centerX,dy=p.position[1]-centerY;
+      return {...p,position:[p.position[0]+(Math.abs(dx)>.5?Math.sign(dx)*.17:0),p.position[1]+Math.sign(dy)*.09,p.position[2]]};
+    });
+  }
   // Preserve the authored 3×2 grid on wide screens; use 2×3 where fitting
   // three open books across would make every book unnecessarily small.
-  return home.map((p,i)=>({...p,position:[(Math.floor(i/3)-.5)*1.98+.433,(1-i%3)*1.42,p.position[2]],gridRows:3}));
+  return home.map((p,i)=>({...p,position:[(Math.floor(i/3)-.5)*2.32+.433,(1-i%3)*1.63,p.position[2]],gridRows:3}));
 }
-export function gridView(home,bounds,aspect){
+export function gridView(home,bounds,aspect,{safeTop=0,viewportHeight=1,extraBox=null}={}){
   const box=new THREE.Box3();for(const p of home)box.union(poseBox(p,bounds));
-  const view=tightView(box,aspect,{fillX:.98,fillY:.82}),offset=box.getSize(new THREE.Vector3()).y*.04;
-  view.target.y+=offset;view.position.y+=offset;return view;
+  if(extraBox)box.union(extraBox);
+  const top=Math.min(.88,Math.max(0,safeTop/Math.max(1,viewportHeight))+.016),bottom=.036;
+  const center=box.getCenter(new THREE.Vector3()),tanY=Math.tan(35*Math.PI/360),tanX=tanY*aspect;
+  const halfHeight=box.getSize(new THREE.Vector3()).y*.5;
+  let distance=Math.max(.5,halfHeight/(tanY*Math.max(.1,1-top-bottom)));
+  const corners=[];
+  for(const x of [box.min.x,box.max.x])for(const y of [box.min.y,box.max.y])for(const z of [box.min.z,box.max.z])corners.push(new THREE.Vector3(x,y,z).sub(center));
+  // Solve against the actual safe viewport band, including depth and width.
+  for(let i=0;i<40;i++){
+    const offset=distance*tanY*(top-bottom);
+    if(corners.every(p=>{const depth=distance-p.z;return depth>0&&Math.abs(p.x)/(depth*tanX)<=.96&&(p.y-offset)/(depth*tanY)<=1-2*top&&(p.y-offset)/(depth*tanY)>=-1+2*bottom;}))break;
+    distance*=1.08;
+  }
+  const target=center.clone();target.y+=distance*tanY*(top-bottom);
+  return {target,position:target.clone().add(new THREE.Vector3(0,0,distance))};
 }
 export function gridReflow(from,to,t){
   const travel=smooth((t-.2)/.6),lift=smooth(t/.2)*(1-smooth((t-.8)/.2));

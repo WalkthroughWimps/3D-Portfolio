@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome and Site Setup | Matt Hall</title>
-    <meta name="description" content="Choose animation, audio, and visual preferences before exploring Matt Hall’s portfolio.">
+    <title>Matt Hall | Creative Technologist</title>
+    <link rel="icon" type="image/svg+xml" href="assets/page-icons/about.svg">
+    <meta name="description" content="Matt Hall blends design, animation, and code to make captivating, interactive experiences. Explore graphics, videos, and playable games.">
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="_7-shared-scripts/template.css">
     <link rel="stylesheet" href="_0-start/start-page.css">
-    <script src="js/site-utils.js" defer></script>
+    <link rel="stylesheet" href="_0-start/start/project-overlays.css">
+    <script src="js/site-utils.js"></script>
     <script src="_0-start/a11y.js" defer></script>
     <!-- runtime-importmap:generated:start -->
     <script type="importmap">
@@ -20,9 +22,10 @@
     }
     </script>
 <!-- runtime-importmap:generated:end -->
-<noscript><style>body .nav-wrap { display:block; position:fixed; inset:0 0 auto; z-index:100001; } body .navigation-bg { width:100%; height:auto; box-sizing:border-box; background:#10141d; padding:12px; } body .navigation { position:static; } body .navigation noscript { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; } body .navigation a { color:#fff; padding:8px; } </style></noscript>
+<noscript><style>body .start-entry { display:block !important; } body #settingsControllerScene { display:none; } body .nav-wrap { display:block; position:fixed; inset:0 0 auto; z-index:100001; } body .navigation-bg { width:100%; height:auto; box-sizing:border-box; background:#10141d; padding:12px; } body .navigation { position:static; } body .navigation noscript { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; } body .navigation a { color:#fff; padding:8px; } </style></noscript>
 </head>
 <body>
+    <a class="skip-link" href="#uiCenterColumn">Skip to content</a>
     <div class="nav-wrap">
         <div class="navigation-bg">
             <nav class="navigation" aria-label="Site">
@@ -39,9 +42,16 @@
     </div>
     <div class="ui-layout">
         <aside class="ui-left" id="uiLeftColumn"></aside>
-        <main class="ui-center" id="uiCenterColumn" aria-label="Site setup">
+        <main class="ui-center" id="uiCenterColumn" tabindex="-1" aria-label="Portfolio and site setup">
+            <section id="portfolioEntry" class="start-entry" aria-labelledby="portfolioEntryTitle" hidden>
+                <div class="start-entry-content">
+                    <h2 id="portfolioEntryTitle" tabindex="-1">Sound &amp; visual controls</h2>
+                    <p>The 3D controller is unavailable. You can use the standard controls below, explore selected work, or proceed to the site.</p>
+                    <button id="openComfortSettings" class="start-entry-settings" type="button" hidden>Open controls</button>
+                </div>
+            </section>
             <div class="bg-overlay">
-                <div id="settingsControllerScene" class="settings-controller-scene settings-controller-scene--full" aria-live="polite" aria-label="3D settings controller">
+                <div id="settingsControllerScene" class="settings-controller-scene settings-controller-scene--full" aria-live="polite" aria-label="3D settings controller" aria-hidden="true" inert>
                     <canvas id="settingsControllerCanvas" class="settings-controller-canvas" role="presentation"></canvas>
                     <div id="settingsControllerStatus" class="settings-controller-status" role="status" aria-live="polite">
                         Loading 3D controller…
@@ -55,6 +65,27 @@
                     </section>
                 </div>
             </div>
+            <aside id="startControllerOverview" class="start-project-rail start-home-work-rail" aria-label="Selected work and introduction">
+                <div class="start-work-main">
+                    <section class="start-work-intro" aria-labelledby="startWorkIntroTitle">
+                        <h1 id="startWorkIntroTitle" class="start-work-context">Matt Hall</h1>
+                        <p class="start-work-role">Creative Technologist</p>
+                        <p class="start-work-explainer">Teaching English sparked my passion for creating educational games, animated explainers, and videos that help students forget they’re learning. I combine creativity and technical skill to solve problems, and I’m eager to bring that resourcefulness to creative work full-time.</p>
+                    </section>
+                    <h2 class="start-work-list-title" id="startWorkListTitle">Selected work</h2>
+                    <nav class="start-work-choices" aria-labelledby="startWorkListTitle">
+<a class="start-project-choice" href="_3-graphics/graphics.html" data-start-project="coursebooks"><img src="assets/selected-work/coursebooks.png" width="144" height="96" alt="" decoding="async"><span>Just Speak</span></a>
+<a class="start-project-choice" href="_2-videos/videos.html" data-start-project="neotube"><img src="Videos/videos-page/neotube-studios.jpg" width="144" height="96" alt="" decoding="async"><span>NeoTube Studios</span></a>
+<a class="start-project-choice" href="_3-graphics/shelf/tabletop.html" data-start-project="global-conquest"><img src="assets/selected-work/global-conquest.png" width="144" height="96" alt="" decoding="async"><span>Global Conquest</span></a>
+<a class="start-project-choice" href="games/plinko/index.html" data-start-project="plunky"><img src="games/images/plinko.png" width="144" height="96" alt="" decoding="async"><span>Go Plunky, Go!</span></a>
+                    </nav>
+                </div>
+                <div class="start-project-hiring" role="group" aria-label="Résumé and contact">
+                    <a href="assets/documents/matt-hall-resume.pdf" download="Matt Hall - Resume.pdf"><img src="assets/icons/resume-page.png" width="24" height="31" alt=""><span>Résumé PDF</span></a>
+                    <a href="mailto:MattHall.JMH@gmail.com"><svg viewBox="0 0 32 28" aria-hidden="true" focusable="false"><rect x="2" y="4" width="28" height="21" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 6l13 10L29 6M3 24l9-9m17 9l-9-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Email me</span></a>
+                    <a class="start-work-sitemap" href="sitemap.html">Sitemap →</a>
+                </div>
+            </aside>
         </main>
         <aside class="ui-right" id="uiRightColumn">
             <div class="ui-right-tabs" role="tablist" aria-label="Control panels">
@@ -73,9 +104,6 @@
         </header>
 
         <section id="debugCameraPanel" class="debug-camera-panel" aria-label="Debug camera stats">
-            <div id="contrastKnobTrackerLine" class="debug-camera-value" style="margin-bottom:4px;font-size:12px;opacity:.95;white-space:normal;">
-                Contrast knob loc: pending
-            </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
                     <div class="debug-camera-label">Lighting Controls</div>
@@ -100,7 +128,7 @@
             </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
-                    <div class="debug-camera-label">UI Anim Speed</div>
+                    <label class="debug-camera-label" for="uiAnimSpeed">Controller animation speed</label>
                     <div class="debug-camera-slider">
                         <input id="uiAnimSpeed" type="range" min="0.1" max="2" step="0.05" value="1">
                         <span id="uiAnimSpeedValue" class="debug-camera-value">1.00x</span>
@@ -200,13 +228,13 @@
             </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
-                    <div class="debug-camera-label">Camera Anim</div>
-                    <button id="resetCameraAnim" class="debug-camera-btn" type="button">Reset camera anim</button>
+                    <div class="debug-camera-label">Camera move</div>
+                    <button id="resetCameraAnim" class="debug-camera-btn" type="button">Replay camera move</button>
                 </div>
             </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
-                    <div class="debug-camera-label">Anim Duration (Custom)</div>
+                    <label class="debug-camera-label" for="animDurationCustom">Camera move duration</label>
                     <div class="debug-camera-slider">
                         <input id="animDurationCustom" type="range" min="1000" max="8000" step="100" value="6000">
                         <span id="animDurationCustomValue" class="debug-camera-value">6000ms</span>
@@ -215,7 +243,7 @@
             </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
-                    <div class="debug-camera-label">Anim Duration (Focus)</div>
+                    <label class="debug-camera-label" for="animDurationFocus">Focus move duration</label>
                     <div class="debug-camera-slider">
                         <input id="animDurationFocus" type="range" min="200" max="2000" step="20" value="520">
                         <span id="animDurationFocusValue" class="debug-camera-value">520ms</span>
@@ -224,16 +252,7 @@
             </div>
             <div class="debug-camera-row debug-camera-row--tuning">
                 <div class="debug-camera-info">
-                    <div class="debug-camera-label">Focus Shift Start</div>
-                    <div class="debug-camera-slider">
-                        <input id="animShiftStart" type="range" min="0.5" max="0.95" step="0.01" value="0.75">
-                        <span id="animShiftStartValue" class="debug-camera-value">0.75</span>
-                    </div>
-                </div>
-            </div>
-            <div class="debug-camera-row debug-camera-row--tuning">
-                <div class="debug-camera-info">
-                    <div class="debug-camera-label">Ease Power</div>
+                    <label class="debug-camera-label" for="animEasePower">Focus easing</label>
                     <div class="debug-camera-slider">
                         <input id="animEasePower" type="range" min="1" max="4" step="0.1" value="3">
                         <span id="animEasePowerValue" class="debug-camera-value">3.0</span>
@@ -350,7 +369,7 @@
                             <button class="arrow-btn" id="syncRight">&gt;</button>
                         </div>
                         <div class="mouse-legend" aria-hidden="true">
-                            <img class="mouse-icon" src="assets/svg/mouse-LMB.svg" alt="Left mouse button">
+                            <img class="mouse-icon" src="assets/svg/mouse_LMB.svg" alt="Left mouse button">
                             <img class="mouse-icon" src="assets/svg/mouse_RMB.svg" alt="Right mouse button">
                         </div>
                         <div class="jump-actions">
@@ -465,26 +484,238 @@
     <div id="permissionModal" class="permission-modal hidden" role="dialog" aria-modal="true" aria-labelledby="permTitle">
         <div class="permission-box">
             <h3 id="permTitle">Allow audio on this site?</h3>
-            <div style="display:flex;gap:8px;margin-top:12px;">
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;">
                 <button id="permAllow" class="primary" type="button">Yes</button>
                 <button id="permDeny" class="secondary" type="button">No</button>
             </div>
         </div>
     </div>
-    <div class="controller-accessible-controls" role="group" aria-label="3D controller alternatives">
+    <button id="proceedToSite" type="button" aria-expanded="false" aria-controls="startSiteNavHost">Proceed to site <span aria-hidden="true">→</span></button>
+    <div id="startSiteNavHost" hidden inert>
+<!-- start-navigation:generated:start -->
+<div id="startSiteNavigation" class="shared-nav-wrap start-site-navigation">
+  <div class="navigation-bg">
+    <nav class="navigation" aria-label="Site">
+      <a href="_1-about/about.html" class="nav-icon about-icon" title="About Me" aria-label="About Me">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <defs>
+            <style>
+              @import url('https://fonts.googleapis.com/css2?family=Rubik:ital,wght@0,300..900;1,300..900&display=swap');
+
+              .resume-icon-1 { fill: var(--red-primary); }
+              .resume-icon-2 { fill: var(--red-tertiary); }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="resume-icon-1" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <path class="resume-icon-2" d="M78.18,25.22c1.1-1.4,1.5-4,1.3-4.8-.3-.9-1-1.9-1.9-2.3-.5-3.3-3.2-6.6-7.3-7.7-8.1-2-12,3.3-18,1.8s-22.3-1.4-28.2,7c-.9,1.3-1.6,3-1,4.4-1.2.8-2.2,1.9-2.9,3.1-5.1,8.2-3.4,18.9.9,27.5,1.5,2.9,2.9,4.3,2.5,7.9-.2,2.2-1.2,4.6,1.6,5.6.6.2,1.5.5,1.7.5h1.2c0,2.6.8,6.4-1.6,10.6-1.4,2.3-3.6,4.5-4.2,6.1h-.3c-1.75.29-3.68,1.24-5.35,2.31,8.85,7.94,20.55,12.78,33.37,12.78.61,0,1.21-.02,1.81-.05.65-.04,1.31-.07,1.96-.14-.9-1.59-1.99-2.59-3.48-3.59-.24-.58-.74-1.3-.92-2.11-.3-1.7,1.4-2.1,2.5-4.9,0-.3.3-.9.4-1.1l.4-.5c0-.2.2-.2.3-.2.2,0,.5-.5.8-1s.5-1.1.5-1.6c.2-1.7,0-2.4.2-3.9.4-2.7,2.6-5.3,5-6.5h.6c.8.3,1.7.6,2.5.9,1.1.4,2.2.7,3.4.7,2.7,0,5.7-2.4,6.1-5.9v-1.5c0-.9-.6-1.6.2-2.4s.8,0,1.2-.4.3-1,.3-1.6v-.4c0-.2-.2-.5-.4-.7,3.2-1.5.5-3.6.5-4.1,0,0,.3-.5.3-1,1.5,0,3.3-.8,4.1-2,.2-.3.4-.6.4-.9.3-1.6-.4-2.3-2.7-4.5,0,0-2.4-2.2-3.6-4.3-.5-.9-.7-1.6-.7-2.6v-1c.3-.9,1-1.5,1-2.4s-1.2-5.8-1.2-6.6c-.2-.9-.4-1.7-.5-2.1-.2-.6-.6-1.4-1.1-2.1.8.2,2,.5,2.6,1,.8.6,1.3,1.4,1.6,2.3.4,1.1.5,2.3.5,3.2s0,.2.2.2.3,0,.3-.2c0,0,.4-1.4.2-3.4,0-2.1-.8-3.7-1.6-4.8,1.8-.3,3.4-1.3,4.5-2.6Z" />
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/about.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">About</span>
+      </a>
+      <a href="_2-videos/videos.html" class="nav-icon videos-icon" aria-label="Videos">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <defs>
+            <style>
+              .videos-icon-1 { fill: var(--blue-primary); }
+              .videos-icon-2 { fill: var(--blue-tertiary); fill-rule: evenodd; }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="videos-icon-1" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <g class="glow">
+              <path class="videos-icon-2" d="M31.78,36.09c0,.98-.79,1.77-1.77,1.77s-1.77-.79-1.77-1.77.79-1.77,1.77-1.77,1.77.79,1.77,1.77h0Z" />
+              <path class="videos-icon-2" d="M31.78,42.93c0,.98-.79,1.77-1.77,1.77s-1.77-.79-1.77-1.77.79-1.77,1.77-1.77,1.77.79,1.77,1.77h0Z" />
+              <path class="videos-icon-2" d="M28.25,39.51c0,.91-.79,1.66-1.77,1.66s-1.77-.74-1.77-1.66.79-1.66,1.77-1.66,1.77.74,1.77,1.66h0Z" />
+              <path class="videos-icon-2" d="M35.09,39.51c0,.91-.74,1.66-1.66,1.66s-1.66-.74-1.66-1.66.74-1.66,1.66-1.66,1.66.74,1.66,1.66h0Z" />
+              <path class="videos-icon-2" d="M56.07,32.56c0,.98-.79,1.77-1.77,1.77s-1.77-.79-1.77-1.77.79-1.77,1.77-1.77,1.77.79,1.77,1.77h0Z" />
+              <path class="videos-icon-2" d="M56.07,39.51c0,.91-.79,1.66-1.77,1.66s-1.77-.74-1.77-1.66.79-1.66,1.77-1.66,1.77.74,1.77,1.66h0Z" />
+              <path class="videos-icon-2" d="M52.54,36.09c0,.98-.74,1.77-1.66,1.77s-1.66-.79-1.66-1.77.74-1.77,1.66-1.77,1.66.79,1.66,1.77h0Z" />
+              <path class="videos-icon-2" d="M59.61,36.09c0,.98-.79,1.77-1.77,1.77s-1.77-.79-1.77-1.77.79-1.77,1.77-1.77,1.77.79,1.77,1.77h0Z" />
+              <polygon class="videos-icon-2" points="79.7 47.35 74.4 52.57 67.33 52.57 67.33 71.72 74.4 71.72 79.7 76.94 85 76.94 85 47.35 79.7 47.35 79.7 47.35" />
+              <path class="videos-icon-2" d="M54.25,43.92c-4.36,0-7.85-3.48-7.85-7.82s3.49-7.82,7.85-7.82,7.85,3.48,7.85,7.82-3.49,7.82-7.85,7.82h0ZM56.87,71.73c-.96,0-1.74-.78-1.74-1.74s.79-1.74,1.74-1.74,1.74.78,1.74,1.74-.79,1.74-1.74,1.74h0ZM40.29,47.39c1.13-1.56,2.01-3.3,2.35-5.3,1.13,2.17,2.97,4,5.06,5.3h-7.41ZM29.83,47.39c-4.36,0-7.85-3.48-7.85-7.82s3.49-7.82,7.85-7.82,7.85,3.48,7.85,7.82-3.49,7.82-7.85,7.82h0ZM60.71,47.39c3.92-2.26,6.63-6.43,6.63-11.3,0-7.21-5.84-13.04-13.08-13.04-6.37,0-11.6,4.52-12.82,10.52-2.18-4.17-6.54-7.04-11.6-7.04-7.24,0-13.08,5.82-13.08,13.04,0,4.26,2.09,8,5.23,10.43v2.61h-1.74l-1.74-1.74h-3.49v8.69h3.49l1.74-1.74h1.74v15.64c0,1.91,1.57,3.48,3.49,3.48h34.89c1.92,0,3.49-1.56,3.49-3.48v-22.59c0-1.83-1.4-3.3-3.14-3.48h0Z" />
+            </g>
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/videos.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">Videos</span>
+      </a>
+      <a href="_3-graphics/graphics.html" class="nav-icon graphics-icon" aria-label="Graphics">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" id="a" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 100 100">
+          <defs>
+            <filter id="icon-shadow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur in="SourceAlpha" stdDeviation="10" />
+              <feOffset dx="0" dy="0" result="offsetblur" />
+              <feFlood flood-color="var(--orange-tertiary)" />
+              <feComposite in2="offsetblur" operator="in" />
+              <feMerge>
+                <feMergeNode />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <style>
+              .graphics-icon-1 { fill: var(--orange-primary); }
+              .graphics-icon-2 { fill: var(--orange-tertiary); }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="graphics-icon-1" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <g filter="url(#icon-shadow)">
+              <path class="graphics-icon-2" d="M36.42,36.39h1.75v-1.06c8.05,2.44,11.85,8.25,11.56,17.64h-1.96v6.55h6.55v-6.55h-1.98c.25-8.56-2.64-14.61-8.61-18.09l12.81,2.36c.2,1.27,1.29,2.2,2.58,2.2h.06l-.06,11.79c0,.24.2.44.44.44.14,0,.27-.06.35-.17l4.02-5.06,6.47-.12c.24,0,.44-.2.44-.44,0-.14-.06-.27-.17-.35l-9.45-7.14c.87-1.15.64-2.79-.51-3.66-1.15-.87-2.79-.64-3.65.51-.07.09-.13.19-.19.28l-18.69-3.44v-2.25h-6.55v6.55h4.8ZM52.57,57.78h-3.06v-3.06h3.06v3.06h0ZM33.36,31.59h3.06v3.06h-3.06v-3.06h0Z" />
+              <path class="graphics-icon-2" d="M81.5,20.32H18.5c-1.93,0-3.49,1.57-3.5,3.49v41.91c0,1.93,1.57,3.49,3.5,3.49h24.5v5.24h-8.75v5.24h31.5v-5.24h-8.75v-5.24h24.5c1.93,0,3.49-1.57,3.5-3.49V23.81c0-1.93-1.57-3.49-3.5-3.49h0ZM79.75,63.97H20.25V25.55h59.5v38.41h0Z" />
+            </g>
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/graphics.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">Graphics</span>
+      </a>
+      <a href="_4-games/games.html" class="nav-icon games-icon" aria-label="Games">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <defs>
+            <style>
+              .games-icon-1 { fill: var(--purple-tertiary); fill-rule: evenodd; }
+              .games-icon-2 { fill: var(--purple-primary); }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="games-icon-2" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <path class="games-icon-1" d="M70.78,49.16c-1.41,0-2.49-1.09-2.49-2.51s1.08-2.51,2.49-2.51,2.49,1.09,2.49,2.51-1.08,2.51-2.49,2.51h0ZM65.79,54.18c-1.41,0-2.49-1.09-2.49-2.51s1.08-2.51,2.49-2.51,2.49,1.09,2.49,2.51-1.08,2.51-2.49,2.51h0ZM60.8,49.16c-1.41,0-2.49-1.09-2.49-2.51s1.08-2.51,2.49-2.51,2.49,1.09,2.49,2.51-1.08,2.51-2.49,2.51h0ZM65.79,39.13c1.41,0,2.49,1.09,2.49,2.51s-1.08,2.51-2.49,2.51-2.49-1.09-2.49-2.51,1.08-2.51,2.49-2.51h0ZM39.2,48.33h-3.32v3.34c0,.92-.75,1.67-1.66,1.67s-1.66-.75-1.66-1.67v-3.34h-3.32c-.91,0-1.66-.75-1.66-1.67s.75-1.67,1.66-1.67h3.32v-3.34c0-.92.75-1.67,1.66-1.67s1.66.75,1.66,1.67v3.34h3.32c.91,0,1.66.75,1.66,1.67s-.75,1.67-1.66,1.67h0ZM69.12,26.6c-9.81,0-4.82,5.02-19.12,5.02s-9.31-5.02-19.12-5.02c-10.47,0-23.77,46.81-9.97,46.81,12.72,0,7.9-11.7,29.09-11.7s16.37,11.7,29.09,11.7c13.8,0,.5-46.81-9.97-46.81h0Z" />
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/games.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">Games</span>
+      </a>
+      <a href="_5-music/music.html" class="nav-icon music-icon" aria-label="Music">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <defs>
+            <style>
+              .music-icon-1 { fill: var(--green-primary); }
+              .music-icon-2 { fill: var(--green-tertiary); fill-rule: evenodd; }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="music-icon-1" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <g>
+              <path class="music-icon-2" d="M80.71,37.21l-34.38,8.15v28.45c-1.92-.38-3.9-.21-5.73.49-4.14,1.51-6.68,4.97-5.73,7.73.95,2.76,5.17,3.82,9.31,2.28,3.74-1.36,5.88-4.77,5.88-6.89v-27.55l26.74-6.31v23.97c-1.96-.39-3.99-.22-5.85.5-4.24,1.56-6.86,5.12-5.83,7.97,1.03,2.85,5.3,3.91,9.55,2.36,3.59-1.29,5.98-3.95,6.1-6.45l-.07-34.68Z" />
+              <path class="music-icon-2" d="M36.37,20.82c-.83-.55-1.53-1.28-2.03-2.15v-1.76c0-1.06-.85-1.91-1.89-1.91s-1.89.86-1.89,1.91v28.84c-1.83-.33-3.71-.14-5.45.53-4.11,1.5-6.62,4.96-5.68,7.73.95,2.77,5.13,3.82,9.24,2.28,2.84-1.05,4.94-3.05,5.61-5.1v-20.15c.26.2.52.39.8.55,6.31,3.82,2.84,9.86,5.92,9.89,3.96.03,4.13-14.77-4.63-20.66h0Z" />
+            </g>
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/music.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">Music</span>
+      </a>
+      <a href="_6-docs/docs.html" class="nav-icon docs-icon" aria-label="Docs">
+        <svg class="nav-legacy-art" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+          <defs>
+            <style>
+              .docs-icon-1 { fill: var(--black-primary); }
+              .docs-icon-2 { fill: var(--black-tertiary); fill-rule: evenodd; }
+            </style>
+          </defs>
+          <g id="Layer_1">
+            <circle class="docs-icon-1" cx="50" cy="50" r="50" />
+          </g>
+          <g id="Layer_2">
+            <g>
+              <path class="docs-icon-2" d="M28.09,79.75V20.25h21.91v18.37h21.91v41.13H28.09ZM55.26,22.44l10.96,10.94h-10.96v-10.94h0ZM55.26,15H22.83v70h54.35v-50.75l-21.91-19.25h0Z" />
+              <polygon class="docs-icon-2" points="33.29 47.34 66.7 47.34 66.7 50.89 33.29 50.89 33.29 47.34 33.29 47.34" />
+              <polygon class="docs-icon-2" points="33.29 40.47 44.65 40.47 44.65 43.8 33.29 43.8 33.29 40.47 33.29 40.47" />
+              <polygon class="docs-icon-2" points="33.29 54.43 66.7 54.43 66.7 57.97 33.29 57.97 33.29 54.43 33.29 54.43" />
+              <polygon class="docs-icon-2" points="33.29 61.3 66.7 61.3 66.7 64.84 33.29 64.84 33.29 61.3 33.29 61.3" />
+            </g>
+          </g>
+        </svg>
+
+        <span class="nav-miniature" aria-hidden="true">
+          <svg class="nav-model-disc" viewBox="0 0 128 112" focusable="false">
+            <circle cx="64" cy="57" r="37" class="nav-disc-edge" />
+            <circle cx="64" cy="53" r="37" class="nav-disc-face" />
+            <path d="M34 36A34 34 0 0 1 81 23M32 41A34 34 0 0 1 78 21" class="nav-disc-shine" />
+          </svg>
+          <img class="nav-model-figure" src="assets/navbar-models/docs.png" width="384" height="384" alt="" decoding="async" />
+        </span>
+        <span class="nav-model-label" aria-hidden="true">Docs</span>
+      </a>
+
+    </nav>
+    <div class="nav-hiring" role="group" aria-label="Résumé and contact">
+  <a class="nav-hiring-resume" href="assets/documents/matt-hall-resume.pdf" download="Matt Hall - Resume.pdf"><img src="assets/icons/resume-page.png" width="247" height="320" alt=""><span>Résumé <small>PDF</small></span></a>
+  <a class="nav-hiring-contact" href="mailto:MattHall.JMH@gmail.com"><svg viewBox="0 0 32 28" aria-hidden="true" focusable="false"><rect x="2" y="4" width="28" height="21" rx="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M3 6l13 10L29 6M3 24l9-9m17 9l-9-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Email me</span></a>
+      <a class="nav-sitemap" href="sitemap.html">Sitemap</a>
+    </div>
+  </div>
+</div>
+<!-- start-navigation:generated:end -->
+</div>
+    <details id="startNativeControls" class="start-native-controls"><summary>Sound &amp; visual controls</summary>
+    <div class="controller-accessible-controls" role="group" aria-label="Sound and visual preferences" aria-hidden="true" inert>
         <button id="accessibleAudioMode" type="button" aria-pressed="false">AUDIO (A)</button>
         <button id="accessibleVisualsMode" type="button" aria-pressed="true">VISUAL (V)</button>
+        <button id="accessiblePower" type="button" aria-pressed="true" disabled>Power switch (P)</button>
+        <span id="startPowerStatus" role="status" aria-live="polite">Power on.</span>
         <label>Volume <input id="accessibleVolume" type="range" min="0" max="100" step="1" value="25"></label>
         <label>Audio sync <input id="accessibleSync" type="range" min="-3000" max="3000" step="5" value="0"></label>
         <label>Brightness <input id="accessibleBrightness" type="range" min="0" max="100" step="1" value="50"></label>
         <label>Contrast <input id="accessibleContrast" type="range" min="0" max="100" step="1" value="50"></label>
-        <button id="accessibleCounts" type="button">Start audio sync exercise</button>
+        <button id="accessibleCounts" type="button">Start audio sync comparison</button>
         <button id="accessibleAlphabet" type="button" hidden>Second video hidden</button>
-        <button id="accessiblePlayPause" type="button" hidden>Tap the current sync cue</button>
-        <button id="accessibleGallery" type="button" hidden>Reset audio sync exercise</button>
+        <button id="accessiblePlayPause" type="button" hidden>Use this offset</button>
+        <button id="accessibleGallery" type="button" hidden>Cancel sync comparison</button>
         <button id="accessibleConfirmYes" type="button" hidden>Yep, proceed to the site</button>
         <button id="accessibleConfirmNo" type="button" hidden>Um, return to settings</button>
     </div>
+    </details>
     <script type="module" src="_0-start/start-page.js" defer></script>
 </body>
 </html>

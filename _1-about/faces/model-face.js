@@ -1,4 +1,4 @@
-/** References to borrowed GLTF nodes. Never reparent or dispose model resources. */
+/** Borrowed GLTF nodes: face modules never reparent or dispose them. The host's reversible layout owns reparenting. */
 export function createModelFace({id, backingName, componentNames = []}) {
   let backing = null, components = [];
   return {

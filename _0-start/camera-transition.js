@@ -29,6 +29,9 @@ export function createCameraTransition(camera, controls, positions, rotations, t
 
     return {
         target: orbitTarget,
+        shiftStartTime(deltaMs) {
+            if(Number.isFinite(deltaMs) && deltaMs > 0) startTime += deltaMs;
+        },
         sample(now) {
             const elapsed = THREE.MathUtils.clamp(now - startTime, 0, totalMs);
             const progress = elapsed / totalMs;

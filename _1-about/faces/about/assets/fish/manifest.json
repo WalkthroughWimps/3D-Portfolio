@@ -1,0 +1,76 @@
+{
+  "source": "assets/.blend/Puzzle Box Assets/.BL/Puzzle_Box_Assets/Singing_Fish/Fishing Sing.blend",
+  "asset": "fish-rig.glb",
+  "source_trim_diameter": 238.2562713623205,
+  "target_trim_diameter": 1.7,
+  "scale": 0.007135174198268134,
+  "excluded_source_mount": [
+    "Fish_Wall",
+    "Fish_Gold_Trim",
+    "Board",
+    "Plaque"
+  ],
+  "nodes": {
+    "root": "FishAssetRoot",
+    "armature": "Armature",
+    "mesh": "Fish.001",
+    "head_bone": "Head",
+    "mouth_bone": "Mouth"
+  },
+  "axis_conversion": {
+    "x": "source X",
+    "y": "source Z",
+    "z_out": "negative source Y"
+  },
+  "neutral_runtime_bounds": {
+    "x": [
+      -0.7255141139030457,
+      0.7022354602813721
+    ],
+    "y": [
+      -0.24979901313781738,
+      0.31984683871269226
+    ],
+    "z": [
+      0.14565709233283997,
+      0.2660243511199951
+    ]
+  },
+  "textures": [
+    {
+      "source": "SingingFish_Fish_BaseColor.png",
+      "export": "SingingFish_Fish_BaseColor.png_1K",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "source": "SingingFish_Fish_Normal.png",
+      "export": "SingingFish_Fish_Normal.png_1K",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "source": "SingingFish_Fish_Roughness.png",
+      "export": "SingingFish_Fish_Roughness.png_1K",
+      "size": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "source": "SingingFish_Fish_Metallic.png",
+      "export": "SingingFish_Fish_Metallic.png_1K",
+      "size": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "mouth_control": "Add local Z rotation 0..0.4 rad to exported neutral Mouth quaternion for downward jaw opening; Blender mouth_open driver is excluded.",
+  "head_control": "Add local X rotation roughly -0.25..+0.35 rad to exported neutral Head quaternion; positive swings outward (+runtime Z), negative swings inward. Confirm browser pose and clearance.",
+  "bytes": 3066712
+}

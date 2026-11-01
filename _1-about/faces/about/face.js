@@ -4,14 +4,15 @@ import {initPanelShell} from '../../../debug/panel-shell.js';
 import {createPreferences} from '../../../_7-shared-scripts/core/preferences.js';
 import {getSettingsArchive} from '../../../_7-shared-scripts/panel-assembly/SettingsArchive.mjs';
 import {createSiliconeBands} from './silicone-bands.js';
-import {ART_SAMPLES, LEGACY_SAMPLES, paintSample, paintRear} from './sample-art.js';
+import {paintSample, paintRear} from './sample-art.js';
 import {DEFAULT_GEOMETRY, THICKNESS, CLEARANCE_MARGIN, normalizeGeometry, ringBounds} from './band-shape.mjs';
 import {bindDisplayInput} from './display-input.js';
 import {createPictureLibrary, normalizeCaption, prepareImage} from './picture-library.mjs';
 import {EASING_GROUPS, EASING_IDS, EASING_LABELS, DEFAULT_EASING_POOL, easeAt} from './easing.mjs';
+import {createFishFace} from './fish-face.js';
 
 export const ABOUT_MOUNT = Object.freeze({normal: [1, 0, 0], right: [0, 0, -1], up: [0, 1, 0], center: [1.015, 0, 0]});
-const SAMPLE_KEY = 'site.about.display.sample.v2';
+const SAMPLE_KEY = 'site.about.display.sample.v3';
 const MOTION_KEY = 'site.about.display.motion.v1';
 const TAU = Math.PI * 2;
 const REST_MARGIN = .012;
@@ -105,27 +106,28 @@ function makePlan(motion, shape) {
 }
 
 /** A centered, fixed-size assembly borrowed from the cube host. */
-export function createAboutFace({focusFace = () => {}} = {}) {
+export function createPictureFace({focusFace = () => {}} = {}) {
   const binding = createModelFace({id: 'about', backingName: 'back.about'}), prefs = createPreferences();
   const library = createPictureLibrary();
   const events = new AbortController(), archive = getSettingsArchive();
   const savedRaw = prefs.getItem(SAMPLE_KEY);
-  const legacySaved = LEGACY_SAMPLES[savedRaw];
-  const saved = library.has(savedRaw) ? savedRaw : library.has(legacySaved) ? legacySaved : library.list()[0].id;
+  const saved = library.has(savedRaw) ? savedRaw : null;
   let savedMotion; try { savedMotion = JSON.parse(prefs.getItem(MOTION_KEY) || '{}'); } catch { savedMotion = {}; }
   let motion = normalizeMotion(savedMotion);
   let shape = normalizeGeometry(motion);
   const frontCanvases = [makeCanvas(2048), makeCanvas(2048)], rearCanvas = makeCanvas(1024);
   paintRear(rearCanvas);
   let activeSnapshot = library.snapshot(saved), stagedSnapshot = null;
-  const state = {bands: shape.count, sample: saved, sampleRevision: activeSnapshot.revision,
-    target: saved, targetRevision: activeSnapshot.revision, phase: 'idle', angle: 0,
+  const state = {bands: shape.count, sample: saved, sampleRevision: activeSnapshot?.revision ?? 0,
+    target: saved, targetRevision: activeSnapshot?.revision ?? 0, phase: 'idle', angle: 0,
     deployment: 0, restDeployment: 0, focusedDeployment: 0, maxDeployment: 0,
     backingBarrier: null, committed: true, photoReady: false,
     photoError: null, focused: false, elapsed: 0, plan: null, commits: [], waiting: false, posesFlat: true};
   const section = document.createElement('section');
+  const fishURL = new URL(location.href); fishURL.searchParams.set('face', 'about'); fishURL.searchParams.delete('about');
   section.innerHTML = `<h3>Ring geometry</h3>
-    <button type="button" data-about-focus>Show About face</button>
+    <button type="button" data-about-focus>Show Fish face</button>
+    <p><a data-about-fish href="${fishURL.href}">Switch to singing fish</a></p>
     <p>Rings orbit 360–480° around the face while each flips 180° toward its next artwork side. Every ring follows a planned endpoint.</p>
     <label>Ring count <input data-motion="count" type="number" min="1" max="60" step="1"></label>
     <label>Outer diameter (cube units) <input data-motion="outerDiameter" type="number" min=".6" max="1.7" step=".01"></label>
@@ -149,7 +151,7 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       <small data-easing-note></small></div>
     <label>Minimum orbit (degrees) <input data-motion="orbitMin" type="number" min="360" max="480" step="1"></label>
     <label>Maximum orbit (degrees) <input data-motion="orbitMax" type="number" min="360" max="480" step="1"></label>
-    <h3>Pictures</h3><p>Click or tap the rings to show the next picture. Edit a whole picture and its caption here.</p>
+    <h3>Pictures</h3><p>Place artwork in <code>_1-about/faces/about/assets/artwork/</code>, then refresh this page. Supported: JPEG, PNG, WebP, GIF. Captions start blank. Click or tap the rings to show the next picture.</p>
     <label>Picture <select data-about-sample></select></label>
     <div class="about-picture-actions"><button type="button" data-about-next>Next picture</button>
       <button type="button" data-picture-add>Add picture / ring set</button></div>
@@ -161,7 +163,8 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       <button type="button" data-picture-up>Move up</button><button type="button" data-picture-down>Move down</button>
       <button type="button" data-picture-remove>Remove picture</button></div>
     <p data-picture-message role="status" aria-live="polite"></p>
-    <p>Imported images are saved in this browser. A settings archive carries the picture list and captions; reimport an image on another device.</p>
+    <p data-picture-empty>There is no artwork in the folder yet. The rings are ready for your images.</p>
+    <p>Optional imported images are saved in this browser. A settings archive carries their names and captions; reimport an image on another device.</p>
     <p data-about-status role="status" aria-live="polite"></p>`;
   const select = section.querySelector('[data-about-sample]'), focusButton = section.querySelector('[data-about-focus]');
   const nextButton = section.querySelector('[data-about-next]');
@@ -174,7 +177,11 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   const easingNote = section.querySelector('[data-easing-note]');
   const css = document.createElement('link'); css.rel = 'stylesheet';
   css.href = new URL('./picture-editor.css', import.meta.url).href; document.head.append(css);
-  const shell = initPanelShell(), unregister = shell.registerContext('about', 'About', section);
+  const shell = initPanelShell(), unregister = shell.registerContext('about', 'Fish', section);
+  const constructorRoot = document.createElement('div');
+  constructorRoot.innerHTML = `<section data-section-key="fish-content-mode"><h3>Fish content</h3>
+    <p>Picture rings are active.</p><p><a href="${fishURL.href}">Switch to singing fish</a></p></section>`;
+  const unregisterConstructor = shell.registerConstructorContext('about', 'Fish', constructorRoot);
   const ORDER_MIGRATION = 'site.about.pictures-bottom.v1';
   if (!localStorage.getItem(ORDER_MIGRATION)) {
     const pictureFold = [...section.querySelectorAll('.settings-fold')]
@@ -218,20 +225,34 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       const option = document.createElement('option'); option.value = entry.id; option.textContent = entry.name; return option;
     }));
     if (library.has(id)) select.value = id;
+    section.querySelector('[data-picture-empty]').hidden = library.list().length > 0;
   }
   function renderPreview() {
     const entry = library.get(editorId);
-    if (!entry) return;
+    if (!entry) {paintSample(picturePreview, null, null); return;}
     let lines = entry.lines;
     try {lines = normalizeCaption(pictureCaption.value);} catch { /* Keep the last valid preview. */ }
     paintSample(picturePreview, {...entry, lines}, previewImage);
   }
   async function editPicture(id) {
-    const entry = library.get(id); if (!entry) return;
+    const entry = library.get(id);
+    if (!entry) {
+      editorId = null; ++previewVersion; draftBlob = null; releasePreview();
+      pictureName.value = pictureCaption.value = pictureFile.value = '';
+      pictureName.disabled = pictureCaption.disabled = pictureFile.disabled = true;
+      for (const key of ['save', 'up', 'down', 'remove'])
+        section.querySelector(`[data-picture-${key}]`).disabled = true;
+      refreshPictureList(); renderPreview(); pictureError(''); return;
+    }
     editorId = id; const version = ++previewVersion;
     draftBlob = null; releasePreview(); pictureFile.value = '';
     pictureName.value = entry.name; pictureCaption.value = entry.lines.join('\n');
-    section.querySelector('[data-picture-remove]').disabled = library.list().length <= 1;
+    pictureCaption.disabled = false;
+    pictureName.disabled = pictureFile.disabled = library.isFolder(id);
+    section.querySelector('[data-picture-save]').disabled = false;
+    section.querySelector('[data-picture-up]').disabled = library.isFolder(id);
+    section.querySelector('[data-picture-down]').disabled = library.isFolder(id);
+    section.querySelector('[data-picture-remove]').disabled = library.isFolder(id);
     refreshPictureList(id); renderPreview(); pictureError('');
     try {
       const image = await library.imageFor(entry);
@@ -305,14 +326,16 @@ export function createAboutFace({focusFace = () => {}} = {}) {
         await editPicture(entry.id); chooseSample(entry.id); return;
       }
       if (action.hasAttribute('data-picture-save')) {
+        if (!editorId) return;
         const name = pictureName.value.trim();
-        if (!name || name.length > 80) throw new Error('Give this picture a name within 80 characters.');
+        if (!name || (!library.isFolder(editorId) && name.length > 80))
+          throw new Error('Give this picture a name within 80 characters.');
         const lines = normalizeCaption(pictureCaption.value);
         const id = editorId, pendingBlob = draftBlob, previousAsset = library.get(id)?.asset;
         const draftVersion = previewVersion;
         savingPicture = true; action.disabled = true;
         try {
-          const asset = pendingBlob ? await library.saveImage(pendingBlob) : previousAsset;
+          const asset = pendingBlob && !library.isFolder(id) ? await library.saveImage(pendingBlob) : previousAsset;
           const entry = library.update(id, {name, lines, asset});
           if (editorId === id && previewVersion === draftVersion) {
             draftBlob = null; refreshPictureList(entry.id); pictureError('Saved. Showing this picture.');
@@ -325,7 +348,23 @@ export function createAboutFace({focusFace = () => {}} = {}) {
       if (action.hasAttribute('data-picture-remove')) {
         const old = editorId, entries = library.list(), index = entries.findIndex(item => item.id === old);
         library.remove(old); const next = library.list()[Math.min(index, library.list().length - 1)];
-        archive.capture('about.glass'); await editPicture(next.id); chooseSample(next.id); return;
+        archive.capture('about.glass'); void editPicture(next?.id); if (next) chooseSample(next.id);
+        else {
+          stagingVersion++; staged = false; stagedSnapshot = queued = null;
+          state.phase = 'idle'; state.plan = null; state.posesFlat = true;
+          state.sample = state.target = null; state.sampleRevision = state.targetRevision = 0;
+          activeSnapshot = null; activeSlot = 0; stagedSlot = 1;
+          paintSlot(0, null, null); paintSlot(1, null, null);
+          if (bands && host) {
+            const oldBands = bands;
+            bands = createSiliconeBands(frontCanvases, rearCanvas, shape);
+            bands.group.applyMatrix4(mountMatrix()); host.cube.add(bands.group);
+            bands.carrier.rotation.z = roll; bands.rotor.position.z = state.deployment;
+            bands.setMountDepth(state.restDeployment); bands.setContrast(contrastGain);
+            oldBands.dispose();
+          }
+          sync();
+        } return;
       }
       const offset = action.hasAttribute('data-picture-up') ? -1 : 1;
       if (library.move(editorId, offset)) {refreshPictureList(editorId); archive.capture('about.glass');}
@@ -448,9 +487,11 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   function sync() {
     if (bands) bands.group.visible = enabled && state.photoReady;
     const blocked = !host || !enabled || suspended || !state.photoReady;
-    focusButton.disabled = nextButton.disabled = select.disabled = blocked;
+    focusButton.disabled = blocked;
+    nextButton.disabled = select.disabled = blocked || library.list().length === 0;
+    section.querySelector('[data-picture-add]').disabled = false;
     section.querySelector('[data-about-status]').textContent = state.phase === 'idle'
-      ? library.get(state.sample)?.name || state.sample : state.waiting ? 'Waiting for a clear view to finish picture change'
+      ? library.get(state.sample)?.name || 'Waiting for artwork in the About folder' : state.waiting ? 'Waiting for a clear view to finish picture change'
         : `Turning to ${library.get(state.target)?.name || state.target}`;
   }
   function paintSlot(slot, snapshot, photo) {
@@ -654,31 +695,32 @@ export function createAboutFace({focusFace = () => {}} = {}) {
   function chooseSample(sample) {const snapshot = library.snapshot(sample); if (snapshot) void stageSample(snapshot);}
   function nextSample() {
     const choices = library.list().map(entry => entry.id);
+    if (!choices.length) return;
     const next = choices[(choices.indexOf(state.target) + 1) % choices.length];
     void editPicture(next);
     chooseSample(next);
   }
   const stopArchive = archive.register('about.glass', {page: 'about',
-    read: () => ({version: 8, sample: library.has(state.sample) ? state.sample : library.list()[0].id,
-      motion, pictures: library.list()}),
+    read: () => ({version: 9, sample: library.has(state.sample) ? state.sample : null,
+      motion, pictures: library.exportMetadata()}),
     validate: value => {
-      if (![2, 3, 4, 5, 6, 7, 8].includes(value?.version)) return false;
-      if (value.version < 8) return Object.hasOwn(ART_SAMPLES, value.sample)
-        || Object.hasOwn(LEGACY_SAMPLES, value.sample);
-      try {library.validateMetadata(value.pictures); return value.pictures.some(entry => entry.id === value.sample);}
+      if (![2, 3, 4, 5, 6, 7, 8, 9].includes(value?.version)) return false;
+      if (value.version < 9) return typeof value.sample === 'string';
+      try {library.validateMetadata(value.pictures); return value.sample === null || typeof value.sample === 'string';}
       catch {return false;}
     },
     apply: value => {
-      if (value.version === 8) library.applyMetadata(value.pictures);
+      stagingVersion++;
+      if (value.version === 9) library.applyMetadata(value.pictures);
       motion = normalizeMotion(value.motion); prefs.setItem(MOTION_KEY, JSON.stringify(motion)); syncControls();
       rebuildGeometry();
-      const legacySample = LEGACY_SAMPLES[value.sample];
       const sample = library.has(value.sample) ? value.sample
-        : library.has(legacySample) ? legacySample : library.list()[0].id;
+        : library.list()[0]?.id ?? null;
       refreshPictureList(sample); void editPicture(sample);
-      if (host) chooseSample(sample);
+      if (host && sample) chooseSample(sample);
       else { activeSnapshot = library.snapshot(sample); state.sample = state.target = sample;
-        state.sampleRevision = state.targetRevision = activeSnapshot.revision; select.value = sample; sync(); }
+        state.sampleRevision = state.targetRevision = activeSnapshot?.revision ?? 0;
+        if (sample) select.value = sample; else paintSlot(activeSlot, null, null); sync(); }
     }});
   section.addEventListener('click', event => {
     if (event.target.closest('[data-about-focus]') && host && enabled && !suspended) focusFace(ABOUT_MOUNT);
@@ -709,9 +751,9 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     if (disposed) return;
     detach(); host = context; binding.attach(context); suspended = false;
     activeSlot = 0; stagedSlot = 1;
-    activeSnapshot = library.snapshot(state.sample) || library.list()[0];
-    state.sample = state.target = activeSnapshot.id;
-    state.sampleRevision = state.targetRevision = activeSnapshot.revision; state.committed = true;
+    activeSnapshot = library.snapshot(state.sample) || library.list()[0] || null;
+    state.sample = state.target = activeSnapshot?.id ?? null;
+    state.sampleRevision = state.targetRevision = activeSnapshot?.revision ?? 0; state.committed = true;
     shape = normalizeGeometry(motion); state.bands = shape.count;
     clearanceProfile = measureBackingProfile(context); refreshClearance();
     paintSlot(0, activeSnapshot, null); bands = createSiliconeBands(frontCanvases, rearCanvas, shape);
@@ -720,15 +762,25 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     bands.rotor.position.z = state.deployment;
     bands.setMountDepth(state.restDeployment); bands.setContrast(contrastGain);
     const faceGeneration = generation;
-    const loadingSnapshot = activeSnapshot;
-    void library.imageFor(loadingSnapshot).then(photo => {
+    state.photoReady = true;
+    void library.loadFolder().then(async () => {
       if (faceGeneration !== generation || !host || disposed) return;
-      paintSlot(0, loadingSnapshot, photo); state.photoReady = true; sync();
+      const selected = library.snapshot(state.sample) || library.snapshot(prefs.getItem(SAMPLE_KEY))
+        || library.list()[0] || null;
+      activeSnapshot = selected;
+      state.sample = state.target = selected?.id ?? null;
+      state.sampleRevision = state.targetRevision = selected?.revision ?? 0;
+      refreshPictureList(selected?.id); void editPicture(selected?.id);
+      const loadVersion = stagingVersion;
+      const photo = await library.imageFor(selected);
+      if (faceGeneration !== generation || !host || disposed || loadVersion !== stagingVersion
+        || state.sample !== selected?.id || state.sampleRevision !== (selected?.revision ?? 0)) return;
+      paintSlot(0, selected, photo); sync();
     }).catch(error => {
       if (faceGeneration !== generation) return;
-      state.photoError = error.message; state.photoReady = true;
+      state.photoError = error.message;
       pictureError(error.message);
-      console.warn('[about face] Initial picture unavailable.', error); sync();
+      console.warn('[about face] Artwork folder unavailable.', error); sync();
     });
     input = bindDisplayInput({...context, onNext: nextSample, getDisplay: () => bands?.rotor,
       allowed: () => Boolean(host && enabled && !suspended && !rotating
@@ -813,6 +865,11 @@ export function createAboutFace({focusFace = () => {}} = {}) {
     suspend() { suspended = true; clearMotionBlur(); sync(); },
     resume() { if (!disposed) { suspended = false; sync(); } },
     dispose() { if (disposed) return; detach(); disposed = true; previewVersion++;
-      releasePreview(); events.abort(); stopArchive(); unregister(); css.remove(); }
+      releasePreview(); events.abort(); stopArchive(); unregisterConstructor(); unregister(); css.remove(); }
   };
+}
+
+export function createAboutFace(options = {}) {
+  return new URLSearchParams(location.search).get('about') === 'pictures'
+    ? createPictureFace(options) : createFishFace(options);
 }

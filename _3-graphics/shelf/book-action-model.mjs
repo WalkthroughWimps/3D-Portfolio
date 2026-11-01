@@ -32,3 +32,6 @@ export function bookClickIntent(state,hitId,selected){
   if(['spread','grid','book'].includes(state))return 'choose-book';
   return 'none';
 }
+export function gridBlankClickReturns(state,layout,startHit,endHit){
+  return state==='book'&&layout==='grid'&&startHit==null&&endHit==null;
+}

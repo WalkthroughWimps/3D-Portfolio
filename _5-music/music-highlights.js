@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {getSharedSettings} from '../_7-shared-scripts/core/settings.js';
 import {getLightScaleForValue} from '../_7-shared-scripts/scene-lighting-sync.js';
 
-export const MUSIC_GLOW_RATIOS = Object.freeze({keys: .33, labels: .33, sideGreen: .5, sideRed: .15, panelGreen: .15});
+export const MUSIC_GLOW_RATIOS = Object.freeze({keys: .33, labels: .33, sideGreen: .2, sideRed: .8, panelGreen: .2, trimRed: .8, pedals: .35});
 
 // Same intentional-highlight curve as Start and the About cube.
 export function musicContrastGlow(value = .5) {
@@ -15,6 +15,30 @@ function ancestry(node, expression) {
     if (expression.test(current.name || '')) return true;
   }
   return false;
+}
+
+function isPianoTrimSlot(name, slot) {
+  return ((['SK_backing', 'SK_fronting', 'SK_keysFronting', 'SK_top'].includes(name) && slot === 1)
+    || (['SK_bottom', 'SK_keyboard', 'pedal_box', 'SK_midrail', 'piano_leftLeg.003', 'piano_leftLeg.013'].includes(name) && slot === 0)
+    || (name === 'SK_keyboard' && slot === 2));
+}
+
+function isPedalSlot(name, slot) {
+  return slot === 0 && ['pedal_left', 'pedal_right', 'pedalRod_left', 'pedalRod_right'].includes(name);
+}
+
+function isPianoTrimSurface(node, source, slot) {
+  if(isPianoTrimSlot(node.name, slot)) return true;
+  for(let current = node; current; current = current.parent) {
+    const name = current.name || '';
+    if(['SK_backing', 'SK_fronting', 'SK_keysFronting', 'SK_top', 'SK_bottom', 'SK_keyboard', 'pedal_box'].includes(name)) return source.name === 'Borders' || (name === 'SK_keyboard' && source.name === 'Material.005');
+    if(['SK_midrail', 'piano_leftLeg.003', 'piano_leftLeg.013'].includes(name)) return source.name === 'Material.005';
+  }
+  return false;
+}
+
+function isPedalSurface(node, slot) {
+  return isPedalSlot(node.name, slot) || ancestry(node, /^(?:pedal_left|pedal_right|pedalRod_left|pedalRod_right)$/);
 }
 
 /** Scene-owned material clones; shared textures and geometry stay with the host. */
@@ -32,7 +56,7 @@ export function bindMusicHighlights({model, lights = [], keyMaterials = [], sign
   function registerMaterial(material, ratio = MUSIC_GLOW_RATIOS.keys) {
     if (!material || disposed || emissions.has(material)) return;
     emissions.set(material, {ratio, original: material.emissiveIntensity});
-    material.emissiveIntensity = musicContrastGlow(snapshot.start?.contrast) * ratio;
+    material.emissiveIntensity = (snapshot.music?.highlightsEnabled === false ? 0 : musicContrastGlow(snapshot.start?.contrast) * ratio);
   }
 
   function cloneMaterial(source, role) {
@@ -71,7 +95,10 @@ export function bindMusicHighlights({model, lights = [], keyMaterials = [], sign
       // dark green to full-strength green would make broad panels look neon.
       material.emissive.copy(source.color);
       material.emissiveMap = source.map || null;
-      registerMaterial(material, role === 'panel-green' ? MUSIC_GLOW_RATIOS.panelGreen : MUSIC_GLOW_RATIOS.keys);
+      const ratio = role === 'panel-green' ? MUSIC_GLOW_RATIOS.panelGreen
+        : role === 'piano-trim' ? MUSIC_GLOW_RATIOS.trimRed
+        : role === 'pedals' ? MUSIC_GLOW_RATIOS.pedals : MUSIC_GLOW_RATIOS.keys;
+      registerMaterial(material, ratio);
     }
     return material;
   }
@@ -79,12 +106,14 @@ export function bindMusicHighlights({model, lights = [], keyMaterials = [], sign
   model.traverse(node => {
     if (!node.material) return;
     const originals = Array.isArray(node.material) ? node.material : [node.material];
-    const next = originals.map(source => {
+    const next = originals.map((source, slot) => {
       if (!source) return source;
       let role;
       if (node.isSprite && ancestry(node, /^(?:user_stickers_group|qwerty_labels_group)$/)) role = 'sprite-label';
       else if (ancestry(node, /^\d{3}_[A-G]#?\d$/)) role = 'key';
       else if (/^(?:noteSticker|noteAccidental|noteText)/i.test(node.name)) role = 'label';
+      else if (isPedalSurface(node, slot)) role = 'pedals';
+      else if (isPianoTrimSurface(node, source, slot)) role = 'piano-trim';
       else if (ancestry(node, /^(?:piano_leftLeg|stripey_stripes)/) && /^Plane_baked/.test(source.name) && source.map) role = 'side-stripes';
       else if (ancestry(node, /^(?:SK_(?:backing|fronting|keysFronting|top|keyboard|bottom|midrail)|piano_leftLeg|stripey_stripes)/)
         && source.color?.g > Math.max(source.color.r, source.color.b) * 1.25) role = 'panel-green';
@@ -104,9 +133,10 @@ export function bindMusicHighlights({model, lights = [], keyMaterials = [], sign
   function apply(next = settings.get()) {
     if (disposed) return;
     snapshot = next;
-    const glow = musicContrastGlow(next.start?.contrast);
+    const enabled = next.music?.highlightsEnabled !== false;
+    const glow = enabled ? musicContrastGlow(next.start?.contrast) : 0;
     for (const [material, {ratio}] of emissions) material.emissiveIntensity = glow * ratio;
-    for (const [material, color] of sprites) material.color.copy(color).multiplyScalar(glow * MUSIC_GLOW_RATIOS.labels);
+    for (const [material, color] of sprites) material.color.copy(color).multiplyScalar(enabled ? glow * MUSIC_GLOW_RATIOS.labels : 1);
     for (const uniform of stripeUniforms) uniform.value = glow;
     const brightness = THREE.MathUtils.clamp(next.start?.brightness ?? .5, 0, 1);
     const lightScale = getLightScaleForValue(.005 + .995 * brightness) * (1 + 2.15 * Math.pow(brightness, 1.35)) / 2.9925;
@@ -114,7 +144,7 @@ export function bindMusicHighlights({model, lights = [], keyMaterials = [], sign
   }
 
   const stop = settings.subscribe((next, change) => {
-    if (!change?.changed?.length || change.changed.some(key => key === 'start.contrast' || key === 'start.brightness')) apply(next);
+    if (!change?.changed?.length || change.changed.some(key => key === 'start.contrast' || key === 'start.brightness' || key === 'music.highlightsEnabled')) apply(next);
   }, {immediate: true});
 
   function dispose() {

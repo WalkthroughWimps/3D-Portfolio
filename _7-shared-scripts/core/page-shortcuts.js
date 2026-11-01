@@ -1,3 +1,6 @@
+import { mountCollapsibleSections } from '../panel-assembly/CollapsibleSections.mjs';
+import { createKeyboardActions, isInteractiveKeyboardTarget } from './keyboard-actions.js';
+
 // One action per row. | separates alternatives; + joins a chord.
 const PAGE_SHORTCUTS = {
   start: [
@@ -21,7 +24,13 @@ const PAGE_SHORTCUTS = {
       ['Wind one second', 'Shift + Left | Shift + Right'], ['Reel start', 'Home'],
       ['Reel end', 'End'], ['Split selected clip', 'S']
     ] },
-    { title: 'Refs face · editor', note: 'Available while the editor canvas has focus.', rows: [
+    { title: 'Oddio face · clip gestures', note: 'Available while Oddio faces you and its controls are unlocked.', rows: [
+      ['Move a clip; Shift widens the snap range', 'Drag clip | Shift + drag'],
+      ['Copy a clip while moving it', 'Alt + drag clip'],
+      ['Trim or stretch an edge', 'Drag edge | Shift + drag edge'],
+      ['Cancel a clip drag', 'Esc']
+    ] },
+    { title: 'About face · editor', note: 'Available while the editor canvas has focus.', rows: [
       ['Nudge the selected element one pixel', 'Arrow keys'],
       ['Nudge ten pixels', 'Shift + Arrow keys'],
       ['Cancel the current edit gesture', 'Esc']
@@ -69,7 +78,7 @@ const PAGE_SHORTCUTS = {
       ['Move one handle independently', 'Alt + drag handle']
     ] },
     { title: 'Notes face · Layers', advanced: true, rows: [
-      ['Open Layers', 'F7'], ['Add a pane (up to three)', 'Mod + Alt + N'],
+      ['Add a pane (up to three)', 'Mod + Alt + N'],
       ['Activate a pane', 'Alt + 1–3'], ['Move selection to a pane', 'Mod + Alt + 1–3'],
       ['Toggle pane visibility', 'Shift + V'], ['Toggle pane lock', 'Shift + K'],
       ['Raise selection', 'Mod + ]'], ['Lower selection', 'Mod + ['],
@@ -88,7 +97,7 @@ const PAGE_SHORTCUTS = {
     ] }
   ],
   videos: [
-    { title: 'Intro', rows: [['Play when ready', 'P'], ['Skip', 'S']] },
+    { title: 'Intro', rows: ['videos.intro.play', ['Skip', 'S']] },
     { title: 'Video player', rows: [
       ['Play or pause', 'K | Space'], ['Back ten seconds', 'J'],
       ['Forward ten seconds', 'L'], ['Mute or unmute', 'M'],
@@ -103,7 +112,9 @@ const PAGE_SHORTCUTS = {
       ['Zoom', 'Wheel'], ['Focus an object', 'Middle click'], ['Pan', 'Middle drag'],
       ['Reset pan', 'Double middle click'], ['Rotate', 'Right drag'],
       ['Reset rotation and zoom', 'Double right click'],
-      ['Choose an item or navigation', 'Tab'], ['Activate it', 'Enter']
+      ['Choose an item or navigation', 'Tab'], ['Activate it', 'Enter'],
+      'graphics.manual.left', 'graphics.manual.right', 'graphics.manual.up',
+      'graphics.manual.down', 'graphics.manual.scale-in', 'graphics.manual.scale-out'
     ] }
   ],
   games: [
@@ -128,9 +139,9 @@ const PAGE_SHORTCUTS = {
     { title: 'Navigation', rows: [['Move among instruments, video controls, and settings', 'Tab']] }
   ],
   docs: [
-    { title: 'Cards', rows: [
-      ['Flip all cards', 'A'], ['Flip selected cards', 'F'],
-      ['Turn a card left', 'L'], ['Turn a card right', 'R']
+    { title: 'Document desk', rows: [
+      ['Rotate the desk view', 'Drag'], ['Zoom the view', 'Wheel'],
+      ['Open a document', 'Click a paper or list item'], ['Close a document', 'Esc']
     ] }
   ]
 };
@@ -140,20 +151,23 @@ const VIDEO_SHORTCUTS = [
     ['Play or pause', 'Space | K'], ['Back ten seconds', 'J'],
     ['Forward ten seconds', 'L'], ['Back five seconds', 'Left'],
     ['Forward five seconds', 'Right'], ['Volume up', 'Up'], ['Volume down', 'Down'],
-    ['Mute or unmute', 'M'], ['Toggle player view', 'F'], ['Exit player', 'Esc']
+    ['Mute or unmute', 'M'], ['Start or end', 'Home | End'],
+    ['Toggle player view', 'F'], ['Exit player', 'Esc']
   ] },
   { title: 'When the player is active', rows: [
     ['Decrease or increase playback speed', 'Shift + , | Shift + .'],
-    ['Previous or next frame while paused', ', | .'], ['Seek by percentage', '0–9']
+    ['Previous or next frame while paused', ', | .'], ['Seek by percentage', '0–9'],
+    ['Show this guide', '?']
   ] }
 ];
 
-const GRAPHICS_ACTIONS = { l: 'left', r: 'right', u: 'up', d: 'down', i: 'scale-in', o: 'scale-out' };
+const GRAPHICS_KEYS = { left: 'L', right: 'R', up: 'U', down: 'D', 'scale-in': 'I', 'scale-out': 'O' };
+const GRAPHICS_LABELS = {
+  left: 'Move manual control left', right: 'Move manual control right',
+  up: 'Move manual control up', down: 'Move manual control down',
+  'scale-in': 'Scale manual control in', 'scale-out': 'Scale manual control out'
+};
 let guideSerial = 0;
-
-function isTypingTarget(target) {
-  return !!target?.closest?.('input, textarea, select, [contenteditable="true"], [role="textbox"]');
-}
 
 function isVisible(element) {
   return !!element && element.getClientRects().length > 0 && !element.closest('[hidden], [inert]');
@@ -193,10 +207,10 @@ function renderKeys(root, expression) {
   return keys;
 }
 
-export function createShortcutGuide({ root = document, title = 'Keyboard shortcuts', sections = [], description = 'Shortcuts work when you are not typing in a field.', id, onClose } = {}) {
+export function createShortcutGuide({ root = document, title = 'Keyboard shortcuts', sections = [], description = 'Shortcuts work when you are not typing in a field.', id, onClose, actions } = {}) {
   const dialog = root.createElement('dialog');
   dialog.className = 'site-shortcuts-dialog site-shortcuts-guide';
-  if (id) dialog.id = id;
+  dialog.id = id || `site-shortcuts-guide-${++guideSerial}`;
   const header = root.createElement('header');
   header.className = 'site-shortcuts-header';
   const heading = root.createElement('h2');
@@ -212,21 +226,27 @@ export function createShortcutGuide({ root = document, title = 'Keyboard shortcu
   header.append(heading, close);
   const body = root.createElement('div');
   body.className = 'site-shortcuts-body';
+  body.dataset.panel = 'guide';
   if (description) {
     const intro = root.createElement('p');
     intro.className = 'site-shortcuts-intro';
     intro.textContent = description;
     body.append(intro);
   }
-  for (const { title: sectionTitle, note, rows, advanced } of [...sections, { title: 'Help', rows: [['Show or hide this guide', '?']] }]) {
-    const section = root.createElement(advanced ? 'details' : 'section');
+  const registeredRows = [];
+  const sectionIds = new Map();
+  for (const { id: sectionId, title: sectionTitle, note, rows, advanced } of [...sections, { id: 'help', title: 'Help', rows: actions ? ['guide.toggle', 'settings.toggle', 'debug.toggle'] : [['Show or hide this guide', '?']] }]) {
+    const section = root.createElement('details');
     section.className = 'site-shortcuts-section';
-    const sectionHeading = root.createElement(advanced ? 'summary' : 'h3');
-    if (advanced) {
-      const heading = root.createElement('h3');
-      heading.textContent = sectionTitle;
-      sectionHeading.append(heading);
-    } else sectionHeading.textContent = sectionTitle;
+    section.open = !advanced;
+    const base = sectionId || sectionTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const index = sectionIds.get(base) || 0;
+    sectionIds.set(base, index + 1);
+    section.dataset.sectionId = index ? `${base}-${index}` : base;
+    const sectionHeading = root.createElement('summary');
+    const sectionLabel = root.createElement('h3');
+    sectionLabel.textContent = sectionTitle;
+    sectionHeading.append(sectionLabel);
     section.append(sectionHeading);
     if (note) {
       const explanation = root.createElement('p');
@@ -235,12 +255,16 @@ export function createShortcutGuide({ root = document, title = 'Keyboard shortcu
       section.append(explanation);
     }
     const list = root.createElement('dl');
-    for (const [action, expression] of rows) {
+    for (const row of rows) {
+      const registered = typeof row === 'string' ? actions?.get(row) : null;
+      if (typeof row === 'string' && !registered) continue;
+      const [action, expression] = registered ? [registered.label, registered.keys] : row;
       const term = root.createElement('dt');
       term.textContent = action;
       const detail = root.createElement('dd');
       detail.append(renderKeys(root, expression));
       list.append(term, detail);
+      if (registered) registeredRows.push({ action: registered, term, detail });
     }
     section.append(list);
     body.append(section);
@@ -257,34 +281,46 @@ export function createShortcutGuide({ root = document, title = 'Keyboard shortcu
   });
   dialog.addEventListener('close', () => onClose?.());
   root.body.append(dialog);
+  const folds = mountCollapsibleSections(dialog, { scope: `shortcuts:${id || title}`, headings: false, reorder: false });
   return {
     dialog,
     body,
     open() {
       if (dialog.open || hasOtherModal(dialog)) return false;
+      for (const { action, term, detail } of registeredRows) {
+        const target = action.target?.();
+        const available = !action.target || (isVisible(target) && !target.disabled);
+        term.hidden = detail.hidden = !available;
+        term.style.display = detail.style.display = available ? '' : 'none';
+      }
       body.scrollTop = 0;
       dialog.showModal();
       heading.focus({ preventScroll: true });
       return true;
     },
     close() { if (dialog.open) dialog.close(); },
-    remove() { if (dialog.open) dialog.close(); dialog.remove(); }
+    remove() { if (dialog.open) dialog.close(); folds.dispose(); dialog.remove(); }
   };
 }
 
 export function createVideoShortcutGuide(options = {}) {
-  return createShortcutGuide({ ...options, title: 'Video keyboard shortcuts', sections: VIDEO_SHORTCUTS,
+  const sections = VIDEO_SHORTCUTS.map(section => ({ ...section, rows: section.rows.filter(([label]) =>
+    (options.playerView === true || label !== 'Toggle player view') &&
+    (options.exit !== false || label !== 'Exit player')) }));
+  if (options.captions || options.tabletView) sections[0].rows.push(
+    ...(options.captions ? [['Toggle captions', 'C']] : []),
+    ...(options.tabletView ? [['Toggle tablet view', 'T']] : []));
+  return createShortcutGuide({ ...options, title: 'Video keyboard shortcuts', sections,
     description: 'These shortcuts work while the video player is active.' });
 }
 
-export function mountPageShortcuts({ pageId, root = document, scope }) {
+export function mountPageShortcuts({ pageId, root = document, scope, getPanels = () => null }) {
+  const actions = createKeyboardActions();
   const trigger = root.createElement('button');
   trigger.type = 'button';
   trigger.className = 'site-shortcuts-trigger';
-  trigger.textContent = 'Shortcuts (?)';
-  trigger.setAttribute('aria-keyshortcuts', 'Shift+/');
-  const guide = createShortcutGuide({ root, sections: PAGE_SHORTCUTS[pageId] || [], onClose: () => trigger.focus() });
-  const { dialog } = guide;
+  trigger.textContent = 'Shortcuts';
+  let guide;
   if (pageId === 'about') {
     const navWrap = root.querySelector('.nav-wrap');
     const launchers = root.createElement('div');
@@ -318,59 +354,85 @@ export function mountPageShortcuts({ pageId, root = document, scope }) {
   } else root.body.append(trigger);
 
   function toggle() {
-    if (dialog.open) guide.close();
-    else guide.open();
+    if (guide.dialog.open) { guide.close(); return true; }
+    return guide.open();
   }
   scope.listen(trigger, 'click', toggle);
 
+  actions.register({
+    id: 'guide.toggle', scope: pageId, label: 'Show or hide this guide', keys: '?', ariaKeys: 'Shift+/',
+    priority: 100, target: () => trigger,
+    match: event => event.key === '?' || (event.code === 'Slash' && event.shiftKey),
+    enabled: () => guide.dialog.open || !hasOtherModal(guide.dialog),
+    run: () => toggle()
+  });
+  for (const [id, key, label, method] of [
+    ['settings.toggle', 's', 'Show or hide Settings', 'toggleSettings'],
+    ['debug.toggle', 'd', 'Show or hide Debug', 'toggleDebug']
+  ]) actions.register({
+    id, scope: pageId, label, keys: `Alt + Shift + ${key.toUpperCase()}`,
+    ariaKeys: `Alt+Shift+${key.toUpperCase()}`, priority: 110,
+    match: event => !event.repeat && event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === key,
+    enabled: () => !!getPanels()?.[method],
+    run: () => { const panel = getPanels(); if (!panel?.[method]) return false; panel[method](); return true; }
+  });
   if (pageId === 'graphics') {
-    for (const [key, action] of Object.entries(GRAPHICS_ACTIONS)) {
-      const button = root.querySelector(`#manual-controls button[data-action="${action}"]`);
-      if (!button) continue;
-      button.dataset.shortcut = key.toUpperCase();
-      button.setAttribute('aria-keyshortcuts', key.toUpperCase());
+    for (const [name, key] of Object.entries(GRAPHICS_KEYS)) {
+      const target = () => root.querySelector(`#manual-controls button[data-action="${name}"]`);
+      actions.register({
+        id: `graphics.manual.${name}`, scope: pageId, label: GRAPHICS_LABELS[name], keys: key,
+        ariaKeys: key, target,
+        match: event => !event.shiftKey && !event.repeat && event.key.toUpperCase() === key,
+        enabled: () => { const button = target(); return isVisible(button) && !button.disabled; },
+        run: () => { target().click(); return true; }
+      });
     }
   }
   if (pageId === 'videos') {
-    const play = root.getElementById('introPlay');
-    if (play) {
-      play.dataset.shortcut = 'P';
-      play.setAttribute('aria-keyshortcuts', 'P');
-    }
+    const target = () => root.getElementById('introPlay');
+    actions.register({
+      id: 'videos.intro.play', scope: pageId, label: 'Play when ready', keys: 'P', ariaKeys: 'P', target,
+      match: event => !event.shiftKey && !event.repeat && event.key.toLowerCase() === 'p',
+      enabled: () => { const button = target(); return isVisible(button) && !button.disabled; },
+      run: () => { target().click(); return true; }
+    });
     const skip = root.getElementById('introSkip');
     if (skip) skip.setAttribute('aria-keyshortcuts', 'S');
   }
 
+  for (const action of actions.list(pageId)) {
+    const target = action.target?.();
+    if (!target) continue;
+    const previousAria = target.getAttribute('aria-keyshortcuts');
+    const previousHint = target.getAttribute('data-shortcut');
+    target.setAttribute('aria-keyshortcuts', action.ariaKeys || action.keys);
+    target.dataset.shortcut = action.keys;
+    scope.defer(() => {
+      if (previousAria === null) target.removeAttribute('aria-keyshortcuts');
+      else target.setAttribute('aria-keyshortcuts', previousAria);
+      if (previousHint === null) target.removeAttribute('data-shortcut');
+      else target.setAttribute('data-shortcut', previousHint);
+    });
+  }
+  guide = createShortcutGuide({ root, id: `site-shortcuts-${pageId}`,
+    sections: PAGE_SHORTCUTS[pageId] || [], actions, onClose: () => trigger.focus() });
+
   scope.listen(globalThis, 'keydown', event => {
-    if (event.ctrlKey || event.altKey || event.metaKey || isTypingTarget(event.target)) return;
-    const helpKey = event.key === '?' || (event.code === 'Slash' && event.shiftKey);
-    if (helpKey) {
-      if (!dialog.open && hasOtherModal(dialog)) return;
+    const panelChord = event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey &&
+      ['s', 'd'].includes(event.key.toLowerCase());
+    const inputTarget = event.target?.closest?.('input');
+    const typingInput = inputTarget && !['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'image', 'color', 'file', 'hidden'].includes(inputTarget.type);
+    const textTarget = typingInput || event.target?.isContentEditable ||
+      event.target?.closest?.('textarea, select, [role="textbox"], [role="combobox"], [role="spinbutton"]');
+    if (event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey ||
+        (event.altKey && !panelChord) || (panelChord ? !!textTarget : isInteractiveKeyboardTarget(event.target))) return;
+    if (!guide.dialog.open && hasOtherModal(guide.dialog)) return;
+    if (guide.dialog.open && !(event.key === '?' || (event.code === 'Slash' && event.shiftKey))) return;
+    if (actions.dispatch(event, pageId)) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      toggle();
-      return;
-    }
-    if (dialog.open || hasOtherModal(dialog)) return;
-    if (event.shiftKey || event.repeat) return;
-    const key = event.key.toLowerCase();
-    if (pageId === 'graphics' && GRAPHICS_ACTIONS[key]) {
-      const button = root.querySelector(`#manual-controls button[data-action="${GRAPHICS_ACTIONS[key]}"]`);
-      if (isVisible(button) && !button.disabled) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        button.click();
-      }
-    }
-    if (pageId === 'videos' && key === 'p') {
-      const button = root.getElementById('introPlay');
-      if (isVisible(button) && !button.disabled) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        button.click();
-      }
     }
   }, { capture: true });
-  scope.defer(() => { guide.remove(); trigger.remove(); });
-  return { show: guide.open };
+  scope.defer(() => { actions.dispose(); guide.remove(); trigger.remove(); });
+  return { show: guide.open, actions };
 }

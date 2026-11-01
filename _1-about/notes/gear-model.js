@@ -101,6 +101,42 @@ export function gearSizing(setup) {
   const smallTeeth=boundedInt(setup.smallTeeth??roller.teeth,8,maxSmall);
   return {largeTeeth,smallTeeth,minLarge,maxLarge,minSmall:8,maxSmall,pitch};
 }
+// Curate automatic setups for interlacing rather than one-lap polygonal traces.
+// Explicit tooth edits continue to use gearSizing without this preference.
+export function compatibleGearSetup(setup, { large = setup.largeTeeth, small = setup.smallTeeth } = {}) {
+  const bounds = gearSizing(setup), wantedLarge = boundedInt(large ?? bounds.largeTeeth, bounds.minLarge, bounds.maxLarge);
+  const roller = rollerFor(setup);
+  // Fit can enlarge a guide without enlarging its roller. Preserve each
+  // roller profile's relative size while giving the pen a broader reach.
+  const preferredSmall = Math.max(boundedInt(small ?? roller.teeth, 8, 80),
+    Math.round(wantedLarge / 3.4 * roller.teeth / 32));
+  // Curvature caps several profiles at the same size; reserve smaller shares
+  // for the smaller rollers so switching presets still changes the trace.
+  const profileCap = Math.max(8, Math.round(bounds.maxSmall * Math.min(1,
+    roller.teeth / 40 + Math.max(0, roller.teeth - 32) / 20)));
+  const constrained = preferredSmall > profileCap;
+  const wantedSmall = Math.min(preferredSmall, profileCap);
+  const base = baseTrack(setup.guide), profileBound = rollerProfile(roller).bound;
+  const target = setup.layout === 'compact' ? 300 : 470;
+  let best = null;
+  for (let largeTeeth = bounds.minLarge; largeTeeth <= bounds.maxLarge; largeTeeth++) {
+    const maxSmall = gearSizing({ ...setup, largeTeeth, smallTeeth: 80 }).maxSmall;
+    for (let smallTeeth = 8; smallTeeth <= maxSmall; smallTeeth++) {
+      const envelope = base.radius * largeTeeth / base.teeth
+        + (setup.inside ? 0 : 2 * bounds.pitch * smallTeeth * profileBound);
+      if (envelope > target) continue;
+      const divisor = gcd(largeTeeth, smallTeeth), laps = smallTeeth / divisor, lobes = largeTeeth / divisor;
+      const ratio = largeTeeth / smallTeeth;
+      if (laps < 3 || laps > 6 || lobes < 12 || lobes > 42 || ratio < 2.5 || ratio > 12) continue;
+      const score = Math.abs(largeTeeth - wantedLarge) * 2 + Math.abs(smallTeeth - wantedSmall) * (constrained ? 6 : 2)
+        + Math.abs(laps - 4.5) * 7 + Math.abs(lobes - 24) * .4;
+      if (!best || score < best.score || score === best.score && smallTeeth < best.smallTeeth)
+        best = { largeTeeth, smallTeeth, score };
+    }
+  }
+  if (!best) return { ...setup, largeTeeth: bounds.largeTeeth, smallTeeth: bounds.smallTeeth };
+  return { ...setup, largeTeeth: best.largeTeeth, smallTeeth: best.smallTeeth };
+}
 export function independentGearSetup(setup) {
   if(Number.isFinite(setup.largeTeeth)||Number.isFinite(setup.smallTeeth)){const {largeTeeth,smallTeeth}=gearSizing(setup);return {...setup,largeTeeth,smallTeeth};}
   const base=baseTrack(setup.guide),geom=gearGeometry(setup,false),pitch=base.length/TAU/base.teeth;
@@ -160,6 +196,18 @@ export function gearGeometry(setup, sample = true) {
   if (sample) points[count] = { ...points[0] };
   return { track, radius, profile, pins, total, points, pose, laps, teeth, envelope: inside ? track.radius : track.radius + 2 * profile.bound };
 }
+export function gearOutlines(setup, progress = 0, geom = gearGeometry(setup)) {
+  const pose = geom.pose(progress);
+  const guide = Array.from({ length: geom.track.teeth * 4 }, (_, i) => {
+    const p = geom.track.at(i / (geom.track.teeth * 4) * geom.track.length), tooth = i % 4 < 2 ? 3 : -2;
+    return { x: setup.x + p.x + tooth * Math.cos(p.normal), y: setup.y + p.y + tooth * Math.sin(p.normal) };
+  });
+  const roller = Array.from({ length: geom.teeth * 4 }, (_, i) => {
+    const p = geom.profile.atArc(i / (geom.teeth * 4) * geom.profile.length), tooth = i % 4 < 2 ? 2.5 : -2;
+    return pose.world({ x: p.x + tooth * Math.cos(p.normal), y: p.y + tooth * Math.sin(p.normal) });
+  });
+  return { guide, roller, pose, geom };
+}
 // Changing the roller chooses its most visible starting contact, never a new
 // guide position. For rim placements this keeps the roller on the glass.
 export function visibleGearPhase(setup) {
@@ -178,13 +226,34 @@ export function restoreGears(value, layers) {
     const result = { layerId: s.layerId, guide, roller: roller.id, teeth: roller.teeth, hole: HOLES.includes(s.hole) ? s.hole : .68,
       size: Number.isFinite(s.size) ? Math.max(0, Math.min(100, s.size)) : null, scale: Math.max(.25, Math.min(8, Number.isFinite(s.scale) ? s.scale : 1)), layout: s.layout === 'compact' ? 'compact' : 'pane',
       x: Math.max(4, Math.min(996, Number.isFinite(s.x) ? s.x : 500)), y: Math.max(4, Math.min(996, Number.isFinite(s.y) ? s.y : 500)),
-      phase: Number.isFinite(s.phase) ? ((s.phase % 1) + 1) % 1 : 0, inside: s.inside===true || guide === 'circle' && s.inside !== false };
+      phase: Number.isFinite(s.phase) ? ((s.phase % 1) + 1) % 1 : 0, inside: s.inside===true || guide === 'circle' && s.inside !== false,
+      manualTeeth: s.manualTeeth === true };
     if(Number.isFinite(s.largeTeeth)||Number.isFinite(s.smallTeeth)) {
       const {largeTeeth,smallTeeth}=gearSizing({...result,largeTeeth:s.largeTeeth,smallTeeth:s.smallTeeth});Object.assign(result,{largeTeeth,smallTeeth});
     }
     const dx = result.x - 500, dy = result.y - 500, factor = Math.min(1, 496 / (Math.hypot(dx, dy) || 1));
     result.x = 500 + dx * factor; result.y = 500 + dy * factor; return result;
   });
+}
+
+// A gear recipe is small metadata beside existing editable geometry. Invalid
+// metadata never invalidates the artwork that carries it.
+export function validateGearRecipe(raw, shape) {
+  const finite = (value, min, max) => Number.isFinite(value) && value >= min && value <= max;
+  const integer = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || raw.version !== 1 ||
+    !['trace', 'large', 'small'].includes(raw.kind) ||
+    !GUIDES.some(guide => guide.id === raw.guide) || !ROLLERS.some(roller => roller.id === raw.roller) ||
+    !integer(raw.largeTeeth, 24, 1000) || !integer(raw.smallTeeth, 8, 80) || !integer(raw.hole, 1, 10) ||
+    typeof raw.inside !== 'boolean' || !finite(raw.phase, 0, 1) || !finite(raw.progress, raw.kind === 'trace' ? Number.EPSILON : 0, 1) ||
+    !finite(raw.baseWidth, 4, 6000) || !finite(raw.baseHeight, 4, 6000) ||
+    shape && (raw.kind === 'trace' ? shape.type !== 'pencil' : shape.type !== 'path')) return null;
+  const sizing = gearSizing(raw);
+  if (sizing.largeTeeth !== raw.largeTeeth || sizing.smallTeeth !== raw.smallTeeth) return null;
+  return { version: 1, kind: raw.kind, guide: raw.guide, roller: raw.roller,
+    largeTeeth: raw.largeTeeth, smallTeeth: raw.smallTeeth, hole: raw.hole,
+    inside: raw.inside, phase: raw.phase, progress: raw.progress,
+    baseWidth: raw.baseWidth, baseHeight: raw.baseHeight };
 }
 
 // The hover cue and the gesture use the same generous hit regions.

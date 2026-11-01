@@ -4,6 +4,7 @@ import {createLaneCircuit,LANE_DEFAULTS} from './audio-effects.mjs?v=track-meter
 import {sessionObject,unpackSession,wavBlob} from './session-io.mjs?v=panel-custom-1';
 import {prepareAudioFile,localAudioContext,audioDeadline} from './audio-import.mjs?v=import-1';
 import {capturePlan} from './capture-placement.mjs?v=capture-1';
+import {analyzeFishSource,fishSourceAt,fishSourceStatus} from './fish-audio-analysis.mjs?v=source-voice-1';
 export const LIMITS = Object.freeze({ lanes: 4, clips: 48, reel: 60, clip: 30, storage: 120, fileBytes: 20 * 1024 * 1024, sampleRate: 24000 });
 export const duration = clip => (clip.out - clip.in) / clip.rate;
 export const sourceSeconds = clips => [...new Set(clips.map(c => c.buffer))].reduce((sum, buffer) => sum + buffer.duration, 0);
@@ -35,6 +36,31 @@ export function createAudioEngine(onChange = () => {}, {now = () => performance.
   function remember(){undoStack.push(snapshot());redoStack.length=0;pruneHistory();}
   const meterData = new Uint8Array(256);
   const emit = () => onChange();
+  const analyzeForFish = buffer => analyzeFishSource(buffer, () => { if (!disposed && clips.some(clip => clip.buffer === buffer)) emit(); });
+  function fishSignal() {
+    if (!playing || !context || context.state !== 'running' || outputMuted || siteMuted || volume <= 0) return {level: 0, kind: 'silence'};
+    const elapsed = context.currentTime - audioOrigin;
+    if (context.currentTime < (direction < 0 ? audioOrigin : audioOrigin + playStart)) return {level: 0, kind: 'silence'};
+    const tapeTime = direction < 0 ? playStart - elapsed : elapsed;
+    if (direction < 0 ? tapeTime <= playUntil : tapeTime >= playUntil) return {level: 0, kind: 'silence'};
+    let voice = 0, music = 0, overall = 0;
+    for (const clip of activeClips) {
+      const window = visibleInterval(clip, clips);
+      if (tapeTime < window.start || tapeTime >= window.end || soloClip && clip.id !== soloClip.id) continue;
+      const lane = lanes[clip.lane];
+      if (lane.muted && soloClip?.id !== clip.id) continue;
+      const blend = clip.links?.some(link => link.mode === 'blend') ? Math.SQRT1_2 : 1;
+      const gain = volume * lane.gain * (clip.gain ?? 1) * blend;
+      if (gain <= 0) continue;
+      const frame = fishSourceAt(clip.buffer, sourceTimeAt(clip, tapeTime));
+      voice = Math.max(voice, frame.voice * gain);
+      music = Math.max(music, frame.music * gain);
+      overall = Math.max(overall, frame.overall * gain);
+    }
+    if (voice > .004) return {level: Math.min(1, voice), kind: 'voice'};
+    if (music > .004) return {level: Math.min(1, music), kind: 'music'};
+    return {level: Math.min(1, overall), kind: overall > .004 ? 'overall' : 'silence'};
+  }
   async function wake() {
     if (disposed) throw new Error('This deck has closed.');
     if (!context) {
@@ -160,7 +186,7 @@ export function createAudioEngine(onChange = () => {}, {now = () => performance.
     if(capturePreview&&recorder){capturePreview.seconds=elapsed;if(captureAnalyser){captureAnalyser.getByteTimeDomainData(meterData);let peak=0;for(const sample of meterData)peak=Math.max(peak,Math.abs(sample-128)/128);const index=Math.min(255,Math.floor(elapsed*8));capturePreview.peaks[index]=Math.max(capturePreview.peaks[index]||0,peak);}}
     return {position: recorder&&capturePreview?clampTapePosition(capturePreview.start+elapsed):clampTapePosition(clock()), recording: elapsed};
   }
-  function captureCandidate(buffer,name,id,start,lane,recorded=false){if(start>=60)throw Error("Move the playhead before 60 seconds to add sound.");return {id,name,buffer,lane,start,in:0,out:Math.min(buffer.duration,LIMITS.clip,60-start),rate:1,gain:1,reversed:false,links:[],visualRecorded:recorded,visualRecordedId:recorded?id:null};}
+  function captureCandidate(buffer,name,id,start,lane,recorded=false){if(start>=60)throw Error("Move the playhead before 60 seconds to add sound.");analyzeForFish(buffer);return {id,name,buffer,lane,start,in:0,out:Math.min(buffer.duration,LIMITS.clip,60-start),rate:1,gain:1,reversed:false,links:[],visualRecorded:recorded,visualRecordedId:recorded?id:null};}
   function finishCapture(buffer,name,{id,start,lane,recorded=false}){
     if(disposed)return;
     if(clips.length>=LIMITS.clips)throw Error('The 48-strip rack is full. Remove a strip first.');
@@ -179,7 +205,7 @@ export function createAudioEngine(onChange = () => {}, {now = () => performance.
     if (sourceSeconds(clips) + buffer.duration > LIMITS.storage) throw new Error('Source storage is full (120 seconds). Remove every clip using an unwanted sound to free it. Copies share their original source.');
     const slot = firstSlot(clips, buffer, preferred);
     remember();pause(); const clip = { id: crypto.randomUUID(), name: name.slice(0, 64), buffer, ...slot, in: 0, out: buffer.duration, rate: 1, gain:1, reversed:false };
-    clips.push(clip);pruneHistory(); emit(); return clip;
+    clips.push(clip);analyzeForFish(buffer);pruneHistory(); emit(); return clip;
   }
   async function decode(blob, name, lane = 0) {
     const buffer=await prepareAudioFile(blob,{limits:LIMITS,signal:loadController?.signal,onStage:stage=>{if(loading){loading={...loading,stage};emit();}},validate:decoded=>{
@@ -282,13 +308,13 @@ export function createAudioEngine(onChange = () => {}, {now = () => performance.
     if(a.buffer===b.buffer&&(a.gain??1)===(b.gain??1)&&a.rate===b.rate&&Boolean(a.reversed)===Boolean(b.reversed)&&Math.abs(a.reversed?a.in-b.out:a.out-b.in)<.0001)candidate=a.reversed?{...a,in:b.in}:{...a,out:b.out};
     else{const seconds=duration(a)+duration(b);if(seconds>30.001)throw Error('A joined source can hold up to 30 seconds.');busy=true;emit();try{const ctx=await wake(),buffer=ctx.createBuffer(1,Math.round(seconds*LIMITS.sampleRate),LIMITS.sampleRate),data=buffer.getChannelData(0);let offset=0;for(const c of[a,b]){const input=c.buffer.getChannelData(0),n=Math.round(duration(c)*LIMITS.sampleRate);for(let i=0;i<n&&offset+i<data.length;i++){const t=sourceTimeAt(c,c.start+i/LIMITS.sampleRate)*c.buffer.sampleRate-(c.reversed?1:0),j=Math.floor(t),f=t-j;data[offset+i]=((input[j]??0)*(1-f)+(input[j+1]??0)*f)*(c.gain??1);}offset+=n;}candidate={...a,buffer,in:0,out:buffer.duration,rate:1,gain:1,reversed:false};}finally{busy=false;emit();}}
     const remaining=clips.filter(c=>c!==a&&c!==b);if(sourceSeconds([...remaining,candidate])>LIMITS.storage+.001)throw Error('There is not enough source storage for the joined sound.');
-    if(disposed)return;remember();pause();Object.assign(a,candidate);clips.splice(clips.indexOf(b),1);pruneHistory();emit();return a;
+    if(disposed)return;remember();pause();Object.assign(a,candidate);clips.splice(clips.indexOf(b),1);analyzeForFish(a.buffer);pruneHistory();emit();return a;
   }
   function saveSession(extra={}){if(busy||recorder||pending)throw Error('Finish recording or loading before saving.');return new Blob([JSON.stringify(sessionObject({clips,lanes,position:tick().position,loop,volume,muted:outputMuted,extra}))],{type:'application/json'});}
   async function loadSession(file){
     if(busy||recorder||pending)throw Error('Finish the current operation first.');if(file.size>24*1024*1024)throw Error('That session file is too large.');busy=true;emit();
     try{const state=unpackSession(JSON.parse(await file.text())),ctx=await wake(),buffers=state.sources.map(s=>{const b=ctx.createBuffer(1,s.pcm.length,s.rate);b.getChannelData(0).set(s.pcm);return b;}),loaded=state.clips.map(c=>({id:c.id,name:c.name,lane:c.lane,start:c.start,in:c.in,out:c.out,rate:c.rate,gain:c.gain??1,reversed:c.reversed===true,buffer:buffers[c.source],links:(c.links||[]).map(l=>({...l}))}));
-      if(disposed)return;pause();playbackReturn=state.position;completedPlayback=false;clips.splice(0,clips.length,...loaded);state.lanes.forEach((l,i)=>Object.assign(lanes[i],l));lanes.forEach((_,i)=>applyLane(i));void windTo(state.position);loop=state.loop;volume=state.volume;outputMuted=state.muted;if(master)master.gain.value=outputMuted||siteMuted?0:volume;undoStack.length=redoStack.length=0;emit();return state.extra;
+      if(disposed)return;pause();playbackReturn=state.position;completedPlayback=false;clips.splice(0,clips.length,...loaded);buffers.forEach(analyzeForFish);state.lanes.forEach((l,i)=>Object.assign(lanes[i],l));lanes.forEach((_,i)=>applyLane(i));void windTo(state.position);loop=state.loop;volume=state.volume;outputMuted=state.muted;if(master)master.gain.value=outputMuted||siteMuted?0:volume;undoStack.length=redoStack.length=0;emit();return state.extra;
     }catch(error){if(error instanceof SyntaxError)throw Error('That session file could not be read.');throw error;}finally{busy=false;emit();}
   }
   async function exportWav({clipId=null,effects=true,tails=true,applyVolume=true}={}){
@@ -322,6 +348,9 @@ export function createAudioEngine(onChange = () => {}, {now = () => performance.
     setSiteMuted(value) { siteMuted = Boolean(value); if (master) master.gain.setTargetAtTime(outputMuted || siteMuted ? 0 : volume, context.currentTime, .015); emit(); },
     setMaster(value) { const next = Number(value); if (!Number.isFinite(next)) return; volume = Math.max(0, Math.min(2, next)); if (master) master.gain.setTargetAtTime(outputMuted || siteMuted ? 0 : volume, context.currentTime, .015); emit(); },
     getLevel() { if (!meter || !playing || outputMuted || siteMuted || !volume || context.state !== 'running') return 0; meter.getByteTimeDomainData(meterData); let sum=0; for(const x of meterData)sum+=((x-128)/128)**2; return Math.sqrt(sum/meterData.length); },
+    getFishLevel() { return fishSignal().level; },
+    getFishSignal() { return fishSignal(); },
+    getFishAnalysisStatus(id) { const clip=clips.find(item=>item.id===id); return clip ? fishSourceStatus(clip.buffer) : 'missing'; },
     getLaneLevels() { return Array.from({length:4},(_,i)=>playing&&!outputMuted&&!siteMuted&&volume&&context?.state==='running'?graphs[i]?.getLevel()||0:0); },
     suspend() { pause(); stopRecording(); void context?.suspend(); },
     dispose() { if (disposed) return; disposed = true;cancelLoad(); generation++; pause(); pending = false; if (recorder) { recorder.onstop = null; recorder.ondataavailable = null; } stopRecording(); recorder = null;capturePreview=null;capturePending=null;graphs.forEach(g=>g.dispose()); void context?.close(); clips.length = 0; graphs = [];undoStack.length=redoStack.length=0; }

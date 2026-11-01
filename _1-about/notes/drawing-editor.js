@@ -9,44 +9,53 @@ import { createLayersPanel } from './drawing-layers.js';
 import { limitOutlineSegments } from './drawing-outline.js';
 import { createArtworkCache } from './drawing-artwork.js';
 import { createGearPanel } from './drawing-gears.js';
+import { makeGearRecipe, validateGearRecipe, gearRecipeBounds, regenerateGearShape } from './gear-recipe.js';
 import { installShortcutLabels, handleEditorShortcut } from './drawing-shortcuts.js';
 import { rotationTargets, nearestRotationTarget, rotateShapesAround, angleStep, rotationPaths } from './drawing-rotation.js';
 import { ALIGNMENTS, alignedObjects, moveSnapIndex, snappedMove, moveSnapPaths, repeatedTransform } from './drawing-transforms.js';
 import {getSharedSettings} from '../../_7-shared-scripts/core/settings.js';
 import { createDrawingLibrary, createDownloadManager, drawingFile, parseDrawingFile, fileName } from './drawing-library.js';
 import { renderDrawingPng } from './drawing-export.js';
+import { createDrawingHistory } from './drawing-history.js';
+import { detectNotesDiscovery, NOTE_AWARDS, noteAwards } from './drawing-discoveries.js';
+import { mountCollapsibleSections } from '../../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
+import { registerNumericInputOwner } from '../../_7-shared-scripts/core/numeric-input.js';
 const STORAGE_KEY = 'site.about.notes.v2';
 const STORAGE_TIME_KEY = 'site.about.notes.v2.updatedAt';
 const SELECTED_KEY = 'site.about.notes.selectedDrawing';
 const slider = (field, label, min, max, step, value) => `<label class="notes-range" data-range="${field}"><span>${label}</span><output data-output="${field}">${value}</output><input data-field="${field}" aria-label="${label}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"></label>`;
 
-export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () => false, layersInitiallyOpen = false } = {}) {
+export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () => false, onDiscovery = () => {}, discoveriesEnabled = false } = {}) {
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = SIZE; canvas.className = 'notes-drawing'; canvas.tabIndex = 0;
   canvas.setAttribute('aria-label', 'Drawing glass'); const context = canvas.getContext('2d');
   const panel = document.createElement('section'); panel.className = 'notes-tools'; panel.hidden = true; panel.setAttribute('aria-label', 'Drawing tools');
   panel.innerHTML = `<header class="notes-context-heading"><div><strong data-context-title>Drawing</strong><span data-context-detail>Pencil</span></div></header>
-    <section class="notes-library" aria-label="Saved drawings"><strong>Saved drawings</strong><label>Choose drawing<select data-library="saved" aria-label="Saved drawings"><option value="">Choose saved drawing…</option></select></label><label>Name<input data-library="name" type="text" maxlength="80" aria-label="Drawing name" placeholder="Untitled drawing"></label><div class="notes-library-actions"><button type="button" data-library-action="save" disabled title="Update the selected saved drawing">Save</button><button type="button" data-library-action="save-as" title="Create a separate saved drawing">Save as new</button><button type="button" data-library-action="reload" disabled title="Reload the selected saved drawing, keeping a recovery copy of canvas changes">Reload saved</button><button type="button" data-library-action="import">Load drawing file</button><button type="button" data-library-action="backup">Download editable file</button><button type="button" data-library-action="png">Export PNG</button></div><input data-library="file" type="file" accept=".notes.json,application/json" hidden><output data-library="status" role="status" aria-live="polite">Checking saved drawings…</output></section>
+    <details class="notes-library" aria-label="Saved drawings"><summary>Saved drawings</summary><label>Choose drawing<select data-library="saved" aria-label="Saved drawings"><option value="">Choose saved drawing…</option></select></label><label>Name<input data-library="name" type="text" maxlength="80" aria-label="Drawing name" placeholder="Untitled drawing"></label><div class="notes-library-actions"><button type="button" data-library-action="save" disabled title="Update the selected saved drawing">Save</button><button type="button" data-library-action="save-as" title="Create a separate saved drawing">Save as new</button><button type="button" data-library-action="reload" disabled title="Reload the selected saved drawing, keeping a recovery copy of canvas changes">Reload saved</button><button type="button" data-library-action="import">Load drawing file</button><button type="button" data-library-action="backup">Download editable file</button><button type="button" data-library-action="png">Export PNG</button></div><div class="notes-export-options"><label>Background<select data-export="background"><option value="color">Color</option><option value="none">No background</option></select></label><label>Color<input type="color" data-export="color" value="#46657f" aria-label="PNG background color"></label><label class="notes-export-clipped"><input type="checkbox" data-export="clipped"> Include clipped art</label></div><input data-library="file" type="file" accept=".notes.json,application/json" hidden><output data-library="status" role="status" aria-live="polite">Checking saved drawings…</output></details>
     <label class="notes-clipped-toggle"><input type="checkbox" data-field="clipped" checked aria-keyshortcuts="Shift+C"><span>Show clipped art</span><kbd aria-hidden="true">Shift+C</kbd></label>
     <div class="notes-top-row"><label class="notes-scale"><input type="checkbox" data-field="scale" checked>Scale strokes</label><div class="notes-align" role="group" aria-label="Align selection">${ALIGNMENTS.map(([id, label, path]) => `<button type="button" data-action="align-${id}" aria-label="${label}" title="${label}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg></button>`).join('')}</div></div>
-    <fieldset class="notes-snaps"><legend><label><input type="checkbox" data-snap="enabled" checked aria-keyshortcuts="Shift+Q">Snaps</label></legend><div>${[['pane', 'Pane'], ['anchors', 'Anchors'], ['centers', 'Centers'], ['intersects', 'Intersects']].map(([id, label]) => `<label><input type="checkbox" data-snap="${id}" checked>${label}</label>`).join('')}</div></fieldset>
+    <fieldset class="notes-snaps"><legend><label><input type="checkbox" data-snap="enabled" checked aria-keyshortcuts="Shift+Q">Snaps</label><button type="button" class="notes-snaps-disclosure" aria-label="Toggle snap options" aria-controls="notes-snap-options"></button></legend><div id="notes-snap-options">${[['pane', 'Pane'], ['anchors', 'Anchors'], ['centers', 'Centers'], ['intersects', 'Intersects']].map(([id, label]) => `<label><input type="checkbox" data-snap="${id}" checked>${label}</label>`).join('')}</div></fieldset>
     <div class="notes-select-row"><button class="notes-select-tool" type="button" data-tool="select" title="Select (V)" aria-keyshortcuts="V" aria-pressed="false">${toolIcon(SELECT_TOOL)}<span>Select</span><kbd>V</kbd></button></div>
-    <button type="button" class="notes-tools-disclosure" data-action="tools-picker" aria-controls="notes-drawing-tool-grid" aria-expanded="false" title="Show drawing tools">Draw tools <span aria-hidden="true">▾</span></button>
     <div class="notes-tool-grid" id="notes-drawing-tool-grid" role="group" aria-label="Drawing mode">${DRAWING_TOOLS.map(t => `<button type="button" data-tool="${t.id}" title="${t.label} (${t.key})" aria-keyshortcuts="${t.key}" aria-pressed="${t.id === 'pencil'}">${toolIcon(t)}<span>${t.label}</span><kbd>${t.key}</kbd></button>`).join('')}</div>
     ${slider('weight', 'Stroke weight', .5, 100, .1, 6)}
     <div class="notes-color-target" role="group" aria-label="Apply color to"><button type="button" data-color-target="fill" data-sample="fill" aria-label="Fill color" title="Fill (F)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="notes-color-outline" d="M3 3H21V21H3Z"/><path class="notes-color-slash" d="M3 21L21 3"/></svg></button><button type="button" data-color-target="stroke" data-sample="stroke" aria-label="Stroke color" title="Stroke (X)" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="notes-color-outline" d="M3 3H21V21H3Z"/><path class="notes-color-slash" d="M3 21L21 3"/></svg></button></div>
     <div class="notes-palette" role="group" aria-label="Color palette"><button type="button" class="notes-no-color" data-color="none" aria-label="No color" title="No color" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20L20 4"/></svg></button>${PALETTE.map(([name, color]) => `<button type="button" data-color="${color}" title="${name}" aria-label="${name}" aria-pressed="false" style="--swatch:${color}"></button>`).join('')}</div>
     ${slider('sides', 'Sides', 3, 24, 1, 3)}${slider('depth', 'Depth', 0, 100, 1, 50)}${slider('smoothing', 'Smoothing', 0, 100, 1, 45)}
     <section class="notes-object-controls" data-context-special="pacman" aria-label="Pacman controls" hidden><h3>Pacman</h3><div class="notes-special-fields"><label><span>Opening angle</span><div><input data-field="opening" aria-label="Pacman opening angle" type="number" min="0" max="360" step="1"><span>°</span></div></label><label><span>Slice angle</span><div><input data-field="slice" aria-label="Pacman slice angle" type="number" min="0" max="360" step="1"><span>°</span></div></label></div><div class="notes-slice-presets" role="group" aria-label="Slice angle presets">${[45,90,180,270].map(angle=>`<button type="button" data-slice="${angle}" title="Set filled slice to ${angle} degrees">${angle}°</button>`).join('')}</div></section>
+    <section class="notes-object-controls notes-gear-recipe-controls" data-gear-recipe-controls aria-label="Selected gear art" hidden><h3>Gear art</h3>${[['largeTeeth','Large teeth'],['smallTeeth','Small teeth'],['hole','Pen hole']].map(([field,label])=>`<div class="notes-gear-recipe-row" data-gear-recipe-row="${field}"><label for="notes-gear-recipe-${field}">${label}</label><div><button type="button" data-gear-recipe-step="${field}" data-step="-1" aria-label="Decrease ${label.toLowerCase()}" title="Decrease ${label.toLowerCase()}">‹</button><input id="notes-gear-recipe-${field}" data-gear-recipe-field="${field}" type="number" inputmode="numeric" step="1" aria-label="${label}"><button type="button" data-gear-recipe-step="${field}" data-step="1" aria-label="Increase ${label.toLowerCase()}" title="Increase ${label.toLowerCase()}">›</button></div></div>`).join('')}</section>
     <div class="notes-dimensions"><label><span>Width</span><input data-field="width" aria-label="Object width" type="number" min="4" max="3000" step="1" value="0" disabled></label><label><span>Height</span><input data-field="height" aria-label="Object height" type="number" min="4" max="3000" step="1" value="0" disabled></label></div>
     <div class="notes-rotation-row"><label class="notes-rotation"><span>Rotation</span><div><input data-field="angle" aria-label="Rotation degrees" type="number" min="-360" max="360" step="5" value="0"><span aria-hidden="true">°</span></div></label><button type="button" data-action="smart-rotate" aria-pressed="false" aria-keyshortcuts="Shift+T" title="Smart rotate (Shift+T). Click to place a pivot; drag to rotate. Shift locks angles when enabled.">${toolIcon(ACTION_TOOLS.rotate)}<span>Smart rotate</span></button></div>
-    <div class="notes-mode-actions"><button type="button" data-action="shape-edit" title="Shape edit mode (A). Double-click an edge to add an anchor; double-click an anchor to toggle its curve handles." aria-keyshortcuts="A" aria-pressed="false">Shape edit mode</button><button type="button" data-action="layers" title="Layers (F7)" aria-keyshortcuts="F7" aria-pressed="false">Layers</button></div>
+    <div class="notes-mode-actions"><button type="button" data-action="shape-edit" title="Shape edit mode (A). Double-click an edge to add an anchor; double-click an anchor to toggle its curve handles." aria-keyshortcuts="A" aria-pressed="false">Shape edit mode</button></div>
     <button type="button" class="notes-gear-toggle" data-action="gears" aria-pressed="false">Gear art<kbd>G</kbd></button><button type="button" class="notes-repeat" data-action="repeat" aria-keyshortcuts="Control+D Meta+D Shift+F4" title="Repeat action (Ctrl/Cmd+D or Shift+F4)">Repeat action<kbd>Ctrl+D</kbd></button><div class="notes-edit-actions"><button type="button" data-action="undo" title="Undo (Ctrl/Cmd+Z)">↶ Undo</button><button type="button" data-action="redo" title="Redo (Ctrl/Cmd+Shift+Z)">↷ Redo</button><button type="button" data-action="duplicate" title="Duplicate (Shift+D or Ctrl/Cmd+J)">Duplicate</button><button type="button" data-action="delete" title="Delete selection">Delete</button></div>
 <output class="notes-status" role="status" aria-live="polite"></output>`;
   const toolStrip = document.createElement('div'); toolStrip.className = 'notes-tool-strip'; toolStrip.setAttribute('aria-label', 'Select and draw tools');
   const properties = document.createElement('div'); properties.className = 'notes-tool-properties';
-  toolStrip.append(panel.querySelector('.notes-select-row'), panel.querySelector('.notes-tools-disclosure'), panel.querySelector('.notes-tool-grid'));
+  toolStrip.append(panel.querySelector('.notes-select-row'), panel.querySelector('.notes-tool-grid'));
   properties.append(...panel.children);
+  properties.insertBefore(properties.querySelector('.notes-library'), properties.querySelector('.notes-status'));
   panel.append(toolStrip, properties);
+  let drawingFolds;
+  const query = selector => panel.querySelector(selector) || toolStrip.querySelector(selector);
+  const queryAll = selector => [...new Set([...panel.querySelectorAll(selector), ...toolStrip.querySelectorAll(selector)])];
   installShortcutLabels(panel);
   let doc, storageFailed = false, localUpdatedAt = 0, latestUpdatedAt = 0;
   try { doc = restoreDocument(JSON.parse(localStorage.getItem(STORAGE_KEY) || localStorage.getItem('site.about.notes.v1'))); }
@@ -55,14 +64,14 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   latestUpdatedAt = localUpdatedAt;
   const library = createDrawingLibrary();
   const downloads = createDownloadManager();
-  const librarySelect = panel.querySelector('[data-library="saved"]');
-  const libraryName = panel.querySelector('[data-library="name"]');
-  const libraryStatus = panel.querySelector('[data-library="status"]');
+  const librarySelect = query('[data-library="saved"]');
+  const libraryName = query('[data-library="name"]');
+  const libraryStatus = query('[data-library="status"]');
   let selectedDrawingId = null, libraryReady = false, libraryBusy = false, savedBaseline = JSON.stringify(doc);
   let draftRevision = 0, savedDraftRevision = 0, draftTimer = 0, draftWrite = null, workingSaved = false;
   function libraryMessage(message, error = false) { libraryStatus.textContent = message; libraryStatus.dataset.error = String(error); }
   function libraryControls() {
-    panel.querySelectorAll('[data-library-action]').forEach(button => {
+    queryAll('[data-library-action]').forEach(button => {
       button.disabled = libraryBusy || ['save', 'reload', 'save-as', 'import'].includes(button.dataset.libraryAction) && !libraryReady ||
         ['save', 'reload'].includes(button.dataset.libraryAction) && !selectedDrawingId;
     });
@@ -134,20 +143,36 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   try { const saved = JSON.parse(localStorage.getItem('site.about.notes.snaps')); for (const key of Object.keys(snaps)) if (typeof saved?.[key] === 'boolean') snaps[key] = saved[key]; } catch { /* Session defaults remain available. */ }
   let selection = new Set(), tool = 'pencil', colorTarget = 'stroke', scaleStrokes = true, shapeEdit = false, selectedAnchor = null;
   let showClippedArt = getSharedSettings().get().about?.notes?.showClippedArt !== false;
-  panel.querySelector('[data-field="clipped"]').checked = showClippedArt;
-  panel.querySelector('[data-field="clipped"]').closest('label').title = 'Show clipped art (Shift+C)';
-  panel.querySelector('[data-snap="enabled"]').closest('label').title = 'Snaps (Shift+Q). Shift locks lines and rotations to 15 degrees.';
+  query('[data-field="clipped"]').checked = showClippedArt;
+  query('[data-field="clipped"]').closest('label').title = 'Show clipped art (Shift+C)';
+  query('[data-snap="enabled"]').closest('label').title = 'Snaps (Shift+Q). Shift locks lines and rotations to 15 degrees.';
   function toggleClipped(value = !showClippedArt) {
-    showClippedArt = value; panel.querySelector('[data-field="clipped"]').checked = value;
+    showClippedArt = value; query('[data-field="clipped"]').checked = value;
     getSharedSettings().patch({'about.notes.showClippedArt': value});
     changed();
   }
   let defaults = { stroke: PALETTE[2][1], fill: null, strokeWidth: 6, sides: 3, depth: .5, smoothing: .45 };
   let polygonSides = 3, starSides = 5;
   let gesture = null, fieldEdit = null, penDraft = null, lastPenEnd = null, hover = null;
-  let repeatAction = null, notice = '', toolsPickerOpen = true;
-  let undoStack = [], redoStack = [], unit = 18, contrast = .5, brightness = .5, disposed = false, layersOpen = layersInitiallyOpen;
+  let repeatAction = null, notice = '', gearCanvasArmed = false, suppressDiscovery = false;
+  const history = createDrawingHistory();
+  let unit = 18, contrast = .5, brightness = .5, disposed = false;
   const input = new AbortController(), listeners = new Set();
+  if (discoveriesEnabled) window.addEventListener('storage', noteAwards.acceptStorage, { signal: input.signal });
+  function inspectCompletedDrawing(id) {
+    if (!discoveriesEnabled || suppressDiscovery || !id) return;
+    const seed = doc.objects.find(s => s.id === id);
+    if (!seed || !nodeVisible(doc, seed)) return;
+    const result = detectNotesDiscovery(doc.objects.filter(s => s.layerId === seed.layerId && nodeVisible(doc, s)), id);
+    const recognized = [result.circle && NOTE_AWARDS.circle, result.key && NOTE_AWARDS.key].filter(Boolean);
+    const receipts = recognized.map(id => noteAwards.award(id) || (() => {
+      const held = noteAwards.get().find(receipt => receipt.id === id);
+      return held ? {...held,alreadyHeld:true} : null;
+    })()).filter(Boolean);
+    for (const receipt of receipts) onDiscovery(receipt, receipt.id === NOTE_AWARDS.circle ? result.circleBounds : result.keyBounds,
+      receipt.id === NOTE_AWARDS.key ? result.keyFit : null);
+    if (receipts.length) notice = receipts.map(r => `${r.id === NOTE_AWARDS.circle ? 'Circle recognized — plate' : 'Key recognized — key'} ${r.alreadyHeld ? 'already collected.' : r.persisted ? 'collected and saved.' : 'collected for this session only.'}`).join(' ');
+  }
   window.addEventListener('pagehide', () => { if (draftRevision > savedDraftRevision) void flushAutosave(); }, { signal: input.signal });
   const artwork = createArtworkCache(), clippedPaths = new WeakMap();
   let lastFlushMs = null, lastOutlineSegments = 0;
@@ -158,14 +183,14 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       else { const points = shape.anchors || shapeAnchors(shape); vertices += points.length;
         for (const p of points) for (const side of ['in', 'out']) if (p[side] && Math.hypot(p[side].x, p[side].y) > .001) handles++; }
     }
-    const cache = artwork.stats, history = [...undoStack, ...redoStack].reduce((n, state) => n + state.doc.objects.reduce((m, shape) => m + (shape.points?.length || shape.anchors?.length || 4), 0), 0);
+    const cache = artwork.stats, historyStats = history.stats;
     return {'Objects (fixed cap)': `${doc.objects.length} / 300`, 'Visible objects': doc.objects.filter(s => nodeVisible(doc, s)).length,
       'Panes (fixed cap)': `${doc.layers.length} / 3`, 'Anchors / curve handles': `${vertices.toLocaleString()} / ${handles.toLocaleString()}`,
       'Pencil samples': pencil.toLocaleString(), 'Weighted geometry limit': 'Not calibrated',
       'Shape cache (RGBA estimate)': `${(cache.pixels * 4 / 1048576).toFixed(2)} / ${(cache.pixelBudget * 4 / 1048576).toFixed(2)} MiB`,
       'Composite (RGBA estimate)': `${(cache.compositePixels * 4 / 1048576).toFixed(2)} MiB`, 'Cached shapes': cache.entries,
       'Cache builds / reuse': `${cache.builds} / ${cache.hits}`, 'Clipped art segments (last)': `${lastOutlineSegments} / 6,000`,
-      'Undo / redo entries': `${undoStack.length} / ${redoStack.length}`, 'History geometry estimate': history.toLocaleString(),
+      'Undo / redo entries': `${historyStats.undo} / ${historyStats.redo}`, 'History geometry estimate': historyStats.uniqueGeometry.toLocaleString(),
       'Last editor update (CPU)': lastFlushMs === null ? 'Awaiting edit with Debug open' : `${lastFlushMs.toFixed(2)} ms`};
   });
   function clippedPath(points) { let segments = clippedPaths.get(points); if (!segments) { segments = outsidePathSegments(points); clippedPaths.set(points, segments); } return segments; }
@@ -173,25 +198,38 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   let paintFrame = 0, panelDirty = false, layersDirty = false;
   const layers = createLayersPanel({ getDocument: () => doc, getSelection: () => selection, getIsolation: () => isolation, onSelect: selectFromLayers, onAction: layerAction });
   const gears = createGearPanel({ getDocument: () => doc, editable: () => layerEditable(doc, doc.activeLayer), getStyle: () => defaults,
-    getSnaps: () => snaps, onActivate() { onPanelRequest('gears'); finishPath(); smart = null; selectIds([]); changed(); },
+    getSnaps: () => snaps, onActivate() { onPanelRequest('gears'); finishPath(); smart = null; gearCanvasArmed = true; changed(); },
     mutate(fn) { remember(); fn(); changed(true); }, repaint: () => changed(false, { panel: false, layers: false }),
-    trace(points, setup, closed) {
+    trace(points, setup, closed, progress) {
       if (!layerEditable(doc, doc.activeLayer) || doc.objects.length >= 300 || !defaults.stroke) return false;
       remember(); const shape = newShape('pencil', points[0], points.at(-1)); shape.smoothing = 0; shape.fill = null;
       normalizePencil(shape, points); shape.name = `Gear ${setup.guide}${closed ? '' : ' partial'} ${doc.objects.filter(s => s.name.startsWith('Gear ')).length + 1}`;
-      doc.objects.push(shape); lastDrawn = shape.id; selectIds([]); changed(true); return true;
+      shape.gearRecipe = makeGearRecipe(setup, 'trace', progress, shape);
+      doc.objects.push(shape); lastDrawn = shape.id; selectIds([shape.id]); inspectCompletedDrawing(shape.id); changed(true); return true;
+    },
+    insertShapes(specs, setup, progress) {
+      if (!layerEditable(doc, doc.activeLayer) || doc.objects.length + specs.length > 300) return false;
+      const before = snapshot(), added = [];
+      for (const spec of specs) {
+        const shape = newShape('path', spec.center, spec.center);
+        const style = defaults.stroke || defaults.fill ? {} : { fill: '#56d9ed' };
+        Object.assign(shape, style, { name: `${spec.name} ${doc.objects.filter(s => s.name.startsWith(spec.name)).length + 1}`,
+          strokeWidth: spec.strokeWidth,
+          anchors: spec.anchors.map(p => ({ x: p.x - spec.center.x, y: p.y - spec.center.y,
+            in: { x: 0, y: 0 }, out: { x: 0, y: 0 }, contour: p.contour || 0 })), closed: true });
+        rebaseShape(shape); shape.gearRecipe = makeGearRecipe(setup, spec.kind, progress, shape); doc.objects.push(shape); added.push(shape.id);
+      }
+      remember(before); lastDrawn = added.at(-1); selectIds(added); for (const id of added) inspectCompletedDrawing(id); changed(true); return true;
     }
   });
   const editable = s => objectEditable(doc,s) && inIsolation(doc,s,isolation);
   const rootFor = s => isolationRoot(doc,s,isolation);
   const chosen = () => doc.objects.filter(s => selection.has(s.id) && editable(s));
   const single = () => chosen().length === 1 ? chosen()[0] : null;
-  const snapshot = () => ({ doc: clone(doc), selection: [...selection], repeatAction: clone(repeatAction), selectedDrawingId, savedBaseline, drawingName: libraryName.value });
+  const snapshot = () => history.capture(doc, { selection: [...selection], repeatAction: clone(repeatAction), selectedDrawingId, savedBaseline, drawingName: libraryName.value });
   const comparable = state => JSON.stringify(state.doc);
   function remember(before = snapshot()) {
-    undoStack.push(before); redoStack = [];
-    let count = undoStack.reduce((n, state) => n + state.doc.objects.reduce((m, s) => m + (s.points?.length || s.anchors?.length || 4), 0), 0);
-    while (undoStack.length > 40 || count > 180000 && undoStack.length > 1) count -= undoStack.shift().doc.objects.reduce((n, s) => n + (s.points?.length || s.anchors?.length || 4), 0);
+    history.record(before);
   }
   function save() {
     if (smart) smart.targets = null;
@@ -259,7 +297,8 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (disposed) throw new Error('The drawing editor is closed.');
     if (!libraryReady) throw new Error('Saved drawing storage is unavailable.');
     if (!id) { librarySelect.value = selectedDrawingId || ''; return; }
-    finishGesture(); finishPath();
+    suppressDiscovery = true;
+    try { finishGesture(); finishPath(); } finally { suppressDiscovery = false; }
     const before = JSON.stringify(doc);
     const record = await library.get(id);
     if (disposed) throw new Error('The drawing editor is closed.');
@@ -275,7 +314,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     }
     remember(); doc = next; selection.clear(); isolation = null; smart = null; gesture = null; fieldEdit = null;
     penDraft = null; lastPenEnd = null; selectedAnchor = null; hover = null; repeatAction = null;
-    shapeEdit = false; tool = 'select'; gears.reset(); gears.close();
+    shapeEdit = false; tool = 'select'; gears.reset(); gears.close(); gearCanvasArmed = false;
     lastDrawn = doc.objects.at(-1)?.id; artwork.clear();
     selectedDrawingId = record.id; savedBaseline = JSON.stringify(doc); libraryName.value = record.name;
     const identityPersisted = persistDrawingIdentity(); changed(true); await refreshLibrary();
@@ -296,7 +335,13 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     libraryMessage(`Imported and loaded ${record.name}.`);
     return record;
   }
-  async function exportPngBlob() { finishGesture(); finishPath(); return renderDrawingPng(doc, artwork, contrast, brightness); }
+  async function exportPngBlob(options = {}) {
+    finishGesture(); finishPath();
+    const backgroundColor = Object.hasOwn(options, 'backgroundColor') ? options.backgroundColor :
+      query('[data-export="background"]').value === 'none' ? null : query('[data-export="color"]').value;
+    const includeClippedArt = options.includeClippedArt ?? query('[data-export="clipped"]').checked;
+    return renderDrawingPng(doc, artwork, contrast, brightness, { backgroundColor, includeClippedArt });
+  }
   function downloadEditable() {
     finishGesture(); finishPath();
     const name = drawingName();
@@ -331,11 +376,11 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (!toggle) selection = new Set(ids); else ids.forEach(id => selection.has(id) ? selection.delete(id) : selection.add(id));
     selectedAnchor = null; const s = single(); if (s) defaults = { ...defaults, stroke: s.stroke, fill: s.fill, strokeWidth: s.strokeWidth };
   }
-  function selectFromLayers(ids, toggle) { if(isolation && ids.some(id=>!inIsolation(doc,doc.objects.find(s=>s.id===id),isolation))) { isolation=null; } finishGesture(); finishPath(); gears.close(); smart = null; const layer = doc.objects.find(s => ids.includes(s.id))?.layerId; if (layer && !toggle) doc.activeLayer = layer; tool = 'select'; selectIds(ids, toggle); changed(true); }
-  function setTool(value) { finishGesture(); finishPath(); smart = null; tool = value; gears.close(); if (value !== 'select') selectIds([]); shapeEdit = false; selectedAnchor = null; changed(); }
+  function selectFromLayers(ids, toggle) { if(isolation && ids.some(id=>!inIsolation(doc,doc.objects.find(s=>s.id===id),isolation))) { isolation=null; } finishGesture(); finishPath(); smart = null; gearCanvasArmed = false; const layer = doc.objects.find(s => ids.includes(s.id))?.layerId; if (layer && !toggle) doc.activeLayer = layer; tool = 'select'; selectIds(ids, toggle); changed(true); }
+  function setTool(value, clearSelection = false) { finishGesture(); finishPath(); smart = null; tool = value; gearCanvasArmed = false; if (value !== 'select' || clearSelection) selectIds([]); shapeEdit = false; selectedAnchor = null; changed(); }
   function commitField(cancel = false) {
     if (!fieldEdit) return; const before = fieldEdit; fieldEdit = null;
-    if (cancel) { doc = before.doc; selection = new Set(before.selection); }
+    if (cancel) { doc = clone(before.doc); selection = new Set(before.selection); }
     else {
       recoverOffPane(doc, before.doc.objects.filter(s => selection.has(s.id)), selection).forEach(s => artwork.invalidate(s));
       if (comparable(before) !== JSON.stringify(doc)) {
@@ -346,6 +391,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
           else repeatAction = { kind: 'resize', handle: before.field === 'width' ? 5 : 6, sx: next.width / original.width, sy: next.height / original.height, proportional: originals.length > 1, opposite: false, scaleStrokes, copy: false };
         }
         remember(before); save();
+        if (['width','height','angle','sides','smoothing'].includes(before.field)) for (const shape of now.slice(0,32)) inspectCompletedDrawing(shape.id);
       }
     }
   }
@@ -368,8 +414,17 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (field === 'sides') { if (tool === 'star') starSides = amount; else polygonSides = amount; }
     shapes.forEach(s => {
       if (field === 'sides' && !['polygon', 'star'].includes(s.type) || field === 'depth' && !['star', 'heart', 'arc', 'torus', 'pacman'].includes(s.type) || field === 'smoothing' && s.type !== 'pencil') return;
-      artwork.invalidate(s); s[key] = amount; if (field === 'sides') { if (s.type === 'star') starSides = amount; else polygonSides = amount; } if (['sides', 'depth'].includes(field)) delete s.anchors;
+      artwork.invalidate(s); if (field === 'smoothing') delete s.gearRecipe; s[key] = amount; if (field === 'sides') { if (s.type === 'star') starSides = amount; else polygonSides = amount; } if (['sides', 'depth'].includes(field)) delete s.anchors;
     });
+  }
+  function commitGearRecipe(field, value) {
+    const shape = single(), recipe = shape && validateGearRecipe(shape.gearRecipe, shape);
+    const input = query(`[data-gear-recipe-field="${field}"]`);
+    const restoreInput = () => { if (recipe && input && input.value !== String(recipe[field])) input.value = recipe[field]; changed(); };
+    if (!recipe || !Number.isInteger(value) || !['largeTeeth', 'smallTeeth', 'hole'].includes(field)) { restoreInput(); return; }
+    const next = regenerateGearShape(shape, field, value);
+    if (!next) { restoreInput(); return; }
+    const before = snapshot(); artwork.invalidate(shape); Object.assign(shape, next); remember(before); changed(true);
   }
   function colorTo(value) {
     finishGesture(); const shapes = chosen(); if (shapes.length) remember(); defaults[colorTarget] = value;
@@ -442,7 +497,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   function cursor() {
     if (smart) return toolCursor(smartVisuals().candidate && !gesture ? 'pivot' : 'rotate', defaults[colorTarget]);
-    if (gears.open) return gears.cursor === 'blocked' ? 'not-allowed' : toolCursor(gears.cursor === 'trace' ? 'gear' : gears.cursor === 'place' ? 'move' : 'select', defaults[colorTarget]);
+    if (gears.open && gearCanvasArmed) return gears.cursor === 'blocked' ? 'not-allowed' : toolCursor(gears.cursor === 'trace' ? 'gear' : gears.cursor === 'place' ? 'move' : 'select', defaults[colorTarget]);
     if (gesture?.kind === 'move') return toolCursor('move', defaults[colorTarget]);
     if (gesture?.kind === 'rotate') return toolCursor('rotate', defaults[colorTarget]);
     if (gesture?.kind === 'resize') {
@@ -460,61 +515,56 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   function syncPanel() {
     const shapes = chosen(), shape = single(), current = shapes[0] || defaults, editable = layerEditable(doc, doc.activeLayer);
-    panel.querySelectorAll('[data-tool]').forEach(el => el.setAttribute('aria-pressed', String(!gears.open && !smart && el.dataset.tool === tool)));
-    const fillOK = !gears.open && (shapes.length ? shapes.some(isClosed) : !['pencil', 'line', 'path'].includes(tool));
+    queryAll('[data-tool]').forEach(el => el.setAttribute('aria-pressed', String(!gearCanvasArmed && !smart && el.dataset.tool === tool)));
+    const fillOK = shapes.length ? shapes.some(isClosed) : !['pencil', 'line', 'path'].includes(tool);
     if (!fillOK && colorTarget === 'fill') colorTarget = 'stroke';
-    panel.querySelectorAll('[data-color-target]').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.colorTarget === colorTarget)));
-    panel.querySelector('[data-color-target="fill"]').disabled = !fillOK;
-    panel.querySelector('[data-color-target="fill"]').title = fillOK ? 'Fill (F)' : 'Fill is unavailable for open paths';
+    queryAll('[data-color-target]').forEach(el => el.setAttribute('aria-pressed', String(el.dataset.colorTarget === colorTarget)));
+    query('[data-color-target="fill"]').disabled = !fillOK;
+    query('[data-color-target="fill"]').title = fillOK ? 'Fill (F)' : 'Fill is unavailable for open paths';
     for (const name of ['stroke', 'fill']) {
-      const sample = panel.querySelector(`[data-sample="${name}"]`);
+      const sample = query(`[data-sample="${name}"]`);
       sample.style.backgroundColor = name === 'fill' ? current.fill || '#172932' : '#172932';
       sample.querySelector('.notes-color-outline').style.stroke = name === 'stroke' ? current.stroke || '#b8cbd0' : 'transparent';
       sample.querySelector('.notes-color-slash').style.stroke = current[name] ? 'transparent' : '#f0acac';
     }
-    const activeSwatch = panel.querySelector(`[data-color-target="${colorTarget}"]`);
+    const activeSwatch = query(`[data-color-target="${colorTarget}"]`);
     if (activeSwatch !== activeSwatch.parentElement.lastElementChild) activeSwatch.parentElement.append(activeSwatch);
-    panel.querySelectorAll('[data-color]').forEach(el => { el.setAttribute('aria-pressed', String((current[colorTarget] || 'none') === el.dataset.color)); el.disabled = !editable && !shapes.length; });
+    queryAll('[data-color]').forEach(el => { el.setAttribute('aria-pressed', String((current[colorTarget] || 'none') === el.dataset.color)); el.disabled = !editable && !shapes.length; });
     const properties = {
       weight: { value: current.strokeWidth, enabled: shapes.length ? shapes.some(s => s.stroke) : Boolean(defaults.stroke) && editable },
-      sides: { value: shapes.find(s => ['polygon', 'star'].includes(s.type))?.sides ?? (tool === 'star' ? starSides : polygonSides), enabled: !gears.open && (shapes.length ? shapes.some(s => ['polygon', 'star'].includes(s.type)) : ['polygon', 'star'].includes(tool) && editable) },
-      depth: { value: Math.round((shapes.find(s => ['heart', 'star', 'arc', 'torus', 'pacman'].includes(s.type)) || defaults).depth * 100), enabled: !gears.open && (shapes.length ? shapes.some(s => ['heart', 'star', 'arc', 'torus', 'pacman'].includes(s.type)) : ['heart', 'star', 'arc', 'torus', 'pacman'].includes(tool) && editable) },
-      smoothing: { value: Math.round((shapes.find(s => s.type === 'pencil') || defaults).smoothing * 100), enabled: !gears.open && (shapes.length ? shapes.some(s => s.type === 'pencil') : tool === 'pencil' && editable) }
+      sides: { value: shapes.find(s => ['polygon', 'star'].includes(s.type))?.sides ?? (tool === 'star' ? starSides : polygonSides), enabled: shapes.length ? shapes.some(s => ['polygon', 'star'].includes(s.type)) : ['polygon', 'star'].includes(tool) && editable },
+      depth: { value: Math.round((shapes.find(s => ['heart', 'star', 'arc', 'torus', 'pacman'].includes(s.type)) || defaults).depth * 100), enabled: shapes.length ? shapes.some(s => ['heart', 'star', 'arc', 'torus', 'pacman'].includes(s.type)) : ['heart', 'star', 'arc', 'torus', 'pacman'].includes(tool) && editable },
+      smoothing: { value: Math.round((shapes.find(s => s.type === 'pencil') || defaults).smoothing * 100), enabled: shapes.length ? shapes.some(s => s.type === 'pencil') : tool === 'pencil' && editable }
     };
     for (const [field, data] of Object.entries(properties)) {
-      const el = panel.querySelector(`[data-field="${field}"]`); el.disabled = !data.enabled; if (document.activeElement !== el) el.value = data.value;
-      panel.querySelector(`[data-output="${field}"]`).textContent = Math.round(data.value * 10) / 10; el.closest('label').classList.toggle('is-disabled', !data.enabled);
+      const el = query(`[data-field="${field}"]`); el.disabled = !data.enabled; if (document.activeElement !== el) el.value = data.value;
+      query(`[data-output="${field}"]`).textContent = Math.round(data.value * 10) / 10; el.closest('label').classList.toggle('is-disabled', !data.enabled);
     }
-    const angle = panel.querySelector('[data-field="angle"]'); angle.disabled = !shapes.length; if (document.activeElement !== angle) angle.value = shape ? Math.round(shape.rotation * 180 / Math.PI) : 0;
+    const angle = query('[data-field="angle"]'); angle.disabled = !shapes.length; if (document.activeElement !== angle) angle.value = shape ? Math.round(shape.rotation * 180 / Math.PI) : 0;
     angle.closest('label').classList.toggle('is-disabled', !shapes.length);
     const frame = shapes.length ? selectionFrame() : null;
     for (const field of ['width', 'height']) {
-      const el = panel.querySelector(`[data-field="${field}"]`); el.disabled = !frame;
+      const el = query(`[data-field="${field}"]`); el.disabled = !frame;
       if (document.activeElement !== el) el.value = frame ? Math.round(frame[field] * 10) / 10 : '';
       el.closest('label').classList.toggle('is-disabled', !frame);
     }
-    const edit = panel.querySelector('[data-action="shape-edit"]'); edit.disabled = !shape || shape.type === 'pencil'; edit.setAttribute('aria-pressed', String(shapeEdit && !edit.disabled));
-    panel.querySelector('[data-action="layers"]').setAttribute('aria-pressed', String(layersOpen));
-    panel.querySelector('[data-action="gears"]').setAttribute('aria-pressed', String(gears.open));
-    for (const name of ['duplicate', 'delete']) panel.querySelector(`[data-action="${name}"]`).disabled = !shapes.length;
-    panel.querySelector('[data-action="duplicate"]').disabled ||= doc.objects.length + shapes.length > 300;
-    panel.querySelector('[data-action="repeat"]').disabled = !repeatAction || !shapes.length || repeatAction.copy && doc.objects.length + shapes.length > 300;
-    panel.querySelectorAll('.notes-align button').forEach(button => { button.disabled = !shapes.length; });
-    panel.querySelector('[data-action="undo"]').disabled = !undoStack.length; panel.querySelector('[data-action="redo"]').disabled = !redoStack.length;
+    const edit = query('[data-action="shape-edit"]'); edit.disabled = !shape || shape.type === 'pencil'; edit.setAttribute('aria-pressed', String(shapeEdit && !edit.disabled));
+    query('[data-action="gears"]').setAttribute('aria-pressed', String(gears.open));
+    for (const name of ['duplicate', 'delete']) query(`[data-action="${name}"]`).disabled = !shapes.length;
+    query('[data-action="duplicate"]').disabled ||= doc.objects.length + shapes.length > 300;
+    query('[data-action="repeat"]').disabled = !repeatAction || !shapes.length || repeatAction.copy && doc.objects.length + shapes.length > 300;
+    queryAll('.notes-align button').forEach(button => { button.disabled = !shapes.length; });
+    query('[data-action="undo"]').disabled = !history.canUndo; query('[data-action="redo"]').disabled = !history.canRedo;
 
-    const selected=shapes.length>0,drawing=!selected&&!gears.open&&tool!=='select';
+    const selected=shapes.length>0,drawing=!selected&&!gearCanvasArmed&&tool!=='select';
     const kinds=new Set(shapes.map(s=>s.type)),kind=selected?(kinds.size===1?shapes[0].type:null):tool;
     const roots=selected?selectionRoots(doc,selection,isolation):[];
     const title=selected?(roots.length===1?roots[0].name:`${shapes.length} objects`):gears.open?'Gear art':drawing?'Drawing':'Select';
     const detail=selected?(roots.length===1&&roots[0].kind==='group'?`Group · ${shapes.length} objects`:kinds.size>1?'Mixed selection':DRAWING_TOOLS.find(t=>t.id===kind)?.label||'Path'):drawing?DRAWING_TOOLS.find(t=>t.id===tool)?.label||'Pen':' '; 
-    const text=(selector,value)=>{const node=panel.querySelector(selector);if(node.textContent!==value)node.textContent=value;};
-    const hide=(selector,value)=>{const node=panel.querySelector(selector);if(node.hidden!==value)node.hidden=value;};
+    const text=(selector,value)=>{const node=query(selector);if(node.textContent!==value)node.textContent=value;};
+    const hide=(selector,value)=>{const node=query(selector);if(node.hidden!==value)node.hidden=value;};
     const mode=selected?'selection':gears.open?'gear':'drawing';if(panel.dataset.context!==mode)panel.dataset.context=mode;
     text('[data-context-title]',title||'Selection');text('[data-context-detail]',detail);
-    panel.querySelector('[data-action="tools-picker"]').setAttribute('aria-expanded',String(toolsPickerOpen));
-    text('[data-action="tools-picker"] span',toolsPickerOpen?'▴':'▾');
-    panel.querySelector('[data-action="tools-picker"]').title=toolsPickerOpen?'Hide drawing tools':'Show drawing tools';
-    hide('.notes-tool-grid',!toolsPickerOpen);
     hide('.notes-align',!selected);
     hide('.notes-dimensions',!selected);
     hide('.notes-rotation',!selected);
@@ -527,24 +577,41 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     for(const field of ['sides','depth','smoothing'])hide(`[data-range="${field}"]`,!properties[field].enabled);
     const depthName={star:'Point depth',heart:'Cleft depth',arc:'Thickness',torus:'Ring thickness',pacman:'Wedge opening'}[kind]||'Depth';
     text('[data-range="depth"] > span',depthName);
-    panel.querySelector('[data-field="depth"]').setAttribute('aria-label',depthName);
-    panel.querySelector('[data-field="depth"]').title=`${depthName} (B; use arrow keys)`;
-    const pacman=kind==='pacman'&&!gears.open&&(selected||drawing),depth=current.depth??.5;
+    query('[data-field="depth"]').setAttribute('aria-label',depthName);
+    query('[data-field="depth"]').title=`${depthName} (B; use arrow keys)`;
+    const pacman=kind==='pacman'&&(selected||drawing),depth=current.depth??.5;
     hide('[data-context-special="pacman"]',!pacman);
+    const recipe = shape && validateGearRecipe(shape.gearRecipe, shape);
+    hide('[data-gear-recipe-controls]',!recipe);
+    if (recipe) {
+      const bounds = gearRecipeBounds(recipe);
+      for (const field of ['largeTeeth','smallTeeth','hole']) {
+        const row = query(`[data-gear-recipe-row="${field}"]`), relevant = field === 'largeTeeth' || recipe.kind !== 'large';
+        row.hidden = !relevant;
+        if (!relevant) continue;
+        const control = row.querySelector('input'), [min,max] = bounds[field];
+        control.min = min; control.max = max;
+        if (document.activeElement !== control && control.value !== String(recipe[field])) control.value = recipe[field];
+        row.querySelector('[data-step="-1"]').disabled = recipe[field] <= min;
+        row.querySelector('[data-step="1"]').disabled = recipe[field] >= max;
+      }
+    }
     for(const [field,value]of [['opening',depth*360],['slice',(1-depth)*360]]){
-      const control=panel.querySelector(`[data-field="${field}"]`);control.disabled=!pacman;
+      const control=query(`[data-field="${field}"]`);control.disabled=!pacman;
       if(document.activeElement!==control)control.value=Math.round(value*10)/10;
       control.title=`${field==='opening'?'Opening':'Filled slice'} angle, in degrees`;
     }
-    panel.querySelectorAll('[data-slice]').forEach(button=>{button.disabled=!pacman;button.setAttribute('aria-pressed',String(pacman&&Math.abs((1-depth)*360-Number(button.dataset.slice))<.1));});
-    panel.querySelector('.notes-status').textContent = `${shapes.length} selected. ${doc.objects.length} objects. ${!storageFailed || workingSaved ? 'Saved locally.' : draftRevision > savedDraftRevision && libraryReady ? 'Saving locally…' : 'Session only. Device storage unavailable.'}${isolation ? ` Editing ${doc.groups.find(g=>g.id===isolation)?.name}. Double-click empty glass or press Escape to leave.` : ''}${notice ? ` ${notice}` : ''}`;
-    const smartButton = panel.querySelector('[data-action="smart-rotate"]'); smartButton.disabled = !shapes.length && !lastTarget(); smartButton.setAttribute('aria-pressed', String(Boolean(smart)));
-    panel.querySelectorAll('[data-snap]').forEach(el => { el.checked = snaps[el.dataset.snap]; el.disabled = el.dataset.snap !== 'enabled' && !snaps.enabled; });
+    queryAll('[data-slice]').forEach(button=>{button.disabled=!pacman;button.setAttribute('aria-pressed',String(pacman&&Math.abs((1-depth)*360-Number(button.dataset.slice))<.1));});
+    query('.notes-status').textContent = `${shapes.length} selected. ${doc.objects.length} objects. ${!storageFailed || workingSaved ? 'Saved locally.' : draftRevision > savedDraftRevision && libraryReady ? 'Saving locally…' : 'Session only. Device storage unavailable.'}${isolation ? ` Editing ${doc.groups.find(g=>g.id===isolation)?.name}. Double-click empty glass or press Escape to leave.` : ''}${notice ? ` ${notice}` : ''}`;
+    const smartButton = query('[data-action="smart-rotate"]'); smartButton.disabled = !shapes.length && !lastTarget(); smartButton.setAttribute('aria-pressed', String(Boolean(smart)));
+    queryAll('[data-snap]').forEach(el => { el.checked = snaps[el.dataset.snap]; el.disabled = el.dataset.snap !== 'enabled' && !snaps.enabled; });
     canvas.style.cursor = cursor();
   }
   function action(name) {
-    finishGesture(); if (name !== 'undo' && name !== 'redo') finishPath(); notice = '';
-    if(name==='tools-picker'){toolsPickerOpen=!toolsPickerOpen;changed();return;}
+    const traveling = name === 'undo' || name === 'redo';
+    suppressDiscovery = traveling;
+    try { finishGesture(); } finally { suppressDiscovery = false; }
+    if (!traveling) finishPath(); notice = '';
     if (name.startsWith('align-') || name === 'repeat') {
       if (!chosen().length || name === 'repeat' && !repeatAction) return;
       const before = snapshot(), operation = name === 'repeat' ? clone(repeatAction) : { kind: 'align', mode: name.slice(6), copy: false };
@@ -557,25 +624,24 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       recoverOffPane(doc, originals, selection).forEach(s => artwork.invalidate(s));
       if (comparable(before) !== JSON.stringify(doc)) { repeatAction = operation; remember(before); save(); }
       if (operation.kind !== 'rotate') smart = null;
-      gears.close(); tool = 'select'; changed(); return;
+      gears.close(); gearCanvasArmed = false; tool = 'select'; changed(); return;
     }
     if (name === 'smart-rotate') {
       if (smart) { smart = null; changed(); return; }
       if (!chosen().length) { const target = lastTarget(); if (!target) return; selectIds(leaves(doc, rootFor(target)).map(s => s.id)); }
-      gears.close(); tool = 'select'; shapeEdit = false; const frame = selectionFrame(); smart = { pivot: { x: frame.x, y: frame.y } }; changed(); return;
+      gears.close(); gearCanvasArmed = false; tool = 'select'; shapeEdit = false; const frame = selectionFrame(); smart = { pivot: { x: frame.x, y: frame.y } }; changed(); return;
     }
-    if (name === 'gears') { onPanelRequest('gears'); smart = null; gears.toggle(); if (gears.open) selectIds([]); changed(); return; }
-    if (name === 'layers') { if (onPanelRequest('layers')) return; layersOpen = !layersOpen; changed(); return; }
+    if (name === 'gears') { onPanelRequest('gears'); smart = null; gears.toggle(); gearCanvasArmed = false; changed(); return; }
     if (name === 'shape-edit') { smart = null; if (single()?.type !== 'pencil' && single()) { tool = 'select'; shapeEdit = !shapeEdit; selectedAnchor = null; changed(); } return; }
     if (name === 'undo' || name === 'redo') {
-      penDraft = null; gears.reset(); const from = name === 'undo' ? undoStack : redoStack, to = name === 'undo' ? redoStack : undoStack;
-      if (!from.length) return; to.push(snapshot()); const state = from.pop(); doc = state.doc; repeatAction = state.repeatAction || null; selection = new Set(tool === 'select' && !gears.open ? state.selection : []); selectedAnchor = null;
+      penDraft = null; gears.reset(); if (name === 'undo' && !history.canUndo || name === 'redo' && !history.canRedo) return;
+      const state = history.travel(name, snapshot()); doc = state.doc; repeatAction = state.repeatAction || null; selection = new Set(state.selection); selectedAnchor = null;
       selectedDrawingId = state.selectedDrawingId || null; savedBaseline = state.savedBaseline || JSON.stringify(doc); libraryName.value = state.drawingName || ''; librarySelect.value = selectedDrawingId || ''; persistDrawingIdentity(); changed(true); return;
     }
     if (name === 'group' || name === 'ungroup') { layerAction(name); return; }
     if (name === 'delete' && shapeEdit && single() && selectedAnchor !== null && single().type !== 'line') {
       const s = single(), points = shapeAnchors(s); if (points.filter(p=>(p.contour||0)===(points[selectedAnchor]?.contour||0)).length <= (isClosed(s) ? 3 : 2)) return;
-      remember(); artwork.invalidate(s); points.splice(selectedAnchor, 1); s.anchors = points; if (s.type === 'polygon') s.sides = points.length; rebaseShape(s); selectedAnchor = null; changed(true); return;
+      remember(); artwork.invalidate(s); delete s.gearRecipe; points.splice(selectedAnchor, 1); s.anchors = points; if (s.type === 'polygon') s.sides = points.length; rebaseShape(s); selectedAnchor = null; changed(true); return;
     }
     if (name === 'duplicate' && chosen().length && doc.objects.length + chosen().length <= 300) { remember(); selection = duplicateSelection(doc, selection, undefined, isolation); repeatAction = { kind: 'move', delta: { x: 20, y: 20 }, copy: true }; tool = 'select'; }
     else if (name === 'delete' && chosen().length) { remember(); doc.objects = doc.objects.filter(s => !selection.has(s.id)); selection.clear(); pruneGroups(doc); }
@@ -586,12 +652,11 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   function layerAction(name, payload = {}) {
     finishGesture(); finishPath();
     if (name === 'clear') { action('clear'); return; }
-    if (name === 'close') { if (onPanelRequest('close-layers')) return; layersOpen = false; changed(); return; }
     if (name === 'activate') { if (!doc.layers.some(l => l.id === payload.id)) return; smart = null; doc.activeLayer = payload.id; isolation=null; selectIds([]); changed(true); return; }
     if (name === 'drop-nodes') {
       const next = clone(doc); if (!placeNodes(next, payload.ids, payload)) return;
       const moved = payload.ids.flatMap(id => { const group = doc.groups.find(g => g.id === id); return group ? leaves(doc, { ...group, kind: 'group' }).map(s => s.id) : [id]; });
-      remember(); doc = next; selection = new Set(moved); doc.activeLayer = payload.layerId; smart = null; gears.close(); tool = 'select'; changed(true); return;
+      remember(); doc = next; selection = new Set(moved); doc.activeLayer = payload.layerId; smart = null; gears.close(); gearCanvasArmed = false; tool = 'select'; changed(true); return;
     }
     if (name === 'reorder-pane') {
       const next = [...doc.layers].reverse(), source = next.find(l => l.id === payload.id); if (!source || payload.beforeId === source.id) return;
@@ -620,11 +685,11 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     else if (name === 'move-layer') { moveSelectionToLayer(doc, selection, payload.id); doc.activeLayer = payload.id; }
     changed(true);
   }
-  panel.addEventListener('click', event => {
+  const clickControl = event => {
     const b = event.target.closest('button'); if (!b) return;
     if (b.dataset.libraryAction) {
       const choice = b.dataset.libraryAction;
-      if (choice === 'import') panel.querySelector('[data-library="file"]').click();
+      if (choice === 'import') query('[data-library="file"]').click();
       else runLibraryTask(async () => {
         if (choice === 'save') await saveDrawing();
         else if (choice === 'save-as') await saveDrawing(true);
@@ -634,11 +699,17 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       });
     }
     else if (b.dataset.tool) setTool(b.dataset.tool);
+    else if (b.dataset.gearRecipeStep) {
+      const recipe = single()?.gearRecipe;
+      if (recipe) commitGearRecipe(b.dataset.gearRecipeStep, recipe[b.dataset.gearRecipeStep] + Number(b.dataset.step));
+    }
     else if(b.dataset.slice){if(!b.disabled){finishGesture();fieldEdit={...snapshot(),field:'slice'};applyProperty('slice',Number(b.dataset.slice));commitField();changed();}}
     else if (b.dataset.colorTarget) { colorTarget = b.dataset.colorTarget; changed(); }
     else if (b.dataset.color) colorTo(b.dataset.color === 'none' ? null : b.dataset.color);
     else if (b.dataset.action) action(b.dataset.action);
-  }, { signal: input.signal });
+  };
+  panel.addEventListener('click', event => { if (!toolStrip.contains(event.target)) clickControl(event); }, { signal: input.signal });
+  toolStrip.addEventListener('click', clickControl, { signal: input.signal });
   panel.addEventListener('input', event => {
     const field = event.target.dataset.field; if (!field || ['scale', 'clipped'].includes(field)) return;
     if (!fieldEdit) { finishGesture(); fieldEdit = { ...snapshot(), field }; }
@@ -647,6 +718,11 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     applyProperty(field, value); changed();
   }, { signal: input.signal });
   panel.addEventListener('change', event => {
+    if (event.target.dataset.gearRecipeField) { commitGearRecipe(event.target.dataset.gearRecipeField, Number(event.target.value)); return; }
+    if (event.target.dataset.export) {
+      if (event.target.dataset.export === 'background') query('[data-export="color"]').disabled = event.target.value === 'none';
+      return;
+    }
     if (event.target.dataset.library === 'saved') { runLibraryTask(() => loadDrawing(event.target.value)); return; }
     if (event.target.dataset.library === 'file') {
       const file = event.target.files?.[0]; event.target.value = '';
@@ -656,7 +732,16 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (event.target.dataset.library === 'name') return;
     if (event.target.dataset.snap) toggleSnap(event.target.dataset.snap, event.target.checked); else if (event.target.dataset.field === 'scale') scaleStrokes = event.target.checked; else if (event.target.dataset.field === 'clipped') toggleClipped(event.target.checked); else { commitField(); changed(); }
   }, { signal: input.signal });
-  panel.addEventListener('focusout', () => commitField(), { signal: input.signal });
+  panel.addEventListener('focusout', event => { if (event.target.dataset.gearRecipeField) commitGearRecipe(event.target.dataset.gearRecipeField, Number(event.target.value)); else commitField(); }, { signal: input.signal });
+  panel.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.dataset.gearRecipeField) { commitGearRecipe(event.target.dataset.gearRecipeField, Number(event.target.value)); event.preventDefault(); } }, { signal: input.signal });
+  registerNumericInputOwner(panel, {
+    start: el => el.dataset.field ? { defaults: clone(defaults) } : null,
+    end: (el, { cancel, data }) => {
+      if (!el.dataset.field) return;
+      if (cancel) { commitField(true); Object.assign(defaults, data.defaults); changed(); }
+      else { commitField(); changed(); }
+    }
+  }, { signal: input.signal });
   function hitTest(point) {
     for (const shape of orderedObjects(doc).reverse()) {
       if (!editable(shape)) continue;
@@ -687,7 +772,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     context.save(); context.globalAlpha = .65 + .35 * easedContrast;
     gears.render(context, unit);
     context.strokeStyle = '#e6f8ff'; context.lineWidth = unit * .14; const shape = single(), selected = chosen();
-    if (!gears.open && !smart && tool === 'select' && selected.length && gesture?.kind !== 'endpoint') {
+    if (!gearCanvasArmed && !smart && tool === 'select' && selected.length && gesture?.kind !== 'endpoint') {
       if (shapeEdit && shape && shape.type !== 'pencil' && shape.type !== 'line') {
         context.save(); context.translate(shape.x, shape.y); context.rotate(shape.rotation); context.setLineDash([unit * .4, unit * .4]); context.stroke(makePath(shape)); context.restore(); drawAnchors(shape);
       } else {
@@ -697,6 +782,11 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
         context.stroke(); context.setLineDash([]); const stem = multiply(add(points[0], points[1]), .5), last = points.at(-1);
         context.beginPath(); context.moveTo(stem.x, stem.y); context.lineTo(last.x, last.y); context.stroke(); points.forEach((p, i) => drawHandle(p, i === points.length - 1));
       }
+    } else if (selected.length && !smart) {
+      const frame = selectionFrame(); context.save(); context.setLineDash([unit * .6, unit * .4]);
+      if (selected.length === 1) { context.translate(frame.x, frame.y); context.rotate(frame.rotation); context.strokeRect(-frame.width / 2, -frame.height / 2, frame.width, frame.height); }
+      else { context.strokeRect(frame.x - frame.width / 2, frame.y - frame.height / 2, frame.width, frame.height); }
+      context.restore();
     }
     if (smart) {
       const visuals = smartVisuals(); context.setLineDash([]); context.lineWidth = unit * .18;
@@ -721,10 +811,10 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     context.restore(); context.restore();
   }
   function startPen(point) {
-    if (lastPenEnd && performance.now() - lastPenEnd.time < 350 && distance(point, lastPenEnd.point) < unit) return true;
+    if (lastPenEnd && performance.now() - lastPenEnd.time < 350 && distance(point, lastPenEnd.point) < unit * .25) return true;
     let shape = doc.objects.find(s => s.id === penDraft); const before = snapshot();
-    if (shape && shape.anchors.length >= 3 && distance(point, toWorld(shape.anchors[0], shape)) < unit * 1.4) { shape.closed = true; remember(before); finishPath(); changed(true); return true; }
-    if (shape && shape.anchors.length >= 2 && distance(point, toWorld(shape.anchors.at(-1), shape)) < unit) { finishPath(); return true; }
+    if (shape && shape.anchors.length >= 3 && distance(point, toWorld(shape.anchors[0], shape)) < unit * 1.4) { shape.closed = true; remember(before); finishPath(false, point); changed(true); return true; }
+    if (shape && shape.anchors.length >= 2 && distance(point, toWorld(shape.anchors.at(-1), shape)) < unit * .25) { finishPath(false, point); return true; }
     if (!shape) {
       if (doc.objects.length >= 300 || !layerEditable(doc, doc.activeLayer)) return false;
       shape = newShape('path', point, point); shape.anchors = []; shape.closed = false; doc.objects.push(shape); penDraft = shape.id;
@@ -733,16 +823,16 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     const local = toLocal(point, shape); artwork.invalidate(shape); shape.anchors.push(anchor(local.x, local.y)); selectIds([shape.id]);
     gesture = { kind: 'pen-anchor', before, id: shape.id, index: shape.anchors.length - 1, start: point }; changed(); return true;
   }
-  function finishPath(close = false) {
+  function finishPath(close = false, suppressPoint = null) {
     if (!penDraft) return;
     const shape = doc.objects.find(s => s.id === penDraft); penDraft = null; hover = null;
     if (shape) {
-      lastPenEnd = { point: toWorld(shape.anchors.at(-1), shape), time: performance.now() };
+      lastPenEnd = suppressPoint ? { point: suppressPoint, time: performance.now() } : null;
       if (close && shape.anchors.length >= 3) { remember(); shape.closed = true; }
       if (shape.anchors.length < 2) { doc.objects = doc.objects.filter(s => s.id !== shape.id); selection.delete(shape.id); }
-      else { artwork.invalidate(shape); rebaseShape(shape); lastDrawn = shape.id; }
+      else { artwork.invalidate(shape); rebaseShape(shape); lastDrawn = shape.id; inspectCompletedDrawing(shape.id); }
     }
-    selectIds([]);
+    selectIds(shape && shape.anchors.length >= 2 ? [shape.id] : []);
     changed(true);
   }
   function newShape(type, start, end, shift = false) {
@@ -751,9 +841,9 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     return shape;
   }
   function pointerDown(point, event = {}) {
-    commitField(); if (gesture || !point || !onGlass(point) && !gears.open && !smart && (tool !== 'select' || !showClippedArt)) return false; hover = point; notice = '';
+    commitField(); if (gesture || !point || !onGlass(point) && !gearCanvasArmed && !smart && (tool !== 'select' || !showClippedArt)) return false; hover = point; notice = '';
     if (smart) { const targets = smart.targets ||= rotationTargets(doc, snaps); const candidate = nearestRotationTarget(point, targets, unit * (event.pointerType === 'touch' ? 2.5 : 1.4)); gesture = { kind: 'smart-rotate', before: snapshot(), originals: clone(chosen()), start: point, targets, previousAngle: Math.atan2(point.y - smart.pivot.y, point.x - smart.pivot.x), pivot: { ...smart.pivot }, candidate, moved: false, delta: 0, copyRequested: Boolean(event.altKey) }; changed(); event.preventDefault?.(); return true; }
-    if (gears.open) { event.preventDefault?.(); return gears.pointerDown(point); }
+    if (gears.open && gearCanvasArmed) { event.preventDefault?.(); return gears.pointerDown(point); }
     if (tool === 'path') { event.preventDefault?.(); return startPen(point); }
     const before = snapshot(), shapes = chosen(), shape = single(), tolerance = unit * (event.pointerType === 'touch' ? 2.5 : 1.4);
     if (tool !== 'select') {
@@ -797,7 +887,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     changed(); event.preventDefault?.(); return true;
   }
   function pointerMove(point, event = {}) {
-    if (!point) return; hover = point; if (gears.open) gears.setHover(point); if (gears.active) { gears.pointerMove(point); return; }
+    if (!point) return; hover = point; if (gears.open && gearCanvasArmed) gears.setHover(point); if (gears.active) { gears.pointerMove(point); return; }
     if (!gesture) { if (penDraft || smart) changed(false, { panel: false, layers: false }); return; }
     const g = gesture, p = constrainPoint(point), shape = doc.objects.find(s => s.id === (g.id || single()?.id));
     if (g.kind === 'smart-rotate') {
@@ -859,18 +949,22 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
   }
   function finishGesture(cancel = false) {
     commitField(cancel); if (gears.active) gears.finishGesture(cancel); if (!gesture) return; const g = gesture; gesture = null;
-    if (cancel || g.kind === 'draw' && !g.started) { doc = g.before.doc; selection = new Set(g.before.selection); if (!doc.objects.some(s => s.id === penDraft)) penDraft = null; }
+    if (cancel || g.kind === 'draw' && !g.started) { doc = clone(g.before.doc); selection = new Set(g.before.selection); if (!doc.objects.some(s => s.id === penDraft)) penDraft = null; }
     else if (g.kind === 'smart-rotate' && !g.moved) { const candidate = snaps.enabled ? g.candidate || nearestRotationTarget(g.start, g.targets || [], unit * 1.4) : null; smart.pivot = { x: candidate?.x ?? g.start.x, y: candidate?.y ?? g.start.y }; }
     else if (g.kind !== 'marquee') {
-      const shape = doc.objects.find(s => s.id === g.id); if (shape && ['anchor', 'control', 'endpoint', 'pen-anchor'].includes(g.kind)) { artwork.invalidate(shape); rebaseShape(shape); }
+      const shape = doc.objects.find(s => s.id === g.id); if (shape && ['anchor', 'control', 'endpoint', 'pen-anchor'].includes(g.kind)) { artwork.invalidate(shape); if (['anchor','control','pen-anchor'].includes(g.kind)) delete shape.gearRecipe; rebaseShape(shape); }
       if (g.originals) recoverOffPane(doc, g.originals, new Set(g.originals.map(s => s.id))).forEach(s => artwork.invalidate(s));
-      if (g.kind === 'draw') { lastDrawn = g.id; selectIds([]); }
-      if (comparable(g.before) !== JSON.stringify(doc)) { recordTransform(g); remember(g.before); save(); }
+      if (g.kind === 'draw') { lastDrawn = g.id; selectIds([g.id]); }
+      if (comparable(g.before) !== JSON.stringify(doc)) {
+        recordTransform(g); remember(g.before); save();
+        if (g.kind === 'draw' || ['move', 'resize', 'rotate', 'smart-rotate', 'anchor', 'control', 'endpoint'].includes(g.kind))
+          for (const id of g.kind === 'draw' ? [g.id] : g.originals?.map(s => s.id) || [g.id]) inspectCompletedDrawing(id);
+      }
     }
     changed();
   }
   function doubleClick(point) {
-    if (gears.open || smart) return;
+    if (gearCanvasArmed || smart) return;
     if (tool === 'path') { finishGesture(); finishPath(); return; }
     if(tool==='select' && !shapeEdit) {
       finishGesture(); const hit=point && hitTest(point), root=hit && rootFor(hit);
@@ -895,7 +989,7 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       }
       if (nearest.index !== undefined && anchors.length < (shape.type === 'polygon' ? 24 : 200)) { shape.anchors = splitCurve(anchors, nearest.index, clamp(nearest.t, .02, .98), isClosed(shape)); if (shape.type === 'polygon') shape.sides = shape.anchors.length; selectedAnchor = nearest.index + 1; }
     }
-    artwork.invalidate(shape); rebaseShape(shape); changed(true);
+    artwork.invalidate(shape); delete shape.gearRecipe; rebaseShape(shape); changed(true);
   }
   function keydown(event) {
     if (event.target?.closest?.('textarea,select,input:not([type="range"]):not([type="checkbox"]),[contenteditable="true"]')) return false;
@@ -910,13 +1004,13 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     if (!command && !event.altKey && event.shiftKey && key === 'q') { toggleSnap('enabled'); event.preventDefault(); event.stopImmediatePropagation?.(); return true; }
     if (!command && !event.altKey && event.shiftKey && key === 'c') { toggleClipped(); event.preventDefault(); event.stopImmediatePropagation?.(); return true; }
     if (handleEditorShortcut(event, { panel, doc, selection, layers, layerAction, action, chosen, single,
-      setScale() { scaleStrokes = !scaleStrokes; panel.querySelector('[data-field="scale"]').checked = scaleStrokes; },
+      setScale() { scaleStrokes = !scaleStrokes; query('[data-field="scale"]').checked = scaleStrokes; },
       color(target) { colorTarget = target; changed(); }, noColor() { colorTo(null); },
       selectAll() { finishPath(); tool = 'select'; selectIds(doc.objects.filter(s => editable(s)).map(s => s.id)); changed(); } })) {
       event.preventDefault(); event.stopImmediatePropagation?.(); return true;
     }
     if (!command && !event.altKey && !event.shiftKey && key === 'g') { action('gears'); event.preventDefault(); event.stopImmediatePropagation?.(); return true; }
-    if (gears.keydown(event)) { if (gears.open) selectIds([]); event.preventDefault(); event.stopImmediatePropagation?.(); changed(); return true; }
+    if ((gearCanvasArmed || gears.panel.contains(document.activeElement)) && gears.keydown(event)) { if (!gears.open) gearCanvasArmed = false; event.preventDefault(); event.stopImmediatePropagation?.(); changed(); return true; }
     if (command && key === 'z') action(event.shiftKey ? 'redo' : 'undo');
     else if (command && key === 'y') action('redo');
     else if (command && key === 'g') action(event.shiftKey ? 'ungroup' : 'group');
@@ -925,7 +1019,6 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     else if (event.key === 'Enter' && penDraft) { finishGesture(); finishPath(command); }
     else if (event.key === 'Escape') { finishGesture(true); finishPath(); selectIds([]); shapeEdit = false; if(isolation)isolation=doc.groups.find(g=>g.id===isolation)?.parentId||null; changed(); }
     else if (!command && !event.altKey && key === 'a') action('shape-edit');
-    else if (event.key === 'F7') action('layers');
     else if (!command && !event.altKey && ALL_TOOLS.some(t => t.key.toLowerCase() === key)) setTool(ALL_TOOLS.find(t => t.key.toLowerCase() === key).id);
     else if (!command && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key) && chosen().length) {
       finishGesture(); if (event.altKey && doc.objects.length + chosen().length > 300) return false;
@@ -936,11 +1029,21 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
     } else handled = false;
     if (handled) { event.preventDefault(); event.stopImmediatePropagation?.(); } return handled;
   }
+  drawingFolds = mountCollapsibleSections(panel, {
+    scope: 'about:notes:drawing', group: 'drawing', headingLevels: [3], reorder: false,
+    detailsSelector: '.notes-library',
+    disclosures: [
+      {
+        id: 'snaps', heading: query('.notes-snaps-disclosure'), body: query('#notes-snap-options'),
+        defaultExpanded: true
+      }
+    ]
+  });
   changed();
-  return { canvas, panel, layersPanel: layers.panel, gearsPanel: gears.panel, dropGear: gears.drop, tick: gears.tick, pointerDown, pointerMove, pointerLeave() { hover = null; gears.setHover(null); if (smart) changed(false, { panel: false, layers: false }); }, doubleClick, finishGesture, finishPath, keydown, action, flush,
+  return { canvas, panel, toolStrip, selectTool(clearSelection = false) { setTool('select', clearSelection); }, setGearView(open) { if (gears.open !== open) { onPanelRequest('gears'); gears.toggle(); gearCanvasArmed = false; changed(); } }, layersPanel: layers.panel, gearsPanel: gears.panel, dropGear: gears.drop, tick: gears.tick, pointerDown, pointerMove, pointerLeave() { hover = null; gears.setHover(null); if (smart) changed(false, { panel: false, layers: false }); }, doubleClick, finishGesture, finishPath, keydown, action, flush,
     libraryReady: libraryInitialization, saveDrawing, loadDrawing, importDrawing, exportPngBlob, flushAutosave,
     get isolation() { return isolation; }, get drawing() { return clone(doc.objects); }, get document() { return clone(doc); }, get tool() { return tool; }, get cursor() { return cursor(); },
-    setClippedArt(value) { if (showClippedArt !== value) { showClippedArt = value; panel.querySelector('[data-field="clipped"]').checked = value; changed(); } },
+    setClippedArt(value) { if (showClippedArt !== value) { showClippedArt = value; query('[data-field="clipped"]').checked = value; changed(); } },
     get overflow() {
       const visible = showClippedArt ? orderedObjects(doc).filter(s => nodeVisible(doc, s)) : [];
       let artworkPaths = [];
@@ -952,10 +1055,10 @@ export function createDrawingEditor({ onChange = () => {}, onPanelRequest = () =
       lastOutlineSegments = artworkPaths.reduce((n, p) => n + p.segments.length, 0);
       return [...artworkPaths, ...[...smartVisuals().paths, ...(gesture?.snapPaths || [])].map(p => ({ color: p.color, segments: clippedPath(p.points), dynamic: true })), ...gears.paths.filter(p => p.mechanical || showClippedArt).map(p => ({ color: p.color, segments: clippedPath(p.points), dynamic: true }))].filter(p => p.segments.length);
     },
-    get active() { return Boolean(gesture) || gears.active; }, get layersOpen() { return layersOpen; }, get gearsOpen() { return gears.open; }, get layerCount() { return doc.layers.length; },
+    get active() { return Boolean(gesture) || gears.active; }, get layersOpen() { return true; }, get gearsOpen() { return gears.open; }, get layerCount() { return doc.layers.length; },
     subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     setHandleUnit(value) { const next = clamp(value, 7, 35); if (Math.abs(next - unit) > 1) { unit = next; if (selection.size || penDraft || smart || gears.active) changed(false, { panel: false, layers: false }); } },
     setAppearance(next) { const c = clamp(next.contrast ?? .5, 0, 1), b = clamp(next.brightness ?? .5, 0, 1); if (contrast !== c || brightness !== b) { contrast = c; brightness = b; artwork.clear(); changed(); } },
-    dispose() { finishGesture(); finishPath(); disposed = true; cancelAnimationFrame(paintFrame); paintFrame = 0; stopBudget(); artwork.dispose(); gears.dispose(); input.abort(); layers.dispose(); downloads.dispose(); listeners.clear(); void flushAutosave().finally(() => library.dispose()); }
+    dispose() { finishGesture(); finishPath(); disposed = true; cancelAnimationFrame(paintFrame); paintFrame = 0; stopBudget(); artwork.dispose(); gears.dispose(); drawingFolds.dispose(); input.abort(); layers.dispose(); downloads.dispose(); listeners.clear(); void flushAutosave().finally(() => library.dispose()); }
   };
 }

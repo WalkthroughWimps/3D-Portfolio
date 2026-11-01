@@ -1,18 +1,28 @@
+import { mountCollapsibleSections } from '../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
+import { mountSettingsContextMenu } from '../_7-shared-scripts/panel-assembly/SettingsContextMenu.mjs';
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
 import { createStartSettingsFlow } from './start/settings-flow.js';
 import { disposeControllerSceneResources } from './start/controller-scene.js';
 import { createStartCameraFlow, easeInOutPower } from './start/camera-flow.js';
 import { syncStartAccessibleControls } from './start/accessible-controls.js';
-import { estimateSyncOffsetMs, audioDelaySeconds } from './start/media-calibration.js';
+import { audioDelaySeconds } from './start/media-calibration.js';
+import { createPowerCat } from './start/power-cat.js';
+import { createStartViewMemory } from './start/view-memory.js';
+import { createModeButtonMotion, sampleMomentaryPress } from './start/button-motion.js';
+import { createControllerAccents, contrastHighlightIntensity } from './start/controller-accents.js';
+import { createSyncComparison } from './start/sync-comparison.js';
+import { mountStartProjectOverlays } from './start/project-overlays.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
+import { panelViewport } from '../_7-shared-scripts/core/panel-viewport.js';
 import { getSyncOffsetMs, setSyncOffsetMs, snapSyncMs } from '../_7-shared-scripts/global-sync.js';
 import { localPreferences } from '../_7-shared-scripts/local-preferences.js';
+import { createSceneStickyAdapter, createSceneInputOwnership } from '../_7-shared-scripts/sticky-notes/scene-adapter.js';
 
 import { createCameraTransition } from './camera-transition.js';
 import { assetUrl, isLocalDev } from "../_7-shared-scripts/assets-config.js";
 import { loadDebugIfEnabled } from "../debug/debug-loader.js";
 import { getSceneLightingValue, setSceneLightingValue, getLightScaleForValue, MAX_LIGHT_RATIO } from "../_7-shared-scripts/scene-lighting-sync.js";
-import { ensureAudioConsentPrompt, setAudioConsentAllowed } from "../_7-shared-scripts/audio-consent.js";
+import { ensureAudioConsentPrompt, getAudioConsentState, setAudioConsentAllowed, onAudioConsentChange } from "../_7-shared-scripts/audio-consent.js";
 import { applyStartPageMouseControlMode } from "../_7-shared-scripts/shared-glb-mouse-controls.js";
 import {  getStoredPreservePitch, setPreservePitchFlag, playbackRates as SHARED_PLAYBACK_RATES } from "../_7-shared-scripts/shared-video-controls.js";
 import * as THREE from "three";
@@ -39,6 +49,7 @@ const settingsControllerBridge = {
     camera: null,
     model: null,
     controls: null,
+    stickyAdapter: null,
     canvas: null,
     knobVolNode: null,
     knobSyncNode: null,
@@ -93,6 +104,11 @@ export function mountStartPage({ scope }) {
     let suspendScene = () => {};
     let resumeScene = () => {};
     let restartVisualizer = false;
+    let projectOverlayOpen = false;
+    const viewMemory = createStartViewMemory(localPreferences);
+    const rememberedStartView = viewMemory.read();
+    let rememberCurrentView = () => {};
+    listen(window, 'pagehide', () => rememberCurrentView(true));
     const { keys, defaultSliderValue: DEFAULT_SLIDER_VALUE,
         defaultLookTuning: DEFAULT_LOOK_TUNING, lightingState, clamp01Value,
         clampLookTuning, lookTuning, getLuxValue, setLuxValue,
@@ -120,12 +136,7 @@ export function mountStartPage({ scope }) {
             thumbnail: assetUrl('_0-start/alphabet-thumb.jpg')
         }
     };
-    const SYNC_VOICE_URL = assetUrl('assets/audio/sync-voice.wav');
-    const SYNC_TICKS_URL = assetUrl('assets/audio/sync-ticks.wav');
-    const SYNC_BEAT_MS = 800;
-    const SYNC_REACTION_ALLOWANCE_MS = 180;
-    const SYNC_WORDS = ['GO', '3', '2', '1', 'GO'];
-    const SYNC_CUE_OFFSETS_MS = [3200, 4000, 4800, 5600, 6400];
+    const SYNC_GUIDE_URL = assetUrl('assets/audio/sync-guide.mp3');
 
     // Elements
     const saveBtn = document.getElementById('save_a11y');
@@ -137,10 +148,6 @@ export function mountStartPage({ scope }) {
     const jumpVideo = document.getElementById('jumpVideo');
 
     const jumpAudio = document.getElementById('jumpAudio');
-    const syncVoiceAudio = new Audio(SYNC_VOICE_URL);
-    const syncTicksAudio = new Audio(SYNC_TICKS_URL);
-    syncVoiceAudio.preload = 'auto';
-    syncTicksAudio.preload = 'auto';
     const syncSlider = document.getElementById('syncSlider');
     const syncLeft = document.getElementById('syncLeft');
     const syncRight = document.getElementById('syncRight');
@@ -157,6 +164,11 @@ export function mountStartPage({ scope }) {
     const settingsBtn = document.getElementById('settingsBtn');
     const settingsModal = document.getElementById('settingsModal');
     const leadText = document.getElementById('leadText');
+    const portfolioEntry = document.getElementById('portfolioEntry');
+    const openComfortSettings = document.getElementById('openComfortSettings');
+    const startControllerOverview = document.getElementById('startControllerOverview');
+    let controllerUnavailable = false;
+    const accessibleControllerControls = document.querySelector('.controller-accessible-controls');
     const settingsControllerScene = document.getElementById('settingsControllerScene');
     const bgOverlay = document.querySelector('.bg-overlay');
     const settingsControllerCanvas = document.getElementById('settingsControllerCanvas');
@@ -185,6 +197,8 @@ export function mountStartPage({ scope }) {
     const accessibleGallery = document.getElementById('accessibleGallery');
     const accessibleConfirmYes = document.getElementById('accessibleConfirmYes');
     const accessibleConfirmNo = document.getElementById('accessibleConfirmNo');
+    const accessiblePower = document.getElementById('accessiblePower');
+    const powerStatus = document.getElementById('startPowerStatus');
 
 
 
@@ -207,14 +221,11 @@ export function mountStartPage({ scope }) {
         animationAllowed: null,
         selectedMedia: 'counts',
         returnStage: 'gallery',
+        saveLatched: false,
         resolvePrompt: null,
         hoverHint: '',
         syncExercise: {
             active: false,
-            startedAt: 0,
-            taps: [],
-            litCount: 0,
-            litLines: new Set(),
             result: ''
         },
         hitRegions: [],
@@ -231,7 +242,7 @@ export function mountStartPage({ scope }) {
                 confirmYes: accessibleConfirmYes, confirmNo: accessibleConfirmNo },
             view: activeSettingsView, volume: storedVolume, syncMs: storedSync,
             brightness: getLuxValue(), contrast: getEmiValue(),
-            flow: controllerFlow, syncWords: SYNC_WORDS
+            flow: controllerFlow
         });
     }
 
@@ -242,6 +253,8 @@ export function mountStartPage({ scope }) {
         try{ jumpVideo.pause(); }catch{}
         try{ jumpAudio.pause(); }catch{}
         controllerFlow.stage = 'confirm';
+        controllerFlow.saveLatched = true;
+        settingsControllerBridge.setSaveLatched?.(true);
         settingsControllerBridge.renderScreen?.();
         syncAccessibleControllerUI();
     }
@@ -251,9 +264,12 @@ export function mountStartPage({ scope }) {
             window.location.href = '_1-about/about.html';
             return;
         }
-        controllerFlow.stage = controllerFlow.returnStage || 'gallery';
-        settingsControllerBridge.renderScreen?.();
-        syncAccessibleControllerUI();
+        resetSyncExercise();
+    }
+    function dismissSavedState(){
+        if(!controllerFlow.saveLatched) return false;
+        resetSyncExercise();
+        return true;
     }
     const getBackgroundBrightness = () => {
         if(Number.isFinite(lightingState.overlay)){
@@ -336,11 +352,8 @@ export function mountStartPage({ scope }) {
         const animDurationCustomValue = document.getElementById('animDurationCustomValue');
         const animDurationFocus = document.getElementById('animDurationFocus');
         const animDurationFocusValue = document.getElementById('animDurationFocusValue');
-        const animShiftStart = document.getElementById('animShiftStart');
-        const animShiftStartValue = document.getElementById('animShiftStartValue');
         const animEasePower = document.getElementById('animEasePower');
         const animEasePowerValue = document.getElementById('animEasePowerValue');
-        let contrastKnobTrackerEl = document.getElementById('contrastKnobTrackerLine');
         let lightingDebugLineEl = null;
         let knobSidesLineEl = null;
         let lightingDebugState = { source: 'init', knob: '-' };
@@ -461,18 +474,6 @@ export function mountStartPage({ scope }) {
 
     function ensureLightingDebugLine(){
         if(!debugCameraPanel) return;
-        if(!contrastKnobTrackerEl || !contrastKnobTrackerEl.isConnected){
-            const tracker = document.createElement('div');
-            tracker.id = 'contrastKnobTrackerLine';
-            tracker.className = 'debug-camera-value';
-            tracker.style.marginBottom = '4px';
-            tracker.style.fontSize = '12px';
-            tracker.style.opacity = '0.95';
-            tracker.style.whiteSpace = 'normal';
-            tracker.textContent = 'Contrast knob loc: pending';
-            debugCameraPanel.insertBefore(tracker, debugCameraPanel.firstChild);
-            contrastKnobTrackerEl = tracker;
-        }
         if(!lightingDebugLineEl || !lightingDebugLineEl.isConnected){
             const line = document.createElement('div');
             line.id = 'lightingDebugLine';
@@ -495,36 +496,6 @@ export function mountStartPage({ scope }) {
             debugCameraPanel.appendChild(sides);
             knobSidesLineEl = sides;
         }
-    }
-
-    function updateContrastKnobTrackerLine(){
-        if(!contrastKnobTrackerEl) return;
-        const node = settingsControllerBridge.knobSyncNode;
-        const constraints = settingsControllerBridge.knobConstraints;
-        const constraint = constraints?.sync || null;
-        const canvas = settingsControllerCanvas;
-        const camera = settingsControllerBridge.camera;
-        if(!node || !constraint || !node.parent){
-            contrastKnobTrackerEl.textContent = 'Contrast knob loc: unavailable';
-            return;
-        }
-        const axis = constraint.axis;
-        const raw = node.position[axis];
-        const denom = Math.max(1e-6, (constraint.max - constraint.min));
-        const t = Math.max(0, Math.min(1, (raw - constraint.min) / denom));
-        let sx = Number.NaN;
-        let sy = Number.NaN;
-        if(canvas && camera){
-            const rect = canvas.getBoundingClientRect();
-            if(rect.width > 0 && rect.height > 0){
-                const world = node.parent.localToWorld(node.position.clone());
-                const ndc = world.project(camera);
-                sx = ((ndc.x + 1) * 0.5) * rect.width;
-                sy = ((1 - ndc.y) * 0.5) * rect.height;
-            }
-        }
-        contrastKnobTrackerEl.textContent =
-            `Contrast knob loc: node=${node.name || '(unnamed)'} axis=${axis} raw=${raw.toFixed(4)} t=${t.toFixed(3)} local=(${node.position.x.toFixed(3)},${node.position.y.toFixed(3)},${node.position.z.toFixed(3)}) screen=(${Number.isFinite(sx) ? sx.toFixed(1) : '?'},${Number.isFinite(sy) ? sy.toFixed(1) : '?'})`;
     }
 
     function getConstraintScreenData(node, constraint, canvasRect, camera){
@@ -586,7 +557,6 @@ export function mountStartPage({ scope }) {
         const contrastNodeName = settingsControllerBridge.knobSyncNode?.name || '(none)';
         lightingDebugLineEl.textContent =
             `DBG src:${lightingDebugState.source} knob:${lightingDebugState.knob} Lux:${lux.toFixed(2)} Emi:${emi.toFixed(2)} CNode:${contrastNodeName}`;
-        updateContrastKnobTrackerLine();
         updateKnobSidesLine();
     }
 
@@ -595,7 +565,7 @@ export function mountStartPage({ scope }) {
         settingsControllerBridge.applyLuxControls?.();
         syncLuxInputs();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
-            settingsControllerBridge.updateKnobTransformsFromState();
+            settingsControllerBridge.updateKnobTransformsFromState({ immediate: 'vol' });
         }
         updateLightingDebugLine(source || 'lux', 'sync');
         syncAccessibleControllerUI();
@@ -608,7 +578,7 @@ export function mountStartPage({ scope }) {
         settingsControllerBridge.applyEmissionControls?.();
         syncEmiInputs();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
-            settingsControllerBridge.updateKnobTransformsFromState();
+            settingsControllerBridge.updateKnobTransformsFromState({ immediate: 'sync' });
         }
         updateLightingDebugLine(source || 'emi', 'contrast');
         syncAccessibleControllerUI();
@@ -633,7 +603,7 @@ export function mountStartPage({ scope }) {
     window.toggleOverlayBlendForDebugShortcut = toggleOverlayBlendForDebugShortcut;
     bindBackgroundLookControls();
 
-    function bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation }){
+    function bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation, updateUiAnimationSpeed }){
         ensureLightingDebugLine();
         if(uiAnimSpeedSlider && uiAnimSpeedValue){
             uiAnimSpeedSlider.value = String(uiAnimTuning.speed.toFixed(2));
@@ -641,6 +611,7 @@ export function mountStartPage({ scope }) {
             listen(uiAnimSpeedSlider, 'input', () => {
                 uiAnimTuning.speed = Math.max(0.05, parseFloat(uiAnimSpeedSlider.value) || 1);
                 uiAnimSpeedValue.textContent = `${uiAnimTuning.speed.toFixed(2)}x`;
+                updateUiAnimationSpeed();
             });
         }
         if(luxControlSlider){
@@ -735,14 +706,6 @@ export function mountStartPage({ scope }) {
                 animDurationFocusValue.textContent = `${animTuning.focusDurationMs}ms`;
             });
         }
-        if(animShiftStart && animShiftStartValue){
-            animShiftStart.value = String(animTuning.focusShiftStart.toFixed(2));
-            animShiftStartValue.textContent = animTuning.focusShiftStart.toFixed(2);
-            listen(animShiftStart, 'input', () => {
-                animTuning.focusShiftStart = parseFloat(animShiftStart.value) || animTuning.focusShiftStart;
-                animShiftStartValue.textContent = animTuning.focusShiftStart.toFixed(2);
-            });
-        }
         if(animEasePower && animEasePowerValue){
             animEasePower.value = String(animTuning.easePower.toFixed(1));
             animEasePowerValue.textContent = animTuning.easePower.toFixed(1);
@@ -773,6 +736,9 @@ export function mountStartPage({ scope }) {
             if(settingsControllerStatus) settingsControllerStatus.textContent = '3D controller unavailable. Use the settings controls below.';
             settingsControllerScene.classList.remove('controller-loading', 'controller-ready');
             settingsControllerScene.classList.add('controller-fallback');
+            controllerUnavailable = true;
+            document.body.classList.add('start-controller-unavailable');
+            setPortfolioEntryVisible(true);
             signalSettingsControllerReady();
             return;
         }
@@ -801,9 +767,10 @@ export function mountStartPage({ scope }) {
             settingsControllerBridge.camera = null;
             settingsControllerBridge.model = null;
             settingsControllerBridge.controls = null;
+            settingsControllerBridge.stickyAdapter = null;
             for(const key of ['renderScreen', 'revealController', 'finishOnboarding', 'selectMode',
-                'setAccessibilityView', 'setAudioView', 'updateAudioMeter',
-                'updateKnobTransformsFromState', 'resetCustomCameraAnimation']) {
+                'setAccessibilityView', 'setAudioView', 'updateAudioMeter', 'setSaveLatched',
+                'updateKnobTransformsFromState', 'resetCustomCameraAnimation', 'powerCat', 'syncComparison']) {
                 settingsControllerBridge[key] = null;
             }
             settingsControllerScene.classList.remove('controller-ready', 'controller-loading');
@@ -812,6 +779,10 @@ export function mountStartPage({ scope }) {
         const fallbackCamera = new THREE.PerspectiveCamera(45, 1, 0.01, 1000);
         fallbackCamera.position.set(0, 1.6, 4);
         let activeCamera = fallbackCamera;
+        const stickyAdapter = createSceneStickyAdapter({pageId: 'start', scene, canvas: settingsControllerCanvas,
+            getCamera: () => activeCamera, getRoot: () => scene, scope,
+            onInputOwnership: createSceneInputOwnership(() => controls)});
+        settingsControllerBridge.stickyAdapter = stickyAdapter;
         let centerOnViewport = Boolean(getSharedSettings().get().start?.centerOnViewport);
         const modelLocalCenter = new THREE.Vector3();
         const stopCenterSetting = getSharedSettings().subscribe(snapshot => {
@@ -826,8 +797,15 @@ export function mountStartPage({ scope }) {
         undersideLight.userData.lookRole = 'underside';
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
         dirLight.position.set(2, 4, 3);
-        scene.add(ambient, undersideLight, dirLight);
-        const lightingRig = [ambient, undersideLight, dirLight];
+        // The front key cannot illuminate normals on the controller's back or
+        // the feet. These are ordinary fills, governed by the same Brightness.
+        const rearFill = new THREE.DirectionalLight(0xcbd8ff, 0.9);
+        rearFill.position.set(-1, 1.5, -4);
+        const bottomFill = new THREE.DirectionalLight(0xb9a9d6, 0.42);
+        bottomFill.position.set(0.5, -4, -1);
+        bottomFill.userData.lookRole = 'underside';
+        scene.add(ambient, undersideLight, dirLight, rearFill, bottomFill);
+        const lightingRig = [ambient, undersideLight, dirLight, rearFill, bottomFill];
         let lightingTargets = null;
         const emissiveControlState = {
             exclusions: new Set(),
@@ -836,6 +814,7 @@ export function mountStartPage({ scope }) {
         settingsControllerBridge.emissiveControlState = emissiveControlState;
         const EMISSIVE_EXCLUSIONS_KEY = 'scene.emissive.exclusions';
         const EMISSIVE_SCALES_KEY = 'scene.emissive.scales';
+        let emissiveSelectionSaved = false;
         const DEFAULT_EMISSIVE_INCLUDE = new Set([
             'controller-box',
             'control-panel',
@@ -928,7 +907,7 @@ export function mountStartPage({ scope }) {
 
 
 
-        const captureLightingTargets = (model) => {
+        const captureLightingTargets = (model, emissiveAnimMaterials, emissiveAnimNodes) => {
             const ignoredEmissionNames = new Set([
                 'txt-glow-on',
                 'txt-glow-off',
@@ -964,6 +943,12 @@ export function mountStartPage({ scope }) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 const controlName = (controlNode.name || '').toLowerCase();
                 const nodeName = (child.name || '').toLowerCase();
+                const userControllable = !isControlScreenPath(getEmissiveNodePath(controlNode, model))
+                    && !isControlScreenPath(getEmissiveNodePath(child, model))
+                    && !isButtonTextName(controlName)
+                    && !isButtonTextName(nodeName)
+                    && !emissiveAnimNodes.has(controlName)
+                    && !emissiveAnimNodes.has(nodeName);
                 const contrastLocked = CONTRAST_EMISSIVE_LOCK.has(controlName)
                     || CONTRAST_EMISSIVE_LOCK.has(nodeName)
                     || animatedNodeNames.has(controlName)
@@ -972,9 +957,15 @@ export function mountStartPage({ scope }) {
                     || isButtonTextName(nodeName);
                 materials.forEach((mat, idx) => {
                     if(!mat || !('emissiveIntensity' in mat)) return;
-                    if(contrastLocked){
+                    const hasEmission = Boolean(mat.emissive)
+                        && (mat.emissive.r > 0 || mat.emissive.g > 0 || mat.emissive.b > 0);
+                    const controllable = userControllable && hasEmission && !mat.userData?.controllerOwned
+                        && !emissiveAnimMaterials.has((mat.name || '').toLowerCase());
+                    // A glTF material may be shared by unrelated components. Each
+                    // adjustable mesh needs its own intensity to honor its slider.
+                    if(controllable || contrastLocked){
                         const cloned = mat.clone();
-                        cloned.userData = { ...(mat.userData || {}), contrastLocked: true };
+                        cloned.userData = { ...(mat.userData || {}), contrastLocked: contrastLocked || mat.userData?.contrastLocked === true };
                         if(Array.isArray(child.material)){
                             child.material[idx] = cloned;
                         }else{
@@ -994,7 +985,7 @@ export function mountStartPage({ scope }) {
                             : 1;
                         mat.userData.maxEmissiveIntensity = base;
                     }
-                    emissiveTargets.push({ node: child, material: mat, controlNode });
+                    emissiveTargets.push({ node: child, material: mat, controlNode, userControllable: controllable });
                 });
             });
             lightingRig.forEach((light) => {
@@ -1004,7 +995,7 @@ export function mountStartPage({ scope }) {
                     light.userData.maxIntensity = light.intensity / MAX_LIGHT_RATIO;
                 }
             });
-            return { emissiveTargets, lights: [...lightingRig] };
+            return { model, emissiveTargets, lights: [...lightingRig] };
         };
 
         function getReadoutParts(type){
@@ -1298,12 +1289,14 @@ export function mountStartPage({ scope }) {
         const loadEmissiveExclusions = () => {
             try{
                 const raw = localPreferences.getItem(EMISSIVE_EXCLUSIONS_KEY);
+                emissiveSelectionSaved = raw !== null;
                 const parsed = raw ? JSON.parse(raw) : [];
                 if(Array.isArray(parsed)){
                     emissiveControlState.exclusions = new Set(parsed.map(String));
                 }
             }catch{
                 emissiveControlState.exclusions = new Set();
+                emissiveSelectionSaved = false;
             }
         };
 
@@ -1340,6 +1333,21 @@ export function mountStartPage({ scope }) {
         };
         settingsControllerBridge.saveEmissiveScales = saveEmissiveScales;
 
+        const isLiveEmissiveTarget = (target) => {
+            if(!target?.userControllable || !target.node?.isMesh || !target.material || !lightingTargets?.model) return false;
+            const materials = Array.isArray(target.node.material) ? target.node.material : [target.node.material];
+            if(!materials.includes(target.material) || target.material.userData?.controllerOwned) return false;
+            const color = target.material.emissive;
+            if(!color || !(color.r > 0 || color.g > 0 || color.b > 0)) return false;
+            let current = target.node;
+            for(; current && current !== lightingTargets.model; current = current.parent){
+                // PowerCat replaces these original switch meshes; their saved
+                // material references are never part of the visible rocker.
+                if(['switch-on', 'switch-off001', 'switch-off.001', 'shape-switch-on'].includes((current.name || '').toLowerCase())) return false;
+            }
+            return current === lightingTargets.model;
+        };
+
         const buildEmissiveList = (model, emissiveTargets) => {
             if(!emissiveList) return;
             emissiveList.innerHTML = '';
@@ -1349,18 +1357,13 @@ export function mountStartPage({ scope }) {
             }
             const seen = new Map();
             emissiveTargets.forEach((entry) => {
-                if(!entry?.controlNode) return;
+                if(!isLiveEmissiveTarget(entry) || !entry.controlNode) return;
                 const path = getEmissiveNodePath(entry.controlNode, model);
                 if(seen.has(path)) return;
                 seen.set(path, entry.controlNode);
             });
             const entries = [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-            if(entries.length && entries.every(([path]) => emissiveControlState.exclusions.has(path))){
-                // Recovery path: if everything is excluded, restore a visible default.
-                emissiveControlState.exclusions.clear();
-                saveEmissiveExclusions();
-            }
-            if(emissiveControlState.exclusions.size === 0){
+            if(!emissiveSelectionSaved){
                 let defaultIncludeCount = 0;
                 entries.forEach(([, node]) => {
                     const name = (node?.name || '').toLowerCase();
@@ -1380,6 +1383,7 @@ export function mountStartPage({ scope }) {
                     emissiveControlState.exclusions.clear();
                 }
                 saveEmissiveExclusions();
+                emissiveSelectionSaved = true;
             }
             entries.forEach(([path, node]) => {
                 const labelText = `${node.name}`;
@@ -1424,6 +1428,10 @@ export function mountStartPage({ scope }) {
                     sliderLabel.textContent = labelText;
                     const slider = document.createElement('input');
                     slider.type = 'range';
+                    const sliderId = `${id}-strength`;
+                    slider.id = sliderId;
+                    sliderLabel.htmlFor = sliderId;
+                    sliderLabel.textContent = `${labelText} strength`;
                     slider.min = '0';
                     slider.max = '2';
                     slider.step = '0.01';
@@ -1538,10 +1546,13 @@ export function mountStartPage({ scope }) {
                 light.intensity = maxIntensity * lightScale * lookScale;
             });
             lightingTargets.emissiveTargets.forEach((target) => {
-                const { material: mat, node, controlNode } = target;
+                const { material: mat, node, controlNode, userControllable } = target;
                 if(!mat || !node || !controlNode || mat.userData?.controllerOwned) return;
-                const path = getEmissiveNodePath(controlNode, settingsControllerBridge.model || controlNode);
-                const meshPath = getEmissiveNodePath(node, settingsControllerBridge.model || node);
+                const currentMaterials = Array.isArray(node.material) ? node.material : [node.material];
+                if(!currentMaterials.includes(mat)) return;
+                if(userControllable && !isLiveEmissiveTarget(target)) return;
+                const path = getEmissiveNodePath(controlNode, lightingTargets.model);
+                const meshPath = getEmissiveNodePath(node, lightingTargets.model);
                 if(isControlScreenPath(path) || isControlScreenPath(meshPath) || isControlScreenPath(node.name)) return;
                 const name = `${node.name || ''} ${controlNode.name || ''} ${mat.name || ''}`.toLowerCase();
                 // Structural metal stays structural even when its mesh name (for
@@ -1552,21 +1563,22 @@ export function mountStartPage({ scope }) {
                 const base = Number.isFinite(mat.userData?.maxEmissiveIntensity)
                     ? mat.userData.maxEmissiveIntensity
                     : 1;
-                const userScale = emissiveControlState.scales.get(path);
-                const scale = Number.isFinite(userScale) ? userScale : 1;
-                const effectiveScale = intentional ? Math.max(0.65, scale) : scale;
-                const lowContrastHighlight = 0.08;
-                const highContrastHighlight = 2.4;
+                const userScale = userControllable ? emissiveControlState.scales.get(path) : undefined;
+                const scale = userControllable && emissiveControlState.exclusions.has(path)
+                    ? 0
+                    : Number.isFinite(userScale) ? userScale : 1;
                 const lowContrastSpeaker = 0.16;
                 const highContrastSpeaker = 0.4 + (0.9 * lookTuning.speakerPurple);
                 const factor = intentional
-                    ? lowContrastHighlight + (highContrastHighlight - lowContrastHighlight) * contrastEase
+                    ? contrastHighlightIntensity(contrast)
                     : speakerAccent
                         ? lowContrastSpeaker + (highContrastSpeaker - lowContrastSpeaker) * contrastEase
                         : 0.025;
-                mat.emissiveIntensity = base * factor * effectiveScale;
+                mat.emissiveIntensity = base * factor * scale;
                 mat.needsUpdate = true;
             });
+            powerCat?.setContrast(contrast);
+            controllerAccents?.update(contrast);
             applyModeButtonAppearance();
         };
         settingsControllerBridge.applyReviewLook = applySceneAppearance;
@@ -1745,12 +1757,15 @@ export function mountStartPage({ scope }) {
         let usesGltfCamera = false;
         let clip = null;
         let uiAction = null;
-        let catAction = null;
+        let powerCat = null;
+        let controllerAccents = null;
+        const modeButtonMotion = createModeButtonMotion(activeSettingsView);
         let emissiveAction = null;
         let emissionActions = [];
         let cameraAction = null;
         let cameraTargetTime = null;
         let targetTime = null;
+        let knobModeMotion = null;
         let animationJumpBackFrame = null;
         const TOTAL_FRAMES = 30;
         const CAMERA_START_FRAME = 1;
@@ -1762,6 +1777,7 @@ export function mountStartPage({ scope }) {
         const AUDIO_FRAME = UI_END_FRAME;
         const FRAME_EPSILON = 0.1;
         let introActive = true;
+        let cameraViewReady = false;
         let screenTexture = null;
         let animationInfoLines = [];
 
@@ -1771,7 +1787,7 @@ export function mountStartPage({ scope }) {
         const clock = new THREE.Clock();
         const raycaster = new THREE.Raycaster();
         const pointer = new THREE.Vector2();
-        const interactiveNames = new Set(['btn-accessibility', 'btn-vol-sync', 'btn-save', 'btn-reset']);
+        const interactiveNames = new Set(['btn-accessibility', 'btn-vol-sync', 'btn-save', 'btn-reset', 'switch-plate', 'start-power-rocker']);
         const glbBounds = new THREE.Box3();
         const glbCenter = new THREE.Vector3();
         const KNOB_VOL_RANGE = 0.56;
@@ -1787,6 +1803,7 @@ export function mountStartPage({ scope }) {
         const COLOR_RED = new THREE.Color(0xd5222c);
         const COLOR_TRANSITION_DARK = new THREE.Color(0x260817);
         const momentaryButtonPulses = new Map();
+        let saveButtonMotion = { from: 0, target: 0, startedAt: 0, durationMs: 70 };
 
         function prepareAudioMeter(node){
             if(!node?.isMesh || !node.geometry) return;
@@ -1809,8 +1826,8 @@ export function mountStartPage({ scope }) {
                 });
                 mesh.material = Array.isArray(mesh.material) ? materials : materials[0];
             });
-            // Project the instrument onto its authored face. Keeping its paint
-            // in SVG prevents the flipping GLB shell from obscuring the meter.
+            // Project the instrument onto its authored face using the same
+            // camera projection as the GLB, and only while that face is exposed.
             const svgNS = 'http://www.w3.org/2000/svg';
             const svg = document.createElementNS(svgNS, 'svg');
             svg.setAttribute('aria-hidden', 'true');
@@ -1828,7 +1845,10 @@ export function mountStartPage({ scope }) {
             scope.defer(() => svg.remove());
             node.visible = false;
             audioMeterState = { node, bounds: bounds.clone(), svg, well, signal, peakLine,
-                fill: 0, peakFill: 0, clipped: false, peakClipped: false };
+                fill: 0, peakFill: 0, clipped: false, peakClipped: false,
+                occlusionRay: new THREE.Raycaster(), lastEye: new THREE.Vector3(Infinity, Infinity, Infinity),
+                lastCenter: new THREE.Vector3(Infinity, Infinity, Infinity),
+                lastNormal: new THREE.Vector3(), unobstructed: false };
         }
 
         settingsControllerBridge.updateAudioMeter = ({ level = 0, peak = 0, clipped = false, peakClipped = false } = {}) => {
@@ -1842,7 +1862,37 @@ export function mountStartPage({ scope }) {
         function renderAudioMeter(){
             if(!audioMeterState) return;
             const { node, bounds, svg, well, signal, peakLine, fill, peakFill, clipped, peakClipped } = audioMeterState;
-            const visible = activeSettingsView === 'audio' && settingsControllerBridge.model?.visible;
+            let visible = settingsControllerBridge.model?.visible
+                && (powerCat?.powered ?? true) && !powerCat?.busy;
+            if(visible){
+                // The projected paint must not shine through the cabinet or a
+                // foreground object when the controller is viewed from its side.
+                const eye = activeCamera.getWorldPosition(new THREE.Vector3());
+                const center = node.localToWorld(bounds.getCenter(new THREE.Vector3()));
+                const normal = new THREE.Vector3(0, 1, 0).transformDirection(node.matrixWorld);
+                // Selecting AUDIO starts the flip; it does not expose the meter
+                // yet. Follow the physical face in both directions, including
+                // rapid reversals, rather than the destination mode.
+                const facing = normal.dot(eye.clone().sub(center).normalize()) > .025;
+                if(facing && (eye.distanceToSquared(audioMeterState.lastEye) > 1e-10
+                    || center.distanceToSquared(audioMeterState.lastCenter) > 1e-10
+                    || normal.distanceToSquared(audioMeterState.lastNormal) > 1e-10)){
+                    audioMeterState.lastEye.copy(eye); audioMeterState.lastCenter.copy(center);
+                    audioMeterState.lastNormal.copy(normal);
+                    const direction = center.clone().sub(eye);
+                    audioMeterState.occlusionRay.set(eye, direction.clone().normalize());
+                    audioMeterState.occlusionRay.far = direction.length() + .025;
+                    const hit = audioMeterState.occlusionRay.intersectObjects(settingsControllerBridge.model.children, true).find(hit => {
+                        for(let ancestor = hit.object; ancestor; ancestor = ancestor.parent) if(!ancestor.visible) return false;
+                        return true;
+                    });
+                    audioMeterState.unobstructed = false;
+                    for(let ancestor = hit?.object; ancestor; ancestor = ancestor.parent){
+                        if(ancestor === node.parent) { audioMeterState.unobstructed = true; break; }
+                    }
+                }
+                visible = facing && audioMeterState.unobstructed;
+            }
             svg.style.display = visible ? 'block' : 'none';
             if(!visible) return;
             const canvasRect = settingsControllerCanvas.getBoundingClientRect();
@@ -1950,20 +2000,30 @@ export function mountStartPage({ scope }) {
         }
 
         function getMomentaryPressAmount(kind, now){
+            if(kind === 'save'){
+                if(controllerFlow.animationAllowed === false || getSharedSettings().get().accessibility.reducedMotion){
+                    return saveButtonMotion.target;
+                }
+                const t = Math.max(0, Math.min(1, (now - saveButtonMotion.startedAt) / saveButtonMotion.durationMs));
+                const eased = t * t * (3 - 2 * t);
+                return saveButtonMotion.from + (saveButtonMotion.target - saveButtonMotion.from) * eased;
+            }
             const pulse = momentaryButtonPulses.get(kind);
             if(!pulse) return 0;
             const elapsed = now - pulse.startedAt;
-            const downDuration = 70;
-            const upDuration = 110;
-            if(elapsed >= downDuration + upDuration){
+            const { amount, done } = sampleMomentaryPress(kind, elapsed);
+            if(done){
                 momentaryButtonPulses.delete(kind);
                 return 0;
             }
-            const raw = elapsed <= downDuration
-                ? elapsed / downDuration
-                : 1 - ((elapsed - downDuration) / upDuration);
-            return raw * raw * (3 - 2 * raw);
+            return amount;
         }
+        settingsControllerBridge.setSaveLatched = pressed => {
+            const now = performance.now();
+            saveButtonMotion = { from: getMomentaryPressAmount('save', now), target: pressed ? 1 : 0,
+                startedAt: now, durationMs: pressed ? 70 : 110 };
+            applyModeButtonAppearance();
+        };
 
         function applyMomentaryButtonState(kind, glowScale, now){
             const body = controllerButtonNodes.get(`${kind}Body`);
@@ -1989,7 +2049,9 @@ export function mountStartPage({ scope }) {
                 : (uiAction && clip
                     ? Math.max(0, Math.min(1, uiAction.time / Math.max(0.0001, clip.duration)))
                     : (activeSettingsView === 'audio' ? 1 : 0));
-            const buttonProgress = modeProgress * modeProgress * (3 - 2 * modeProgress);
+            const now = performance.now();
+            const instant = controllerFlow.animationAllowed === false || getSharedSettings().get().accessibility.reducedMotion;
+            const buttonAmounts = modeButtonMotion.sample(now, instant);
             if(audioVisualizationPanel){
                 if(audioVisualizationRotation && clip){
                     const rotation = audioVisualizationRotation.evaluate(modeProgress * clip.duration);
@@ -1997,11 +2059,10 @@ export function mountStartPage({ scope }) {
                 }
                 audioVisualizationPanel.visible = true;
             }
-            if(audioBody) audioBody.position.y = releasedY + ((pressedY - releasedY) * buttonProgress);
-            if(visualsBody) visualsBody.position.y = pressedY + ((releasedY - pressedY) * buttonProgress);
-            applyButtonState(audioBody, controllerButtonNodes.get('audioText'), buttonProgress, glowScale);
-            applyButtonState(visualsBody, controllerButtonNodes.get('visualsText'), 1 - buttonProgress, glowScale);
-            const now = performance.now();
+            if(audioBody) audioBody.position.y = releasedY + ((pressedY - releasedY) * buttonAmounts.audio);
+            if(visualsBody) visualsBody.position.y = releasedY + ((pressedY - releasedY) * buttonAmounts.visuals);
+            applyButtonState(audioBody, controllerButtonNodes.get('audioText'), buttonAmounts.audio, glowScale);
+            applyButtonState(visualsBody, controllerButtonNodes.get('visualsText'), buttonAmounts.visuals, glowScale);
             applyMomentaryButtonState('save', glowScale, now);
             applyMomentaryButtonState('reset', glowScale, now);
 
@@ -2016,6 +2077,11 @@ export function mountStartPage({ scope }) {
         function pulseMomentaryButton(kind){
             const node = controllerButtonNodes.get(`${kind}Body`);
             if(!node) return;
+            if(controllerFlow.animationAllowed === false || getSharedSettings().get().accessibility.reducedMotion){
+                momentaryButtonPulses.delete(kind);
+                applyModeButtonAppearance();
+                return;
+            }
             if(!node.userData.restPosition) node.userData.restPosition = node.position.clone();
             momentaryButtonPulses.set(kind, { startedAt: performance.now() });
             applyModeButtonAppearance();
@@ -2030,7 +2096,6 @@ export function mountStartPage({ scope }) {
         const animTuning = {
             customDurationMs: 6000,
             focusDurationMs: 520,
-            focusShiftStart: 0.75,
             easePower: 3
         };
         window.animTuning = animTuning;
@@ -2063,7 +2128,6 @@ export function mountStartPage({ scope }) {
         }
         window.knobAxisValues = settingsControllerBridge.knobAxisValues;
         let focusAnim = null;
-        let customCameraAnim = null;
         let middlePointerState = null;
         let lastMiddleClickTime = 0;
         let rightPointerState = null;
@@ -2083,6 +2147,16 @@ export function mountStartPage({ scope }) {
                 ? new THREE.Quaternion().setFromEuler(controllerEntrance.homeRotation)
                 : model?.quaternion.clone() || null;
         }
+        rememberCurrentView = (force = false) => {
+            if(!cameraViewReady || introActive || !controls || !activeCamera || !settingsControllerBridge.model?.visible) return;
+            if(!force && (cameraTween || focusAnim || controllerEntrance)) return;
+            viewMemory.record({ version: 1, position: activeCamera.position.toArray(),
+                quaternion: activeCamera.quaternion.toArray(), up: activeCamera.up.toArray(),
+                target: controls.target.toArray(), zoom: activeCamera.zoom, fov: activeCamera.fov,
+                minDistance: controls.minDistance, maxDistance: controls.maxDistance,
+                mode: activeSettingsView, presentation: document.body.classList.contains('start-entry-active') ? 'text' : '3d'
+            }, performance.now(), force);
+        };
         const CAMERA_ANIM_POS = [
             [-0.005232, 4.233088, 1.427375],
             [-0.005232, 4.233088, 1.427375],
@@ -2232,51 +2306,12 @@ export function mountStartPage({ scope }) {
 
 
 
-        function updateCustomCameraAnimation(){
-            if(!customCameraAnim || !activeCamera || !controls) return false;
-            const now = performance.now();
-            const t = (now - customCameraAnim.startTime) / customCameraAnim.durationMs;
-            const k = Math.min(1, Math.max(0, t));
-            const zoomEase = easeInOutPower(k, animTuning.easePower);
-            const distance = customCameraAnim.startDistance
-                + (customCameraAnim.endDistance - customCameraAnim.startDistance) * zoomEase;
-
-            const shiftStart = Math.min(1, Math.max(0.5, animTuning.focusShiftStart));
-            const shiftDenom = Math.max(0, 1 - shiftStart);
-            const targetPhase = k < shiftStart
-                ? easeInOutPower(k / shiftStart, animTuning.easePower)
-                : easeInOutPower((k - shiftStart) / shiftDenom, animTuning.easePower);
-            const target = k < shiftStart
-                ? customCameraAnim.screenTarget.clone().lerp(customCameraAnim.comfortTarget, targetPhase)
-                : customCameraAnim.comfortTarget.clone().lerp(customCameraAnim.glbCenter, targetPhase);
-
-            controls.target.copy(target);
-            activeCamera.position.copy(target.clone().add(customCameraAnim.dir.clone().multiplyScalar(distance)));
-            activeCamera.lookAt(target);
-            activeCamera.updateMatrixWorld(true);
-
-            if(k >= 1){
-                customCameraAnim = null;
-                const wasDamping = controls.enableDamping;
-                controls.enableDamping = false;
-                controls.update();
-                controls.enableDamping = wasDamping;
-                controls.enableRotate = true;
-                controls.enableZoom = true;
-                controls.enabled = true;
-                return false;
-            }
-            return true;
-        }
-
         function resetCustomCameraAnimation(){
             const model = settingsControllerBridge.model;
-            if(!model || !activeCamera || !controls) return;
+            if(!model || !activeCamera || !controls || controllerFlow.stage !== 'gallery') return;
             focusAnim = null;
-            customCameraAnim = null;
             cameraTween = null;
             cameraTargetTime = null;
-            pendingAudioAllowed = null;
 
             const screenTarget = getScreenFocusPoint(model);
             const dir = activeCamera.position.clone().sub(controls.target);
@@ -2290,8 +2325,10 @@ export function mountStartPage({ scope }) {
             activeCamera.position.copy(screenTarget.clone().add(dir.multiplyScalar(distance)));
             activeCamera.lookAt(screenTarget);
             activeCamera.updateMatrixWorld(true);
-            setUserCameraControlsEnabled(false);
-            introActive = true;
+            const reducedMotion = getSharedSettings().get().accessibility.reducedMotion ||
+                window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            startManualCameraTween({ instant: reducedMotion });
+            if(reducedMotion) stepManualCameraTween();
         }
 
         function startFocusAnimation(target, { zoomToMin = false, durationMs = null } = {}){
@@ -2346,7 +2383,7 @@ export function mountStartPage({ scope }) {
 
 
 
-        function startManualCameraTween(){
+        function startManualCameraTween({ instant = false } = {}){
             if(!activeCamera) return;
             logCamEvent('startManualCameraTween()');
             const camPos = new THREE.Vector3();
@@ -2362,13 +2399,13 @@ export function mountStartPage({ scope }) {
                 activeCamera.rotation.setFromQuaternion(camQuat, 'XYZ');
             }
             const model = settingsControllerBridge.model;
-            const target = model
+            const target = controllerEntrance?.homeCenter?.clone() || (model
                 ? new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3())
-                : controls.target.clone();
+                : controls.target.clone());
             cameraTween = {
                 frame: 0,
                 transition: createCameraTransition(activeCamera, controls, CAMERA_ANIM_POS, CAMERA_ANIM_ROT,
-                    target, animTuning.customDurationMs, performance.now())
+                    target, animTuning.customDurationMs, performance.now() - (instant ? animTuning.customDurationMs + 1 : 0))
             };
             lastCameraFrame = 0;
             logCamEvent(`manual tween start camPos=${camPos.x.toFixed(3)},${camPos.y.toFixed(3)},${camPos.z.toFixed(3)}`);
@@ -2401,6 +2438,7 @@ export function mountStartPage({ scope }) {
                 controls.update();
                 settingsControllerBridge.controls = controls;
                 captureSettledDefault();
+                cameraViewReady = true;
                 lastControlsEnabled = controls.enabled;
                 if(pendingAudioAllowed !== null){
                     applyAudioPermission(pendingAudioAllowed);
@@ -2454,6 +2492,12 @@ export function mountStartPage({ scope }) {
             cameraTargetTime = null;
         }
 
+        function updateUiAnimationSpeed(){
+            if(uiAction && targetTime !== null){
+                uiAction.timeScale = Math.sign(uiAction.timeScale || 1) * uiAnimTuning.speed;
+            }
+        }
+
         function startAnimationToFrame(frame, jumpBackFrame = null, options = {}){
             if(!uiAction || !clip || !uiMixer) return;
             const { triggerEmissive = true } = options;
@@ -2484,16 +2528,36 @@ export function mountStartPage({ scope }) {
 
 
         function selectMode(mode, options = {}){
-            const { triggerEmissive = true } = options;
+            dismissSavedState();
+            const { triggerEmissive = true, instant = false } = options;
             closeReadoutEditor({ commit: true });
             const nextMode = mode === 'audio' ? 'audio' : 'visuals';
+            if(nextMode !== activeSettingsView && !instant && !introActive
+                && controllerFlow.animationAllowed !== false && !getSharedSettings().get().accessibility.reducedMotion){
+                const constraints = settingsControllerBridge.knobConstraints;
+                knobModeMotion = {
+                    startedAt: performance.now(),
+                    durationMs: (clip?.duration || 1) * 750 / Math.max(.05, uiAnimTuning.speed),
+                    from: {
+                        vol: settingsControllerBridge.knobVolNode?.position[constraints?.vol?.axis],
+                        sync: settingsControllerBridge.knobSyncNode?.position[constraints?.sync?.axis]
+                    }
+                };
+            }else if(instant || introActive || controllerFlow.animationAllowed === false
+                || getSharedSettings().get().accessibility.reducedMotion){
+                knobModeMotion = null;
+            }
+            modeButtonMotion.select(nextMode, performance.now(), instant || introActive || !triggerEmissive
+                || controllerFlow.animationAllowed === false || getSharedSettings().get().accessibility.reducedMotion);
             activeSettingsView = nextMode;
             controllerFlow.hoverHint = '';
             const targetFrame = nextMode === 'audio' ? AUDIO_FRAME : VISUALS_FRAME;
             const started = !isAtFrame(targetFrame);
             // Always retarget from the current pose; this also handles rapid
             // changes while the previous direction is still playing.
-            if(controllerFlow.animationAllowed === false){
+            if(controllerFlow.animationAllowed === false || instant){
+                targetTime = null;
+                animationJumpBackFrame = null;
                 setFrame(targetFrame);
             }else{
                 startAnimationToFrame(targetFrame, null, { triggerEmissive });
@@ -2504,7 +2568,7 @@ export function mountStartPage({ scope }) {
             updateControllerReadouts();
             applyModeButtonAppearance();
             syncAccessibleControllerUI();
-            if(!introActive && !cameraTween && !focusAnim && !customCameraAnim){
+            if(!introActive && !cameraTween && !focusAnim){
                 setUserCameraControlsEnabled(true);
             }
             return started;
@@ -2524,19 +2588,30 @@ export function mountStartPage({ scope }) {
         settingsControllerBridge.finishOnboarding = (allowAnimation) => {
             introActive = false;
             setPreIntroZoomEnabled(false);
-            settingsControllerBridge.revealController?.(allowAnimation);
+            settingsControllerBridge.revealController?.(rememberedStartView ? false : allowAnimation);
             controllerFlow.stage = 'gallery';
             settingsControllerBridge.renderScreen?.();
-            if(catAction){
-                if(allowAnimation){
-                    catAction.enabled = true;
-                    catAction.paused = false;
-                    catAction.setLoop(THREE.LoopRepeat, Infinity);
-                    catAction.play();
-                }else{
-                    catAction.paused = true;
-                    catAction.time = 0;
-                }
+            if(rememberedStartView){
+                cameraTween = null; focusAnim = null; controllerEntrance = null;
+                activeCamera.up.fromArray(rememberedStartView.up).normalize();
+                createOrbitControls(activeCamera);
+                controls.enableDamping = false;
+                controls.minDistance = rememberedStartView.minDistance;
+                controls.maxDistance = rememberedStartView.maxDistance;
+                controls.target.fromArray(rememberedStartView.target);
+                activeCamera.position.fromArray(rememberedStartView.position);
+                activeCamera.quaternion.fromArray(rememberedStartView.quaternion).normalize();
+                activeCamera.zoom = rememberedStartView.zoom;
+                activeCamera.fov = rememberedStartView.fov;
+                activeCamera.updateProjectionMatrix();
+                controls.update(); controls.enableDamping = true;
+                settingsControllerBridge.controls = controls;
+                usesGltfCamera = false; shouldTrackControls = true;
+                setUserCameraControlsEnabled(true);
+                selectMode(rememberedStartView.mode, { triggerEmissive: false, instant: true });
+                cameraViewReady = true;
+                captureSettledDefault();
+                return;
             }
             startManualCameraTween();
             if(!allowAnimation && cameraTween){
@@ -2554,6 +2629,7 @@ export function mountStartPage({ scope }) {
                 controls.update();
                 settingsControllerBridge.controls = controls;
                 captureSettledDefault();
+                cameraViewReady = true;
             }
         };
 
@@ -2564,8 +2640,9 @@ export function mountStartPage({ scope }) {
         function resizeScene(){
             const rect = settingsControllerScene.getBoundingClientRect();
             const maxDimension = 1200;
-            const width = Math.min(Math.max(1, rect.width), maxDimension);
-            const height = Math.min(Math.max(1, rect.height), maxDimension);
+            const canvasScale = Math.min(1, maxDimension / Math.max(1, rect.width, rect.height));
+            const width = Math.max(1, rect.width * canvasScale);
+            const height = Math.max(1, rect.height * canvasScale);
             if(width < 2 || height < 2) return;
             if(Math.abs(width - lastWidth) < 1 && Math.abs(height - lastHeight) < 1) return;
             lastWidth = width;
@@ -2697,8 +2774,9 @@ export function mountStartPage({ scope }) {
                 }else if(controllerFlow.stage === 'gallery'){
                     ctx.fillStyle = '#fff4ff';
                     ctx.font = 'bold 32px "Segoe UI", sans-serif';
-                    ctx.fillText('PRESS SYNC, THEN TAP EACH CUE.', size * 0.5, height * 0.20);
-                    ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.29);
+                    ctx.fillText('COMPARE THE FLASH AND THE CLICK.', size * 0.5, height * 0.20);
+                    ctx.fillText('Adjust sync until they happen together.', size * 0.5, height * 0.29);
+                    if(controllerFlow.syncExercise.result){ ctx.font = 'bold 24px \"Segoe UI\", sans-serif'; ctx.fillText(controllerFlow.syncExercise.result, size * 0.5, height * 0.37); }
                     const button = { x: 0.30, y: 0.48, w: 0.40, h: 0.30 };
                     ctx.fillStyle = '#a94710';
                     ctx.beginPath();
@@ -2710,46 +2788,33 @@ export function mountStartPage({ scope }) {
                     controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[button.x,button.y],[button.x+button.w,button.y],[button.x+button.w,button.y+button.h],[button.x,button.y+button.h]] });
                 }else if(controllerFlow.stage === 'sync-running'){
                     const exercise = controllerFlow.syncExercise;
-                    ctx.fillStyle = '#8cd8ff';
-                    ctx.fillRect(size * 0.035, height * 0.08, size * 0.93, height * 0.25);
-                    ctx.fillStyle = '#0b2a58';
+                    const sample = syncComparison?.sample();
+                    ctx.fillStyle = '#fff4ff';
+                    ctx.font = 'bold 36px "Segoe UI", sans-serif';
+                    ctx.fillText('Match the click to the flash', size * .5, height * .13);
+                    ctx.font = '28px "Segoe UI", sans-serif';
+                    const message = exercise.result || (sample?.guiding ? 'Listen to the guide…' : 'Turn the sync knob. No tapping needed.');
+                    ctx.fillText(message, size * .5, height * .23);
+                    ctx.fillStyle = sample?.flash ? '#fff4d1' : '#203747';
+                    ctx.beginPath(); ctx.arc(size * .5, height * .46, height * .14, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = sample?.flash ? '#172532' : '#cee7f2';
+                    ctx.font = 'bold 32px "Segoe UI", sans-serif';
+                    ctx.fillText(sample?.flash ? 'FLASH' : '•', size * .5, height * .46);
+                    ctx.fillStyle = '#fff4ff';
                     ctx.font = 'bold 30px "Segoe UI", sans-serif';
-                    ctx.fillText('TAP EACH WORD WHEN YOU HEAR IT.', size * 0.5, height * 0.16);
-                    ctx.fillText('LISTEN FOR READY-SET-GO.', size * 0.5, height * 0.25);
-                    const centers = [0.10, 0.285, 0.47, 0.655, 0.875];
-                    const lineY = height * 0.61;
-                    for(let index = 0; index < SYNC_WORDS.length - 1; index++){
-                        const lineStart = (centers[index] + (index === 0 ? 0.065 : 0.045)) * size;
-                        const lineEnd = (centers[index + 1] - (index === 3 ? 0.095 : 0.045)) * size;
-                        ctx.strokeStyle = exercise.litLines.has(index) ? '#8cd8ff' : '#a94710';
-                        ctx.lineWidth = exercise.litLines.has(index) ? 12 : 8;
-                        ctx.beginPath();
-                        ctx.moveTo(lineStart, lineY);
-                        ctx.lineTo(lineEnd, lineY);
-                        ctx.stroke();
-                    }
-                    SYNC_WORDS.forEach((word, index) => {
-                        ctx.fillStyle = index < exercise.litCount ? '#8cd8ff' : '#fff4df';
-                        ctx.font = '54px "Press Start 2P", "Segoe UI", sans-serif';
-                        ctx.fillText(word, centers[index] * size, lineY);
+                    ctx.fillText('Preview: ' + storedSync + ' ms — not saved', size * .5, height * .68);
+                    const buttons = exercise.active
+                        ? [{ kind: 'sync-commit', label: 'Use this offset', x: .07, w: .43, fill: '#8cd8ff' },
+                            { kind: 'sync-cancel', label: 'Cancel', x: .55, w: .38, fill: '#f5b7d9' }]
+                        : [{ kind: 'sync-start', label: 'Try again', x: .07, w: .43, fill: '#8cd8ff' },
+                            { kind: 'sync-cancel', label: 'Back', x: .55, w: .38, fill: '#f5b7d9' }];
+                    buttons.forEach(button => {
+                        ctx.fillStyle = button.fill;
+                        ctx.fillRect(size * button.x, height * .79, size * button.w, height * .15);
+                        ctx.fillStyle = '#11172a'; ctx.font = 'bold 30px "Segoe UI", sans-serif';
+                        ctx.fillText(button.label, size * (button.x + button.w / 2), height * .865);
+                        controllerFlow.hitRegions.push({ kind: button.kind, polygon: [[button.x,.79],[button.x+button.w,.79],[button.x+button.w,.94],[button.x,.94]] });
                     });
-                    if(exercise.result){
-                        ctx.fillStyle = '#fff4ff';
-                        ctx.font = 'bold 27px "Segoe UI", sans-serif';
-                        ctx.fillText(exercise.result, size * 0.5, height * 0.82);
-                        const again = { x: 0.37, y: 0.87, w: 0.26, h: 0.09 };
-                        ctx.fillStyle = '#a94710';
-                        ctx.fillRect(again.x * size, again.y * height, again.w * size, again.h * height);
-                        ctx.fillStyle = '#8cd8ff';
-                        ctx.font = '16px "Press Start 2P", "Segoe UI", sans-serif';
-                        ctx.fillText('TRY AGAIN', size * 0.5, height * 0.915);
-                        controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[again.x,again.y],[again.x+again.w,again.y],[again.x+again.w,again.y+again.h],[again.x,again.y+again.h]] });
-                    }else{
-                        ctx.fillStyle = '#fff4df';
-                        ctx.font = 'bold 28px "Segoe UI", sans-serif';
-                        ctx.fillText('TAP EACH WORD WHEN YOU HEAR IT', size * 0.5, height * 0.83);
-                        controllerFlow.hitRegions.push({ kind: 'sync-tap', value: true, polygon: [[0,0.34],[1,0.34],[1,1],[0,1]] });
-                    }
                 }
                 if(controllerFlow.hoverHint){
                     ctx.fillStyle = 'rgba(3, 8, 14, .88)';
@@ -2766,15 +2831,10 @@ export function mountStartPage({ scope }) {
         }
 
         function animate(){
-            if(sceneDisposed || scope.signal.aborted || suspended){ sceneFrameId = 0; return; }
+            if(sceneDisposed || scope.signal.aborted || suspended || projectOverlayOpen){ sceneFrameId = 0; return; }
             updateReadoutEditorPosition();
             if(controllerFlow.stage === 'playing' && jumpVideo.readyState >= 2){
                 settingsControllerBridge.renderScreen?.();
-            }
-            if(updateCustomCameraAnimation()){
-                renderScene();
-                sceneFrameId = requestAnimationFrame(animate);
-                return;
             }
             if(updateFocusAnimation()){
                 renderScene();
@@ -2794,8 +2854,6 @@ export function mountStartPage({ scope }) {
                 model.position.y -= (1 - eased) * 0.62;
                 model.scale.copy(homeScale).multiplyScalar(Math.max(0.02, eased * pop));
                 model.rotation.copy(homeRotation);
-                model.rotation.y += (1 - progress) * Math.PI * 0.7;
-                model.rotation.z += (1 - progress) * 0.16;
                 if(progress >= 1){
                     model.position.copy(homePosition);
                     model.scale.copy(homeScale);
@@ -2804,7 +2862,7 @@ export function mountStartPage({ scope }) {
                 }
             }
             if(uiMixer){
-                if((uiAction && !uiAction.paused) || (catAction && !catAction.paused)){
+                if(uiAction && !uiAction.paused){
                     uiMixer.update(delta);
                 }
                 if(uiAction && targetTime !== null && !uiAction.paused){
@@ -2826,7 +2884,7 @@ export function mountStartPage({ scope }) {
                             setFrame(animationJumpBackFrame);
                             animationJumpBackFrame = null;
                         }
-                        if(!introActive && !cameraTween && !focusAnim && !customCameraAnim){
+                        if(!introActive && !cameraTween && !focusAnim){
                             setUserCameraControlsEnabled(true);
                         }
                     }
@@ -2967,42 +3025,97 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             if(debugCameraPanel){
                 ensureLightingDebugLine();
-                updateContrastKnobTrackerLine();
             }
             renderScene();
             sceneFrameId = requestAnimationFrame(animate);
         }
 
-        function renderScene(){
-            if(lastWidth < 2 || lastHeight < 2) return;
+        function applyPanelProjection(){
             if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
+            const withWorkRail = target => {
+                const space = panelViewport(target);
+                const rect = target.getBoundingClientRect();
+                const rail = startControllerOverview.getBoundingClientRect();
+                if(startControllerOverview.hidden || !rail.width || !rail.height) return space;
+                if(rail.width < rect.width * .65){
+                    const left = Math.min(space.right, Math.max(space.left, rail.right - rect.left));
+                    return { ...space, left, offsetX: (space.width - left - space.right) / 2 };
+                }
+                const coveredTop = Math.max(0, Math.min(rect.height * .5, rail.bottom - rect.top));
+                return { ...space, offsetY: -coveredTop / 2 };
+            };
+            const panelSpace = withWorkRail(settingsControllerCanvas);
+            let projectionX = panelSpace.offsetX * lastWidth / Math.max(1, panelSpace.width);
+            const projectionY = panelSpace.offsetY || 0;
             if(centerOnViewport && settingsControllerBridge.model){
                 const rect = settingsControllerCanvas.getBoundingClientRect();
+                const pageSpace = withWorkRail(document.documentElement);
                 const modelCenter = settingsControllerBridge.model.localToWorld(modelLocalCenter.clone());
                 activeCamera.updateMatrixWorld(true);
                 const ndc = modelCenter.project(activeCamera);
-                const desiredX = THREE.MathUtils.clamp((window.innerWidth * 0.5 - rect.left) / Math.max(1, rect.width), 0.1, 0.9) * 2 - 1;
-                const desiredY = 1 - THREE.MathUtils.clamp((window.innerHeight * 0.5 - rect.top) / Math.max(1, rect.height), 0.1, 0.9) * 2;
-                if(Number.isFinite(ndc.x) && Number.isFinite(ndc.y))
-                    activeCamera.setViewOffset(lastWidth, lastHeight,
-                        (ndc.x - desiredX) * lastWidth / 2, -(ndc.y - desiredY) * lastHeight / 2,
-                        lastWidth, lastHeight);
+                const desiredX = THREE.MathUtils.clamp(((pageSpace.left + pageSpace.right) * 0.5 - rect.left) / Math.max(1, rect.width), 0.1, 0.9) * 2 - 1;
+                if(Number.isFinite(ndc.x)){
+                    projectionX = (ndc.x - desiredX) * lastWidth / 2;
+                }
             }
+            if(projectionX || projectionY){
+                // PerspectiveCamera.setViewOffset assigns aspect = fullWidth / fullHeight.
+                // Match the current camera aspect and use a full-size crop so the
+                // panels shift the projection without changing its scale or shape.
+                const fullWidth = activeCamera.isPerspectiveCamera
+                    ? activeCamera.aspect * lastHeight : lastWidth;
+                const offsetX = projectionX * fullWidth / lastWidth;
+                activeCamera.setViewOffset(fullWidth, lastHeight, offsetX, projectionY, fullWidth, lastHeight);
+            }
+        }
+
+        function renderScene(){
+            if(lastWidth < 2 || lastHeight < 2) return;
+            powerCat?.update();
+            if(controllerFlow.syncExercise.active) settingsControllerBridge.renderScreen?.();
+            applyPanelProjection();
+            stickyAdapter.update();
             renderer.setViewport(0, 0, lastWidth, lastHeight);
             renderer.setScissor(0, 0, lastWidth, lastHeight);
-            renderer.render(scene, activeCamera);
-            renderAudioMeter();
+            powerCat?.beforeRender();
+            try {
+                renderer.render(scene, activeCamera);
+                // applyPanelProjection shifts the GLB around the page panels.
+                // Project the meter before clearing that same camera offset.
+                renderAudioMeter();
+            }
+            finally {
+                if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
+                powerCat?.afterRender();
+            }
+            rememberCurrentView();
         }
 
         resizeScene();
         settingsControllerBridge.resetCustomCameraAnimation = resetCustomCameraAnimation;
-        bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation });
+        bindAnimTuningControls({ animTuning, uiAnimTuning, resetCustomCameraAnimation, updateUiAnimationSpeed });
         resizeObserver = new ResizeObserver(resizeScene);
         resizeObserver.observe(settingsControllerScene);
         listen(window, 'resize', resizeScene);
         listen(window, 'orientationchange', resizeScene);
-        suspendScene = () => { cancelAnimationFrame(sceneFrameId); sceneFrameId = 0; };
-        resumeScene = () => { if(!sceneDisposed && !sceneFrameId) animate(); };
+        let scenePauseStartedAt = null;
+        suspendScene = () => {
+            if(scenePauseStartedAt === null) scenePauseStartedAt = performance.now();
+            cancelAnimationFrame(sceneFrameId);
+            sceneFrameId = 0;
+        };
+        resumeScene = () => {
+            if(sceneDisposed || sceneFrameId || suspended || projectOverlayOpen) return;
+            if(scenePauseStartedAt !== null){
+                const pausedMs = performance.now() - scenePauseStartedAt;
+                if(controllerEntrance) controllerEntrance.startedAt += pausedMs;
+                if(focusAnim) focusAnim.startTime += pausedMs;
+                cameraTween?.transition.shiftStartTime(pausedMs);
+                clock.getDelta();
+                scenePauseStartedAt = null;
+            }
+            animate();
+        };
         animate();
 
         const loader = new GLTFLoader();
@@ -3068,7 +3181,7 @@ enabled: ${!!cameraAction?.enabled}`;
                         || lower.includes('emissive')
                         || lower.includes('glow');
                     if(hasEmissiveTrack && nodeName){
-                        emissiveAnimNodes.add(nodeName);
+                        emissiveAnimNodes.add(nodeName.toLowerCase());
                     }
                     const materialMatch = name.match(/materials\[(\d+)\]\.(.+)/i);
                     if(materialMatch){
@@ -3132,17 +3245,12 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             const sortedAnimatedNodes = [...animatedNodes].sort();
 
-            lightingTargets = captureLightingTargets(model);
+            lightingTargets = captureLightingTargets(model, emissiveAnimMaterials, emissiveAnimNodes);
             applyLuxControls();
             applyEmissionControls();
             applyBackgroundBrightness(getBackgroundBrightness());
             // Button appearance is node-owned and deterministic; do not infer
             // color changes from shared material names or playback direction.
-            if(lightingTargets?.emissiveTargets && emissiveList){
-                buildEmissiveList(model, lightingTargets.emissiveTargets);
-                applyEmissionControls();
-                if(emissiveListPanel) emissiveListPanel.hidden = false;
-            }
             let percentSyncNode = null;
             let percentVolNode = null;
             model.traverse((child) => {
@@ -3579,7 +3687,9 @@ enabled: ${!!cameraAction?.enabled}`;
                     const local = node.position.clone();
                     local[constraint.axis] = axisValue;
                     const world = node.parent.localToWorld(local.clone());
+                    applyPanelProjection();
                     const ndc = world.clone().project(activeCamera);
+                    if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
                     return new THREE.Vector2(
                         ((ndc.x + 1) * 0.5) * rect.width,
                         ((1 - ndc.y) * 0.5) * rect.height
@@ -3635,11 +3745,20 @@ enabled: ${!!cameraAction?.enabled}`;
 
         function getPointerHits(clientX, clientY){
             const rect = settingsControllerCanvas.getBoundingClientRect();
-            if(!rect.width || !rect.height || !activeCamera) return [];
+            if(!rect.width || !rect.height || lastWidth < 2 || lastHeight < 2 || !activeCamera) return [];
             pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
             pointer.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(pointer, activeCamera);
-            return raycaster.intersectObjects(model.children, true);
+            applyPanelProjection();
+            try {
+                activeCamera.updateMatrixWorld(true);
+                raycaster.setFromCamera(pointer, activeCamera);
+                return raycaster.intersectObjects(model.children, true).filter(hit => {
+                    for(let node = hit.object; node; node = node.parent) if(node.visible === false) return false;
+                    return true;
+                });
+            } finally {
+                if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
+            }
         }
 
         function setControllerHoverHint(message = ''){
@@ -3697,6 +3816,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
         function applyArrowStep(action, pointerButton = 0){
             if(!action) return;
+            dismissSavedState();
             const isRightClick = pointerButton === 2;
             if(action.type === 'vol'){
                 const amount = isRightClick ? 5 : 1;
@@ -3720,6 +3840,7 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function applyKeyboardStep(type, direction, shifted = false){
+            dismissSavedState();
             const isContrast = type === 'sync';
             const amount = isContrast
                 ? (shifted ? 10 : 5)
@@ -3758,6 +3879,7 @@ enabled: ${!!cameraAction?.enabled}`;
         }
 
         function applyKnobStateFromT(type, t){
+            dismissSavedState();
             const clamped = Math.max(0, Math.min(1, t));
             if(type === 'vol'){
                 settingsControllerBridge.knobAxisValues.vol = clamped;
@@ -3796,19 +3918,30 @@ enabled: ${!!cameraAction?.enabled}`;
             }
         }
 
-        function updateKnobTransformsFromState(){
+        function updateKnobTransformsFromState({ immediate = null } = {}){
             const volNode = settingsControllerBridge.knobVolNode;
             const syncNode = settingsControllerBridge.knobSyncNode;
             const defaults = settingsControllerBridge.knobDefaults;
             const constraints = settingsControllerBridge.knobConstraints;
             if(!defaults) return;
+            if(knobModeMotion && immediate) delete knobModeMotion.from[immediate];
+            if(controllerFlow.animationAllowed === false || getSharedSettings().get().accessibility.reducedMotion){
+                knobModeMotion = null;
+            }
+            const progress = knobModeMotion
+                ? Math.min(1, Math.max(0, (performance.now() - knobModeMotion.startedAt) / knobModeMotion.durationMs)) : 1;
+            const eased = progress * progress * (3 - 2 * progress);
+            const positionFor = (type, target) => {
+                const from = knobModeMotion?.from[type];
+                return Number.isFinite(from) ? from + (target - from) * eased : target;
+            };
             if(volNode && defaults.vol && constraints?.vol){
                 const volNorm = activeSettingsView === 'audio'
                     ? Math.max(0, Math.min(1, storedVolume))
                     : Math.max(0, Math.min(1, getLuxValue()));
                 const volRange = constraints.vol.max - constraints.vol.min;
                 // Higher local x is the physical bottom/low endpoint.
-                volNode.position[constraints.vol.axis] = constraints.vol.max - (volNorm * volRange);
+                volNode.position[constraints.vol.axis] = positionFor('vol', constraints.vol.max - (volNorm * volRange));
                 settingsControllerBridge.knobAxisValues.vol = volNorm;
             }
             if(syncNode && defaults.sync && constraints?.sync){
@@ -3817,9 +3950,10 @@ enabled: ${!!cameraAction?.enabled}`;
                     : Math.max(0, Math.min(1, mapContrastValueToKnob(getContrastValue())));
                 const syncRange = constraints.sync.max - constraints.sync.min;
                 // Higher local z is the physical left/low endpoint.
-                syncNode.position[constraints.sync.axis] = constraints.sync.max - (syncNorm * syncRange);
+                syncNode.position[constraints.sync.axis] = positionFor('sync', constraints.sync.max - (syncNorm * syncRange));
                 settingsControllerBridge.knobAxisValues.sync = syncNorm;
             }
+            if(progress >= 1) knobModeMotion = null;
             updateControllerReadouts();
         }
 
@@ -3841,11 +3975,18 @@ enabled: ${!!cameraAction?.enabled}`;
                 return ignoredHitNames.has(name);
             };
             const firstHit = hits.find((hit) => !shouldIgnoreHit(hit.object)) || null;
+            if(event.button === 0 && !introActive && powerCat?.owns(firstHit?.object)){
+                event.preventDefault(); event.stopPropagation();
+                dismissSavedState();
+                powerCat.activate();
+                return;
+            }
+            if(event.button === 0 && powerCat?.busy) return;
             if(event.button === 2 && !introActive && controls?.enabled && targetTime === null){
                 rightPointerState = { at: performance.now(), x: event.clientX, y: event.clientY, moved: 0 };
             }
             if(event.button === 1){
-                if(introActive || targetTime !== null || !controls || !controls.enabled) return;
+                if(introActive || !controls || !controls.enabled) return;
                 event.preventDefault();
                 controls.enablePan = true;
                 middlePointerState = {
@@ -3889,8 +4030,10 @@ enabled: ${!!cameraAction?.enabled}`;
                         resolveSaveConfirmation(region.value);
                     }else if(region?.kind === 'sync-start'){
                         startSyncExercise();
-                    }else if(region?.kind === 'sync-tap'){
-                        registerSyncExerciseTap();
+                    }else if(region?.kind === 'sync-commit'){
+                        commitSyncExercise();
+                    }else if(region?.kind === 'sync-cancel'){
+                        resetSyncExercise();
                     }
                     if(region){
                         event.preventDefault();
@@ -3901,6 +4044,7 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             const readoutHit = event.button === 0 ? getReadoutHit(firstHit.object) : null;
             if(readoutHit){
+                dismissSavedState();
                 openReadoutEditor(readoutHit.type, readoutHit.target);
                 event.preventDefault();
                 event.stopPropagation();
@@ -3909,6 +4053,7 @@ enabled: ${!!cameraAction?.enabled}`;
             if(introActive) return;
             const arrowAction = getArrowActionFromHits(hits);
             if((event.button === 0 || event.button === 2) && arrowAction){
+                dismissSavedState();
                 arrowPointerState = {
                     pointerId: event.pointerId,
                     button: event.button,
@@ -3931,23 +4076,17 @@ enabled: ${!!cameraAction?.enabled}`;
             }
             // A right-button drag away from an arrow remains owned by OrbitControls.
             if(event.button === 2) return;
-            const catClip = allClips.find((clipItem) => clipItem.tracks?.some((track) => {
-                const nodeName = String(track.name || '').split('.')[0].toLowerCase();
-                return nodeName.includes('manekinekoh');
-            }));
-            if(catClip){
-                catAction = uiMixer.clipAction(catClip);
-                catAction.enabled = true;
-                catAction.paused = true;
-                catAction.time = 0;
-                catAction.play();
-            }
             if(event.button === 0 && controls){
-                const knobType = resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit.object);
+                // A nearby rail's generous grab area must never steal a press
+                // on a physical button, especially SAVE beside the lower rail.
+                let buttonHit = firstHit.object;
+                while(buttonHit && !interactiveNames.has(buttonHit.name)) buttonHit = buttonHit.parent;
+                const knobType = buttonHit ? null : resolveKnobTypeFromPointer(event.clientX, event.clientY, firstHit.object);
                 if(knobType){
                     updateLightingDebugLine('pointerdown', knobType);
                 }
                 if(knobType && settingsControllerBridge.knobDefaults){
+                    dismissSavedState();
                     let knobNode = knobType === 'vol'
                         ? settingsControllerBridge.knobVolNode
                         : settingsControllerBridge.knobSyncNode;
@@ -3958,7 +4097,9 @@ enabled: ${!!cameraAction?.enabled}`;
                         const local = knobNode.position.clone();
                         local[constraint.axis] = axisValue;
                         const world = knobNode.parent.localToWorld(local.clone());
+                        applyPanelProjection();
                         const ndc = world.clone().project(activeCamera);
+                        if(activeCamera.view?.enabled) activeCamera.clearViewOffset();
                         return new THREE.Vector2(
                             ((ndc.x + 1) * 0.5) * canvasRect.width,
                             ((1 - ndc.y) * 0.5) * canvasRect.height
@@ -3996,7 +4137,6 @@ enabled: ${!!cameraAction?.enabled}`;
                 }else if(target.name === 'btn-vol-sync'){
                     selectMode('visuals');
                 }else if(target.name === 'btn-save'){
-                    pulseMomentaryButton('save');
                     // Keep the 3D Save control in sync with the accessible form button.
                     saveBtn?.click();
                 }else if(target.name === 'btn-reset'){
@@ -4131,12 +4271,12 @@ enabled: ${!!cameraAction?.enabled}`;
                     clearTimeout(pendingMiddleSingleClick.timerId);
                     pendingMiddleSingleClick = null;
                 }
-                if(settledDefaultTarget) startFocusAnimation(settledDefaultTarget, { zoomToMin: false, durationMs: 320 });
+                if(settledDefaultTarget) startFocusAnimation(settledDefaultTarget, { zoomToMin: false });
             }else if(clickPoint){
                 pendingMiddleSingleClick = {
                     timerId: scope.timeout(() => {
                         if(sceneDisposed || scope.signal.aborted) return;
-                        startFocusAnimation(clickPoint, { zoomToMin: false, durationMs: 320 });
+                        startFocusAnimation(clickPoint, { zoomToMin: false });
                         pendingMiddleSingleClick = null;
                     }, 320)
                 };
@@ -4181,9 +4321,15 @@ enabled: ${!!cameraAction?.enabled}`;
                 event.preventDefault();
             });
             listen(document, 'keydown', (event)=>{
-                if(event.target && /input|textarea|select/i.test(event.target.tagName)) return;
+                if(document.body.classList.contains('start-entry-active') || event.defaultPrevented || event.isComposing ||
+                    event.ctrlKey || event.altKey || event.metaKey ||
+                    [...document.querySelectorAll('dialog[open], [aria-modal="true"]:not(.hidden):not([hidden])')]
+                        .some(modal => modal.getClientRects().length && getComputedStyle(modal).visibility !== 'hidden') ||
+                    event.target?.closest?.('input, textarea, select, button, a, [contenteditable], [role="button"], [role="textbox"]')) return;
                 const key = event.key.toLowerCase();
-                if(key === 'a'){
+                if(key === 'p' && !event.repeat && !introActive){
+                    event.preventDefault(); dismissSavedState(); powerCat?.activate();
+                }else if(key === 'a'){
                     if(event.repeat) return;
                     selectMode('audio');
                 }else if(key === 'v'){
@@ -4209,6 +4355,8 @@ enabled: ${!!cameraAction?.enabled}`;
                 const homePosition = model.position.clone();
                 const homeScale = model.scale.clone();
                 const homeRotation = model.rotation.clone();
+                model.updateMatrixWorld(true);
+                const homeCenter = new THREE.Box3().setFromObject(model).getCenter(new THREE.Vector3());
                 model.visible = true;
                 if(!animateIn){
                     model.position.copy(homePosition);
@@ -4218,14 +4366,39 @@ enabled: ${!!cameraAction?.enabled}`;
                     return;
                 }
                 controllerEntrance = {
-                    model, homePosition, homeScale, homeRotation,
+                    model, homePosition, homeScale, homeRotation, homeCenter,
                     startedAt: performance.now(), durationMs: 850
                 };
             };
             settingsControllerBridge.controls = controls;
             settingsControllerBridge.canvas = settingsControllerCanvas;
             settingsControllerBridge.updateKnobTransformsFromState = updateKnobTransformsFromState;
-            applyModeButtonAppearance();
+            powerCat = createPowerCat({ model, scene, animations: allClips,
+                allowAnimation: () => controllerFlow.animationAllowed !== false && !getSharedSettings().get().accessibility.reducedMotion,
+                onBlackout: () => { closeReadoutEditor({ commit: true }); resetSyncExercise(); },
+                onChange: state => {
+                    settingsControllerScene.dataset.power = state.powered ? 'on' : 'off';
+                    settingsControllerScene.dataset.powerPhase = state.phase;
+                    settingsControllerScene.style.boxShadow = state.powered ? '' : 'none';
+                    settingsControllerScene.style.borderColor = state.powered ? '' : 'transparent';
+                    if(accessiblePower){
+                        accessiblePower.disabled = false;
+                        accessiblePower.setAttribute('aria-pressed', String(state.powered));
+                        accessiblePower.textContent = state.busy ? 'Restore lights now (P)' : 'Power switch (P)';
+                    }
+                    if(powerStatus) powerStatus.textContent = state.busy ? 'Lucky Cat is restoring the lights.' : 'Power on.';
+                }
+            });
+            settingsControllerBridge.powerCat = powerCat;
+            if(powerCat) scope.defer(() => powerCat.dispose());
+            controllerAccents = createControllerAccents(model);
+            scope.defer(() => controllerAccents.dispose());
+            applySceneAppearance();
+            if(lightingTargets?.emissiveTargets && emissiveList){
+                buildEmissiveList(model, lightingTargets.emissiveTargets);
+                applyEmissionControls();
+                if(emissiveListPanel) emissiveListPanel.hidden = false;
+            }
             updateKnobSidesLine();
             signalSettingsControllerReady();
         }, undefined, (error)=>{
@@ -4241,6 +4414,9 @@ enabled: ${!!cameraAction?.enabled}`;
             settingsControllerScene.classList.remove('controller-loading');
             settingsControllerScene.classList.remove('controller-ready');
             settingsControllerScene.classList.add('controller-fallback');
+            controllerUnavailable = true;
+            document.body.classList.add('start-controller-unavailable');
+            setPortfolioEntryVisible(true);
             signalSettingsControllerReady();
         });
     }
@@ -4263,17 +4439,13 @@ enabled: ${!!cameraAction?.enabled}`;
     // WebAudio nodes
     let audioCtx = null;
     let mediaSource = null; // from jumpAudio
-    let syncVoiceSource = null;
-    let syncTicksSource = null;
-    let syncVoiceGain = null;
-    let syncTicksGain = null;
     let analyser = null;
     let delayNode = null;
     let destinationGain = null;
     let vizPeakDb = -Infinity;
     let vizPeakColor = '#28a85b';
     let vizPeakClipped = false;
-    let syncExerciseTimers = [];
+    let syncComparison = null;
 
     // State
     let storedVolume = getSharedSettings().get().audio.volume;
@@ -4318,8 +4490,27 @@ enabled: ${!!cameraAction?.enabled}`;
     if(modalSync) modalSync.value = storedSync;
     syncDisplay.textContent = `Sync: ${storedSync} ms`;
 
-    function askControllerPermission(stage, title){
+    function askControllerPermission(stage, title, signal){
         const previousFocus = document.activeElement;
+        const screenPrompt = Boolean(settingsControllerBridge.model && !controllerUnavailable);
+        const modalHome = permModal.parentNode;
+        const nativeDetails = accessibleControllerControls.closest('details');
+        const nativeDetailsWasOpen = nativeDetails?.open;
+        const canvasRole = settingsControllerCanvas.getAttribute('role');
+        const canvasTabIndex = settingsControllerCanvas.getAttribute('tabindex');
+        const canvasLabel = settingsControllerCanvas.getAttribute('aria-label');
+        if(screenPrompt){
+            accessibleControllerControls.appendChild(permModal);
+            accessibleControllerControls.inert = false;
+            accessibleControllerControls.setAttribute('aria-hidden', 'false');
+            accessibleControllerControls.classList.add('has-screen-permission');
+            permModal.classList.add('controller-screen-permission');
+            permModal.setAttribute('role', 'group');
+            permModal.removeAttribute('aria-modal');
+            settingsControllerCanvas.setAttribute('tabindex', '0');
+            settingsControllerCanvas.setAttribute('role', 'img');
+            settingsControllerCanvas.setAttribute('aria-label', title);
+        }
         controllerFlow.stage = stage;
         settingsControllerBridge.renderScreen?.();
         const titleEl = document.getElementById('permTitle');
@@ -4336,14 +4527,35 @@ enabled: ${!!cameraAction?.enabled}`;
                 permAllow.removeEventListener('click', allow);
                 permDeny.removeEventListener('click', deny);
                 permModal.removeEventListener('keydown', onKeydown);
-                controllerFlow.resolvePrompt = null;
+                settingsControllerCanvas.removeEventListener('keydown', onCanvasKeydown);
+                signal.removeEventListener('abort', cancel);
+                if(controllerFlow.resolvePrompt === finish) controllerFlow.resolvePrompt = null;
                 permModal.classList.add('hidden');
                 permModal.style.display = 'none';
-                if(previousFocus?.isConnected && !permModal.contains(previousFocus)) previousFocus.focus();
-                resolve(!!value);
+                if(screenPrompt){
+                    modalHome.appendChild(permModal);
+                    permModal.classList.remove('controller-screen-permission');
+                    accessibleControllerControls.classList.remove('has-screen-permission');
+                    if(nativeDetails && !nativeDetailsWasOpen) nativeDetails.open = false;
+                    permModal.setAttribute('role', 'dialog');
+                    permModal.setAttribute('aria-modal', 'true');
+                    for(const [name, value] of [['role',canvasRole],['tabindex',canvasTabIndex],['aria-label',canvasLabel]]){
+                        if(value === null) settingsControllerCanvas.removeAttribute(name);
+                        else settingsControllerCanvas.setAttribute(name, value);
+                    }
+                }
+                if(value !== null){
+                    const focusTarget = previousFocus?.isConnected
+                        && !previousFocus.closest?.('[hidden], [inert]')
+                        && !permModal.contains(previousFocus)
+                        ? previousFocus : nativeDetails?.querySelector('summary') || settingsControllerCanvas;
+                    focusTarget.focus({ preventScroll: true });
+                }
+                resolve(value);
             };
             const allow = () => finish(true);
             const deny = () => finish(false);
+            const cancel = () => finish(null);
             const onKeydown = (event) => {
                 if(event.key === 'Escape') { event.preventDefault(); deny(); return; }
                 if(event.key !== 'Tab') return;
@@ -4353,96 +4565,115 @@ enabled: ${!!cameraAction?.enabled}`;
                     event.preventDefault(); permAllow.focus();
                 }
             };
+            const onCanvasKeydown = event => {
+                if(event.key === 'Tab'){
+                    event.preventDefault();
+                    if(nativeDetails) nativeDetails.open = true;
+                    permAllow.focus({ preventScroll: true });
+                }
+                else if(event.key === 'Escape'){ event.preventDefault(); deny(); }
+            };
             controllerFlow.resolvePrompt = finish;
+            signal.addEventListener('abort', cancel, { once: true });
             listen(permAllow, 'click', allow);
             listen(permDeny, 'click', deny);
             listen(permModal, 'keydown', onKeydown);
-            scope.timeout(() => { if(!scope.signal.aborted) permAllow.focus(); }, 0);
+            if(screenPrompt) listen(settingsControllerCanvas, 'keydown', onCanvasKeydown);
+            scope.timeout(() => {
+                if(!scope.signal.aborted && !signal.aborted){
+                    (screenPrompt ? settingsControllerCanvas : permAllow).focus({ preventScroll: true });
+                }
+            }, 0);
         });
     }
 
-    function askControllerScreenPermission(stage){
+    function askControllerScreenPermission(stage, signal){
         // Keep the canvas choice mirrored by the existing keyboard-accessible
         // dialog so screen-reader and keyboard users can finish onboarding.
-        return askControllerPermission(stage, 'Allow audio on this site?');
+        return askControllerPermission(stage, stage === 'motion' ? 'Allow animations on this site?' : 'Allow audio on this site?', signal);
     }
 
     let onboardingPromise = null;
-    const waitForControllerReady = () => Promise.race([
-        settingsControllerBridge.ready,
-        new Promise(resolve => scope.signal.addEventListener('abort', () => resolve(null), { once: true }))
-    ]);
+    let onboardingController = null;
+    const waitForControllerReady = (signal) => new Promise((resolve, reject) => {
+        if(signal.aborted) { resolve(null); return; }
+        const onAbort = () => { signal.removeEventListener('abort', onAbort); resolve(null); };
+        signal.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve(settingsControllerBridge.ready).then(
+            (value) => { signal.removeEventListener('abort', onAbort); resolve(value); },
+            (error) => { signal.removeEventListener('abort', onAbort); reject(error); }
+        );
+    });
 
-    function waitForLocalReviewGesture(){
-        return new Promise((resolve) => {
-            const finish = () => {
-                document.removeEventListener('pointerdown', onPointerDown, true);
-                document.removeEventListener('keydown', onKeyDown, true);
-                controllerFlow.soundAllowed = true;
-                applyAudioPermission(true, { persist: false });
-                playWelcomeJingle(true);
-                resolve();
-            };
-            const onPointerDown = () => finish();
-            const onKeyDown = (event) => {
-                if(event.key === 'Enter' || event.key === ' ') finish();
-            };
-            listen(document, 'pointerdown', onPointerDown, { once: true, capture: true });
-            listen(document, 'keydown', onKeyDown, { capture: true });
-            scope.signal.addEventListener('abort', () => resolve(), { once: true });
-        });
+    function enableTestingAudio(signal){
+        const cleanup = () => {
+            document.removeEventListener('pointerdown', activate, true);
+            document.removeEventListener('keydown', activate, true);
+            signal.removeEventListener('abort', cleanup);
+        };
+        const activate = () => {
+            cleanup();
+            if(signal.aborted) return;
+            applyAudioPermission(true, { persist: false });
+            if(!welcomeJingle || welcomeJingle.paused) playWelcomeJingle(true);
+        };
+        // Autoplay policy may still suspend audio. Retrying on the first real
+        // gesture must never gate the model reveal or move its camera.
+        listen(document, 'pointerdown', activate, { capture: true });
+        listen(document, 'keydown', activate, { capture: true });
+        signal.addEventListener('abort', cleanup, { once: true });
+        playWelcomeJingle(true);
     }
 
     function showPermissionIfNeeded(){
         if(onboardingPromise) return onboardingPromise;
+        const flow = new AbortController();
+        onboardingController = flow;
+        const isCurrent = () => !scope.signal.aborted && !flow.signal.aborted && onboardingController === flow;
         onboardingPromise = (async () => {
-            if(isLocalReview){
+            // Temporary local testing defaults requested by the site owner.
+            // Keep the visitor permission flow below available for production.
+            if(isLocalHost){
                 controllerFlow.animationAllowed = true;
-                controllerFlow.soundAllowed = null;
+                controllerFlow.soundAllowed = true;
+                storedMuted = false;
+                if(!(storedVolume > 0)) storedVolume = .25;
                 controllerFlow.stage = 'gallery';
                 permModal.classList.add('hidden');
                 permModal.style.display = 'none';
                 settingsControllerBridge.renderScreen?.();
 
-                // The first real interaction provides the browser gesture needed
-                // to resume Web Audio. Review choices remain session-only, and
-                // the opening camera sequence is skipped without disabling the
-                // controller's later mode/button animations.
-                await waitForLocalReviewGesture();
-                if(scope.signal.aborted) return null;
-                await waitForControllerReady();
-                if(scope.signal.aborted) return null;
-                settingsControllerBridge.finishOnboarding?.(false);
-                settingsControllerBridge.selectMode?.(localReviewStartMode, { triggerEmissive: false });
+                applyAudioPermission(true);
+                enableTestingAudio(flow.signal);
+                await waitForControllerReady(flow.signal);
+                if(!isCurrent()) return null;
+                settingsControllerBridge.finishOnboarding?.(!isLocalReview);
+                if(isLocalReview && !rememberedStartView) settingsControllerBridge.selectMode?.(localReviewStartMode, { triggerEmissive: false, instant: true });
                 settingsControllerBridge.renderScreen?.();
-                return { soundAllowed: true, animationAllowed: true, review: true };
+                return { soundAllowed: true, animationAllowed: true, testing: true, review: isLocalReview };
             }
 
-            // Both choices are per-visit gates and are mirrored on the GLB
-            // screen. Ask about motion first, but do not start it until sound has
-            // also been explicitly accepted or rejected.
-            const animationAllowed = await askControllerPermission(
-                'motion',
-                'Allow animations on this site?'
-            );
-            if(scope.signal.aborted) return null;
+            // Reveal a static controller before either question. The GLB screen
+            // owns both choices; the native dialog is only a no-WebGL fallback.
+            await waitForControllerReady(flow.signal);
+            if(!isCurrent()) return null;
+            settingsControllerBridge.revealController?.(false);
+            const animationAllowed = await askControllerScreenPermission('motion', flow.signal);
+            if(!isCurrent()) return null;
             localPreferences.setItem(ANIMATION_ALLOWED_KEY, String(animationAllowed));
             controllerFlow.animationAllowed = animationAllowed;
 
-            // The animation choice belongs outside the screen. Once made, the
-            // controller pops in and its own display owns the sound choice.
-            await waitForControllerReady();
-            if(scope.signal.aborted) return null;
-            settingsControllerBridge.revealController?.(animationAllowed);
-
-            const soundAllowed = settingsControllerBridge.model
-                ? await askControllerScreenPermission('sound')
-                : await askControllerPermission('sound', 'Allow audio on this site?');
-            if(scope.signal.aborted) return null;
+            const savedConsent = getAudioConsentState();
+            const soundAllowed = savedConsent.shouldPrompt
+                ? settingsControllerBridge.model
+                    ? await askControllerScreenPermission('sound', flow.signal)
+                    : await askControllerPermission('sound', 'Allow audio on this site?', flow.signal)
+                : savedConsent.allowed;
+            if(!isCurrent()) return null;
             controllerFlow.soundAllowed = soundAllowed;
-            applyAudioPermission(soundAllowed);
-            await waitForControllerReady();
-            if(scope.signal.aborted) return null;
+            applyAudioPermission(soundAllowed, { persist: savedConsent.shouldPrompt });
+            await waitForControllerReady(flow.signal);
+            if(!isCurrent()) return null;
             controllerFlow.stage = 'gallery';
             if(soundAllowed) playWelcomeJingle();
             settingsControllerBridge.finishOnboarding?.(animationAllowed);
@@ -4474,6 +4705,7 @@ enabled: ${!!cameraAction?.enabled}`;
     function offerSoundOnUnmute(){
         if(controllerFlow.soundAllowed) return;
         void ensureAudioConsentPrompt({
+            requestAfterDeny: true,
             modalId: 'siteAudioConsentPrompt',
             allowButtonId: 'siteAudioConsentAllow',
             denyButtonId: 'siteAudioConsentDeny'
@@ -4483,6 +4715,14 @@ enabled: ${!!cameraAction?.enabled}`;
             applyAudioPermission(true);
         });
     }
+
+    scope.defer(onAudioConsentChange(allowed => {
+        // Review's opening sound choice is session-only, but an explicit
+        // revocation must still stop a running comparison immediately.
+        if(allowed || !controllerFlow.soundAllowed) return;
+        controllerFlow.soundAllowed = false;
+        applyVolumeAndMuted();
+    }));
 
     // Create audio context and routing to apply delay to audio and visualizer
     function ensureAudioRouting(){
@@ -4495,22 +4735,8 @@ enabled: ${!!cameraAction?.enabled}`;
             analyser.fftSize = 1024;
             delayNode = audioCtx.createDelay(3.0); // max 3s
             destinationGain = audioCtx.createGain();
-            syncVoiceSource = audioCtx.createMediaElementSource(syncVoiceAudio);
-            syncTicksSource = audioCtx.createMediaElementSource(syncTicksAudio);
-            syncVoiceGain = audioCtx.createGain();
-            syncTicksGain = audioCtx.createGain();
-            syncVoiceGain.gain.value = 1;
-            syncTicksGain.gain.value = 0.48;
-            // route: mediaSource -> delayNode -> destinationGain -> analyser -> audioCtx.destination
             mediaSource.connect(delayNode);
             delayNode.connect(destinationGain);
-            // Calibration assets remain separate so voice/tick balance can be
-            // tuned independently. They bypass the user's current sync delay:
-            // the exercise measures a fresh system latency estimate.
-            syncVoiceSource.connect(syncVoiceGain);
-            syncTicksSource.connect(syncTicksGain);
-            syncVoiceGain.connect(destinationGain);
-            syncTicksGain.connect(destinationGain);
             destinationGain.connect(analyser);
             analyser.connect(audioCtx.destination);
             applySyncValue(storedSync);
@@ -4520,10 +4746,6 @@ enabled: ${!!cameraAction?.enabled}`;
             // WebAudio not supported or blocked
             audioCtx = null;
             mediaSource = null;
-            syncVoiceSource = null;
-            syncTicksSource = null;
-            syncVoiceGain = null;
-            syncTicksGain = null;
             analyser = null;
             delayNode = null;
             destinationGain = null;
@@ -4537,19 +4759,21 @@ enabled: ${!!cameraAction?.enabled}`;
 
     function applySyncValue(ms){
         storedSync = snapSyncMs(ms);
-        setSyncOffsetMs(storedSync);
+        const preview = controllerFlow.syncExercise.active;
+        if(preview) syncComparison?.setOffset(storedSync);
+        else setSyncOffsetMs(storedSync);
         if(syncSlider) syncSlider.value = String(storedSync);
         if(modalSync) modalSync.value = String(storedSync);
         syncAccessibleControllerUI();
-        syncDisplay.textContent = `Sync: ${storedSync} ms`;
+        syncDisplay.textContent = `${preview ? "Preview" : "Sync"}: ${storedSync} ms`;
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
-            settingsControllerBridge.updateKnobTransformsFromState();
+            settingsControllerBridge.updateKnobTransformsFromState({ immediate: 'sync' });
         }
         if(typeof settingsControllerBridge.updateSyncPercentLabel === 'function'){
             settingsControllerBridge.updateSyncPercentLabel();
         }
 
-        if(window.siteConfig) window.siteConfig.audioSyncMs = storedSync;
+        if(window.siteConfig && !preview) window.siteConfig.audioSyncMs = storedSync;
 
         if(!audioCtx || !delayNode) return;
         const audioDelaySec = audioDelaySeconds(storedSync);
@@ -4565,7 +4789,7 @@ enabled: ${!!cameraAction?.enabled}`;
         if(destinationGain){
             destinationGain.gain.value = effectivelyMuted ? 0 : storedVolume;
             try{ jumpAudio.muted = false; }catch{}
-            try{ syncVoiceAudio.muted = false; syncTicksAudio.muted = false; }catch{}
+
             try{ jumpVideo.muted = true; }catch{}
         }else{
             try{
@@ -4576,14 +4800,14 @@ enabled: ${!!cameraAction?.enabled}`;
         }
         if(permissionMuted){
             try{ jumpAudio.pause(); }catch{}
-            try{ syncVoiceAudio.pause(); syncTicksAudio.pause(); }catch{}
+            if(controllerFlow.syncExercise.active) resetSyncExercise();
         }
         if(!isLocalReview){
             getSharedSettings().patch({ audio: { volume: storedVolume, muted: storedMuted } });
         }
         updateVolumeUI();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
-            settingsControllerBridge.updateKnobTransformsFromState();
+            settingsControllerBridge.updateKnobTransformsFromState({ immediate: 'vol' });
         }
         syncAccessibleControllerUI();
     }
@@ -4636,108 +4860,74 @@ enabled: ${!!cameraAction?.enabled}`;
         settingsControllerBridge.updateAudioMeter?.({ level: 0, peak: 0, clipped: false, peakClipped: false });
     }
 
-    function clearSyncExerciseTimers(){
-        syncExerciseTimers.forEach((timerId) => window.clearTimeout(timerId));
-        syncExerciseTimers = [];
-    }
-
-    function stopSyncExerciseAudio(){
-        try{ syncVoiceAudio.pause(); syncVoiceAudio.currentTime = 0; }catch{}
-        try{ syncTicksAudio.pause(); syncTicksAudio.currentTime = 0; }catch{}
-    }
+    function clearSyncExerciseTimers(){ syncComparison?.stop(); }
 
     function resetSyncExercise(){
+        if(controllerFlow.saveLatched){
+            controllerFlow.saveLatched = false;
+            settingsControllerBridge.setSaveLatched?.(false);
+        }
         clearSyncExerciseTimers();
-        stopSyncExerciseAudio();
         const exercise = controllerFlow.syncExercise;
         exercise.active = false;
-        exercise.startedAt = 0;
-        exercise.taps = [];
-        exercise.litCount = 0;
-        exercise.litLines = new Set();
         exercise.result = '';
         exercise.runId = (exercise.runId || 0) + 1;
         controllerFlow.stage = 'gallery';
+        applySyncValue(getSyncOffsetMs());
         settingsControllerBridge.renderScreen?.();
         syncAccessibleControllerUI();
     }
 
-    function startSyncExercise(){
-        if(!controllerFlow.soundAllowed){
-            controllerFlow.syncExercise.result = 'SOUND MUST BE ENABLED TO SYNC';
+    async function startSyncExercise(){
+        resetSyncExercise();
+        const exercise = controllerFlow.syncExercise;
+        if(!controllerFlow.soundAllowed || storedMuted || storedVolume === 0){
+            exercise.result = 'Enable sound and raise the volume to compare.';
             controllerFlow.stage = 'sync-running';
             settingsControllerBridge.renderScreen?.();
             syncAccessibleControllerUI();
             return;
         }
-        clearSyncExerciseTimers();
-        stopSyncExerciseAudio();
         ensureAudioRouting();
-        resumeAudioContext();
+        if(!audioCtx || !destinationGain){
+            exercise.result = 'Audio comparison is unavailable in this browser.';
+            controllerFlow.stage = 'sync-running';
+            settingsControllerBridge.renderScreen?.();
+            syncAccessibleControllerUI();
+            return;
+        }
         resetPeakHold();
         settingsControllerBridge.selectMode?.('audio');
-        const exercise = controllerFlow.syncExercise;
         exercise.active = true;
-        exercise.startedAt = performance.now();
-        exercise.taps = [];
-        exercise.litCount = 0;
-        exercise.litLines = new Set();
-        exercise.result = '';
-        exercise.runId = (exercise.runId || 0) + 1;
-        const runId = exercise.runId;
+        exercise.result = 'Preparing the voice guide…';
+        const runId = ++exercise.runId;
         controllerFlow.stage = 'sync-running';
-        const markPlaybackOrigin = () => {
-            if(exercise.runId !== runId) return;
-            exercise.startedAt = performance.now() - ((syncVoiceAudio.currentTime || 0) * 1000);
-        };
-        listen(syncVoiceAudio, 'playing', markPlaybackOrigin, { once: true });
-        try{ syncVoiceAudio.currentTime = 0; syncTicksAudio.currentTime = 0; }catch{}
-        Promise.all([syncVoiceAudio.play(), syncTicksAudio.play()]).catch(() => {
-            if(exercise.runId !== runId) return;
+        syncComparison ||= createSyncComparison({ context: audioCtx, output: destinationGain,
+            guideUrl: SYNC_GUIDE_URL, signal: scope.signal,
+            onChange: () => settingsControllerBridge.renderScreen?.() });
+        settingsControllerBridge.syncComparison = syncComparison;
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+        try {
+            const started = await syncComparison.start(storedSync);
+            if(runId !== exercise.runId || scope.signal.aborted) return;
+            if(started){ exercise.result = ''; syncComparison.setOffset(storedSync); }
+            else { exercise.active = false; exercise.result = 'Audio could not start. Try again.'; }
+        } catch {
+            if(runId !== exercise.runId || scope.signal.aborted) return;
             exercise.active = false;
-            exercise.result = 'AUDIO COULD NOT START - TRY AGAIN';
-            settingsControllerBridge.renderScreen?.();
-            syncAccessibleControllerUI();
-        });
-        const endTimerId = window.setTimeout(() => {
-            if(exercise.runId !== runId || !exercise.active) return;
-            exercise.active = false;
-            exercise.result = 'MISSED A CUE - TRY AGAIN';
-            settingsControllerBridge.renderScreen?.();
-            syncAccessibleControllerUI();
-        }, 7600);
-        syncExerciseTimers.push(endTimerId);
+            exercise.result = 'Audio could not start. Try again.';
+        }
         settingsControllerBridge.renderScreen?.();
         syncAccessibleControllerUI();
     }
 
-    function registerSyncExerciseTap(){
-        const exercise = controllerFlow.syncExercise;
-        const index = exercise.taps.length;
-        if(!exercise.active || index >= SYNC_WORDS.length) return;
-        const observedOffset = performance.now()
-            - exercise.startedAt
-            - SYNC_CUE_OFFSETS_MS[index]
-            - SYNC_REACTION_ALLOWANCE_MS;
-        exercise.taps.push(observedOffset);
-        exercise.litCount = index + 1;
-        const runId = exercise.runId;
-        if(index < SYNC_WORDS.length - 1){
-            const timerId = window.setTimeout(() => {
-                if(exercise.runId !== runId) return;
-                exercise.litLines.add(index);
-                settingsControllerBridge.renderScreen?.();
-            }, SYNC_BEAT_MS);
-            syncExerciseTimers.push(timerId);
-        }
-        if(exercise.taps.length === SYNC_WORDS.length){
-            exercise.active = false;
-            const calibratedSync = estimateSyncOffsetMs(exercise.taps);
-            applySyncValue(calibratedSync);
-            exercise.result = Math.abs(calibratedSync) < 5
-                ? 'SYNCED NEAR 0 MS'
-                : `ESTIMATED ${calibratedSync > 0 ? '+' : ''}${calibratedSync} MS OFFSET`;
-        }
+    function commitSyncExercise(){
+        if(!controllerFlow.syncExercise.active) return;
+        const selected = storedSync;
+        resetSyncExercise();
+        applySyncValue(selected);
+        controllerFlow.syncExercise.result = 'Saved ' + selected + ' ms';
         settingsControllerBridge.renderScreen?.();
         syncAccessibleControllerUI();
     }
@@ -4954,6 +5144,7 @@ enabled: ${!!cameraAction?.enabled}`;
 
     // Event bindings
     listen(saveBtn, 'click', ()=>{
+        if(dismissSavedState()) return;
         const reducedMotion = document.getElementById('a11y_reduced_motion').checked;
         const highContrast = document.getElementById('a11y_high_contrast').checked;
         const textScale = (document.querySelector('input[name="a11y_text"]:checked')?.value)||'normal';
@@ -5002,7 +5193,7 @@ enabled: ${!!cameraAction?.enabled}`;
         topTabA11y.setAttribute('aria-selected', 'true'); topTabAudio.setAttribute('aria-selected', 'false');
         a11ySection.style.display = 'block';
         jumpContainer.style.display = 'none';
-        leadText.textContent = 'Letâ€™s tune a few preferences so the site works best for you.';
+        leadText.textContent = 'Let’s tune a few preferences so the site works best for you.';
         if(settingsControllerBridge?.setAccessibilityView){
             settingsControllerBridge.setAccessibilityView();
         }
@@ -5027,14 +5218,26 @@ enabled: ${!!cameraAction?.enabled}`;
     if(returnGalleryBtn){
         listen(returnGalleryBtn, 'click', resetSyncExercise);
     }
+    listen(accessiblePower, 'click', () => { dismissSavedState(); settingsControllerBridge.powerCat?.activate(); });
+    listen(accessibleControllerControls, 'pointerdown', event => {
+        const control = event.target.closest?.('button, input, select');
+        if(control && control !== accessibleConfirmYes && control !== accessibleConfirmNo) dismissSavedState();
+    }, { capture: true });
     listen(accessibleAudioMode, 'click', () => settingsControllerBridge.selectMode?.('audio'));
     listen(accessibleVisualsMode, 'click', () => settingsControllerBridge.selectMode?.('visuals'));
-    listen(accessibleVolume, 'input', (event) => setVolumeFromPercent(Number(event.target.value)));
-    listen(accessibleSync, 'input', (event) => applySyncValue(Number(event.target.value)));
-    listen(accessibleBrightness, 'input', (event) => applyLuxFromSource(Number(event.target.value) / 100, 'accessible'));
-    listen(accessibleContrast, 'input', (event) => applyEmiFromSource(Number(event.target.value) / 100, 'accessible'));
+    const editNativeSetting = (mode, apply) => event => {
+        // Mode changes refresh the controls, so retain the input before selecting.
+        const value = Number(event.target.value);
+        dismissSavedState();
+        if(activeSettingsView !== mode) settingsControllerBridge.selectMode?.(mode);
+        apply(value);
+    };
+    listen(accessibleVolume, 'input', editNativeSetting('audio', setVolumeFromPercent));
+    listen(accessibleSync, 'input', editNativeSetting('audio', applySyncValue));
+    listen(accessibleBrightness, 'input', editNativeSetting('visuals', value => applyLuxFromSource(value / 100, 'accessible')));
+    listen(accessibleContrast, 'input', editNativeSetting('visuals', value => applyEmiFromSource(value / 100, 'accessible')));
     listen(accessibleCounts, 'click', startSyncExercise);
-    listen(accessiblePlayPause, 'click', registerSyncExerciseTap);
+    listen(accessiblePlayPause, 'click', commitSyncExercise);
     listen(accessibleGallery, 'click', resetSyncExercise);
     listen(accessibleConfirmYes, 'click', () => resolveSaveConfirmation(true));
     listen(accessibleConfirmNo, 'click', () => resolveSaveConfirmation(false));
@@ -5150,7 +5353,7 @@ enabled: ${!!cameraAction?.enabled}`;
         const actions = {};
         if(saveBtn) actions['Save a11y prefs'] = () => saveBtn.click();
         if(resetBtn) actions['Reset a11y prefs'] = () => resetBtn.click();
-        actions['Reset camera anim'] = () => settingsControllerBridge.resetCustomCameraAnimation?.();
+        actions['Replay camera move'] = () => settingsControllerBridge.resetCustomCameraAnimation?.();
         if(typeof window.registerDebugHooks === 'function'){
             window.registerDebugHooks({ flags, actions });
         }
@@ -5193,8 +5396,89 @@ enabled: ${!!cameraAction?.enabled}`;
     listen(window, 'debug-ui-ready', registerLightingDebugActions);
     registerLightingDebugActions();
 
-    const initializeStart = async () => {
-        if(scope.signal.aborted) return;
+    const nativeControlsPanel = document.getElementById('startNativeControls');
+    const nativeControlsFolds = mountCollapsibleSections(document.body, {scope:'page:start:native-comfort',group:'comfort',headings:false,reorder:false,detailsSelector:'#startNativeControls'});
+    scope.defer(() => nativeControlsFolds.dispose());
+    const comfortPaths = ['audio.volume','audio.syncMs','audio.muted','start.brightness','start.contrast'];
+    const nativeControlsTransfer = mountSettingsContextMenu(nativeControlsPanel, () => ({
+        label:'Sound & visual controls', filename:'start-comfort.json',
+        read:() => ({kind:'preferences-section',schemaVersion:1,page:'start',key:'comfort',values:Object.fromEntries(comfortPaths.map(path => [path,path.split('.').reduce((value,key) => value?.[key],getSharedSettings().get())]))}),
+        apply:data => {
+            if(data?.kind !== 'preferences-section' || data.schemaVersion !== 1 || data.page !== 'start' || data.key !== 'comfort' || !data.values || Array.isArray(data.values) || Object.keys(data.values).some(path => !comfortPaths.includes(path))) throw new TypeError('Choose a Sound & visual controls export');
+            if(!getSharedSettings().patch(data.values).ok) throw new TypeError('Invalid comfort settings');
+        }
+    }));
+    scope.defer(() => nativeControlsTransfer.dispose());
+    const proceedToSite = document.getElementById('proceedToSite');
+    const siteNavHost = document.getElementById('startSiteNavHost');
+    const setSiteNavOpen = (open, restoreFocus = false) => {
+        siteNavHost.hidden = !open;
+        siteNavHost.inert = !open;
+        proceedToSite.setAttribute('aria-expanded', String(open));
+        proceedToSite.textContent = open ? 'Close site menu ×' : 'Proceed to site →';
+        if(open) siteNavHost.querySelector('.navigation a')?.focus({preventScroll:true});
+        else if(restoreFocus) proceedToSite.focus({preventScroll:true});
+    };
+    listen(proceedToSite, 'click', () => setSiteNavOpen(siteNavHost.hidden, !siteNavHost.hidden));
+    listen(document, 'keydown', event => {
+        if(event.key !== 'Escape' || event.defaultPrevented || siteNavHost.hidden || document.querySelector('dialog[open]')) return;
+        event.preventDefault(); setSiteNavOpen(false, true);
+    });
+    listen(document, 'pointerdown', event => {
+        if(!siteNavHost.hidden && !siteNavHost.contains(event.target) && !proceedToSite.contains(event.target)) setSiteNavOpen(false);
+    });
+    const projectOverlays = mountStartProjectOverlays({
+        scope,
+        onOpen() {
+            setSiteNavOpen(false);
+            projectOverlayOpen = true;
+            if(audioStartTimer){ window.clearTimeout(audioStartTimer); audioStartTimer = null; }
+            if(controllerFlow.syncExercise.active) resetSyncExercise();
+            else clearSyncExerciseTimers();
+            jumpVideo.pause();
+            jumpAudio.pause();
+            welcomeJingle?.pause();
+            isPlaying = false;
+            stopVisualizer();
+            suspendScene();
+        },
+        onClose() {
+            projectOverlayOpen = false;
+            if(!scope.signal.aborted && !suspended) resumeScene();
+        }
+    });
+    let startInitialized = false;
+    let setupComplete = false;
+    let setupCompletionFlow = null;
+    function setPortfolioEntryVisible(visible){
+        if(visible && !setupComplete && onboardingController){
+            onboardingController.abort();
+            onboardingController = null;
+            onboardingPromise = null;
+        }
+        document.body.classList.toggle('start-entry-active', visible);
+        portfolioEntry.hidden = !visible;
+        portfolioEntry.inert = !visible;
+        settingsControllerScene.inert = visible;
+        settingsControllerScene.setAttribute('aria-hidden', String(visible));
+        accessibleControllerControls.inert = visible;
+        accessibleControllerControls.setAttribute('aria-hidden', String(visible));
+        startControllerOverview.hidden = false;
+        rememberCurrentView(true);
+        if(visible){
+            if(audioStartTimer){ window.clearTimeout(audioStartTimer); audioStartTimer = null; }
+            if(controllerFlow.syncExercise.active) resetSyncExercise();
+            else clearSyncExerciseTimers();
+            jumpVideo.pause();
+            jumpAudio.pause();
+            isPlaying = false;
+            welcomeJingle?.pause();
+            document.getElementById('portfolioEntryTitle')?.focus({ preventScroll: true });
+        }
+    }
+    const initializeStart = () => {
+        if(scope.signal.aborted || startInitialized) return;
+        startInitialized = true;
         initSettingsControllerScene();
         hydrate();
         // The consent flow can wait for user input. Show persisted audio values
@@ -5202,33 +5486,57 @@ enabled: ${!!cameraAction?.enabled}`;
         storedVolume = getSharedSettings().get().audio.volume;
         updateVolumeUI();
         syncAccessibleControllerUI();
-        await showPermissionIfNeeded();
-        if(scope.signal.aborted) return;
+        openComfortSettings.hidden = false;
+        document.body.classList.add('start-entry-ready');
+        if(!controllerUnavailable){
+            setPortfolioEntryVisible(false);
+            void completeStartSetup();
+        }
+    };
+    const completeStartSetup = async () => {
+        if(!startInitialized) initializeStart();
+        if(setupComplete) return;
+        const flowPromise = showPermissionIfNeeded();
+        if(setupCompletionFlow === flowPromise) return;
+        setupCompletionFlow = flowPromise;
+        const result = await flowPromise;
+        if(setupCompletionFlow === flowPromise) setupCompletionFlow = null;
+        if(scope.signal.aborted || !result || onboardingPromise !== flowPromise
+            || document.body.classList.contains('start-entry-active')) return;
         storedVolume = getSharedSettings().get().audio.volume;
-        storedMuted = isLocalReview ? false : getSharedSettings().get().audio.muted;
+        storedMuted = isLocalHost ? false : getSharedSettings().get().audio.muted;
         storedSync = getSyncOffsetMs();
         syncSlider.value = storedSync;
         if(modalSync) modalSync.value = storedSync;
         applySyncValue(storedSync);
-        syncVoiceAudio.load();
-        syncTicksAudio.load();
+
         applyVolumeAndMuted();
         resetSyncExercise();
+        setupComplete = true;
+        if(controllerUnavailable) accessibleAudioMode.focus({ preventScroll: true });
     };
+    listen(openComfortSettings, 'click', () => {
+        setPortfolioEntryVisible(false);
+        nativeControlsPanel.open = true;
+        if(!setupComplete) void completeStartSetup();
+        else if(controllerUnavailable) accessibleAudioMode.focus({ preventScroll: true });
+        else nativeControlsPanel.querySelector('summary')?.focus({ preventScroll: true });
+    });
     if(document.readyState === 'loading') listen(document, 'DOMContentLoaded', initializeStart, { once: true });
     else void initializeStart();
     scope.defer(async () => {
+        onboardingController?.abort();
         controllerFlow.resolvePrompt?.(false);
         clearSyncExerciseTimers();
         stopVisualizer();
         if(audioStartTimer) window.clearTimeout(audioStartTimer);
-        for(const media of [jumpVideo, jumpAudio, syncVoiceAudio, syncTicksAudio, welcomeJingle]) {
+        for(const media of [jumpVideo, jumpAudio, welcomeJingle]) {
             try{ media?.pause(); }catch{}
         }
-        for(const media of [syncVoiceAudio, syncTicksAudio, welcomeJingle]) {
+        for(const media of [welcomeJingle]) {
             try{ media?.removeAttribute('src'); }catch{}
         }
-        for(const node of [mediaSource, syncVoiceSource, syncTicksSource, syncVoiceGain, syncTicksGain, delayNode, destinationGain, analyser]) {
+        for(const node of [mediaSource, delayNode, destinationGain, analyser]) {
             try{ node?.disconnect(); }catch{}
         }
         if(audioCtx){
@@ -5239,17 +5547,24 @@ enabled: ${!!cameraAction?.enabled}`;
             await audioCtx.close().catch(()=>{});
         }
     });
+    scope.defer(() => rememberCurrentView(true));
     return {
         suspend() {
+            rememberCurrentView(true);
             suspended = true;
+            settingsControllerBridge.stickyAdapter?.suspend?.();
+            projectOverlays.close();
             suspendScene();
+            settingsControllerBridge.powerCat?.restore();
+            if(controllerFlow.syncExercise.active) resetSyncExercise();
             restartVisualizer = !!vizAnimation;
             stopVisualizer();
         },
         resume() {
             if(!suspended || scope.signal.aborted) return;
             suspended = false;
-            resumeScene();
+            settingsControllerBridge.stickyAdapter?.resume?.();
+            if(!projectOverlayOpen) resumeScene();
             if(restartVisualizer && audioCtx) startVisualizer();
             restartVisualizer = false;
         }

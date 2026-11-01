@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "song": "woods",
+  "output_dir": "midi/prepared/woods",
+  "tempo_source": "midi/woods.mid",
+  "parts": [
+    {"id": "flute", "source": "midi/woods-flute.mid"},
+    {"id": "oboe", "source": "midi/woods-oboe.mid"},
+    {"id": "clarinet", "source": "midi/woods-clarinet.mid"},
+    {"id": "horn", "source": "midi/woods-horn.mid"},
+    {"id": "bassoon", "source": "midi/woods-bassoon.mid"}
+  ]
+}

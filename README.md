@@ -1,5 +1,7 @@
 # Resume website
 
+Start with the [site reference and folder map](docs/README.md) for current page entry points, feature owners, settings locations and the proposed organization phases. Historical validation figures below describe their original architecture checkpoint; use fresh check output for the current working tree.
+
 Static multipage website with browser ES modules, Three.js scenes, generated games and local/CDN media. The Phase 8 release gate is **INCOMPLETE**; nothing has been published by the architecture phases.
 
 Use Node **24.19.0** and npm **11** (validated locally with npm 11.17.0). Run `npm ci --ignore-scripts`, `npm test`, `npm run check:site-html`, and `npm run lint`. Lint currently fails with 642 inherited errors. The real Hypersound fixture and hydrated GLBs are prerequisites for the existing tests. Ignored media are separate inputs; a Git checkout alone is insufficient.

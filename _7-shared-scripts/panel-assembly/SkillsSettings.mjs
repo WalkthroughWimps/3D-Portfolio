@@ -124,11 +124,12 @@ export function mountSkillsSettings({app,nav,holder,read,apply,refresh,getTab,se
   const root=nav.parentElement;
   const context=mountSettingsContextMenu(root,target=>{const element=target.closest('.settings-fold,details'),heading=element?.querySelector(':scope > h2,:scope > h3,:scope > h4,:scope > summary');if(element&&heading&&holder.contains(element))return{label:heading.textContent,filename:'skills-section.json',read:()=>subsection(element),apply:data=>importSubsection(data,element)};
     const button=target.closest('[data-tab]');if(button&&nav.contains(button)){const tab=button.dataset.tab;return{label:tab,filename:`skills-${tab.toLowerCase()}.json`,read:()=>section(tab),apply:async data=>{if(currentTab(data.section)!==tab)throw new TypeError('Choose an export of this tab');await importSection(data);}};}return null;});
-  root.addEventListener('settings-transfer-status',event=>say(event.detail));
+  const onTransferStatus=event=>say(event.detail);
+  root.addEventListener('settings-transfer-status',onTransferStatus);
   const flush=()=>{clearTimeout(timer);persist();};globalThis.addEventListener('pagehide',flush);
   const onEdit=event=>{if(event.target.closest('.settings-preset-dock'))return;const tab=event.target.closest('[data-panel]')?.dataset.panel;if(tab&&event.type!=='click'){ui.selected[tab]='';ui.selected.Skills='';renderPickers();}clearTimeout(timer);timer=setTimeout(persist,150);};holder.addEventListener('input',onEdit);holder.addEventListener('change',onEdit);
   const unsubscribe=app.motion.subscribe(()=>{clearTimeout(timer);timer=setTimeout(persist,250);});
   const detach=[...holder.querySelectorAll('input[type="range"]')].map(input=>attachPrecisionSlider(input));
   renderPickers();refresh();queueMicrotask(persist);
-  return{archive,section,importSection,applyPreset,persist,readBundle:read,applyBundle,getState:()=>structuredClone(ui),restoreUI,tabChanged:renderPickers,dispose(){context.dispose();globalThis.removeEventListener('pagehide',flush);clearTimeout(timer);persist();unregister();unsubscribe();for(const stop of detach)stop();holder.removeEventListener('input',onEdit);holder.removeEventListener('change',onEdit);toolbar.remove();status.remove();}};
+  return{archive,section,importSection,applyPreset,persist,readBundle:read,applyBundle,getState:()=>structuredClone(ui),restoreUI,tabChanged:renderPickers,dispose(){context.dispose();root.removeEventListener('settings-transfer-status',onTransferStatus);globalThis.removeEventListener('pagehide',flush);clearTimeout(timer);persist();unregister();unsubscribe();for(const stop of detach)stop();holder.removeEventListener('input',onEdit);holder.removeEventListener('change',onEdit);toolbar.remove();status.remove();}};
 }

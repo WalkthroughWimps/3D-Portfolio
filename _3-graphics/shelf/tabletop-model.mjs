@@ -2,7 +2,8 @@
 export const HOLD_MS=650;
 export const STICKS={helicopter:{length:3.25,width:.44,notch:.165,color:'#d0a52e'},balloon:{length:3.25*.55,width:.44,notch:.165,color:'#d99036'}};
 export const CARD_THICKNESS=.005;
-export const bodyHeight=b=>b.kind==='cards'?Math.max(1,b.cards.length)*CARD_THICKNESS:b.half[1]*2;
+export const spreadStep=count=>Math.min(.2,3.4/Math.max(1,count-1));
+export const bodyHeight=b=>b.kind==='cards'?(b.fanned?CARD_THICKNESS+Math.max(0,b.cards.length-1)*.0008:Math.max(1,b.cards.length)*CARD_THICKNESS):b.half[1]*2;
 export function supportHeight(b){const [x,z]=b.tilt||[0,0],h=bodyHeight(b)/2;return Math.abs(Math.sin(z)*Math.cos(x))*b.half[0]+Math.abs(Math.cos(z)*Math.cos(x))*h+Math.abs(Math.sin(x))*b.half[2];}
 export function outsideTable(p,board){return !p.every(Number.isFinite)||p[1]<0||p[1]>Math.max(board.width,board.height)*2||Math.abs(p[0])>board.width*1.5||Math.abs(p[2])>board.height*1.5;}
 export class Tabletop {
@@ -13,12 +14,28 @@ export class Tabletop {
     if(this.data.mode!=='manor')this.data.colors.forEach((c,i)=>this.add({kind:'meeple',name:c.material.replace('Meeple','')+' meeple',color:c.color,p:[-w*.24+i*.3,.004,-h*.10],half:[.135,.15,.053]}));
     if(this.data.mode!=='manor')for(const [i,[key,s]] of Object.entries(STICKS).entries())this.add({kind:'stick',vehicle:key,name:key==='helicopter'?'Helicopter stick':'Hot air balloon stick',p:[w*.04,.008,h*(.38+i*.075)],half:[s.length/2,.014,s.width/2],length:s.length,angle:0});
     this.data.decks.forEach((d,i)=>this.add({kind:'cards',name:d.label,family:d.id,cards:d.cards.map(id=>`${d.id}:${id}`),faceUp:false,p:[-w*.42,.004,h*(i===0?.35:.07)],half:[.42,.015,.42]}));
-    for(let i=0;i<6;i++)this.add({kind:'stand',character:i+1,name:`Character stand ${i+1}`,color:['#9a4658','#bf8447','#6b917b','#4f7caa','#8062a0','#cbab4f'][i],p:[-w*.4+i*.48,.004,h/2+.55],half:[.25,.45,.25]});
+    if(this.data.mode==='manor')for(let i=0;i<6;i++)this.add({kind:'stand',character:i+1,name:`Character stand ${i+1}`,color:['#9a4658','#bf8447','#6b917b','#4f7caa','#8062a0','#cbab4f'][i],p:[-w*.4+i*.48,.004,h/2+.55],half:[.25,.45,.25]});
     if(this.data.mode==='manor')for(let i=0;i<2;i++)this.add({kind:'dice',name:`D8 ${i+1}`,color:i?'#bd7947':'#754e86',value:1,p:[w/2+.7,.004,-.4+i*.7],half:[.25,.25/Math.sqrt(3),.25]});
     this.revision++;return this.bodies;
   }
   get(id){return this.bodies.find(b=>b.id===id);}
-  packet(body,cards,p){return this.add({kind:'cards',name:body.name,family:body.family,cards,faceUp:body.faceUp,p,half:[...body.half]});}
+  packet(body,cards,p){return this.add({kind:'cards',name:body.name,family:body.family,cards,faceUp:body.faceUp,p,half:[.42,.015,.42]});}
+  cardBounds(b){if(b?.kind!=='cards')return;b.half=[.42+(b.fanned?Math.max(0,b.cards.length-1)*spreadStep(b.cards.length)/2:0),bodyHeight(b)/2,.42];}
+  fan(id){const b=this.get(id);if(b?.kind!=='cards')return false;const offset=(b.fanned?1:-1)*Math.max(0,b.cards.length-1)*spreadStep(b.cards.length)/2;b.p[0]+=Math.cos(b.angle)*offset;b.p[2]-=Math.sin(b.angle)*offset;b.fanned=!b.fanned;this.cardBounds(b);this.checkpoint(b);this.revision++;return b.fanned;}
+  playFromFan(id,card,now=0){
+    const hand=this.get(id),index=hand?.cards?.indexOf(card);if(!hand?.fanned||index<0)return null;
+    const offset=(index-(hand.cards.length-1)/2)*spreadStep(hand.cards.length),front=.42+.42+.28,c=Math.cos(hand.angle),s=Math.sin(hand.angle);
+    hand.cards.splice(index,1);
+    const body=this.packet(hand,[card],[hand.p[0]+c*offset-s*front,.004,hand.p[2]-s*offset-c*front]);
+    body.angle=hand.angle;body.homeAngle=hand.angle;body.noRejoinHand=hand.id;body.noRejoinUntil=now+800;
+    if(!hand.cards.length&&!hand.role)this.bodies.splice(this.bodies.indexOf(hand),1);else this.cardBounds(hand);
+    this.revision++;return body;
+  }
+  addToFan(cardId,handId,now=0){
+    const card=this.get(cardId),hand=this.get(handId);
+    if(!card||!hand||card===hand||card.kind!=='cards'||card.cards.length!==1||!hand.fanned||card.noRejoinHand===handId&&now<card.noRejoinUntil)return false;
+    hand.cards.push(...card.cards);this.bodies.splice(this.bodies.indexOf(card),1);this.cardBounds(hand);this.revision++;return true;
+  }
   draw(id,count=1,faceDown=false){const b=this.get(id);if(b?.kind!=='cards')return [];const n=Math.min(b.cards.length,Math.max(1,Math.floor(count)||1)),result=[];
     for(let i=0;i<n;i++){const hand=this.bodies.filter(q=>q.kind==='cards'&&q.cards.length===1&&q.faceUp).length;
       // A compact hand area stays within the board's reset perimeter.
@@ -63,7 +80,7 @@ export class Tabletop {
   step(seconds){const steps=Math.max(1,Math.ceil(Math.min(.1,seconds)*120)),dt=Math.min(.1,seconds)/steps;let moving=false;
     for(let k=0;k<steps;k++){
       if(this.anchor){const s=this.get(this.anchor.stick),p=this.get(this.anchor.piece);if(s&&p){s.p[0]=p.p[0];s.p[2]=p.p[2];}else this.anchor=null;}
-      for(const b of this.bodies){if(outsideTable(b.p,this.board)){this.resetBody(b);continue;}if(b.held)continue;
+      for(const b of this.bodies){this.cardBounds(b);if(outsideTable(b.p,this.board)){this.resetBody(b);continue;}if(b.held)continue;
         if(b.p[1]>.004||b.v[1]>0)b.v[1]-=12*dt;
         b.p=b.p.map((v,i)=>v+b.v[i]*dt);b.angle+=b.spin*dt;
         if(b.p[1]<.004){b.p[1]=.004;b.v[1]=Math.abs(b.v[1])>.45?-b.v[1]*.22:0;}

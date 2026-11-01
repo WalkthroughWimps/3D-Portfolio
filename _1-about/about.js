@@ -1,20 +1,31 @@
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { registerPageSummaryPoints } from '../_7-shared-scripts/core/page-summary.js';
+import { ABOUT_MOUNT } from './faces/about/face.js';
+import { NOTES_MOUNT } from './notes/notes-face.js';
+import { CLOCK_MOUNT } from './faces/clock/face.js';
+import { ODD_MOUNT } from './faces/odd/face-runtime.js?v=transport-ticks-1';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { alignedCubeQuaternion } from './cube-alignment.js';
 import { circularizeCubeApertures } from './cube-apertures.mjs';
 import { rotateCubeAtOrbitTarget } from './cube-orbit-focus.mjs';
-import { applyStartPageMouseControlMode, installStartPageStyleMouseControls } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
+import { applyStartPageMouseControlMode, installStartPageStyleMouseControls, transformResetDuration } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
+import { prefersReducedMotion } from '../_7-shared-scripts/core/motion-preference.js';
+import { panelViewport } from '../_7-shared-scripts/core/panel-viewport.js';
+import { resolveTransformResetEasing } from '../_7-shared-scripts/core/transform-easing.js';
 import {bindAboutAppearance} from './scene-appearance.js';
 import {createFaceRegistry, cubeAssets} from './faces/index.js?v=odd-zip-1';
 import {createNotesFace} from './faces/notes/face.js';
+import {createAboutStickyAdapter} from './sticky-notes-adapter.js';
 import {trackPerformanceRenderer} from '../debug/performance-stats.js';
 
 function mountAbout() {
 const canvas = document.getElementById('about-cube');
 const status = document.getElementById('cube-status');
+const faceArrows = document.getElementById('about-face-arrows');
+const faceArrowButtons = [...faceArrows.querySelectorAll('[data-face-edge]')];
 let renderer;
 try {
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
@@ -117,6 +128,7 @@ const fill = new THREE.DirectionalLight(0xc4d5ff, 0.75); fill.position.set(-5, 1
 let cube = null;
 let apertureCorrection = null;
 let appearance=null;
+let stickyAdapter=null;
 let showCubeShell = true;
 const shellMeshes = [];
 function applyCubeShellVisibility() {
@@ -140,10 +152,18 @@ let frameDeltaSeconds = 0;
 let settingsViewOffset = 0;
 const targetCubeQuaternion = new THREE.Quaternion();
 const arrowGeometries = [];
+const faceArrowOcclusion = new Map();
+let lastArrowOcclusionAt = 0, lastArrowFaceId = null;
 let rotatePointer = null;
 let alignAt = null;
 let aligning = true;
+let explicitRotationReset = null;
+let entrance = null;
+const entranceHome = new THREE.Vector3();
 let faceSnap=false;
+let lockedRotation=false, faceRotation=false, showFaceArrows=false, arrowSpeed=1;
+const lockedBase = new THREE.Quaternion();
+let lockedYaw=0, lockedTilt=0;
 let pointerLockPending = false;
 let disposed = false;
 let suspended = false;
@@ -158,6 +178,20 @@ let launchClearance = 0, orbitRestoreDistance = null, orbitPushedDistance = null
 const faces = createFaceRegistry({stage: canvas.parentElement,
   focusFace, rotateBy,
   onInputOwnership: owned => { controls.enabled = !owned; } });
+const summaryFaces = [
+  ['Fish', 'about', () => ABOUT_MOUNT],
+  ['Skills', 'skills', () => faces.physicalMount('skills', {normal: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0]})],
+  ['About', 'refs', () => faces.physicalMount('refs', faces.get('refs').mount)],
+  ['Clock', 'clock', () => CLOCK_MOUNT],
+  ['Oddio', 'odd', () => faces.physicalMount('odd', ODD_MOUNT)],
+  ['Notes', 'notes', () => faces.physicalMount('notes', NOTES_MOUNT)]
+];
+const unregisterSummary = registerPageSummaryPoints('about', summaryFaces.map(([label, id, mount]) => ({
+  label,
+  ready: () => Boolean(cube && !disposed && !suspended && !failed3D && faces.get(id)?.backing &&
+    getSharedSettings().get().about?.[id]?.enabled !== false && mount()),
+  run: options => { const face = faces.get(id); if (face?.backing) focusFace(mount(), options); }
+})));
 if (location.hostname === '127.0.0.1' && new URLSearchParams(location.search).has('review'))
   window.__aboutSkillsReview = { get assembly() { return faces.get('skills').assembly; }, faces, get cube() { return cube; }, camera, renderer,
     get frameId() { return frameId; }, get rotationEnvelope() { return rotationEnvelope; }, get apertureCorrection() { return apertureCorrection; }, controls, get notes() { return faces.get('notes').runtime; },
@@ -175,30 +209,128 @@ if (location.hostname === '127.0.0.1' && new URLSearchParams(location.search).ha
         anchor, target, active: Boolean(activeSurfaceFocus),
         errorPixels: anchor && target ? Math.hypot(anchor.x - target.x, anchor.y - target.y) : null};
     }, suspend, resume, dispose };
-function focusFace(mount) {
+function focusFace(mount, poiOptions = null) {
   if (!cube || disposed || suspended) return;
+  finishEntrance();
+  explicitRotationReset = null;
   faces.endGestures();
   stopCubeRotation();
-  mouseControls.startFocusAnimation(getDefaultFocusPoint());
+  mouseControls.startFocusAnimation(getDefaultFocusPoint(), poiOptions ? {
+    durationMs: poiOptions.animate ? Math.round(700 / poiOptions.speed) : 1
+  } : {});
+  targetCubeQuaternion.copy(quaternionForFace(mount));
+  resetLockedRotation();
+  alignAt = null; aligning = true;
+  if (poiOptions) {
+    const duration = poiOptions.animate ? Math.round(700 / poiOptions.speed) : 0;
+    explicitRotationReset = duration ? {from: cube.quaternion.clone(), to: targetCubeQuaternion.clone(),
+      start: performance.now(), duration, easingId: 'inOutCubic', poi: true} : null;
+    if (!duration) rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.copy(targetCubeQuaternion));
+  }
+}
+function resetLockedRotation() {
+  lockedBase.copy(targetCubeQuaternion);
+  lockedYaw = lockedTilt = 0;
+}
+function lockedFaceQuaternion(rotation) {
+  const cameraRotation = camera.getWorldQuaternion(new THREE.Quaternion());
+  const towardCamera = new THREE.Vector3(0, 0, 1).applyQuaternion(cameraRotation);
+  const sideNormals = [
+    new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0),
+    new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)
+  ];
+  const normal = sideNormals.reduce((best, axis) =>
+    axis.clone().applyQuaternion(rotation).dot(towardCamera) > best.clone().applyQuaternion(rotation).dot(towardCamera)
+      ? axis : best);
+  // Local +Y is the cube's vertical axis: Notes has +Y up and Clock sits at -Y.
+  const up = new THREE.Vector3(0, 1, 0);
+  const right = new THREE.Vector3().crossVectors(up, normal).normalize();
+  const localUp = new THREE.Vector3().crossVectors(normal, right).normalize();
+  const localBasis = new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(right, localUp, normal));
+  return cameraRotation.multiply(localBasis.invert()).normalize();
+}
+function quaternionForFace(mount) {
   const normal = camera.getWorldPosition(new THREE.Vector3()).sub(controls.target).normalize();
   const right = new THREE.Vector3().crossVectors(camera.up, normal).normalize();
   const up = new THREE.Vector3().crossVectors(normal, right).normalize();
   const world = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, normal));
   const local = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(
     new THREE.Vector3(...mount.right), new THREE.Vector3(...mount.up), new THREE.Vector3(...mount.normal)));
-  targetCubeQuaternion.copy(world.multiply(local.invert()));
-  alignAt = null; aligning = true;
+  return world.multiply(local.invert());
+}
+function finishEntrance() {
+  if (!entrance || entrance.finishing) return;
+  entrance = {finishing: true, start: performance.now(), duration: reducedMotion ? 0 : 260,
+    fromY: cube.position.y - entranceHome.y};
+  targetCubeQuaternion.copy(cube.quaternion);
+}
+function animateEntrance(now) {
+  if (!entrance) return false;
+  const t = Math.min(1, (now - entrance.start) / (entrance.duration || 1));
+  if (entrance.finishing) {
+    const eased = t * t * (3 - 2 * t);
+    cube.position.copy(entranceHome).addScaledVector(camera.up, entrance.fromY * (1 - eased));
+  } else {
+    // A full turn brings Refs past the viewer, then the last short return bounces into place.
+    const pass = .72, travel = Math.min(1, t / pass);
+    const yaw = t < pass ? (1 - travel * travel * (3 - 2 * travel)) * Math.PI * 2.15 - .25 :
+      -.25 * Math.exp(-12 * (t - pass)) * Math.cos(19 * (t - pass));
+    const lift = 1 - Math.pow(1 - t, 3);
+    cube.position.copy(entranceHome).addScaledVector(camera.up, -2.1 * (1 - lift) + .10 * Math.sin(Math.PI * 2.5 * t) * (1 - t));
+    cube.quaternion.copy(entrance.target).premultiply(new THREE.Quaternion().setFromAxisAngle(camera.up, yaw));
+  }
+  cube.updateMatrixWorld(true);
+  if (t >= 1) {
+    cube.position.copy(entranceHome);
+    if (!entrance.finishing) {
+      cube.quaternion.copy(entrance.target);
+      targetCubeQuaternion.copy(cube.quaternion);
+    }
+    entrance = null;
+  }
+  return true;
 }
 unsubscribeSettings = getSharedSettings().subscribe(snapshot => {
   const nextSnap=Boolean(snapshot?.cube?.faceSnap);
   if(faceSnap!==nextSnap){faceSnap=nextSnap;alignAt=nextSnap?performance.now()+ALIGN_DELAY_MS:null;if(!nextSnap)aligning=false;}
-  reducedMotion = Boolean(snapshot?.accessibility?.reducedMotion);
+  const nextLocked = Boolean(snapshot?.cube?.lockedRotation);
+  const nextFaceRotation = Boolean(snapshot?.cube?.faceRotation);
+  if (nextLocked !== lockedRotation) {
+    lockedRotation = nextLocked;
+    if (lockedRotation && cube) targetCubeQuaternion.copy(lockedFaceQuaternion(cube.quaternion));
+    resetLockedRotation();
+  }
+  if (nextFaceRotation !== faceRotation) {
+    faceRotation = nextFaceRotation;
+    if (cube) {
+      // Both transitions take over immediately, including an in-flight arrow or POI turn.
+      explicitRotationReset = null;
+      targetCubeQuaternion.copy(cube.quaternion);
+      if (faceRotation) targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
+      alignAt = null; aligning = faceRotation; resetLockedRotation();
+    }
+  }
+  showFaceArrows = faceRotation && Boolean(snapshot?.cube?.faceArrows);
+  arrowSpeed = Number(snapshot?.cube?.arrowSpeed) || 1;
+  faceArrows.hidden = !showFaceArrows || !cube || suspended || failed3D;
+  reducedMotion = prefersReducedMotion();
+  if (reducedMotion && entrance && cube) {
+    cube.position.copy(entranceHome);
+    cube.quaternion.copy(entrance.target || targetCubeQuaternion);
+    targetCubeQuaternion.copy(cube.quaternion);
+    entrance = null;
+  }
   centerOnViewport = Boolean(snapshot?.about?.centerOnViewport);
   if (canvas.parentElement) resize();
   showCubeShell = snapshot?.cube?.showShell !== false;
   applyCubeShellVisibility();
   faces.applySettings(snapshot);
-  if (reducedMotion && cube) {
+  if ((reducedMotion || (snapshot?.interaction?.animateResets === false && !explicitRotationReset?.poi)) && cube && explicitRotationReset) {
+    explicitRotationReset = null;
+    rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.copy(targetCubeQuaternion));
+    frameDeltaSeconds = 0; alignVisibleArrows();
+  } else if (reducedMotion && cube) {
     rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.copy(targetCubeQuaternion));
     frameDeltaSeconds = 0; alignVisibleArrows();
   }
@@ -290,13 +422,96 @@ function alignVisibleArrows() {
   });
 }
 
+function physicalFaceMounts() {
+  return summaryFaces.map(([label, id, getMount]) => ({label, id, mount: getMount()})).filter(face => face.mount);
+}
+function frontFace(rotation = targetCubeQuaternion) {
+  const towardCamera = camera.position.clone().sub(controls.target).normalize();
+  return physicalFaceMounts().reduce((best, face) => {
+    const score = new THREE.Vector3(...face.mount.normal).applyQuaternion(rotation).dot(towardCamera);
+    return !best || score > best.score ? {...face, score} : best;
+  }, null);
+}
+function adjacentFace(face, edge) {
+  if (!face) return null;
+  const axis = edge === 'left' || edge === 'right' ? face.mount.right : face.mount.up;
+  const direction = new THREE.Vector3(...axis).multiplyScalar(edge === 'left' || edge === 'down' ? -1 : 1);
+  return physicalFaceMounts().filter(other => other.id !== face.id).reduce((best, other) => {
+    const score = new THREE.Vector3(...other.mount.normal).dot(direction);
+    return !best || score > best.score ? {...other, score} : best;
+  }, null);
+}
+function turnToAdjacentFace(edge, duration = 0) {
+  if (!cube || disposed || suspended) return;
+  const next = adjacentFace(frontFace(), edge);
+  if (!next || next.score < .7) return;
+  finishEntrance();
+  explicitRotationReset = null;
+  targetCubeQuaternion.copy(quaternionForFace(next.mount));
+  alignAt = null; aligning = true; resetLockedRotation();
+  if (duration > 0) explicitRotationReset = {from: cube.quaternion.clone(), to: targetCubeQuaternion.clone(),
+    start: performance.now(), duration, easingId: 'inOutCubic', poi: true};
+  else if (reducedMotion) rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.copy(targetCubeQuaternion));
+}
+function updateFaceArrows() {
+  const visible = showFaceArrows && cube && !disposed && !suspended && !failed3D && !entrance && !explicitRotationReset;
+  faceArrows.hidden = !visible;
+  if (!visible) return;
+  const face = frontFace(cube.quaternion);
+  if (!face || face.score < .92) { faceArrowButtons.forEach(button => { button.hidden = true; }); return; }
+  const now = performance.now();
+  const checkOcclusion = face.id !== lastArrowFaceId || now - lastArrowOcclusionAt > 80;
+  if (checkOcclusion) { lastArrowFaceId = face.id; lastArrowOcclusionAt = now; }
+  const rect = canvas.getBoundingClientRect();
+  const stageRect = faceArrows.getBoundingClientRect();
+  const center = new THREE.Vector3(...(face.mount.center || new THREE.Vector3(...face.mount.normal).multiplyScalar(1.015).toArray()));
+  const normal = new THREE.Vector3(...face.mount.normal);
+  const raycaster = new THREE.Raycaster();
+  for (const button of faceArrowButtons) {
+    const edge = button.dataset.faceEdge;
+    const next = adjacentFace(face, edge);
+    const basis = new THREE.Vector3(...(edge === 'left' || edge === 'right' ? face.mount.right : face.mount.up));
+    basis.multiplyScalar(edge === 'left' || edge === 'down' ? -1 : 1);
+    const anchor = center.clone().addScaledVector(basis, .90).addScaledVector(normal, .055);
+    cube.localToWorld(anchor);
+    const ndc = anchor.clone().project(camera);
+    const distance = anchor.distanceTo(camera.position);
+    raycaster.setFromCamera(ndc, camera);
+    raycaster.far = Math.max(0, distance - .035);
+    if (checkOcclusion) faceArrowOcclusion.set(edge, raycaster.intersectObjects(cube.children, true).some(hit => {
+      for (let node = hit.object; node && node !== cube; node = node.parent) if (!node.visible) return false;
+      const material = Array.isArray(hit.object.material)
+        ? hit.object.material[hit.face?.materialIndex ?? 0] : hit.object.material;
+      return material?.visible !== false && material?.colorWrite !== false &&
+        (material?.opacity ?? 1) > .2;
+    }));
+    const occluded = faceArrowOcclusion.get(edge);
+    button.hidden = !next || next.score < .7 || occluded || ndc.z < -1 || ndc.z > 1 ||
+      ndc.x < -.98 || ndc.x > .98 || ndc.y < -.98 || ndc.y > .98;
+    if (!button.hidden) {
+      button.style.left = `${rect.left - stageRect.left + (ndc.x + 1) * rect.width / 2}px`;
+      button.style.top = `${rect.top - stageRect.top + (1 - ndc.y) * rect.height / 2}px`;
+      button.setAttribute('aria-label', `Show ${next.label} face`);
+    }
+  }
+}
+faceArrows.addEventListener('click', event => {
+  const button = event.target.closest('[data-face-edge]');
+  if (!button || button.hidden || !showFaceArrows) return;
+  faces.endGestures({preserveModes:true});
+  turnToAdjacentFace(button.dataset.faceEdge, reducedMotion ? 0 : Math.round(640 / arrowSpeed));
+}, {signal: input.signal});
+
 // The cube owns right-button gestures. Keep OrbitControls from trying to
 // capture the same pointer, especially during a rapid double-click.
 canvas.addEventListener('pointerdown', event => {
+  if (entrance && event.isTrusted) finishEntrance();
   if (event.button === 2) event.stopImmediatePropagation();
 }, { capture: true, signal: input.signal });
+canvas.addEventListener('wheel', () => finishEntrance(), {passive: true, signal: input.signal});
 canvas.addEventListener('mousedown', (event) => {
   if (event.button !== 2 || !cube) return;
+  explicitRotationReset = null;
   mouseControls.cancelFocusAnimation();
   faces.endGestures({preserveModes:true});
   event.preventDefault();
@@ -304,7 +519,8 @@ canvas.addEventListener('mousedown', (event) => {
   targetCubeQuaternion.copy(cube.quaternion);
   alignAt = null;
   aligning = false;
-  rotatePointer = { x: event.clientX, y: event.clientY, moved: false };
+  rotatePointer = { x: event.clientX, y: event.clientY, moved: false, axisX: 0, axisY: 0,
+    intent: null, crossDrift: 0, faceDX: 0, faceDY: 0 };
   // Native pointer lock supplies unlimited relative motion, hides the cursor,
   // and restores its pre-lock position when released. Fall back to capture if denied.
   try {
@@ -315,8 +531,32 @@ canvas.addEventListener('mousedown', (event) => {
   } catch { pointerLockPending = false; /* Keep visible dragging available. */ }
 }, { signal: input.signal });
 function rotateBy(dx, dy) {
+  finishEntrance();
+  explicitRotationReset = null;
   dx = THREE.MathUtils.clamp(dx, -22, 22);
   dy = THREE.MathUtils.clamp(dy, -22, 22);
+  if (faceRotation) {
+    if (!rotatePointer) turnToAdjacentFace(Math.abs(dx) >= Math.abs(dy) ? dx > 0 ? 'left' : 'right' : dy > 0 ? 'up' : 'down');
+    else {
+      rotatePointer.faceDX += dx; rotatePointer.faceDY += dy;
+      if (Math.max(Math.abs(rotatePointer.faceDX), Math.abs(rotatePointer.faceDY)) >= 44) {
+        const edge = Math.abs(rotatePointer.faceDX) >= Math.abs(rotatePointer.faceDY)
+          ? rotatePointer.faceDX > 0 ? 'left' : 'right' : rotatePointer.faceDY > 0 ? 'up' : 'down';
+        rotatePointer.faceDX = rotatePointer.faceDY = 0;
+        turnToAdjacentFace(edge);
+      }
+    }
+    return;
+  }
+  if (lockedRotation) {
+    lockedYaw += dx * .0045;
+    lockedTilt = THREE.MathUtils.clamp(lockedTilt + dy * .0035, -Math.PI / 2, Math.PI / 2);
+    const yaw = new THREE.Quaternion().setFromAxisAngle(camera.up, lockedYaw);
+    const cameraRight = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
+    const tilt = new THREE.Quaternion().setFromAxisAngle(cameraRight, lockedTilt);
+    targetCubeQuaternion.copy(lockedBase).premultiply(yaw).premultiply(tilt).normalize();
+    return;
+  }
   const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), dx * 0.0045);
   const cameraRight = new THREE.Vector3().crossVectors(camera.getWorldDirection(new THREE.Vector3()), camera.up).normalize();
   const pitch = new THREE.Quaternion().setFromAxisAngle(cameraRight, dy * 0.0035);
@@ -350,7 +590,21 @@ window.addEventListener('mousemove', (event) => {
   if(Math.abs(dx)+Math.abs(dy)>2)rotatePointer.moved=true;
   rotatePointer.x = event.clientX;
   rotatePointer.y = event.clientY;
-  rotateBy(dx, dy);
+  let x = dx, y = dy;
+  if (!lockedRotation && !faceRotation && rotatePointer.intent !== 'free') {
+    rotatePointer.axisX += dx; rotatePointer.axisY += dy;
+    if (!rotatePointer.intent && Math.hypot(rotatePointer.axisX, rotatePointer.axisY) >= 8)
+      rotatePointer.intent = Math.abs(rotatePointer.axisX) > Math.abs(rotatePointer.axisY) * 1.8 ? 'horizontal' :
+        Math.abs(rotatePointer.axisY) > Math.abs(rotatePointer.axisX) * 1.8 ? 'vertical' : 'free';
+    if (rotatePointer.intent === 'horizontal') {
+      rotatePointer.crossDrift += dy; y = 0;
+      if (Math.abs(rotatePointer.crossDrift) > 18) { y = rotatePointer.crossDrift - Math.sign(rotatePointer.crossDrift) * 18; rotatePointer.intent = 'free'; }
+    } else if (rotatePointer.intent === 'vertical') {
+      rotatePointer.crossDrift += dx; x = 0;
+      if (Math.abs(rotatePointer.crossDrift) > 18) { x = rotatePointer.crossDrift - Math.sign(rotatePointer.crossDrift) * 18; rotatePointer.intent = 'free'; }
+    } else if (!rotatePointer.intent) x = y = 0;
+  }
+  rotateBy(x, y);
 }, { capture: true, signal: input.signal });
 function stopCubeRotation() {
   if (!rotatePointer) return;
@@ -368,6 +622,11 @@ function finishRightClick(event){
   if(now-lastRightClick<420&&cube){
     lastRightClick=0;alignAt=null;aligning=true;
     targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion,camera.getWorldQuaternion(new THREE.Quaternion())));
+    resetLockedRotation();
+    const duration = transformResetDuration('rotation', 560);
+    const easingId = getSharedSettings().get().interaction.rotationResetEasing;
+    explicitRotationReset = duration ? {from:cube.quaternion.clone(),to:targetCubeQuaternion.clone(),start:now,duration,easingId} : null;
+    if (!duration) rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.copy(targetCubeQuaternion));
     event.preventDefault();
   }else lastRightClick=now;
 }
@@ -396,27 +655,21 @@ function resize() {
   camera.updateProjectionMatrix();
   updateZoomLimit();
 }
-function frameBesideSettings(deltaSeconds, drawer) {
+function frameBesideSettings() {
   const bounds = canvas.getBoundingClientRect();
   const width = bounds.width, height = bounds.height;
   if (!width || !height) return;
-  let targetOffset = 0;
-  if (drawer && !drawer.classList.contains('is-closed')) {
-    // Notes fits its rim-mounted controls into this same available area.
-    const drawerLeft = drawer.offsetLeft + (drawer.offsetParent?.getBoundingClientRect().left || 0);
-    const freeWidth = THREE.MathUtils.clamp(drawerLeft - bounds.left, 0, width);
-    targetOffset = (width - freeWidth) * .5;
-  }
-  settingsViewOffset = reducedMotion ? targetOffset :
-    THREE.MathUtils.damp(settingsViewOffset, targetOffset, 10, deltaSeconds);
-  if (Math.abs(settingsViewOffset - targetOffset) < .05) settingsViewOffset = targetOffset;
+  const panelSpace = panelViewport(canvas);
+  settingsViewOffset = panelSpace.offsetX;
   const shift = `${settingsViewOffset}px`;
   if (canvas.parentElement.style.getPropertyValue('--notes-settings-shift') !== shift)
     canvas.parentElement.style.setProperty('--notes-settings-shift', shift);
-  const notesLayout = faces.get('notes').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
-  const aboutLayout = faces.get('about').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
-  const skillsLayout = faces.get('skills').frameLayout({bounds, availableRight: width - 2 * settingsViewOffset});
-  const viewOffset = centerOnViewport ? 0 : skillsLayout?.offset ?? notesLayout?.offset ?? settingsViewOffset, zoom = notesLayout?.zoom ?? skillsLayout?.zoom ?? aboutLayout?.zoom ?? 1;
+  const notesLayout = faces.get('notes').frameLayout({bounds, availableLeft:panelSpace.left, availableRight:panelSpace.right});
+  const aboutLayout = faces.get('about').frameLayout({bounds, availableRight:panelSpace.right-panelSpace.left});
+  const skillsLayout = faces.get('skills').frameLayout({bounds, availableRight:panelSpace.right});
+  const viewOffset = centerOnViewport ? settingsViewOffset : skillsLayout ? skillsLayout.offset-panelSpace.left/2 : notesLayout?.offset ?? settingsViewOffset;
+  const viewOffsetY = notesLayout?.offsetY ?? 0;
+  const zoom = notesLayout?.zoom ?? skillsLayout?.zoom ?? aboutLayout?.zoom ?? 1;
   const nextClearance = skillsLayout?.launchClearance ?? 0;
   const zoomChanged = Math.abs(camera.zoom - zoom) > .00001;
   if (zoomChanged) { camera.zoom = zoom; camera.updateProjectionMatrix(); }
@@ -439,11 +692,11 @@ function frameBesideSettings(deltaSeconds, drawer) {
       orbitRestoreDistance = orbitPushedDistance = null;
     }
   }
-  if (viewOffset === 0) {
+  if (viewOffset === 0 && viewOffsetY === 0) {
     if (camera.view?.enabled) camera.clearViewOffset();
-  } else if (!camera.view?.enabled || Math.abs(camera.view.offsetX - viewOffset) > .01 ||
+  } else if (!camera.view?.enabled || Math.abs(camera.view.offsetX - viewOffset) > .01 || Math.abs(camera.view.offsetY - viewOffsetY) > .01 ||
       camera.view.fullWidth !== width || camera.view.fullHeight !== height) {
-    camera.setViewOffset(width, height, viewOffset, 0, width, height);
+    camera.setViewOffset(width, height, viewOffset, viewOffsetY, width, height);
   }
 }
 function updateZoomLimit() {
@@ -509,6 +762,7 @@ function showFallback() {
   document.body.classList.add('about-2d-fallback');
   status.classList.add('is-hidden');
   faces.detach();
+  stickyAdapter?.dispose(); stickyAdapter=null;
 }
 async function loadCube() {
   let gltf;
@@ -531,6 +785,11 @@ async function loadCube() {
     appearance=bindAboutAppearance(cube,[ambient,key,fill]);
     frameModel(cube);
     faces.attach({cube, gltf, manifest, renderer, camera, controls, canvas});
+    let stickyControlsBeforeDialog = true;
+    stickyAdapter = createAboutStickyAdapter({scene,cube,gltf,camera,canvas,onInputOwnership: owned => {
+      if (owned) { stickyControlsBeforeDialog=controls.enabled; controls.enabled=false; }
+      else controls.enabled=stickyControlsBeforeDialog;
+    }});
     const assembly = faces.get('skills').assembly;
     // Include each skill card's orientation, Clicked morph, ripple and configured juts.
     for (const panel of assembly.motion.panels.values()) {
@@ -538,12 +797,23 @@ async function loadCube() {
     }
     updateZoomLimit();
     faces.applySettings(getSharedSettings().get());
-    targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
+    const requestedFace = new URLSearchParams(location.search).get('face');
+    const refsMount = faces.physicalMount('refs', faces.get('refs').mount);
+    if (refsMount && !requestedFace) {
+      const target = quaternionForFace(refsMount);
+      targetCubeQuaternion.copy(target);
+      entranceHome.copy(cube.position);
+      if (prefersReducedMotion()) cube.quaternion.copy(target);
+      else entrance = {start: performance.now(), duration: 1800, target};
+    } else if (!requestedFace)
+      targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
+    resetLockedRotation();
     status.classList.add('is-hidden');
   } catch (error) {
     if (disposed || error?.name === 'AbortError') { if (gltf?.scene && gltf.scene !== cube) disposeModel(gltf.scene); return; }
     console.warn('[about] cube faces unavailable; showing text view.', error);
     faces.detach();
+    stickyAdapter?.dispose(); stickyAdapter=null;
     appearance?.dispose();appearance=null;
     if (cube) { scene.remove(cube); disposeModel(cube); cube = null; }
     showFallback();
@@ -569,16 +839,28 @@ function render() {
       alignAt = null;
       aligning = true;
       targetCubeQuaternion.copy(alignedCubeQuaternion(cube.quaternion, camera.getWorldQuaternion(new THREE.Quaternion())));
+      resetLockedRotation();
     }
     // Drag follow-through stays responsive; face alignment is deliberately slower.
     const settle = reducedMotion ? 1 : 1 - Math.exp(-(aligning ? ALIGN_SPEED : 7) * deltaSeconds);
-    if (!faces.gestureActive)
-      rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.slerp(targetCubeQuaternion, settle));
+    if (faces.gestureActive) { explicitRotationReset = null; finishEntrance(); }
+    if (entrance) animateEntrance(now);
+    else if (!faces.gestureActive) {
+      if (explicitRotationReset) {
+        const tween = explicitRotationReset;
+        const t = (tween.poi ? (prefersReducedMotion() ? 0 : tween.duration) : transformResetDuration('rotation', tween.duration)) <= 0 ? 1 :
+          THREE.MathUtils.clamp((now-tween.start)/tween.duration,0,1);
+        const eased = resolveTransformResetEasing(tween.easingId,t,'smoothstep');
+        rotateCubeAtOrbitTarget(cube,camera,controls,()=>cube.quaternion.copy(tween.from).slerp(tween.to,eased));
+        if (t >= 1) explicitRotationReset = null;
+      } else rotateCubeAtOrbitTarget(cube, camera, controls, () => cube.quaternion.slerp(targetCubeQuaternion, settle));
+    }
     else cube.updateMatrixWorld(true);
     alignVisibleArrows();
   }
   controls.update();
   faces.update(deltaSeconds, {rotating: Boolean(rotatePointer)});
+  stickyAdapter?.update();
   if (activeSurfaceFocus) {
     const point = activeSurfaceFocus.resolve();
     if (!point) activeSurfaceFocus = null;
@@ -589,7 +871,8 @@ function render() {
       camera.updateMatrixWorld(true);
     }
   }
-  frameBesideSettings(deltaSeconds, settingsDrawer);
+  frameBesideSettings();
+  updateFaceArrows();
   renderer.info.reset();
   renderer.render(scene, camera);
   faces.afterRender({drawer: settingsDrawer});
@@ -598,7 +881,15 @@ function render() {
 function suspend() {
   if (suspended || disposed) return;
   suspended = true;
+  if (entrance && cube) {
+    cube.position.copy(entranceHome);
+    cube.quaternion.copy(entrance.target || targetCubeQuaternion);
+    targetCubeQuaternion.copy(cube.quaternion);
+    entrance = null;
+  }
+  explicitRotationReset = null;
   faces.suspend();
+  stickyAdapter?.suspend();
   if (frameId) cancelAnimationFrame(frameId);
   frameId = 0;
   stopCubeRotation();
@@ -608,6 +899,7 @@ function resume() {
   if (!suspended || disposed) return;
   suspended = false;
   faces.resume();
+  stickyAdapter?.resume();
   if (document.hidden || failed3D) return;
   lastFrameTime = performance.now();
   frameId = requestAnimationFrame(render);
@@ -615,6 +907,9 @@ function resume() {
 function dispose() {
   if (disposed) return;
   disposed = true;
+  entrance = null;
+  unregisterSummary();
+  explicitRotationReset = null;
   assetAbort.abort();
   unsubscribeSettings?.();
   if (frameId) cancelAnimationFrame(frameId);
@@ -626,6 +921,7 @@ function dispose() {
   mouseControls?.dispose();
   controls.dispose();
   faces.dispose();
+  stickyAdapter?.dispose(); stickyAdapter=null;
   appearance?.dispose();appearance=null;
   delete window.__aboutSkillsReview;
   disposeModel(cube);

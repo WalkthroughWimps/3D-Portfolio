@@ -1,5 +1,5 @@
 // Card ownership only. No route, vehicle, score, objective or turn rules run here.
-export const VEHICLES=[['001','Bicycle'],['002','Taxi'],['003','Bus'],['004','Hot air balloon'],['005','Motorcycle'],['006','Train'],['007','Helicopter'],['008','Ship'],['009','Airplane'],['010','Thief'],['011','Superman'],['012','Iron Man']].map(([id,name])=>({id,name}));
+export const VEHICLES=[['001','Bicycle'],['002','Taxi'],['003','Bus'],['004','Hot air balloon'],['005','Motorcycle'],['006','Train'],['007','Helicopter'],['008','Ship'],['009','Airplane'],['010','Thief'],['011','Teleporter'],['012','Teleporter']].map(([id,name])=>({id,name}));
 export const artKey=card=>card?.split('~')[0];
 export const vehicleFor=card=>VEHICLES.find(v=>`vehicles:${v.id}`===artKey(card));
 export const landmarkLetter=card=>String.fromCharCode(64+Number(artKey(card)?.split(':')[1]));

@@ -5,8 +5,8 @@ export const MEDIA_CATALOG = Object.freeze({
     topPad: Object.freeze({
       title: 'Music Videos',
       thumbnail: '../Videos/music-page/sunil-video.jpg',
-      preview: '../Videos/music-page/sunil-video_lq.webm',
-      video: '../Videos/music-page/sunil-video_hq.webm',
+      preview: '../Videos/music-page/sunil-video-lq.webm',
+      video: '../Videos/music-page/sunil-video-hq.webm',
       audio: '../Videos/music-page/sunil-video.opus'
     })
   })

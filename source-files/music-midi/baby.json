@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "song": "baby",
+  "output_dir": "midi/prepared/baby",
+  "parts": [
+    {"id": "piano", "source": "midi/babyshutup.mid"}
+  ]
+}

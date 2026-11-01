@@ -1,0 +1,158 @@
+{
+  "source": "assets/.blend/Puzzle Box Assets/.BL/Puzzle_Box_Assets/Singing_Fish/Hover_Rings_Mix_Color.blend",
+  "asset": "hover-rings.glb",
+  "root": "HoverAssemblyRoot",
+  "coordinate_contract": "Runtime X=Blender X, Y=Blender Z, outward Z=negative Blender Y; same 238.256-source-diameter-to-1.7 scale as fish rig/mount.",
+  "orientation": "Authored source rings lie in Blender XY and export nearly horizontal in runtime XZ; tilt parent 90 degrees about runtime X to face the viewer at rest.",
+  "parts": {
+    "Hover_Ring.1": {
+      "node": "AuthoredHover_1",
+      "original_material": "Ring_Top",
+      "opacity_at_source_frame_1": 1.0,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.8945367932319641,
+          0.8945367932319641
+        ],
+        "y": [
+          0.5595148205757141,
+          0.6123799681663513
+        ],
+        "z": [
+          -0.8945367932319641,
+          0.8945367932319641
+        ]
+      }
+    },
+    "Hover_Ring.2": {
+      "node": "AuthoredHover_2",
+      "original_material": "Ring_Second_80",
+      "opacity_at_source_frame_1": 0.8666667,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.7367669939994812,
+          0.7367669939994812
+        ],
+        "y": [
+          0.4788188934326172,
+          0.5316839814186096
+        ],
+        "z": [
+          -0.7367669939994812,
+          0.7367669939994812
+        ]
+      }
+    },
+    "Hover_Ring.3": {
+      "node": "AuthoredHover_3",
+      "original_material": "Ring_Third_60",
+      "opacity_at_source_frame_1": 0.6666667,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.606820821762085,
+          0.6068207621574402
+        ],
+        "y": [
+          0.3712098002433777,
+          0.4240749180316925
+        ],
+        "z": [
+          -0.6068207621574402,
+          0.6068207621574402
+        ]
+      }
+    },
+    "Hover_Ring.4": {
+      "node": "AuthoredHover_4",
+      "original_material": "Ring_Fourth_40",
+      "opacity_at_source_frame_1": 0.4,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.4165485203266144,
+          0.4165485203266144
+        ],
+        "y": [
+          0.2546854615211487,
+          0.3075506091117859
+        ],
+        "z": [
+          -0.41655614972114563,
+          0.41655614972114563
+        ]
+      }
+    },
+    "Hover_Ring.5": {
+      "node": "AuthoredHover_5",
+      "original_material": "Ring_Fifth_00",
+      "opacity_at_source_frame_1": 0.2475,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.1333712786436081,
+          0.1333712637424469
+        ],
+        "y": [
+          0.1266287863254547,
+          0.17949390411376953
+        ],
+        "z": [
+          -0.13338550925254822,
+          0.1333855241537094
+        ]
+      }
+    },
+    "Hover_Ring.6": {
+      "node": "AuthoredHover_6",
+      "original_material": "Ring_Shrink",
+      "opacity_at_source_frame_1": 0.0,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.007995307445526123,
+          0.007995308376848698
+        ],
+        "y": [
+          -0.0929473340511322,
+          -0.07413504272699356
+        ],
+        "z": [
+          -0.00799496565014124,
+          0.00799496565014124
+        ]
+      }
+    },
+    "Hover_Ring.7": {
+      "node": "AuthoredHover_7",
+      "original_material": "Ring_Grow",
+      "opacity_at_source_frame_1": 0.175,
+      "vertices": 2048,
+      "triangles": 4096,
+      "runtime_bounds": {
+        "x": [
+          -0.4549226462841034,
+          0.4468165338039398
+        ],
+        "y": [
+          0.5038396716117859,
+          0.5249672532081604
+        ],
+        "z": [
+          -0.4482918083667755,
+          0.4534473717212677
+        ]
+      }
+    }
+  },
+  "provenance_note": "Seven visible ring meshes with evaluated SimpleDeform from the last complete sibling source. The local Hover_Ring.002 in Fishing Sing evaluates to zero vertices because its GeometryNodes modifier removes the mesh at frames 1,4,10,20,30,40. The later linked Final_Attempt.blend is absent; its blend1 backup also has that broken link. Shader noise/particle animation is not portable; simple blue/alpha PBR approximates the original blue materials while preserving authored geometry.",
+  "bytes": 2015276
+}

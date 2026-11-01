@@ -1,7 +1,10 @@
 import { bootstrapPage } from '../_7-shared-scripts/core/bootstrap.js';
+import { createSceneStickyAdapter, createSceneInputOwnership } from '../_7-shared-scripts/sticky-notes/scene-adapter.js';
+import { registerPageSummaryPoints } from '../_7-shared-scripts/core/page-summary.js';
 import { previewSegments } from './preview-segments.js';
 import { getEffectiveAudioSettings } from '../_7-shared-scripts/audio-settings.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
+import { prefersReducedMotion, onReducedMotionChange } from '../_7-shared-scripts/core/motion-preference.js';
 import { getSyncOffsetMs } from '../_7-shared-scripts/global-sync.js';
 import { createTabletFocus } from './tablet-focus.js';
 import { createPanAwareCenterProjection } from '../_7-shared-scripts/shared-glb-mouse-controls.js';
@@ -131,6 +134,12 @@ const dropAnim = {
 
 function tryStartDrop() {
   if (!introState.done || !dropAnim.ready || dropAnim.active || !dropAnim.group) return;
+  if (prefersReducedMotion()) {
+    dropAnim.group.position.y = dropAnim.toY;
+    dropAnim.group.updateMatrixWorld(true);
+    dropAnim.active = false;
+    return;
+  }
   dropAnim.active = true;
   dropAnim.start = performance.now();
 }
@@ -197,7 +206,7 @@ function getStoredAudioSettings() {
 }
 
 function setupIntroVideo() {
-  if (!introState.enabled) return;
+  if (!introState.enabled || introState.done) return;
   const videoEl = document.getElementById('tabletIntro');
   if (!videoEl) {
     introState.phase = 'error';
@@ -436,46 +445,17 @@ function setupIntroSkip() {
   introState.skipBtn = btn || null;
   if (!btn) return;
   updateIntroSkipVisibility();
-  if (!introState.enabled) {
+  if (!introState.enabled || introState.done) {
     btn.classList.add('hidden');
     return;
   }
   const listen = (target, type, fn) => { target.addEventListener(type, fn); introState.listeners.push([target, type, fn]); };
   listen(btn, 'click', () => markIntroDone('skip'));
-  const placeByTitle = () => {
-    if (window.innerWidth <= 600) {
-      introState.skipBtn.style.removeProperty('left');
-      introState.skipBtn.style.removeProperty('top');
-      return true;
-    }
-    const title = document.querySelector('.header .title');
-    const cap = document.querySelector('.header');
-    if (!title || !cap || !introState.skipBtn) return false;
-    const titleRect = title.getBoundingClientRect();
-    const modern = document.body.dataset.headerLayout === 'modern';
-    const capRight = modern ? parseFloat(getComputedStyle(cap, '::before').width) || 0 : 0;
-    const left = Math.max(titleRect.right + 16, capRight + 16);
-    const fitsBesideCap = left + introState.skipBtn.offsetWidth <= window.innerWidth - 8;
-    introState.skipBtn.style.left = `${fitsBesideCap ? left : Math.max(8, window.innerWidth - introState.skipBtn.offsetWidth - 12)}px`;
-    const top = modern && fitsBesideCap ? titleRect.top + (titleRect.height - introState.skipBtn.offsetHeight) / 2 : modern ? parseFloat(getComputedStyle(cap, '::before').height) + 12 : cap.getBoundingClientRect().bottom + 12;
-    introState.skipBtn.style.top = `${Math.max(8, Math.round(top))}px`;
-    return true;
-  };
-  const startPlacement = () => {
-    if (!placeByTitle()) {
-      const timer = setInterval(() => {
-        if (placeByTitle()) { clearInterval(timer); }
-      }, 250);
-      introState.cleanups.push(() => clearInterval(timer));
-      const timeout = setTimeout(() => clearInterval(timer), 6000);
-      introState.timers.push(timeout);
-    }
-  };
-  startPlacement();
-  listen(window, 'resize', () => placeByTitle());
-  listen(window, 'site:header-layout-change', () => placeByTitle());
   listen(window, 'keydown', (e) => {
-    if (introState.done) return;
+    if (introState.done || e.defaultPrevented || e.isComposing || e.repeat ||
+        e.altKey || e.ctrlKey || e.metaKey ||
+        document.querySelector('dialog[open], [aria-modal="true"]:not([hidden])') ||
+        e.target?.closest?.('input, textarea, select, button, a, [contenteditable], [role="textbox"], [role="button"], #review-panels')) return;
     if (e.key === 's' || e.key === 'S') {
       e.preventDefault();
       markIntroDone('skip');
@@ -489,6 +469,7 @@ function showLoadingUIImmediately() {
   const playBtn = document.getElementById('introPlay');
   const loadBar = document.getElementById('introLoadBar');
   const loadText = document.getElementById('introLoadText');
+  if (introState.done) { gate?.classList.add('is-hidden'); return; }
   if (gate) {
     gate.classList.remove('is-hidden');
     gate.classList.remove('hidden');
@@ -568,10 +549,34 @@ export function mountVideosPage({ scope }) {
   dropAnim.active = false;
   dropAnim.ready = false;
   dropAnim.group = null;
+  introState.gateEl = document.getElementById('introGate');
+  introState.skipBtn = document.getElementById('introSkip');
+  const finishReducedMotion = reduced => {
+    if (!reduced) return;
+    if (!introState.done) markIntroDone('reduced-motion');
+    if (dropAnim.group) {
+      dropAnim.group.position.y = dropAnim.toY;
+      dropAnim.group.updateMatrixWorld(true);
+      dropAnim.active = false;
+    }
+  };
+  const stopMotionPreference = onReducedMotionChange(finishReducedMotion, { signal: scope.signal });
+  scope.defer(stopMotionPreference);
+  finishReducedMotion(prefersReducedMotion());
   let disposed = false, suspended = false;
   let startupFrame = 0, startupTimer = 0, resumeStartup = null, glbFallbackTimer = 0, glbObserver = null, pendingGlbStart = null;
   let renderer = null, scene = null, canvas = null, createdCanvas = false;
-  let camera = null, controls = null, animId = 0, animatePage = null, tabletFocus = null, gridApi = null, modelRoot = null;
+  let camera = null, controls = null, animId = 0, animatePage = null, tabletFocus = null, gridApi = null, modelRoot = null, stickyAdapter = null;
+  scope.defer(() => stickyAdapter?.dispose());
+  scope.defer(registerPageSummaryPoints('videos', [
+    'Online Classes', 'A-List Videos', 'News Broadcast', 'NeoTube Studios', 'Music Videos', 'Random Vids'
+  ].map((label, index) => ({
+    label,
+    ready: () => !disposed && !suspended && introState.done && Boolean(gridApi?.selectPoint),
+    run: options => gridApi?.selectPoint(index, options)
+  })).concat([
+    'Online Classes', 'A-List Videos', 'News Broadcast', 'NeoTube Studios', 'Music Videos', 'Random Vids'
+  ].map(label => ({ label: `${label} visual only`, linkText: `${label} visual preview` })))));
   let centerProjection = null, centerProjectionCamera = null;
   setVideoPresentation(false);
   let centerOnViewport = Boolean(getSharedSettings().get().videos?.centerOnViewport);
@@ -644,6 +649,8 @@ export function mountVideosPage({ scope }) {
   try { renderer.physicallyCorrectLights = true; } catch (e) { /* ignore */ }
 
   scene = new THREE.Scene();
+  stickyAdapter = createSceneStickyAdapter({pageId: 'videos', scene, canvas, getCamera: () => camera, getRoot: () => scene,
+    scope, onInputOwnership: createSceneInputOwnership(() => controls)});
   // Lighting rig: hemisphere + key + fill + rim + under + subtle ambient
   const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85);
   scene.add(hemi);
@@ -699,19 +706,20 @@ export function mountVideosPage({ scope }) {
         if (centerProjectionCamera !== camera) {
           centerProjectionCamera = camera;
           centerProjection = createPanAwareCenterProjection(camera, {
-            onClear: () => tabletFocus?.refreshProjection?.()
+            onClear: () => tabletFocus?.refreshProjection?.(), viewportElement: canvas
           });
         }
         centerProjection.update({ enabled: centerOnViewport && !!refsOwned?.tabletGroup,
           panned: !!controls?.userData?.sharedMouse?.isPanned?.(),
           width: Math.max(1, window.innerWidth), height: Math.max(1, window.innerHeight),
           getCenter: () => new THREE.Box3().setFromObject(refsOwned.tabletGroup).getCenter(new THREE.Vector3()) });
+        stickyAdapter?.update();
         renderer.render(scene, camera);
       }
     }
     catch (e) { /* ignore */ }
     if (dropAnim.active && dropAnim.group) {
-      const t = Math.min(1, (performance.now() - dropAnim.start) / dropAnim.durationMs);
+      const t = prefersReducedMotion() ? 1 : Math.min(1, (performance.now() - dropAnim.start) / dropAnim.durationMs);
       const k = 1 - Math.pow(1 - t, 3);
       const y = dropAnim.fromY + (dropAnim.toY - dropAnim.fromY) * k;
       dropAnim.group.position.y = y;
@@ -830,9 +838,19 @@ export function mountVideosPage({ scope }) {
                   toggleTabletView: () => gridApi.toggleTabletView?.(),
                   exit: () => gridApi.exitPlayback?.()
                 });
-                const ui = createVideoControlsUI();
+                const ui = createVideoControlsUI({ shortcutCapabilities: { playerView: true, captions: true, tabletView: true } });
                 ui.setViewportRectProvider(adapter.getViewportRect);
                 ui.onAction = (action) => adapter.dispatch(action);
+                if (refs.controls) {
+                  const onGestureStart = () => ui.setCameraGestureActive?.(true);
+                  const onGestureEnd = () => ui.setCameraGestureActive?.(false);
+                  refs.controls.addEventListener('start', onGestureStart);
+                  refs.controls.addEventListener('end', onGestureEnd);
+                  scope.defer(() => {
+                    refs.controls.removeEventListener('start', onGestureStart);
+                    refs.controls.removeEventListener('end', onGestureEnd);
+                  });
+                }
                 gridApi.setSharedControls?.(ui, adapter);
                 console.log('%c[videos] shared controls ENABLED', 'color:#00ff66;font-weight:bold');
               } else {
@@ -888,7 +906,7 @@ export function mountVideosPage({ scope }) {
             dropAnim.toY = finalY;
             dropAnim.durationMs = videosPageConfig.intro.dropDurationMs || dropAnim.durationMs;
             dropAnim.ready = true;
-            refs.tabletGroup.position.y = startY;
+            refs.tabletGroup.position.y = prefersReducedMotion() ? finalY : startY;
             refs.tabletGroup.updateMatrixWorld(true);
             tryStartDrop();
           }
@@ -959,6 +977,7 @@ export function mountVideosPage({ scope }) {
     suspend() {
       if (disposed || suspended) return;
       suspended = true;
+      stickyAdapter?.suspend();
       setVideoPresentation(false);
       cancelAnimationFrame(animId); animId = 0;
       introState.videoEl?.pause();
@@ -970,6 +989,7 @@ export function mountVideosPage({ scope }) {
     resume() {
       if (disposed || !suspended) return;
       suspended = false;
+      stickyAdapter?.resume();
       setVideoPresentation(!!gridApi?.isPlayingFull?.());
       if (resumeStartup) { const resume = resumeStartup; resumeStartup = null; startupFrame = requestAnimationFrame(resume); }
       if (pendingGlbStart && !modelRoot) {

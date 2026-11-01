@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "song": "raisins",
+  "output_dir": "midi/prepared/raisins",
+  "default_bpm": 120,
+  "parts": [
+    {"id": "piano", "source": "midi/raisins.mid"}
+  ]
+}

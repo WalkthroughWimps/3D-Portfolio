@@ -1,0 +1,225 @@
+{
+  "source": "assets/.blend/Puzzle Box Assets/.BL/Hexagon_Site_2.blend",
+  "sourceRootObject": "Desk",
+  "includedObjectNames": [
+    "Desk",
+    "Desk_Leather",
+    "Desklamp_Base",
+    "Cube.003",
+    "Cube.004",
+    "Cube.006",
+    "Sphere.002",
+    "Sphere.003",
+    "Sphere.004",
+    "Sphere.005",
+    "Sphere.006",
+    "Sphere.007",
+    "Sphere.008",
+    "Sphere.009",
+    "Drawer_BL",
+    "KEYHOLE",
+    "Plane.002",
+    "Drawer_BR",
+    "KEYHOLE.001",
+    "Plane.001",
+    "Drawer_TL",
+    "HANDLE",
+    "Drawer_TR",
+    "HANDLE.001"
+  ],
+  "units": "metres (normalized from source geometry)",
+  "scaleMetresPerSourceUnit": 0.003464445504226605,
+  "sourceBounds": {
+    "min": [
+      102.40621948242188,
+      356.498291015625,
+      0.5101495981216431
+    ],
+    "max": [
+      506.51129150390625,
+      694.7188720703125,
+      288.63653564453125
+    ]
+  },
+  "modelBoundsYUp": {
+    "min": [
+      0,
+      0,
+      -1.171747
+    ],
+    "max": [
+      1.4,
+      0.998198,
+      0
+    ]
+  },
+  "orientation": "glTF and Three.js Y up; X is desk width; front of desktop faces negative Z",
+  "tabletop": {
+    "surfaceY": 0.590161,
+    "usableRectangleXZ": {
+      "minX": 0.062047,
+      "maxX": 1.337587,
+      "minZ": -1.109917,
+      "maxZ": -0.062044
+    },
+    "sourceBasis": "Desk_Leather mesh world bounds; top at source Z=170.858",
+    "placementNote": "Keep papers away from the lamp footprint (X 0.84-1.10, Z -0.37 to -0.14). A4 is 0.210 x 0.297 m at this scale."
+  },
+  "materials": [
+    "Black",
+    "Brass",
+    "Green leather",
+    "HANDLE",
+    "KEYHOLE",
+    "Material.003",
+    "Material.004",
+    "Simple wood",
+    "Simple wood_H"
+  ],
+  "images": [
+    {
+      "material": "Green leather",
+      "image": "Green leather_Displacement.jpg",
+      "filepath": "//assets\\materials\\green-leather_6c648899-b06f-41d8-83a3-2d3f85df9e8c\\textures_2k\\Green leather_Displacement.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Green leather",
+      "image": "Green leather_BaseColor.jpg",
+      "filepath": "//assets\\materials\\green-leather_6c648899-b06f-41d8-83a3-2d3f85df9e8c\\textures_2k\\Green leather_BaseColor.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Green leather",
+      "image": "Green leather_Metallic.jpg",
+      "filepath": "//assets\\materials\\green-leather_6c648899-b06f-41d8-83a3-2d3f85df9e8c\\textures_2k\\Green leather_Metallic.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Green leather",
+      "image": "Green leather_Roughness.jpg",
+      "filepath": "//assets\\materials\\green-leather_6c648899-b06f-41d8-83a3-2d3f85df9e8c\\textures_2k\\Green leather_Roughness.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Green leather",
+      "image": "Green leather_Normal.jpg",
+      "filepath": "//assets\\materials\\green-leather_6c648899-b06f-41d8-83a3-2d3f85df9e8c\\textures_2k\\Green leather_Normal.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "HANDLE",
+      "image": "handle_base_color",
+      "filepath": "//assets\\models\\vintage-bronze-h_3116bb38-14f1-4b2e-83c1-a5592baaa0eb\\textures_2k\\handle_base_color.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "KEYHOLE",
+      "image": "keyhole_base_color",
+      "filepath": "//assets\\models\\vintage-bronze-h_3116bb38-14f1-4b2e-83c1-a5592baaa0eb\\textures_2k\\keyhole_base_color.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood",
+      "image": "wood12_height.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_height.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood",
+      "image": "wood12b_diffuse.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12b_diffuse.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood",
+      "image": "wood12_glossiness.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_glossiness.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood",
+      "image": "wood12_opengl_normal.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_opengl_normal.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood_H",
+      "image": "wood12_height.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_height.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood_H",
+      "image": "wood12b_diffuse.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12b_diffuse.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood_H",
+      "image": "wood12_glossiness.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_glossiness.jpg",
+      "packed": true,
+      "exists": true
+    },
+    {
+      "material": "Simple wood_H",
+      "image": "wood12_opengl_normal.jpg",
+      "filepath": "//assets\\materials\\simple-wood_f1bc99ac-261b-4d82-a27d-03e2a0af7d69\\textures_2k\\wood12_opengl_normal.jpg",
+      "packed": true,
+      "exists": true
+    }
+  ],
+  "sourceSha256": "41a9b8040261700b50670ed406bd3872ddb07282977641059a195364e281eb9a",
+  "derivedTextureMaxEdgePixels": 1024,
+  "scalarAndHardwareMaxEdgePixels": 512,
+  "constantMappingScales": [
+    {
+      "material": "Green leather",
+      "scale": 0.004999999888241291
+    },
+    {
+      "material": "Simple wood",
+      "scale": 0.010000040754675865
+    },
+    {
+      "material": "Simple wood_H",
+      "scale": 0.010000040754675865
+    }
+  ],
+  "drawerOffsetsLocal": {
+    "Drawer_BL": [
+      -80.453278,
+      0.0,
+      0.0
+    ],
+    "Drawer_BR": [
+      -80.453293,
+      0.0,
+      0.0
+    ],
+    "Drawer_TL": [
+      -80.453217,
+      0.0,
+      0.0
+    ],
+    "Drawer_TR": [
+      -80.453262,
+      0.0,
+      0.0
+    ]
+  }
+}

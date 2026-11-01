@@ -80,7 +80,7 @@ test('Start camera flow samples a late loaded clip and keeps authored endpoint i
   assert.equal(easeInOutPower(0.5, 3), 0.5);
 });
 
-test('Start accessible controls mirror active sync exercise without changing media', async () => {
+test('Start accessible controls expose explicit sync preview confirmation without changing media', async () => {
   const { syncStartAccessibleControls } = await loadPure('_0-start/start/accessible-controls.js');
   const element = () => ({ hidden: false, value: '', textContent: '', attrs: {},
     setAttribute(name, value) { this.attrs[name] = value; } });
@@ -89,14 +89,13 @@ test('Start accessible controls mirror active sync exercise without changing med
     'confirmYes', 'confirmNo'].map(key => [key, element()]));
   syncStartAccessibleControls({ elements, view: 'audio', volume: 0.25, syncMs: -270,
     brightness: 0.5, contrast: 0.5,
-    flow: { stage: 'sync-running', syncExercise: { active: true, taps: [42] } },
-    syncWords: ['ONE', 'TWO', 'THREE'] });
+    flow: { stage: 'sync-running', syncExercise: { active: true } } });
   assert.equal(elements.audioMode.attrs['aria-pressed'], 'true');
   assert.equal(elements.visualsMode.attrs['aria-pressed'], 'false');
   assert.equal(elements.volumeSlider.value, '25');
   assert.equal(elements.syncSlider.value, '-270');
   assert.equal(elements.counts.hidden, true);
-  assert.equal(elements.playPause.textContent, 'Tap TWO sync cue');
+  assert.equal(elements.playPause.textContent, 'Use this offset');
   assert.equal(elements.playPause.hidden, false);
 });
 

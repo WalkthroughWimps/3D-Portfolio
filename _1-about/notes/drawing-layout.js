@@ -2,9 +2,23 @@ export const NOTES_PANELS = Object.freeze({ tools: 352, gears: 264, layers: 224,
 
 // Bounds are projected at zoom 1, without the host's horizontal view offset.
 // Only the circular glass counts: clipped art must never expand the layout.
-export function drawingLayout({ width, left, right, availableLeft = 0, availableRight = width, leftPanelWidth = NOTES_PANELS.gears, compactAt = 680, layersOpen = false, margin = 12, fitInterior = true }) {
+export function drawingLayout({ width, left, right, availableLeft = 0, availableRight = width, leftPanelWidth = NOTES_PANELS.gears, compactAt = 680, layersOpen = false, margin = 12, fitInterior = true, height = width, safeTop = 0, workspaceMode = false }) {
   const p = NOTES_PANELS, startEdge = Math.max(0, Math.min(width, availableLeft));
   const end = Math.max(startEdge, Math.min(width, availableRight)), usableWidth = end - startEdge;
+  if (workspaceMode) {
+    const panelWidth = 352, diameter = Math.max(1, right - left);
+    const fixed = 2 * panelWidth + 40;
+    if (width <= compactAt || usableWidth - 2 * margin < fixed + 220) {
+      const workspaceTop = height - Math.min(height * .42, 390) - 54;
+      const topRoom = Math.max(120, workspaceTop - safeTop - 36);
+      const zoom = Math.min(1, topRoom / diameter, (usableWidth - 2 * margin) / diameter);
+      return { compact:true, stacked:false, zoom, offset:(width-startEdge-end)/2,
+        offsetY:height/2-(safeTop+workspaceTop)/2, dockLeft:(startEdge+end)/2 };
+    }
+    const zoom = fitInterior ? Math.min(1, Math.max(.1, (usableWidth - 2 * margin - fixed) / diameter)) : 1;
+    return { compact:false, stacked:false, zoom, offset:(width-startEdge-end)/2,
+      gearsLeft:startEdge+margin, uiLeft:end-margin-panelWidth, dockLeft:(startEdge+end)/2 };
+  }
   const stacked = layersOpen && (width <= compactAt || usableWidth - 2 * margin < leftPanelWidth + p.tools + p.panelGap + p.layers + 2 * p.rimGap + 220);
   const rightWidth = p.tools + (layersOpen && !stacked ? p.panelGap + p.layers : 0);
   const peek = stacked ? p.stackPeek : 0, fixedWidth = leftPanelWidth + peek + rightWidth + 2 * p.rimGap;

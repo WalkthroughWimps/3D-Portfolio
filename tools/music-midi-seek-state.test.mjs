@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { createContext, runInContext, runInNewContext } from 'node:vm';
 import { getMidiStateAtElapsed } from '../_5-music/midi-seek-state.mjs';
+import { firstAudibleOffsetMs, midiElapsedForAudioPosition, videoTimeForAudioPosition } from '../_5-music/music-track-timing.mjs';
 
 const events = [
   { timeMs: 0, type: 'on', note: 60, chan: 0, velocity: 90 },
@@ -36,18 +37,20 @@ test('track seek preserves the video instance and playback state while rebasing 
   const start = source.indexOf('function seekTrackToRatio(ratio){');
   const end = source.indexOf('function getTrackVideoElements(key){', start);
   assert.ok(start >= 0 && end > start);
-  for (const playing of [true, false]) {
+  for (const mode of ['playing', 'paused', 'pending']) {
+    const playing = mode !== 'paused';
     const calls = [];
     const oldVideo = { identity: 'selected track' };
     const oldSource = { onended: () => calls.push('stale end') };
     const context = {
       audioCtx: { currentTime: 10 }, audioReady: true, midiLoaded: true,
-      getTrackDurationSec: () => 100, audioPlaying: playing, playingMIDI: playing,
+      getTrackDurationSec: () => 100, audioPlaying: mode === 'playing', playingMIDI: mode === 'playing',
       audioSource: oldSource, ignoreAudioEndedOnce: true,
       disposeAudioSource: () => { assert.equal(oldSource.onended, null); calls.push('dispose'); },
       stopAllNotesAndPedal: () => calls.push('panic'),
       suppressedNoteOffEvents: new Set([3]), suppressNoteEventsUntilMs: 200,
       savedAudioPosSec: 0, getMidiElapsedMsForAudioPos: sec => sec * 1000,
+      trackSeekGeneration: 0, cancelPendingTrackSeek: mode === 'pending' ? () => calls.push('cancel old seek') : null,
       midiStartCtxTime: 0, transportStartAudioTime: 0,
       rebuildNoteStateAtElapsed: () => 42,
       midiIndex: 0, midiFirstNoteMs: 0,
@@ -81,6 +84,7 @@ test('Music presentation follows camera focus, not ordinary track playback', () 
   const context = {
     topPadVideo: { mode: 'idle', focused: false },
     trackVideo: { active: true },
+    syncSunilBackControl: () => {},
     window: { dispatchEvent: event => events.push(event.detail) },
     CustomEvent: class { constructor(_type, options) { this.detail = options.detail; } }
   };
@@ -113,6 +117,8 @@ test('recorded track starts without a sampled keyboard instrument', () => {
     suppressedNoteOffEvents: new Set([60]), clearAllKeyGlow: () => {}, resetPlaybackVisuals: () => {},
     setBackboardViewMode: () => {}, disposeAudioSource: () => {}, savedAudioPosSec: 3, midiIndex: 8,
     resetKeys: () => {}, getSyncOffsetMs: () => 0, midiFirstNoteMs: 0, SONG_LEAD_IN_SEC: 0,
+    audioOnsetMs: 60, audioTrimMs: 0, currentPlaybackRate: 1,
+    getTrackMidiOnsetMs: () => 60, getTrackMidiSyncOffsetMs: () => 0,
     buildPendingNotes: () => calls.push('notes'), startAudio: () => calls.push('audio'),
     startTrackVideoPlayback: () => calls.push('video'), currentTrackKey: 'baby',
     console: { log: () => {} }
@@ -123,6 +129,54 @@ test('recorded track starts without a sampled keyboard instrument', () => {
   assert.equal(context.playbackPaused, false);
   assert.equal(context.savedAudioPosSec, 0);
   assert.equal(context.suppressedNoteOffEvents.size, 0);
+  assert.ok(Math.abs(context.midiStartCtxTime - context.audioStartCtxTime - .06) < 1e-9);
+});
+
+test('seeking shared channels and pitches retains the correct instrument part', () => {
+  const parts = [
+    {timeMs:0,type:'on',chan:0,note:60,part:'flute'},
+    {timeMs:10,type:'on',chan:0,note:60,part:'horn'},
+    {timeMs:20,type:'off',chan:0,note:60,part:'horn'},
+    {timeMs:40,type:'off',chan:0,note:60,part:'flute'}
+  ];
+  assert.deepEqual(getMidiStateAtElapsed(parts,25,t=>t).heldNotes.map(e=>e.part),['flute']);
+  assert.equal(getMidiStateAtElapsed(parts,45,t=>t).heldNotes.length,0);
+});
+
+test('first audible signal uses either channel and preserves first-note alignment at each rate', () => {
+  const silent = new Float32Array(1000), audible = new Float32Array(1000);
+  audible.fill(.1,80);
+  const onset = firstAudibleOffsetMs({sampleRate:1000,length:1000,numberOfChannels:2,getChannelData:i=>i?audible:silent});
+  assert.equal(onset,80);
+  for(const rate of [.5,1,1.5,2]) assert.equal(midiElapsedForAudioPosition(.08,4.6875,onset,rate),4.6875);
+  assert.equal(videoTimeForAudioPosition(10,0,250),10.25);
+  assert.equal(videoTimeForAudioPosition(10,120,-250),9.87);
+});
+
+test('video seeks hold audio until decoded and never resume a stale selection', async () => {
+  const source=readFileSync(new URL('../_5-music/music-piano-controls.v2.js',import.meta.url),'utf8');
+  const block=source.slice(source.indexOf('function prepareTrackVideoSeek('),source.indexOf('function seekTrackToRatio('));
+  for(const stale of [false,true]) {
+    const video=new EventTarget();
+    Object.assign(video,{duration:100,currentTime:0,seeking:true,readyState:1,paused:false,
+      pause(){this.paused=true;},play(){this.paused=false;return Promise.resolve();}});
+    const calls=[];
+    const context={trackVideo:{active:true,hqVideo:video},getTrackVideoTargetTime:pos=>pos,
+      trackSeekGeneration:0,trackLoadGeneration:1,cancelPendingTrackSeek:null,musicPageSignal:null,
+      musicPageDisposed:false,savedAudioPosSec:40,setTimeout,clearTimeout,queueMicrotask,calls};
+    runInNewContext(block+'\nprepareTrackVideoSeek(40,()=>calls.push("resume"));',context);
+    assert.equal(video.currentTime,40);
+    assert.equal(video.paused,false,'keep the muted decoder running until the sought frame is ready');
+    assert.equal(calls.length,0);
+    if(stale) context.trackLoadGeneration++;
+    video.seeking=false;video.readyState=2;
+    video.dispatchEvent(new Event('seeked'));
+    video.dispatchEvent(new Event('canplay'));
+    await Promise.resolve();
+    assert.equal(video.paused,true,'freeze the decoded picture before rebasing the audio clock');
+    assert.equal(calls.length,stale?0:1);
+    assert.equal(context.cancelPendingTrackSeek,null);
+  }
 });
 
 test('default piano starts only after module state is initialized', () => {
@@ -133,12 +187,110 @@ test('default piano starts only after module state is initialized', () => {
   assert.ok(start >= 0 && end > start && bootstrap > source.indexOf('const NoteEngine = {'));
   assert.ok(bootstrap > source.indexOf('const instrumentPlayersBySide = {'));
   const loaded = [];
+  const finished = [];
   const context = {
     document: { readyState: 'complete' }, window: { addEventListener: () => {} },
     musicPageDisposed: false, musicPageSignal: null, instrumentPlayer: null, currentInstrumentName: null,
+    SINGLE_INSTRUMENT_SIDE: 'left',
+    beginInstrumentLoad: (side, id, label) => { loaded.push(`${side}:${id}:${label}`); return 1; },
+    finishInstrumentLoad: (side, generation, player) => finished.push([side, generation, !!player]),
     loadInstrument: id => { loaded.push(id); return Promise.resolve({}); },
     console: { warn: () => {} }
   };
   runInNewContext(`${source.slice(start, end)}\n${source.slice(bootstrap)}`, context);
-  assert.deepEqual(loaded, ['keys_acoustic_piano']);
+  assert.deepEqual(loaded, ['left:keys_acoustic_piano:Grand Piano', 'keys_acoustic_piano']);
+  return Promise.resolve().then(() => assert.deepEqual(finished, [['left', 1, true]]));
+});
+
+test('instrument feedback stays quiet on transitions and reports only attempted unavailable notes', () => {
+  const source = readFileSync(new URL('../_5-music/music-piano-controls.v2.js', import.meta.url), 'utf8');
+  const start = source.indexOf('const instrumentLoadFeedback = {');
+  const end = source.indexOf('const sf2SynthState = {', start);
+  assert.ok(start >= 0 && end > start);
+  const announcements = [];
+  const notice = {
+    textContent: '', dataset: {},
+    classList: { add: () => {}, remove: () => {} }
+  };
+  const context = {
+    window: {}, document: { getElementById: () => notice },
+    musicPageDisposed: false, dualInstrumentMode: true, SINGLE_INSTRUMENT_SIDE: 'left',
+    instrumentPlayersBySide: { left: { player: {} }, right: { player: null } },
+    instrumentPlayer: null, performance: { now: () => 2000 },
+    setTimeout: () => 1, clearTimeout: () => {},
+    updateDisabledKeysForConfig: () => {},
+    announcements
+  };
+  runInNewContext(`${source.slice(start, end)}
+    announcements.push('idle:' + getInstrumentAvailability('right').state);
+    const generation = beginInstrumentLoad('right', 'fx_dog', 'Dog');
+    announcements.push(getInstrumentAvailability('right').state);
+    announcements.push(document.getElementById('musicInstrumentNotice').textContent);
+    notifyUnavailableInstrument('right');
+    announcements.push(document.getElementById('musicInstrumentNotice').textContent);
+    finishInstrumentLoad('right', generation, null);
+    announcements.push(getInstrumentAvailability('right').state);
+    announcements.push(document.getElementById('musicInstrumentNotice').textContent);
+    announcements.push(getInstrumentAvailability('left').state);
+    notifyUnavailableInstrument('right');
+    announcements.push(document.getElementById('musicInstrumentNotice').textContent);
+    const retry = beginInstrumentLoad('right', 'fx_dog', 'Dog');
+    document.getElementById('musicInstrumentNotice').textContent = '';
+    document.getElementById('musicInstrumentNotice').dataset.kind = '';
+    instrumentPlayersBySide.right.player = {};
+    finishInstrumentLoad('right', retry, instrumentPlayersBySide.right.player);
+    announcements.push(getInstrumentAvailability('right').state);
+    announcements.push(document.getElementById('musicInstrumentNotice').textContent);`, context);
+  assert.deepEqual(announcements, [
+    'idle:loading', 'loading', '', 'Right: Dog is loading. Try a key again shortly.',
+    'failed', 'Right: Dog is loading. Try a key again shortly.', 'loading',
+    'Right: Dog could not load. Choose another instrument.', 'ready', ''
+  ]);
+  assert.ok(announcements.every(message => !message.includes('loaded. Ready to play')),
+    'ready transitions never announce that the instrument loaded');
+  assert.equal(announcements[3], announcements[5], 'load failure adds no automatic announcement');
+  assert.match(announcements[7], /could not load/, 'failure is announced after an attempted note');
+});
+
+test('loading instrument state shades keys while track playback keeps its glow path', () => {
+  const source = readFileSync(new URL('../_5-music/music-piano-controls.v2.js', import.meta.url), 'utf8');
+  const start = source.indexOf('function updateDisabledKeysForConfig(){');
+  assert.ok(start >= 0);
+  const bodyStart = source.indexOf('{', start);
+  let depth = 0;
+  let end = bodyStart;
+  for(; end < source.length; end++){
+    if(source[end] === '{') depth++;
+    else if(source[end] === '}' && --depth === 0){ end++; break; }
+  }
+  assert.ok(end > bodyStart);
+  const disabledKeySet = new Set();
+  let trackPlayback = false;
+  const context = {
+    isTrackPlaybackActive: () => trackPlayback,
+    disabledKeySet,
+    clearDisabledKeyMaterials: () => {},
+    window: {}, requestBackboardRedraw: () => {},
+    getPlayableNoteRangeForSide: () => ({ minNote: 60, maxNote: 60, id: 'piano' }),
+    SINGLE_INSTRUMENT_SIDE: 'left', dualInstrumentMode: false,
+    getPlayableKeyIndices: () => null, getQwertyBoundsForGroup: () => null,
+    getSplitKeyIndex: () => 0, midiKeyMap: new Map([[60, {}]]),
+    getInstrumentAvailability: () => ({ state: 'loading' }),
+    updateKeyGlowMaterial: () => {}, getKeyIndexForMidi: () => 0,
+    getOwnerSideForKeyIndex: () => 'left',
+    qwertyRebuildInProgress: true,
+    QWERTY_LOWER_WHITE_CODES: [], QWERTY_UPPER_WHITE_CODES: [],
+    qwertyLeftEndIndex: null, qwertyRightStartIndex: null,
+    syncQwertyRangesToPlayable: () => {}, lastRangeLogSignature: '',
+    console: { log: () => {} }
+  };
+  runInNewContext(source.slice(start, end) + '\nupdateDisabledKeysForConfig();', context);
+  assert.ok(disabledKeySet.has(60), 'a key is disabled while its instrument is loading');
+  context.getInstrumentAvailability = () => ({ state: 'ready' });
+  runInNewContext(source.slice(start, end) + '\nupdateDisabledKeysForConfig();', context);
+  assert.ok(!disabledKeySet.has(60), 'a key is restored when its instrument is ready');
+  trackPlayback = true;
+  disabledKeySet.add(60);
+  runInNewContext(source.slice(start, end) + '\nupdateDisabledKeysForConfig();', context);
+  assert.ok(!disabledKeySet.has(60), 'track playback retains the early path that clears disabled-key shading');
 });

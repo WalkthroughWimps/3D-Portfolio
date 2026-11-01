@@ -8,6 +8,7 @@ import {getSharedSettings} from '../../../_7-shared-scripts/core/settings.js';
 import {RETRO_COLORS,applyThemeVariables,controlLane} from './theme.mjs?v=contrast-glows-1';
 import {cloneClip,visibleInterval,placementPlan,validClip} from './clip-layout.mjs?v=panel-custom-1';
 import {createOverlapDialog} from './overlap-dialog.mjs?v=capture-blend-1';
+import {mountCollapsibleSections} from '../../../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
 
 const time=value=>(value<0?'−':'')+`${Math.floor(Math.abs(value)/60).toString().padStart(2,'0')}:${(Math.abs(value)%60).toFixed(1).padStart(4,'0')}`;
 const VOLUME_KEY = 'site.about.odd.volume';
@@ -34,6 +35,40 @@ export function createSoundDeck({onChange = () => {}, onClose = () => {},onStatu
     <footer class="odd-footer"><button data-action="bell" title="Print a two-second synthesized bell">✧ PRINT A TEST BELL</button><p role="status" aria-live="polite" data-status>Ready when you are. Feed a file, or record something peculiar.</p><span>LOCAL AUDIO · SAVE TO KEEP</span></footer>
     <p class="odd-spec">4 voices · ${LIMITS.clips} strips · 30 sec per sound · 120 sec source storage (copies share audio) · files up to 20 MB · mixed to mono. Audio stays local. Save a session before reloading to keep it. Undo/redo retains up to 20 clip edits within a bounded audio-memory budget.</p>`;
   const query = selector => root.querySelector(selector);
+  const disclosures = [];
+  for (const [selector, id] of [
+    ['.odd-strip-editor', 'strip-editor'],
+    ['.odd-effects', 'voice-effects'],
+    ['.odd-file-bay', 'session-files'],
+  ]) {
+    const section = query(selector);
+    const title = section.querySelector(':scope > .odd-section-title');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'odd-section-toggle';
+    button.append(...title.childNodes);
+    title.append(button);
+    const body = [...section.children].filter(node => node !== title);
+    body.forEach(node => node.dataset.oddFoldBody = '');
+    disclosures.push({id, heading: button, body});
+  }
+  const options = query('.odd-export-options');
+  const legend = options.querySelector('legend');
+  const optionsToggle = document.createElement('button');
+  optionsToggle.type = 'button';
+  optionsToggle.className = 'odd-section-toggle';
+  optionsToggle.textContent = legend.textContent;
+  legend.replaceChildren(optionsToggle);
+  const optionLabels = [...options.querySelectorAll(':scope > label')];
+  optionLabels.forEach(node => node.dataset.oddFoldBody = '');
+  disclosures.push({id: 'wav-options', heading: optionsToggle, body: optionLabels});
+  const sectionFolds = mountCollapsibleSections(root, {
+    scope: 'about:odd:deck',
+    group: 'deck',
+    headings: false,
+    reorder: false,
+    disclosures,
+  });
   root.querySelectorAll('.odd-strips').forEach(node=>{for(const[time,label]of[[0,'start'],[60,'end']]){const seam=document.createElement('span');seam.className='odd-boundary odd-boundary-'+label;seam.style.left=time/15*100+'%';seam.title=label+' of playable range';node.append(seam);}});
   query('[data-control="position"]').addEventListener('change',()=>engine.seek(snapTapePosition(engine.targetPosition)),{signal:input.signal});
 
@@ -246,6 +281,6 @@ export function createSoundDeck({onChange = () => {}, onClose = () => {},onStatu
   render(); resume();
   return {root, engine, handleShortcut, setVolume, message, placeClip, editSelected, setControl, previewRate, selectClip(id){const c=engine.clips.find(c=>c.id===id);if(c)select(c);},selectLane(value){lane=value;render();},get locked(){return controlsLocked();},get status(){return query('[data-status]').textContent;}, tick() { if(suspended||disposed)return;const now=performance.now(),frame=engine.tick(now);loadingTime();if(now-lastTick>45||engine.winding||engine.playing||engine.recording){lastTick=now;positionUI(frame.position);} }, get selected() {return selected;}, get lane() {return lane;}, get position() {return lastPosition;},
     suspend() { suspended = true;cancelDrag();overlap.close(); engine.suspend(); if (animation) cancelAnimationFrame(animation); animation = 0; }, resume,
-    dispose() { if (disposed) return; disposed = true; stopSync();overlap.dispose();clipboard=null; engine.dispose(); input.abort(); cancelAnimationFrame(animation);downloads.forEach(url=>URL.revokeObjectURL(url));downloads.clear(); root.remove(); }
+    dispose() { if (disposed) return; disposed = true; sectionFolds.dispose(); stopSync();overlap.dispose();clipboard=null; engine.dispose(); input.abort(); cancelAnimationFrame(animation);downloads.forEach(url=>URL.revokeObjectURL(url));downloads.clear(); root.remove(); }
   };
 }

@@ -141,3 +141,8 @@ All three resumed assignments have completed and released their source reservati
 Use one implementation agent at a time for this shared state, with an independent read-only reviewer only when useful. These slices used GPT-6 Sol at medium effort. Follow the repository's routing guidance; any new GPT-6.1-family phase needs a scoped preflight notice and explicit human permission before starting. Do not resume broader architecture work from this handoff.
 
 Other dirty work includes Refs, Oddio, SkillsSettings, and untracked Refs assets/documents. Those changes are outside this checkpoint's ownership. Preserve them and use the saved bounded diffs to distinguish this slice.
+
+## Deferred beanbag targeting follow-up (October 30)
+
+The user paused the beanbag collision changes for deployment readiness. No beanbag fix from this pass was retained. When resumed, investigate shots blocked by other active beanbags or invisible surfaces during rapid fire, especially toward the right; shots should reach their aimed targets and bags should still hop back to the basket. Initial inspection identified active-bag interception in the throw planner and hidden-backing energy contact as candidates, not a confirmed complete diagnosis. Preserve intended card impacts, visible backing/miss handling, and energy-field destruction when the backing is removed. Reproduce, implement, and verify rapid concurrent throws and return behavior before considering the follow-up complete.
+

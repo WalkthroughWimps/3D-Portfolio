@@ -14,6 +14,10 @@ import { getEffectiveAudioSettings as getSharedEffectiveAudioSettings, patchAudi
 import { parseSrt, captionAtTime, captionTimeForVideo } from './media/captions.js';
 import { getSharedSettings } from './core/settings.js';
 import { VIDEO_EXPLAINER_DEFAULTS } from './core/settings-schema.js';
+import { createCorsImage, createCorsVideo } from './media/media-elements.js';
+import { drawIconAsset, drawClockIcon, getVolumeIconName } from './media/control-icons.js';
+import { formatTime } from './media/time-format.js';
+import { drawBackControl } from './media/back-control.js';
 
 // Player state management
 
@@ -37,117 +41,8 @@ function getControlsTheme() {
   return { bg, fg, bgAlpha };
 }
 
-const ICON_SVG_PATHS = {
-  back: '../assets/video-playback-icons/arrow_back_2.svg',
-  volume_on: '../assets/video-playback-icons/volume_high.svg',
-  volume_off: '../assets/video-playback-icons/no_sound.svg',
-  volume_low: '../assets/video-playback-icons/volume_low.svg',
-  volume_medium: '../assets/video-playback-icons/volume_medium.svg',
-  volume_high: '../assets/video-playback-icons/volume_high.svg'
-};
-
-
-
 const AUDIO_SYNC_KEY = 'site.audio.sync';
 const SYNC_RANGE_MS = 3000;
-const svgTextCache = new Map();
-const iconImageCache = new Map();
-
-function createCorsImage(src, eager = true) {
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.decoding = 'async';
-  if (eager) img.loading = 'eager';
-  if (src) img.src = assetUrl(src);
-  return img;
-}
-
-function createCorsVideo(src, { muted = true, loop = false, preload = 'metadata' } = {}) {
-  const video = document.createElement('video');
-  video.crossOrigin = 'anonymous';
-  video.preload = preload;
-  video.playsInline = true;
-  video.muted = muted;
-  video.loop = loop;
-  if (src) video.src = assetUrl(src);
-  video.addEventListener('error', () => {
-    const err = video.error;
-    console.warn('VIDEO ERROR:', video.src, err ? { code: err.code, message: err.message } : err);
-  });
-  return video;
-}
-
-function buildInlineSvg(name, color) {
-  if (name === 'play') {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="${color}"><polygon points="22,14 22,50 50,32"/></svg>`;
-  }
-  if (name === 'pause') {
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="${color}"><rect x="18" y="14" width="10" height="36"/><rect x="36" y="14" width="10" height="36"/></svg>`;
-  }
-  return null;
-}
-
-function colorizeSvg(svgText, color) {
-  if (!svgText) return svgText;
-  if (svgText.includes('fill=')) {
-    return svgText.replace(/fill=\"[^\"]*\"/g, `fill="${color}"`);
-  }
-  return svgText.replace('<svg', `<svg fill="${color}"`);
-}
-
-function ensureSvgText(path) {
-  if (svgTextCache.has(path)) return svgTextCache.get(path);
-  fetch(path).then((res) => res.text()).then((text) => {
-    svgTextCache.set(path, text);
-  }).catch(() => {
-    svgTextCache.set(path, null);
-  });
-  svgTextCache.set(path, null);
-  return null;
-}
-
-function getIconImage(name, color) {
-  const key = `${name}|${color}`;
-  const cached = iconImageCache.get(key);
-  if (cached) {
-    if (!cached.ready && ICON_SVG_PATHS[name] && !cached.img.src) {
-      const raw = svgTextCache.get(ICON_SVG_PATHS[name]);
-      if (raw) {
-        const colored = colorizeSvg(raw, color);
-        cached.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(colored)}`;
-      }
-    }
-    return cached.ready ? cached.img : null;
-  }
-
-  const entry = { img: createCorsImage(null), ready: false };
-  iconImageCache.set(key, entry);
-  entry.img.onload = () => { entry.ready = true; };
-
-  if (ICON_SVG_PATHS[name]) {
-    const raw = ensureSvgText(ICON_SVG_PATHS[name]);
-    if (raw) {
-      const colored = colorizeSvg(raw, color);
-      entry.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(colored)}`;
-    }
-  } else {
-    const inline = buildInlineSvg(name, color);
-    if (inline) {
-      entry.img.src = `data:image/svg+xml;utf8,${encodeURIComponent(inline)}`;
-    }
-  }
-  return null;
-}
-
-function drawIconAsset(ctx, rect, name, color) {
-  const img = getIconImage(name, color);
-  if (img && img.complete) {
-    safeDrawImage(ctx, img, rect.x, rect.y, rect.w, rect.h);
-    return true;
-  }
-  return false;
-}
-
 function getStoredSyncMsLocal() {
   if (SharedVC.getStoredSyncMs) return SharedVC.getStoredSyncMs();
   const raw = parseInt(localStorage.getItem(AUDIO_SYNC_KEY) || '0', 10);
@@ -160,49 +55,20 @@ function getStoredAudioSettingsGlobal() {
 }
 
 function setStoredAudioMutedGlobal(muted) {
-  patchAudioSettings({ muted: !!muted });
+  patchAudioSettings({ muted: !!muted }, { requestAfterDeny: true });
 }
 
 function setStoredAudioVolumeGlobal(volume) {
   const v = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
-  patchAudioSettings({ volume: v });
+  patchAudioSettings({ volume: v }, { requestAfterDeny: true });
   setStoredAudioMutedGlobal(v <= 0.001);
   return v;
 }
 
 function setStoredSyncMsLocal(ms) { return setSyncOffsetMs(ms); }
 
-function drawClockIcon(ctx, rect, color, fontFamily) {
-  ctx.save();
-  ctx.fillStyle = color || '#fff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const size = Math.round(rect.h * 0.9);
-  const font = fontFamily || '"Material Symbols Rounded","Material Symbols Outlined","Material Icons Round","Material Icons"';
-  ctx.font = `${size}px ${font}`;
-  ctx.fillText('schedule', rect.x + rect.w / 2, rect.y + rect.h / 2 + 1);
-  ctx.restore();
-}
-
-
-
 function drawTransportFlashOverlay(ctx, rect, kind, color, alpha = 1, scale = 1) {
   SharedVC.drawTransportFlashOverlay(ctx, rect, kind, color, alpha, scale);
-}
-
-function getVolumeIconName(volume, muted) {
-  const level = Math.max(0, Math.min(1, Number.isFinite(volume) ? volume : 0));
-  if (muted || level <= 0.0001) return 'volume_off';
-  if (level <= 0.3) return 'volume_low';
-  if (level <= 0.7) return 'volume_medium';
-  return 'volume_high';
-}
-
-function formatTime(t) {
-  if (!isFinite(t) || t < 0) return '0:00';
-  const minutes = Math.floor(t / 60);
-  const seconds = Math.floor(t % 60);
-  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
   // Video player instance
@@ -621,6 +487,7 @@ function formatTime(t) {
         if (!this.state.playingFull) return;
         this.keepControlsVisible();
         if (this.dragState) {
+          this.clearHoverPreview();
           const pt = this.getCanvasPoint(event);
           const ui = this.getControlsLayout();
           const video = this.getActiveVideo();
@@ -664,6 +531,7 @@ function formatTime(t) {
       }
 
     handlePointerDown(event) {
+      this.clearHoverPreview();
       // Reset interactions if not in full player mode
       if (!this.state.playingFull) {
         this.state.reset();
@@ -718,6 +586,7 @@ function formatTime(t) {
 
       handlePointerLeave() {
         this.dragState = null;
+        this.clearHoverPreview();
       }
 
     showControlsTemporarily() {
@@ -1086,6 +955,21 @@ function formatTime(t) {
     }
 
     // Hover preview helpers
+    clearHoverPreview() {
+      if (this.preview?.container) this.preview.container.style.display = 'none';
+      if (this._previewState) {
+        this._previewState.visible = false;
+        this._previewState.lastPct = -1;
+        this._previewState.seekToken++;
+      }
+    }
+
+    setCameraGestureActive(active) {
+      this._cameraGestureActive = !!active;
+      this._cameraGestureEndsAt = active ? 0 : performance.now() + 120;
+      this.clearHoverPreview();
+    }
+
     _isPointOverProgress(pt, pr) {
       if (!pr || !pt) return false;
        // vertical tolerance
@@ -1094,10 +978,21 @@ function formatTime(t) {
 
     _updateHoverPreview(event) {
       if (!this.preview) return;
+      if (this._cameraGestureActive || performance.now() < (this._cameraGestureEndsAt || 0) || event?.pointerType === 'touch' || (typeof event?.buttons === 'number' && event.buttons !== 0)) {
+        this.clearHoverPreview();
+        return;
+      }
       const pt = this.getCanvasPoint(event);
       if (!pt) return;
       const ui = this.getControlsLayout();
       const pr = ui.bottom.progress;
+      const playerWidth = this.canvas.getBoundingClientRect?.().width || this.controlsBounds?.w || this.canvas.width;
+      const previewWidth = Math.max(48, Math.min(160, Math.round(playerWidth * 0.24)));
+      if (this.preview.canvas.width !== previewWidth) {
+        this.preview.canvas.width = previewWidth;
+        this.preview.canvas.height = Math.max(27, Math.round(previewWidth * 9 / 16));
+        this._previewState.lastPct = -1;
+      }
       if (!this._isPointOverProgress(pt, pr)) {
         // hide preview
         if (this._previewState.visible) {
@@ -1163,7 +1058,7 @@ function formatTime(t) {
           const token = ++this._previewState.seekToken;
           const drawIfReady = () => {
             try {
-              if (this._previewState.seekToken !== token) return;
+              if (this._previewState.seekToken !== token || this._cameraGestureActive || performance.now() < (this._cameraGestureEndsAt || 0)) return;
               if (pv.readyState >= 2) {
                 try { this.preview.ctx.drawImage(pv, 0, 0, this.preview.canvas.width, this.preview.canvas.height); } catch  {}
               }
@@ -1265,6 +1160,8 @@ function formatTime(t) {
         console.warn('[VideoPlayer] createGrid: missing screenMesh/renderer/camera; skipping grid creation.');
         return null;
       }
+      const originalCanvasTabIndex = renderer.domElement.getAttribute('tabindex');
+      if (originalCanvasTabIndex === null) renderer.domElement.setAttribute('tabindex', '0');
 
       const DEFAULT_ENTRIES_6 = Object.entries(VIDEO_EXPLAINER_DEFAULTS).map(([id, item], order) => ({
         id, title: item.title, description: item.text, order
@@ -1743,6 +1640,7 @@ function formatTime(t) {
           if (uiState.fullscreen) {
             const v = fullIndex >= 0 ? fullVideos[fullIndex] : null;
             showFullscreenOverlay(v);
+            fullscreenOverlay?.append(backButton);
             const targetEl = fullscreenOverlay || renderer.domElement || document.documentElement || document.body;
             const req = targetEl.requestFullscreen || document.documentElement.requestFullscreen || document.body.requestFullscreen;
             if (req) req.call(targetEl).catch(() => {
@@ -1750,6 +1648,7 @@ function formatTime(t) {
               if (fallback) fallback.call(document.documentElement || document.body);
             });
           } else {
+            document.body.append(backButton);
             hideFullscreenOverlay();
             if (document.fullscreenElement && document.exitFullscreen) {
               document.exitFullscreen().catch(() => {});
@@ -2046,7 +1945,7 @@ function formatTime(t) {
 
       function setStoredVolumeFromRatio(ratio) {
         const clamped = Math.max(0, Math.min(1, ratio));
-        patchAudioSettings({ volume: clamped, muted: clamped <= 0.001 });
+        patchAudioSettings({ volume: clamped, muted: clamped <= 0.001 }, { requestAfterDeny: true });
       }
 
       function toggleStoredMute() {
@@ -2083,6 +1982,7 @@ function formatTime(t) {
 
       function exitPlayback() {
         if (opts.setTabletFocus && uiState.tabletView) setTabletView(false, false);
+        if (uiState.fullscreen) toggleFullscreenMode();
         if (fullIndex >= 0) startZoomOut(fullIndex);
       }
 
@@ -2310,6 +2210,25 @@ function formatTime(t) {
       let description = 'Hover a thumbnail to preview selected highlights.';
       let playingFull = false;
       let fullIndex = -1;
+      let playbackLauncher = null;
+      const backButton = document.createElement('button');
+      backButton.type = 'button';
+      backButton.textContent = 'Back to videos';
+      backButton.setAttribute('aria-label', 'Back to videos');
+      backButton.hidden = true;
+      backButton.style.cssText = 'position:fixed;left:1rem;bottom:1rem;z-index:10020;min-height:44px;padding:.65rem 1rem;border:2px solid var(--hl-secondary-color,#1ca36b);border-radius:.6rem;background:#16111f;color:#fff;font:inherit;cursor:pointer;outline-offset:3px;';
+      document.body.append(backButton);
+      backButton.addEventListener('click', () => exitPlayback());
+      const syncBackVisibility = () => { backButton.hidden = !playingFull || document.hidden; };
+      document.addEventListener('visibilitychange', syncBackVisibility);
+      function restorePlaybackFocus() {
+        const shouldRestore = [backButton, renderer.domElement, document.body].includes(document.activeElement);
+        const target = playbackLauncher !== document.body && playbackLauncher?.isConnected && playbackLauncher.getClientRects().length
+          ? playbackLauncher : renderer.domElement;
+        playbackLauncher = null;
+        if (!shouldRestore || !target?.isConnected) return;
+        target.focus({ preventScroll: true });
+      }
       let lastFullRect = null;
       let lastHoverEntry = null;
       const previewWindows = entries.map(() => ({ phase: 'idle', bag: [], previous: -1, clip: null }));
@@ -2618,6 +2537,7 @@ function formatTime(t) {
           type: ev?.type || '',
           button: ev?.button,
           buttons: ev?.buttons,
+          pointerType: ev?.pointerType,
           clientX: ev?.clientX,
           target: dom,
           pointerId: ev?.pointerId
@@ -3115,6 +3035,7 @@ function formatTime(t) {
       function startFull(idx) {
         const v = fullVideos[idx];
         if (!v) return;
+        playbackLauncher = document.activeElement;
         entryStill = captureEntryStill(idx);
         cancelPendingPlayback();
         prioritizeGridMedia(idx);
@@ -3123,6 +3044,7 @@ function formatTime(t) {
         fullIndex = idx;
         if (captionsEnabled) loadCaptions(idx);
         playingFull = true;
+        syncBackVisibility();
         opts.onPresentationChange?.(true);
         renderer.domElement.style.cursor = '';
         lastMouseMoveTs = performance.now();
@@ -3153,6 +3075,8 @@ function formatTime(t) {
       function startZoomOut(idx) {
         if (idx === -1) return;
         if (['out', 'fade'].includes(animation.phase) && fullIndex === idx) return;
+        backButton.hidden = true;
+        restorePlaybackFocus();
         pauseFullPlayback(idx);
         opts.onPresentationChange?.(false);
         captionLive.textContent = '';
@@ -3316,6 +3240,7 @@ function formatTime(t) {
       }
 
       function drawIcon(ctxTarget, rect, glyph, opts = {}) {
+        if (glyph === 'arrow_back_2') { drawBackControl(ctxTarget, rect, opts); return; }
         const hovered = !!opts.hovered;
         const alpha = Number.isFinite(opts.alpha) ? opts.alpha : 1;
         const scale = hovered ? 1.12 : 1;
@@ -3355,13 +3280,6 @@ function formatTime(t) {
         ctxTarget.beginPath();
         ctxTarget.arc(dotX, rect.y + rect.h / 2, Math.max(5, rect.h * 0.8), 0, Math.PI * 2);
         ctxTarget.fill();
-      }
-
-      function formatTime(t) {
-        if (!isFinite(t) || t < 0) return '0:00';
-        const minutes = Math.floor(t / 60);
-        const seconds = Math.floor(t % 60);
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
       }
 
         function buildTopPanelLayout() {
@@ -3832,7 +3750,7 @@ function formatTime(t) {
             return;
           }
           const phase = animation.phase;
-          const t = Math.min(1, (now - animation.start) / (phase === 'fade' ? 240 : opts.zoomDuration));
+          const t = Math.min(1, (now - animation.start) / (phase === 'fade' ? 240 : phase === 'in' ? (animation.poiDuration || opts.zoomDuration) : opts.zoomDuration));
           const eased = t * t * t * (t * (t * 6 - 15) + 10);
           rect = phase === 'fade' ? animation.to : lerpRect(animation.from, animation.to, eased);
           ctx.save();
@@ -3850,6 +3768,7 @@ function formatTime(t) {
           if (t >= 1) {
             if (phase === 'in') {
               animation.phase = 'hold';
+              animation.poiDuration = null;
               animation.playOnComplete = false;
               startFullPlayback(fullIndex);
             } else if (phase === 'out') {
@@ -4454,6 +4373,7 @@ function formatTime(t) {
       const handleFullscreenChange = () => {
           uiState.fullscreen = !!document.fullscreenElement;
           if (!uiState.fullscreen) {
+            document.body.append(backButton);
             hideFullscreenOverlay();
             if (renderer && renderer.domElement && renderer.domElement.style) renderer.domElement.style.display = '';
           }
@@ -4463,11 +4383,14 @@ function formatTime(t) {
       // Keyboard shortcuts (YouTube-like)
       function handleKeydown(ev) {
         if (!playingFull || fullIndex < 0) return;
+        if (ev.defaultPrevented || ev.isComposing || ev.ctrlKey || ev.altKey || ev.metaKey ||
+            document.querySelector('dialog[open], [aria-modal="true"]:not([hidden])')) return;
         const video = fullVideos[fullIndex];
         if (!video) return;
-        if (ev.target?.closest?.('input, textarea, select, [contenteditable="true"]')) return;
+        if (ev.target?.closest?.('input, textarea, select, [contenteditable], [role="textbox"]')) return;
         const key = (ev.key || '').toLowerCase();
         const shift = ev.shiftKey;
+        if (key === ' ' && ev.target?.closest?.('button, a, [role="button"]')) return;
 
         const prevent = () => { try { ev.preventDefault(); } catch  { /* ignore */ } };
 
@@ -4483,7 +4406,7 @@ function formatTime(t) {
           applyAudioSettings(getFullAudio(fullIndex));
         };
 
-        if (shift && key === '?') { prevent(); SharedVC.showVideoKeyboardShortcuts?.(); return; }
+        if (shift && (key === '?' || ev.code === 'Slash')) { prevent(); SharedVC.showVideoKeyboardShortcuts?.({ playerView: true, captions: true, tabletView: true }); return; }
 
         // Toggle play/pause
         if (key === ' ' || key === 'k') { prevent(); video.paused ? startFullPlayback(fullIndex) : pauseFullPlayback(fullIndex); return; }
@@ -4491,7 +4414,7 @@ function formatTime(t) {
         if (key === 'm') { prevent(); toggleStoredMute(); return; }
         // Fullscreen
         if (key === 'f') { prevent(); if (!ev.repeat) toggleFullscreenMode(); return; }
-        if (key === 'escape' && opts.setTabletFocus && uiState.tabletView) { prevent(); setTabletView(false); return; }
+        if (key === 'escape') { prevent(); exitPlayback(); return; }
         // Seek
         if (key === 'j') { prevent(); seekBy(-10); return; }
         if (key === 'l') { prevent(); seekBy(10); return; }
@@ -4503,15 +4426,15 @@ function formatTime(t) {
         if (key === 'arrowup') { prevent(); setVolume(0.05); return; }
         if (key === 'arrowdown') { prevent(); setVolume(-0.05); return; }
         // Rate change
-        if (key === ',' && shift) { prevent(); uiState.playbackRateIndex = Math.max(0, uiState.playbackRateIndex - 1); applySettingsToAllVideos(); return; }
-        if (key === '.' && shift) { prevent(); uiState.playbackRateIndex = Math.min(playbackRates.length - 1, uiState.playbackRateIndex + 1); applySettingsToAllVideos(); return; }
+        if (shift && (key === '<' || ev.code === 'Comma' || key === ',')) { prevent(); uiState.playbackRateIndex = Math.max(0, uiState.playbackRateIndex - 1); applySettingsToAllVideos(); return; }
+        if (shift && (key === '>' || ev.code === 'Period' || key === '.')) { prevent(); uiState.playbackRateIndex = Math.min(playbackRates.length - 1, uiState.playbackRateIndex + 1); applySettingsToAllVideos(); return; }
         // Toggle audio sync debug overlay
         if (key === 'd' && shift) { prevent(); setAudioDebugEnabled(!isAudioDebugEnabled()); return; }
         // Frame step when paused
-        if (key === ',' && video.paused) { prevent(); seekBy(-1 / 30); return; }
-        if (key === '.' && video.paused) { prevent(); seekBy(1 / 30); return; }
+        if (!shift && (key === ',' || ev.code === 'Comma') && video.paused) { prevent(); seekBy(-1 / 30); return; }
+        if (!shift && (key === '.' || ev.code === 'Period') && video.paused) { prevent(); seekBy(1 / 30); return; }
         // Number seek (0-9)
-        if ('0123456789'.includes(key)) {
+        if (/^[0-9]$/.test(key)) {
           prevent();
           const digit = parseInt(key, 10);
           if (video.duration && isFinite(video.duration)) {
@@ -4522,8 +4445,6 @@ function formatTime(t) {
         }
         // Captions toggle (placeholder)
         if (key === 'c') { prevent(); toggleCaptions(); return; }
-        // Opacity cycling placeholders
-        if (key === 'o' || key === 'w' || key === '+' || key === '-') { prevent(); /* reserved for caption styling */ return; }
         // Theater mode analog (toggle tablet view)
         if (key === 't') { prevent(); if (!uiState.tabletView) setTabletView(true); else setTabletView(false); return; }
       }
@@ -4620,7 +4541,7 @@ function formatTime(t) {
 
       function ensureDefaultSharedControls() {
         if (sharedControls || opts.sharedControls === false || !SharedVC.createVideoControlsUI) return;
-        const ui = SharedVC.createVideoControlsUI();
+        const ui = SharedVC.createVideoControlsUI({ shortcutCapabilities: { playerView: true, captions: true, tabletView: true } });
         const adapter = {
           getViewportRect,
           getState() {
@@ -4747,6 +4668,12 @@ function formatTime(t) {
         applyToMeshById,
         isScreenPointInteractive,
         isPlayingFull() { return !!playingFull; },
+        selectPoint(index, options = {}) {
+          if (gridDisposed || !Number.isInteger(index) || index < 0 || index >= entries.length) return false;
+          animation.poiDuration = options.animate === false ? 1 : Math.round(opts.zoomDuration / Math.max(.25, Math.min(3, Number(options.speed) || 1)));
+          startFull(index);
+          return true;
+        },
         getActiveVideo,
         playActiveVideo() { if (fullIndex >= 0) startFullPlayback(fullIndex); },
         pauseActiveVideo() { if (fullIndex >= 0) pauseFullPlayback(fullIndex); },
@@ -4765,6 +4692,11 @@ function formatTime(t) {
         restoreOriginalMaterial,
         destroy() {
           if (gridDisposed) return;
+          if (originalCanvasTabIndex === null && renderer.domElement.getAttribute('tabindex') === '0') {
+            renderer.domElement.removeAttribute('tabindex');
+          }
+          backButton.remove();
+          document.removeEventListener('visibilitychange', syncBackVisibility);
           stopVideoExplainerSettings();
           cancelPendingPlayback();
           gridDisposed = true;

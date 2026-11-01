@@ -60,6 +60,11 @@ body[data-header-layout="modern"] .about-header #patterned-background-shape {
 .about-stage { position: fixed; inset: var(--about-scene-top, 0px) 0 0; display: grid; place-items: center; }
 #about-cube { position: absolute; inset: 0; display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
 #about-cube:active { cursor: grabbing; }
+.about-face-arrows { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.about-face-arrows[hidden] { display: none; }
+.about-face-arrows button { position: absolute; width: 2.25rem; height: 2.25rem; padding: 0; transform: translate(-50%, -50%); border: 1px solid var(--hl-secondary-color); border-radius: 50%; background: color-mix(in oklab, var(--primary-color) 84%, transparent); color: var(--hl-tertiary-color); box-shadow: 0 2px 12px rgba(0,0,0,.45); font: 700 1.35rem/1 system-ui,sans-serif; cursor: pointer; pointer-events: auto; }
+.about-face-arrows button[hidden] { display: none; }
+.about-face-arrows button:focus-visible { outline: 2px solid var(--hl-tertiary-color); outline-offset: 3px; }
 .about-fallback { position: relative; z-index: 1; width: min(900px, calc(100vw - 3rem)); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; border: 1px solid color-mix(in srgb, var(--blue-tertiary) 55%, transparent); border-radius: 24px; background: color-mix(in srgb, var(--primary-color) 76%, #100c10); box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42); }
 .about-fallback::-webkit-scrollbar { display: none; }
 .about-fallback-track { display: flex; width: 300%; }
@@ -69,8 +74,14 @@ body[data-header-layout="modern"] .about-header #patterned-background-shape {
 .about-fallback-panel h2 { margin: 0 0 1.25rem; font-size: clamp(2rem, 6vw, 4rem); color: var(--hl-tertiary-color); }
 .about-fallback-panel p { max-width: 40ch; font-size: clamp(1rem, 2vw, 1.25rem); line-height: 1.65; }
 .fallback-kicker { color: var(--hl-secondary-color); font-weight: 800; letter-spacing: .18em; }
-.about-fallback-dots { position: sticky; left: 0; display: flex; justify-content: center; gap: .55rem; padding: .9rem; }
-.about-fallback-dots i { width: .55rem; height: .55rem; border-radius: 50%; background: var(--hl-tertiary-color); opacity: .7; }
+.about-fallback-nav { position: sticky; left: 0; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; gap: .5rem; width: 100%; padding: .55rem .8rem; background: rgba(12, 8, 10, .9); }
+.about-fallback-arrow { min-width: 6.5rem; padding: .35rem .5rem; border: 1px solid currentColor; border-radius: .4rem; color: var(--hl-tertiary-color); background: transparent; cursor: pointer; font: 600 .9rem system-ui, sans-serif; }
+.about-fallback-dots { display: flex; justify-content: center; gap: .3rem; }
+.about-fallback-dots button { box-sizing: border-box; width: 2.2rem; height: 2.2rem; padding: .6rem; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.about-fallback-dots button::before { content: ''; display: block; width: 1rem; height: 1rem; border-radius: 50%; background: var(--hl-tertiary-color); opacity: .48; }
+.about-fallback-dots button[aria-current="true"]::before { opacity: 1; box-shadow: 0 0 0 .18rem var(--primary-color), 0 0 0 .32rem var(--hl-tertiary-color); }
+.about-fallback-nav button:focus-visible { outline: 2px solid var(--hl-tertiary-color); outline-offset: 2px; }
+@media (max-width: 420px) { .about-fallback-arrow { min-width: 2.3rem; } .about-fallback-arrow span { display: none; } }
 .about-2d-fallback .cube-hint { display: none; }
 .cube-hint, .cube-status {
   position: fixed; z-index: 2; margin: 0; padding: 0.45rem 0.7rem; border-radius: 999px;

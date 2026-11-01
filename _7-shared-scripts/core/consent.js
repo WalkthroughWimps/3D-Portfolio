@@ -31,7 +31,7 @@ export function createConsent({ doc = document, target = window, storage = {
     const allowed = sessionChoice ?? cookie ?? local ?? false;
     return Object.freeze({ key: KEY, cookieName: COOKIE,
       hasCookie: cookie !== null, hasLocalStorage: local !== null,
-      allowed, shouldPrompt: sessionChoice === null && cookie === null,
+      allowed, shouldPrompt: sessionChoice === null && cookie === null && local === null,
       cookieValue: cookie, localValue: local,
       persistence: failedLocal || failedWrite ? 'session' : 'persistent' });
   }
@@ -68,7 +68,8 @@ export function createConsent({ doc = document, target = window, storage = {
     return stop;
   }
   function prompt(options = {}) {
-    if (get().allowed) return Promise.resolve(get());
+    const state = get();
+    if (state.allowed || (!state.shouldPrompt && options.requestAfterDeny !== true)) return Promise.resolve(state);
     if (pending) return pending.promise;
     let root = doc.getElementById(options.modalId || 'permissionModal');
     let allow = doc.getElementById(options.allowButtonId || 'permAllow');

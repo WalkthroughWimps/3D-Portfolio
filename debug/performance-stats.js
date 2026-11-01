@@ -1,4 +1,5 @@
 import {frameBudget} from './performance-budget.js';
+import {mountCollapsibleSections} from '../_7-shared-scripts/panel-assembly/CollapsibleSections.mjs';
 
 const renderers = new Set(), budgets = new Map();
 let activeSamplers = 0;
@@ -24,19 +25,23 @@ export function mountPerformanceStats(parent, isOpen) {
   for (const label of fields) { const term = document.createElement('dt'), value = document.createElement('dd'); term.textContent = label; value.textContent = '—'; values.set(label, value); section.querySelector('dl').append(term, value); }
   const details = document.createElement('div'); section.append(details);
   const providers = new Map();
+  let folds;
   function providerReport() {
-    for (const [token, node] of providers) if (!budgets.has(token)) { node.remove(); providers.delete(token); }
+    let changed=false;
+    for (const [token, node] of providers) if (!budgets.has(token)) { node.remove(); providers.delete(token); changed=true; }
     for (const [token, source] of budgets) {
       let node = providers.get(token);
-      if (!node) { node = document.createElement('section'); const heading = document.createElement('h3'); heading.textContent = source.name; node.append(heading, document.createElement('dl')); details.append(node); providers.set(token, node); }
+      if (!node) { node = document.createElement('section'); const heading = document.createElement('h3'); heading.textContent = source.name; node.append(heading, document.createElement('dl')); details.append(node); providers.set(token, node); changed=true; }
       let rows; try { rows = source.sample(); } catch { rows = {'Metrics': 'Unavailable'}; }
       const list = node.querySelector('dl'), pairs = Object.entries(rows || {});
       if (list.childElementCount !== pairs.length * 2) { list.replaceChildren(); for (let i = 0; i < pairs.length; i++) list.append(document.createElement('dt'), document.createElement('dd')); }
       pairs.forEach(([label, value], i) => { const term = list.children[i * 2], field = list.children[i * 2 + 1]; if (term.textContent !== label) term.textContent = label; const text = String(value); if (field.textContent !== text) field.textContent = text; });
     }
+    if(changed)folds?.refresh();
   }
   const note = document.createElement('p'); note.textContent = '60 FPS is a reference target. Frame intervals include browser waiting; they do not measure spare CPU/GPU capacity. Memory values are estimates, not total device usage.'; section.append(note);
   parent.prepend(section);
+  folds=mountCollapsibleSections(section,{scope:'debug:performance',reorder:false});
   const graph = section.querySelector('canvas'), context = graph.getContext('2d');
   let frame = 0, previous = 0, lastReport = 0, samples = [], longTasks = 0, observer = null, disposed = false, sampling = false;
   function report() {
@@ -80,5 +85,5 @@ export function mountPerformanceStats(parent, isOpen) {
     frame = requestAnimationFrame(tick);
   }
   document.addEventListener('visibilitychange', refresh);
-  return {refresh, dispose() { disposed = true; refresh(); document.removeEventListener('visibilitychange', refresh); section.remove(); }};
+  return {refresh, dispose() { disposed = true; refresh(); document.removeEventListener('visibilitychange', refresh); folds.dispose(); section.remove(); }};
 }

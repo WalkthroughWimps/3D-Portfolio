@@ -1,0 +1,132 @@
+:root{color-scheme:dark;font-family:system-ui,Segoe UI,Arial,sans-serif;background:#0e141c;color:#f0f4fc}*{box-sizing:border-box}body{margin:0}main{max-width:1300px;margin:auto;padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:18px;margin-bottom:16px}h1{margin:0;letter-spacing:.18em;font-size:30px}p{margin:6px 0 0;color:#a7b6c6}#status{background:#202c3b;padding:12px 16px;border-radius:12px;max-width:320px}.layout{display:grid;grid-template-columns:minmax(300px,1fr) 290px;gap:20px}.stage{min-width:0;background:#141d28;border:1px solid #324254;border-radius:14px;overflow:hidden}#scene{height:min(72vh,700px);min-height:430px;cursor:pointer}.hint{padding:14px;text-align:center;color:#b7cadc;background:#202b37}aside{background:#192331;border:1px solid #324254;border-radius:14px;padding:16px}aside h2{margin:0 0 12px;font-size:20px}button{background:#315176;color:white;border:1px solid #6889af;border-radius:8px;padding:9px 12px;margin:0 7px 16px 0;cursor:pointer}button:hover{background:#456a92}label{display:block;margin:13px 0;font-size:13px}label span{display:flex;justify-content:space-between;margin-bottom:5px}input[type=range]{width:100%;accent-color:#72c7ff}label.check{display:flex;gap:8px;align-items:center}.legend{border-top:1px solid #3a4958;padding-top:12px;margin-top:16px}.legend h3{font-size:14px}.legend div{font-size:13px;margin:8px 0}.legend i{display:inline-block;width:12px;height:12px;margin-right:9px;border-radius:50%}.muted{line-height:1.5;font-size:12px;margin-top:24px}@media(max-width:800px){.layout{grid-template-columns:1fr}#scene{height:55vh;min-height:350px}header{align-items:flex-start;flex-direction:column}}
+
+/* Three-column workspace and edge-attached player roster. */
+main{max-width:1600px}
+.layout{grid-template-columns:225px minmax(380px,1fr) 290px;gap:14px;align-items:start}
+.stage{position:relative}
+.left-panel .muted{margin-top:4px}
+.player-dock{position:absolute;right:0;bottom:46px;background:#192331eb;border:1px solid #324254;border-right:0;border-bottom:0;border-radius:12px 0 0 0;padding:9px 11px;min-width:155px;pointer-events:none;z-index:2}
+.player-entry{padding:5px 7px;border-radius:6px;opacity:.8;border-left:3px solid transparent}
+.player-entry.active-turn{background:#344151;opacity:1;border-left-color:var(--player-color)}
+.player-entry.eliminated{opacity:.34}
+.player-name{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650}
+.player-dot{width:11px;height:11px;border-radius:50%;background:var(--player-color);box-shadow:0 0 8px var(--player-color)}
+.player-entry small{display:block;font-size:11px;color:#b4c6da;margin-left:19px}
+@media(max-width:1050px){.layout{grid-template-columns:205px minmax(260px,1fr)}.layout>aside:not(.left-panel){grid-column:1/-1}}
+@media(max-width:650px){.layout{grid-template-columns:1fr}.layout>aside:not(.left-panel){grid-column:auto}.player-dock{min-width:125px;padding:6px}.player-entry{padding:3px}.player-name{font-size:11px}#scene{min-height:360px}}
+
+/* Keep the configuration choices together in the left panel. */
+.left-panel #personalityOptions label.check{margin:9px 0;align-items:flex-start;line-height:1.35}
+.left-panel #personalityOptions input{margin-top:2px;flex-shrink:0}
+.left-panel .legend{margin-top:14px}
+
+/* Player dock is anchored to the actual 3D viewport, not the status hint below it. */
+#scene{position:relative;overflow:hidden}
+#scene canvas{display:block}
+.player-dock{right:0;bottom:0;z-index:3;pointer-events:auto;min-width:166px;max-height:calc(100% - 12px);overflow-y:auto;border:0;border-top-left-radius:12px;box-shadow:-3px -3px 14px #0003}
+.player-dock .player-name{gap:7px}
+.player-color-picker{appearance:none;-webkit-appearance:none;width:22px;height:22px;padding:0;border:1px solid #8291a7;background:transparent;border-radius:7px;cursor:pointer;flex-shrink:0}
+.player-color-picker::-webkit-color-swatch-wrapper{padding:2px}
+.player-color-picker::-webkit-color-swatch{border:0;border-radius:4px}
+.player-color-picker::-moz-color-swatch{border:0;border-radius:4px}
+.player-color-picker:focus-visible{outline:2px solid white;outline-offset:2px}
+
+/* V5: accessible full-width player strip and concise two-line heading. */
+header{justify-content:flex-start}header h1{flex-shrink:0}.header-details{font-size:13px;color:#a7b6c6;line-height:1.75;flex:1}#status{margin-left:auto}
+.stage{display:flex;flex-direction:column}.stage .hint{order:0;text-align:center;padding:10px 12px}.stage #scene{order:1;flex:none;min-height:420px}.stage .player-dock{order:2;position:relative;right:auto;bottom:auto;left:auto;max-height:none;min-width:0;width:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;overflow:visible;background:#192331;border:0;border-radius:0;padding:8px 9px;box-shadow:none;pointer-events:auto}
+.player-entry{min-width:0}.player-entry small{margin-left:0}.player-name{flex-wrap:wrap}.player-color-picker{width:25px;height:25px}
+@media(max-width:950px){header{flex-wrap:wrap}#status{margin-left:0}.stage .player-dock{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Compact two-column choice grids. Pressed buttons are visibly selected. */
+#personalityOptions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:9px 0 0}
+#placementOptions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:10px 0}
+#personalityOptions .choice-button,#placementOptions .choice-button{width:100%;min-width:0;margin:0;padding:8px 5px;border:1px solid #435366;border-radius:7px;background:#202d3c;color:#adbed1;text-align:center;font-size:11px;line-height:1.35;white-space:normal;overflow-wrap:anywhere;min-height:49px;cursor:pointer}
+#personalityOptions .choice-button[aria-pressed="true"],#placementOptions .choice-button[aria-pressed="true"]{background:#245c83;border-color:#75c9ff;color:#fff;box-shadow:inset 0 0 0 1px #75c9ff45}
+#personalityOptions .choice-button:hover,#placementOptions .choice-button:hover{border-color:#a7dbff}
+#personalityOptions .choice-button:focus-visible,#placementOptions .choice-button:focus-visible{outline:2px solid #f5f7ff;outline-offset:2px}
+.personality-reveal{margin:7px 0 8px!important}
+.personality-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 8px!important}
+.personality-actions button{padding:7px 4px;margin:0;font-size:11px}
+
+/* Wider configuration sidebar; each choice shows a distinct title and one-line subtitle. */
+@media(min-width:1051px){
+  .layout{grid-template-columns:380px minmax(320px,1fr) 290px;}
+}
+@media(min-width:651px) and (max-width:1050px){
+  .layout{grid-template-columns:380px minmax(260px,1fr);}
+}
+#personalityOptions,#placementOptions{gap:8px}
+#personalityOptions .choice-button,#placementOptions .choice-button{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:10px 7px;gap:4px;min-height:62px;overflow-wrap:normal;
+}
+.choice-name{display:block;font-size:14px;font-weight:750;line-height:1.2;white-space:nowrap}
+.choice-description{display:block;font-size:11px;font-weight:400;line-height:1.25;white-space:nowrap;letter-spacing:-.12px}
+@media(max-width:650px){.choice-description{font-size:10px}}
+
+/* Flash settings and keyboard-accessible reduced animation control. */
+.flash-options{border-top:1px solid #3a4958;margin-top:15px;padding-top:6px}
+
+.flash-options input[type=range]:disabled{opacity:.35;cursor:not-allowed}
+
+/* Workspace scrolling: the board stays on screen while each sidebar scrolls alone. */
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+main{
+  width:100%;max-width:1600px;height:100vh;height:100dvh;
+  display:flex;flex-direction:column;min-height:0;
+  padding:12px 16px;overflow:hidden;
+}
+header{flex:0 0 auto;margin-bottom:12px}
+.layout{
+  flex:1 1 auto;min-height:0;min-width:0;
+  display:grid;grid-template-columns:380px minmax(0,1fr) 290px;
+  gap:14px;align-items:stretch;
+}
+.layout>aside{
+  min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;scrollbar-gutter:stable;
+}
+.stage{
+  min-height:0;min-width:0;overflow:hidden;
+  display:flex;flex-direction:column;
+}
+.stage .hint{flex:0 0 auto}
+.stage #scene{
+  flex:1 1 auto;min-height:0;height:auto;
+  overscroll-behavior:contain;
+  touch-action:none;
+}
+.stage .player-dock{
+  flex:0 0 auto;max-height:34%;overflow-y:auto;overscroll-behavior:contain;
+}
+#scene canvas{touch-action:none}
+/* Compress only the sidebars on smaller desktop windows; never stack one below the game. */
+@media(max-width:1200px){.layout{grid-template-columns:clamp(210px,27vw,380px) minmax(0,1fr) clamp(210px,23vw,290px)}}
+@media(max-width:800px){
+  main{padding:8px}
+  header{flex-direction:row;flex-wrap:wrap;gap:8px}
+  .layout{grid-template-columns:minmax(145px,24vw) minmax(0,1fr) minmax(145px,24vw);gap:6px}
+  .layout>aside:not(.left-panel){grid-column:auto}
+  .stage #scene{height:auto;min-height:0}
+  .stage .player-dock{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .choice-description{white-space:normal}
+}
+
+.game-header{display:grid;grid-template-columns:48px minmax(0,1fr) minmax(170px,320px);gap:12px;align-items:center}
+.game-back-link{display:grid;place-items:center;width:42px;height:42px;border:1px solid #526579;border-radius:10px;color:#f0f4fc;background:#202c3b;text-decoration:none}
+.game-back-link:hover{background:#315176;border-color:#91b9e6}
+.game-back-link:focus-visible{outline:2px solid #f0f4fc;outline-offset:3px}
+.game-back-link svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.game-header-copy{min-width:0;text-align:center}
+.game-header-copy .header-details{font-size:13px;color:#a7b6c6;line-height:1.65}
+.game-header #status{margin-left:0;justify-self:end}
+@media(max-width:650px){
+  .game-header{grid-template-columns:42px minmax(0,1fr);gap:8px}
+  .game-header-copy{grid-column:2;grid-row:1}
+  .game-header #status{grid-column:2;grid-row:2;justify-self:center;max-width:100%;padding:8px 12px}
+  .game-header-copy .header-details{font-size:12px;line-height:1.5}
+}
+
+/* Human Knight setting stays beside CP reveal without taking grid space. */
+.personality-header-options{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.personality-header-options label.check{margin:5px 0!important;font-size:12px;white-space:nowrap}

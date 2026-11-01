@@ -3,207 +3,289 @@
     "landmarks:001": {
       "atlas": 0,
       "tile": 0,
-      "source": "001.png"
+      "source": "001.png",
+      "svg": "masters/landmarks-001.svg",
+      "detail": "faces/landmarks-001.webp"
     },
     "landmarks:002": {
       "atlas": 0,
       "tile": 1,
-      "source": "002.png"
+      "source": "002.png",
+      "svg": "masters/landmarks-002.svg",
+      "detail": "faces/landmarks-002.webp"
     },
     "landmarks:003": {
       "atlas": 0,
       "tile": 2,
-      "source": "003.png"
+      "source": "003.png",
+      "svg": "masters/landmarks-003.svg",
+      "detail": "faces/landmarks-003.webp"
     },
     "landmarks:004": {
       "atlas": 0,
       "tile": 3,
-      "source": "004.png"
+      "source": "004.png",
+      "svg": "masters/landmarks-004.svg",
+      "detail": "faces/landmarks-004.webp"
     },
     "landmarks:005": {
       "atlas": 0,
       "tile": 4,
-      "source": "005.png"
+      "source": "005.png",
+      "svg": "masters/landmarks-005.svg",
+      "detail": "faces/landmarks-005.webp"
     },
     "landmarks:006": {
       "atlas": 0,
       "tile": 5,
-      "source": "006.png"
+      "source": "006.png",
+      "svg": "masters/landmarks-006.svg",
+      "detail": "faces/landmarks-006.webp"
     },
     "landmarks:007": {
       "atlas": 0,
       "tile": 6,
-      "source": "007.png"
+      "source": "007.png",
+      "svg": "masters/landmarks-007.svg",
+      "detail": "faces/landmarks-007.webp"
     },
     "landmarks:008": {
       "atlas": 0,
       "tile": 7,
-      "source": "008.png"
+      "source": "008.png",
+      "svg": "masters/landmarks-008.svg",
+      "detail": "faces/landmarks-008.webp"
     },
     "landmarks:009": {
       "atlas": 0,
       "tile": 8,
-      "source": "009.png"
+      "source": "009.png",
+      "svg": "masters/landmarks-009.svg",
+      "detail": "faces/landmarks-009.webp"
     },
     "landmarks:010": {
       "atlas": 0,
       "tile": 9,
-      "source": "010.png"
+      "source": "010.png",
+      "svg": "masters/landmarks-010.svg",
+      "detail": "faces/landmarks-010.webp"
     },
     "landmarks:011": {
       "atlas": 0,
       "tile": 10,
-      "source": "011.png"
+      "source": "011.png",
+      "svg": "masters/landmarks-011.svg",
+      "detail": "faces/landmarks-011.webp"
     },
     "landmarks:012": {
       "atlas": 0,
       "tile": 11,
-      "source": "012.png"
+      "source": "012.png",
+      "svg": "masters/landmarks-012.svg",
+      "detail": "faces/landmarks-012.webp"
     },
     "landmarks:013": {
       "atlas": 0,
       "tile": 12,
-      "source": "013.png"
+      "source": "013.png",
+      "svg": "masters/landmarks-013.svg",
+      "detail": "faces/landmarks-013.webp"
     },
     "landmarks:014": {
       "atlas": 0,
       "tile": 13,
-      "source": "014.png"
+      "source": "014.png",
+      "svg": "masters/landmarks-014.svg",
+      "detail": "faces/landmarks-014.webp"
     },
     "landmarks:015": {
       "atlas": 0,
       "tile": 14,
-      "source": "015.png"
+      "source": "015.png",
+      "svg": "masters/landmarks-015.svg",
+      "detail": "faces/landmarks-015.webp"
     },
     "landmarks:016": {
       "atlas": 0,
       "tile": 15,
-      "source": "016.png"
+      "source": "016.png",
+      "svg": "masters/landmarks-016.svg",
+      "detail": "faces/landmarks-016.webp"
     },
     "landmarks:017": {
       "atlas": 1,
       "tile": 0,
-      "source": "017.png"
+      "source": "017.png",
+      "svg": "masters/landmarks-017.svg",
+      "detail": "faces/landmarks-017.webp"
     },
     "landmarks:018": {
       "atlas": 1,
       "tile": 1,
-      "source": "018.png"
+      "source": "018.png",
+      "svg": "masters/landmarks-018.svg",
+      "detail": "faces/landmarks-018.webp"
     },
     "landmarks:019": {
       "atlas": 1,
       "tile": 2,
-      "source": "019.png"
+      "source": "019.png",
+      "svg": "masters/landmarks-019.svg",
+      "detail": "faces/landmarks-019.webp"
     },
     "landmarks:020": {
       "atlas": 1,
       "tile": 3,
-      "source": "020.png"
+      "source": "020.png",
+      "svg": "masters/landmarks-020.svg",
+      "detail": "faces/landmarks-020.webp"
     },
     "landmarks:021": {
       "atlas": 1,
       "tile": 4,
-      "source": "021.png"
+      "source": "021.png",
+      "svg": "masters/landmarks-021.svg",
+      "detail": "faces/landmarks-021.webp"
     },
     "landmarks:022": {
       "atlas": 1,
       "tile": 5,
-      "source": "022.png"
+      "source": "022.png",
+      "svg": "masters/landmarks-022.svg",
+      "detail": "faces/landmarks-022.webp"
     },
     "landmarks:023": {
       "atlas": 1,
       "tile": 6,
-      "source": "023.png"
+      "source": "023.png",
+      "svg": "masters/landmarks-023.svg",
+      "detail": "faces/landmarks-023.webp"
     },
     "landmarks:024": {
       "atlas": 1,
       "tile": 7,
-      "source": "024.png"
+      "source": "024.png",
+      "svg": "masters/landmarks-024.svg",
+      "detail": "faces/landmarks-024.webp"
     },
     "landmarks:025": {
       "atlas": 1,
       "tile": 8,
-      "source": "025.png"
+      "source": "025.png",
+      "svg": "masters/landmarks-025.svg",
+      "detail": "faces/landmarks-025.webp"
     },
     "landmarks:026": {
       "atlas": 1,
       "tile": 9,
-      "source": "026.png"
+      "source": "026.png",
+      "svg": "masters/landmarks-026.svg",
+      "detail": "faces/landmarks-026.webp"
     },
     "landmarks:027": {
       "atlas": 1,
       "tile": 10,
-      "source": "027.png"
+      "source": "027.png",
+      "svg": "masters/landmarks-027.svg",
+      "detail": "faces/landmarks-027.webp"
     },
     "landmarks:028": {
       "atlas": 1,
       "tile": 11,
-      "source": "028.png"
+      "source": "028.png",
+      "svg": "masters/landmarks-028.svg",
+      "detail": "faces/landmarks-028.webp"
     },
     "landmarks:029": {
       "atlas": 1,
       "tile": 12,
-      "source": "029.png"
+      "source": "029.png",
+      "svg": "masters/landmarks-029.svg",
+      "detail": "faces/landmarks-029.webp"
     },
     "vehicles:001": {
       "atlas": 1,
       "tile": 14,
-      "source": "001.png"
+      "source": "001.png",
+      "svg": "masters/vehicles-001.svg",
+      "detail": "faces/vehicles-001.webp"
     },
     "vehicles:002": {
       "atlas": 1,
       "tile": 15,
-      "source": "002.png"
+      "source": "002.png",
+      "svg": "masters/vehicles-002.svg",
+      "detail": "faces/vehicles-002.webp"
     },
     "vehicles:003": {
       "atlas": 2,
       "tile": 0,
-      "source": "003.png"
+      "source": "003.png",
+      "svg": "masters/vehicles-003.svg",
+      "detail": "faces/vehicles-003.webp"
     },
     "vehicles:004": {
       "atlas": 2,
       "tile": 1,
-      "source": "004.png"
+      "source": "004.png",
+      "svg": "masters/vehicles-004.svg",
+      "detail": "faces/vehicles-004.webp"
     },
     "vehicles:005": {
       "atlas": 2,
       "tile": 2,
-      "source": "005.png"
+      "source": "005.png",
+      "svg": "masters/vehicles-005.svg",
+      "detail": "faces/vehicles-005.webp"
     },
     "vehicles:006": {
       "atlas": 2,
       "tile": 3,
-      "source": "006.png"
+      "source": "006.png",
+      "svg": "masters/vehicles-006.svg",
+      "detail": "faces/vehicles-006.webp"
     },
     "vehicles:007": {
       "atlas": 2,
       "tile": 4,
-      "source": "007.png"
+      "source": "007.png",
+      "svg": "masters/vehicles-007.svg",
+      "detail": "faces/vehicles-007.webp"
     },
     "vehicles:008": {
       "atlas": 2,
       "tile": 5,
-      "source": "008.png"
+      "source": "008.png",
+      "svg": "masters/vehicles-008.svg",
+      "detail": "faces/vehicles-008.webp"
     },
     "vehicles:009": {
       "atlas": 2,
       "tile": 6,
-      "source": "009.png"
+      "source": "009.png",
+      "svg": "masters/vehicles-009.svg",
+      "detail": "faces/vehicles-009.webp"
     },
     "vehicles:010": {
       "atlas": 2,
       "tile": 7,
-      "source": "010.png"
+      "source": "010.png",
+      "svg": "masters/vehicles-010.svg",
+      "detail": "faces/vehicles-010.webp"
     },
     "vehicles:011": {
       "atlas": 2,
       "tile": 8,
-      "source": "011.png"
+      "source": "011.png",
+      "svg": "masters/vehicles-011.svg",
+      "detail": "faces/vehicles-011.webp"
     },
     "vehicles:012": {
       "atlas": 2,
       "tile": 9,
-      "source": "012.png"
+      "source": "012.png",
+      "svg": "masters/vehicles-012.svg",
+      "detail": "faces/vehicles-012.webp"
     }
   },
   "backs": {
@@ -218,5 +300,6 @@
       "source": "backs.png"
     }
   },
-  "failures": []
+  "failures": [],
+  "revision": "69c6f61def96"
 }

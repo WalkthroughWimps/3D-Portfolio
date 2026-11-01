@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "siteFiles": [
     "index.html",
+    "sitemap.html",
     "sw.js",
     "sw-asset-config.js",
     "Videos/videos-page/online-classes-hq.webm",
@@ -29,7 +30,8 @@
     "data/attributions.json",
     "data/runtime-dependencies.json",
     "data/soundfont-packages.json",
-    "data/video-filter.json"
+    "data/video-filter.json",
+    "data/site-map.json"
   ],
   "extensions": [
     ".html",
@@ -77,7 +79,10 @@
     "output",
     "tmp",
     "Old .glb",
-    "blend"
+    "blend",
+    "City Cards 2025 Mergled Folder",
+    "Vehicle Cards Revamped Folder",
+    "card-rework"
   ],
   "excludedNames": [
     "package-lock.json",

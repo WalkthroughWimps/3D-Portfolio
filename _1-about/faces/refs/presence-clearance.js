@@ -3,6 +3,11 @@
 export const REFS_SKIN_MARGIN = .006;
 const REST_FRONT_Y = -.08;
 
+/** The cabinet front is fixed to the borrowed rim, independent of depth. */
+export function refsCabinetCarrierY(rimLocalY, frontY, scale, position) {
+  return rimLocalY - scale * frontY - position;
+}
+
 function triangleRadius(a, b, c) {
   const cross = (p, q) => p.x * q.z - p.z * q.x;
   if ((cross(a, b) >= 0 && cross(b, c) >= 0 && cross(c, a) >= 0) ||
@@ -42,7 +47,7 @@ export function createRefsSkinProfile(THREE, cube, backing, frame) {
   triangles.sort((a, b) => a.radius - b.radius);
   for (let i = 1; i < triangles.length; i++) triangles[i].y = Math.min(triangles[i].y, triangles[i - 1].y);
   return {
-    supportRadius,
+    supportRadius, rimY: outerY,
     minimumY(radius) {
       if (radius >= supportRadius - REFS_SKIN_MARGIN) return outerY;
       let low = 0, high = triangles.length;
@@ -57,33 +62,56 @@ export function createRefsSkinProfile(THREE, cube, backing, frame) {
 }
 
 export function measureRefsAssembly(THREE, board, profile) {
-  // Measure every owned mesh, including hidden wallpaper and future additions.
-  // The transparent sketch plane is only an editing map, not cabinet hardware.
+  // Include the complete iris and molded rear surface in skin deployment.
+  // Keep the legacy fit estimate advisory: depth is user controlled.
   board.placement.updateWorldMatrix(true, true);
   const inverse = board.placement.matrixWorld.clone().invert();
-  let radius = 0, rearY = -Infinity, frontY = Infinity;
+  const options = board.getOptions();
+  const envelope = () => ({radius: 0, rearY: -Infinity, frontY: Infinity, safeOffset: Infinity});
+  const total = envelope(), fit = envelope();
+  const translationRadius = Math.hypot(options.x, options.y);
+  function include(target, point) {
+    const r = Math.hypot(point.x, point.z);
+    target.radius = Math.max(target.radius, r);
+    target.rearY = Math.max(target.rearY, point.y);
+    target.frontY = Math.min(target.frontY, point.y);
+    const skinY = profile.minimumY(translationRadius + options.scale * r);
+    target.safeOffset = Math.min(target.safeOffset,
+      skinY - options.scale * point.y - REFS_SKIN_MARGIN);
+  }
   board.placement.traverse(node => {
-    if (!node.isMesh || node === board.sketch || !node.geometry?.attributes.position) return;
+    if ((!node.isMesh && !node.isLine) || node === board.sketch ||
+        !node.geometry?.attributes.position) return;
+    for (let ancestor = node; ancestor && ancestor !== board.placement; ancestor = ancestor.parent)
+      if (ancestor.userData.refsTransient) return;
+    let irisPart = Boolean(node.userData.refsIrisPocket);
+    for (let ancestor = node.parent; ancestor; ancestor = ancestor.parent)
+      if (ancestor === board.iris?.root) irisPart = true;
     const transform = inverse.clone().multiply(node.matrixWorld);
     const positions = node.geometry.attributes.position, point = new THREE.Vector3();
     for (let i = 0; i < positions.count; i++) {
       point.fromBufferAttribute(positions, i).applyMatrix4(transform);
-      radius = Math.max(radius, Math.hypot(point.x, point.z));
-      rearY = Math.max(rearY, point.y);
-      frontY = Math.min(frontY, point.y);
+      include(total, point);
+      if (!irisPart) include(fit, point);
     }
   });
-  if (!Number.isFinite(rearY)) { rearY = REST_FRONT_Y; frontY = REST_FRONT_Y; }
-  const options = board.getOptions();
-  const rollRadius = Math.hypot(options.x, options.y) + options.scale * radius;
+  if (!Number.isFinite(total.rearY)) {
+    total.rearY = fit.rearY = REST_FRONT_Y;
+    total.frontY = fit.frontY = REST_FRONT_Y;
+    total.safeOffset = fit.safeOffset = 0;
+  }
+  const rollRadius = translationRadius + options.scale * total.radius;
   const skinY = profile.minimumY(rollRadius);
-  const safeOffset = skinY - options.scale * rearY - REFS_SKIN_MARGIN;
-  const desiredTuck = Math.max(0, REST_FRONT_Y - options.scale * frontY);
+  const safeOffset = total.safeOffset;
+  const desiredTuck = Math.max(0, REST_FRONT_Y - options.scale * total.frontY);
   const cabinetFrontY = options.scale * board.getMetrics().frontY;
   const cabinetTuck = REST_FRONT_Y - cabinetFrontY;
-  const fittingDepth = options.cabinetDepth + (safeOffset - cabinetTuck) / options.scale;
+  // The fit estimate is advisory. Per-vertex clearance deploys the assembly.
+  const fitSkinY = profile.minimumY(translationRadius + options.scale * fit.radius);
+  const fitSafeOffset = fitSkinY - options.scale * fit.rearY - REFS_SKIN_MARGIN;
+  const fittingDepth = options.cabinetDepth + (fitSafeOffset - cabinetTuck) / options.scale;
   return {rollRadius, supportRadius: profile.supportRadius, skinY,
-    rearY: options.scale * rearY, frontY: options.scale * frontY,
+    rearY: options.scale * total.rearY, frontY: options.scale * total.frontY,
     safeOffset, desiredTuck, cabinetTuck,
     maxDepth: Math.max(.04, Math.min(.45, fittingDepth)),
     deployed: Math.min(0, safeOffset),

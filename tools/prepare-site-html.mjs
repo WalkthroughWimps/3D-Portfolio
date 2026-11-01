@@ -26,6 +26,21 @@ for (const [file, dep] of Object.entries(manifest.three.routes)) {
     if (!match) throw new Error(`Missing import map in ${file}`);
     updated = updated.replace(match[0], map);
   }
+  if (file === 'index.html') {
+    const startA = '<!-- start-navigation:generated:start -->';
+    const startB = '<!-- start-navigation:generated:end -->';
+    const startFragment = fragment
+      .replace(/<a class="skip-link"[^>]*>[\s\S]*?<\/a>\s*/, '')
+      .replace(/<div class="nav-separator"[^>]*><\/div>\s*/, '')
+      .replace(/<a [^>]*class="nav-icon settings-icon"[^>]*>[\s\S]*?<\/a>/, '')
+      .replace('class="nav-wrap"', 'id="startSiteNavigation" class="shared-nav-wrap start-site-navigation"')
+      .replaceAll('href="../', 'href="').replaceAll('src="../', 'src="')
+      .replace(/^[\t ]+$/gm, '');
+    const startNav = generated(startA, startB, startFragment);
+    if (updated.includes(startA)) updated = updated.replace(new RegExp(`${startA}[\\s\\S]*?${startB}`), startNav);
+    else updated = updated.replace('<div id="startSiteNavHost" hidden inert></div>', `<div id="startSiteNavHost" hidden inert>\n${startNav}\n</div>`);
+    if (!updated.includes(startA)) throw new Error('Missing Start site-navigation host');
+  }
   if (file !== 'index.html') {
     const skipTarget = { '_4-games/games.html': 'model-stage', '_6-docs/docs.html': 'glb-viewer' }[file] || 'page-main';
     const pageHeader = fragment.replace('href="#page-main"', `href="#${skipTarget}"`)

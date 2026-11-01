@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "pretty-pets",
+      "type": "presentation",
+      "title": "Pretty Pets",
+      "description": "1st Grade Unit 3 Week 1 · Do you have a pet? · 31 slides",
+      "sourceUrl": "https://1drv.ms/p/c/f747edb114afa405/IQTs_qJa-ZktSI1UUDdAu1tzAZL9weST4VV5sw633AkWFzU?wdAr=1.7777777777777777",
+      "previewUrl": "./assets/pretty-pets-cover.png",
+      "width": 0.297,
+      "height": 0.167063,
+      "x": 0.35,
+      "z": -0.59,
+      "rotation": -8,
+      "scale": 1
+    }
+  ]
+}

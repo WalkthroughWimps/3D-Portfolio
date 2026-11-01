@@ -1,6 +1,6 @@
 // Pointer coordinates are CSS pixels at the boundary; layout/view own logical
 // canvas dimensions and DPR. No page media or rendering dependency enters here.
-export function createControlsInput({ getState, getLayout, getControlAvailability, getViewportRect, isSpeedExpanded, snapSyncMs }) {
+export function createControlsInput({ getState, getLayout, getControlAvailability, getViewportRect, isSpeedExpanded, snapSyncMs, seekHitPadding = 6, showVolumeSlider = true }) {
   function getPointerPosition(ev, meta = {}) {
     if (Number.isFinite(ev?.canvasX) && Number.isFinite(ev?.canvasY)) {
       const cw = meta.canvasWidth || 1;
@@ -68,11 +68,11 @@ export function createControlsInput({ getState, getLayout, getControlAvailabilit
       const syncMs = snapSyncMs(s.syncMs || 0);
       return { hit: true, handled: !!controls.sync, action: controls.sync ? { type: 'setSyncMs', value: syncMs, ratio } : null, control: 'sync' };
     }
-    if (y >= ui.progress.y - 6 && y <= ui.progress.y + ui.progress.h + 6 && x >= ui.progress.x && x <= ui.progress.x + ui.progress.w) {
+    if (y >= ui.progress.y - seekHitPadding && y <= ui.progress.y + ui.progress.h + seekHitPadding && x >= ui.progress.x && x <= ui.progress.x + ui.progress.w) {
       const ratio = Math.max(0, Math.min(1, (x - ui.progress.x) / ui.progress.w));
       return { hit: true, handled: !!controls.seek, action: controls.seek ? { type: 'seekToRatio', ratio } : null, control: 'seek' };
     }
-    if (y >= ui.volumeSlider.y - 6 && y <= ui.volumeSlider.y + ui.volumeSlider.h + 6 && x >= ui.volumeSlider.x && x <= ui.volumeSlider.x + ui.volumeSlider.w) {
+    if (showVolumeSlider && y >= ui.volumeSlider.y - 6 && y <= ui.volumeSlider.y + ui.volumeSlider.h + 6 && x >= ui.volumeSlider.x && x <= ui.volumeSlider.x + ui.volumeSlider.w) {
       const ratio = Math.max(0, Math.min(1, (x - ui.volumeSlider.x) / ui.volumeSlider.w));
       return { hit: true, handled: !!controls.volume, action: controls.volume ? { type: 'setVolume', volume: ratio } : null, control: 'volume' };
     }

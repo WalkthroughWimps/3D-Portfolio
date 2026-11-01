@@ -1,5 +1,5 @@
 // Mirror controller state into the keyboard and screen reader alternative.
-export function syncStartAccessibleControls({ elements, view, volume, syncMs, brightness, contrast, flow, syncWords }) {
+export function syncStartAccessibleControls({ elements, view, volume, syncMs, brightness, contrast, flow }) {
   const { audioMode, visualsMode, volumeSlider, syncSlider, brightnessSlider, contrastSlider,
     counts, alphabet, playPause, gallery, confirmYes, confirmNo } = elements;
   audioMode?.setAttribute('aria-pressed', String(view === 'audio'));
@@ -12,12 +12,12 @@ export function syncStartAccessibleControls({ elements, view, volume, syncMs, br
   const syncActive = syncRunning && flow.syncExercise.active;
   if (counts) {
     counts.hidden = syncActive;
-    counts.textContent = syncRunning ? 'Try audio sync exercise again' : 'Start audio sync exercise';
+    counts.textContent = syncRunning ? 'Restart audio sync comparison' : 'Start audio sync comparison';
   }
   if (alphabet) alphabet.hidden = true;
   if (playPause) {
     playPause.hidden = !syncActive;
-    playPause.textContent = `Tap ${syncWords[Math.min(flow.syncExercise.taps.length, syncWords.length - 1)]} sync cue`;
+    playPause.textContent = 'Use this offset';
   }
   if (gallery) gallery.hidden = !syncRunning;
   if (confirmYes) confirmYes.hidden = flow.stage !== 'confirm';

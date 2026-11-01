@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "song": "forests",
+  "output_dir": "midi/prepared/forests",
+  "tempo_source": "midi/Forests-Accomp.mid",
+  "parts": [
+    {"id": "accomp", "source": "midi/Forests-Accomp.mid"},
+    {"id": "harmony", "source": "midi/Forests-Harmony.mid"},
+    {"id": "melody", "source": "midi/Forests-Melody.mid"}
+  ]
+}

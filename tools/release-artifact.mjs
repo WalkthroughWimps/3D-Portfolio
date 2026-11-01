@@ -3,6 +3,7 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import {ARTWORK_RELATIVE, collectAboutArtwork} from './about-artwork-catalog.mjs';
 
 const defaultRoot = path.resolve(import.meta.dirname, '..');
 export async function artifactPlan(root = defaultRoot) {
@@ -15,6 +16,7 @@ export async function artifactPlan(root = defaultRoot) {
       if (entry.isSymbolicLink()) throw new Error(`Artifact symlink is not allowed: ${file}`);
       if (policy.excludedSegments.includes(entry.name) || policy.excludedNames.includes(entry.name) || entry.name.startsWith('.')) { excluded.push(file); continue; }
       if (entry.isDirectory()) await walk(file);
+      else if (/\.(?:test|spec)\.m?js$/i.test(entry.name)) excluded.push(file);
       else if (policy.extensions.includes(path.extname(entry.name).toLowerCase()) || /^(LICENSE|LICENCE|COPYING|NOTICE)([.-].*)?$/i.test(entry.name)) files.add(file);
       else excluded.push(file);
     }
@@ -39,6 +41,7 @@ export async function artifactPlan(root = defaultRoot) {
     limitation: 'Site payload only. External media/CDN, dependency compatibility, licensing and prior acceptance gates must be verified separately.' };
 }
 export async function buildArtifact(destination, root = defaultRoot) {
+  const catalog = await collectAboutArtwork(root);
   const plan = await artifactPlan(root);
   // Refuse stale output and never delete an existing tree or write into source.
   if (await fs.stat(destination).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; })) throw new Error('Use a new empty artifact destination; existing output is preserved.');
@@ -48,6 +51,8 @@ export async function buildArtifact(destination, root = defaultRoot) {
     const source = path.join(root, file), target = path.join(destination, file);
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.copyFile(source, target);
+    if (file === `${ARTWORK_RELATIVE}/index.json`)
+      await fs.writeFile(target, `${JSON.stringify(catalog, null, 2)}\n`);
     const digest = createHash('sha256');
     for await (const chunk of createReadStream(target)) digest.update(chunk);
     records.push({ path: file, bytes: (await fs.stat(target)).size, sha256: digest.digest('hex') });

@@ -1,15 +1,12 @@
-import {ART_SAMPLES, ART_FILES, SAMPLE_LINES} from './sample-art.js';
+const ARTWORK_CATALOG_URL = '/_1-about/faces/about/assets/artwork/index.json';
 
-const KEY = 'site.about.picture-library.v1';
+const KEY = 'site.about.picture-library.v2';
 const DB_NAME = 'site-about-picture-assets-v1';
 const STORE = 'images';
 const clone = value => JSON.parse(JSON.stringify(value));
-const BUILTINS = Object.freeze(Object.keys(ART_SAMPLES).map(id => ({
-  id, name: ART_SAMPLES[id], lines: [...SAMPLE_LINES[id]], asset: `builtin:${id}`, revision: 1
-})));
 const validId = id => typeof id === 'string' && /^[a-zA-Z0-9_-]{1,80}$/.test(id);
 const validAsset = asset => asset === null || typeof asset === 'string'
-  && (/^builtin:[a-zA-Z0-9_-]{1,80}$/.test(asset) || /^local:[a-f0-9-]{36}$/.test(asset));
+  && (/^local:[a-f0-9-]{36}$/.test(asset) || /^folder:[^/\\\x00-\x1f]{1,240}$/.test(asset));
 
 export function normalizeCaption(value) {
   const lines = String(value ?? '').replace(/\r/g, '').split('\n').map(line => line.trim());
@@ -20,7 +17,7 @@ export function normalizeCaption(value) {
 }
 function validEntry(raw) {
   if (!raw || !validId(raw.id) || typeof raw.name !== 'string' || !raw.name.trim()
-    || raw.name.length > 80 || !validAsset(raw.asset) || !Number.isInteger(raw.revision)
+    || raw.name.length > 240 || !validAsset(raw.asset) || !Number.isInteger(raw.revision)
     || raw.revision < 1 || !Array.isArray(raw.lines)) return null;
   try {
     const lines = normalizeCaption(raw.lines.join('\n'));
@@ -28,18 +25,13 @@ function validEntry(raw) {
     return {id: raw.id, name: raw.name.trim(), lines, asset: raw.asset, revision: raw.revision};
   } catch {return null;}
 }
-function normalizeEntries(value, strict = false) {
-  if (!Array.isArray(value) || !value.length || value.length > 100) {
-    if (strict) throw new TypeError('Invalid picture collection.');
-    return clone(BUILTINS);
-  }
+function normalizeEntries(value) {
+  if (!Array.isArray(value) || value.length > 100) throw new TypeError('Invalid picture collection.');
   const seen = new Set(), entries = [];
   for (const item of value) {
     const entry = validEntry(item);
-    if (!entry || seen.has(entry.id)) {
-      if (strict) throw new TypeError('Invalid picture collection entry.');
-      return clone(BUILTINS);
-    }
+    if (!entry || seen.has(entry.id) || entry.asset?.startsWith('folder:'))
+      throw new TypeError('Invalid picture collection entry.');
     seen.add(entry.id); entries.push(entry);
   }
   return entries;
@@ -98,42 +90,69 @@ async function decodeURL(url, revoke = false) {
   finally {if (revoke) URL.revokeObjectURL(url);}
 }
 export function createPictureLibrary() {
-  let entries;
-  try {entries = normalizeEntries(JSON.parse(localStorage.getItem(KEY) || 'null'));}
-  catch {entries = clone(BUILTINS);}
-  const persist = next => {localStorage.setItem(KEY, JSON.stringify(next)); entries = next;};
-  const list = () => clone(entries);
-  const get = id => {const entry = entries.find(item => item.id === id); return entry ? clone(entry) : null;};
-  const snapshot = id => get(id);
+  let custom = [];
+  try {custom = normalizeEntries(JSON.parse(localStorage.getItem(KEY) || '[]'));} catch {custom = [];}
+  let folder = [];
+  let overrides = {};
+  try {overrides = JSON.parse(localStorage.getItem(`${KEY}.folder-captions`) || '{}') || {};} catch {overrides = {};}
+  const persist = () => localStorage.setItem(KEY, JSON.stringify(custom));
+  const entries = () => [...folder, ...custom];
+  const list = () => clone(entries());
+  const get = id => {const entry = entries().find(item => item.id === id); return entry ? clone(entry) : null;};
   return {
-    list, get, snapshot,
-    has: id => entries.some(item => item.id === id),
+    list, get, snapshot: get,
+    has: id => entries().some(item => item.id === id),
+    isFolder: id => folder.some(item => item.id === id),
+    async loadFolder() {
+      const response = await fetch(ARTWORK_CATALOG_URL, {cache: 'no-store'});
+      if (!response.ok) throw new Error('Could not read the About artwork folder.');
+      const catalog = await response.json();
+      if (catalog?.version !== 1 || !Array.isArray(catalog.files) || catalog.files.length > 100)
+        throw new Error('Invalid About artwork catalog.');
+      const seen = new Set();
+      folder = catalog.files.map(file => {
+        if (!validId(file.id) || typeof file.name !== 'string' || !/\.(?:jpe?g|png|webp|gif)$/i.test(file.name)
+          || !validAsset(`folder:${file.name}`) || !Number.isInteger(file.revision) || file.revision < 1
+          || seen.has(file.id)) throw new Error('Invalid About artwork file.');
+        seen.add(file.id);
+        const lines = Array.isArray(overrides[file.id]) ? normalizeCaption(overrides[file.id].join('\n')) : [];
+        return {id: file.id, name: file.name.replace(/\.[^.]+$/, ''), lines,
+          asset: `folder:${file.name}`, revision: file.revision};
+      });
+      return list();
+    },
     add() {
-      if (entries.length >= 100) throw new Error('Keep the picture collection to 100 entries or fewer.');
+      if (entries().length >= 100) throw new Error('Keep the picture collection to 100 entries or fewer.');
       const id = `picture_${crypto.randomUUID().replaceAll('-', '')}`;
       const entry = {id, name: 'New picture', lines: [], asset: null, revision: 1};
-      persist([...entries, entry]); return clone(entry);
+      custom.push(entry); persist(); return clone(entry);
     },
     update(id, fields) {
-      const index = entries.findIndex(item => item.id === id);
+      const collection = folder.some(item => item.id === id) ? folder : custom;
+      const index = collection.findIndex(item => item.id === id);
       if (index < 0) throw new Error('Picture no longer exists.');
-      const candidate = {...entries[index], ...fields, revision: entries[index].revision + 1};
+      const candidate = {...collection[index], ...fields, revision: collection[index].revision + 1};
       const entry = validEntry(candidate);
       if (!entry) throw new Error('Picture name, caption, or image reference is invalid.');
-      const next = [...entries]; next[index] = entry; persist(next); return clone(entry);
+      collection[index] = entry;
+      if (collection === folder) {
+        overrides[id] = entry.lines;
+        localStorage.setItem(`${KEY}.folder-captions`, JSON.stringify(overrides));
+      } else persist();
+      return clone(entry);
     },
     remove(id) {
-      if (entries.length <= 1) throw new Error('Keep at least one picture.');
-      persist(entries.filter(item => item.id !== id));
+      if (folder.some(item => item.id === id)) throw new Error('Remove this image from the artwork folder, then refresh.');
+      custom = custom.filter(item => item.id !== id); persist();
     },
     move(id, offset) {
-      const index = entries.findIndex(item => item.id === id), target = index + offset;
-      if (index < 0 || target < 0 || target >= entries.length) return false;
-      const next = [...entries]; [next[index], next[target]] = [next[target], next[index]];
-      persist(next); return true;
+      const index = custom.findIndex(item => item.id === id), target = index + offset;
+      if (index < 0 || target < 0 || target >= custom.length) return false;
+      [custom[index], custom[target]] = [custom[target], custom[index]]; persist(); return true;
     },
-    validateMetadata: value => {normalizeEntries(value, true); return true;},
-    applyMetadata(value) {const next = normalizeEntries(value, true); persist(next); return list();},
+    exportMetadata: () => clone(custom),
+    validateMetadata: value => {normalizeEntries(value); return true;},
+    applyMetadata(value) {custom = normalizeEntries(value); persist(); return list();},
     async saveImage(blob) {
       const asset = `local:${crypto.randomUUID()}`;
       await storeBlob(asset, blob);
@@ -141,10 +160,12 @@ export function createPictureLibrary() {
     },
     async imageFor(entry) {
       if (!entry?.asset) return null;
-      if (entry.asset.startsWith('builtin:')) {
-        const id = entry.asset.slice(8), file = ART_FILES[id];
-        if (!file) throw new Error('Built-in picture is unavailable.');
-        return decodeURL(new URL(`./assets/4-perspectives/${file}`, import.meta.url).href);
+      if (entry.asset.startsWith('folder:')) {
+        const file = entry.asset.slice(7);
+        if (!folder.some(item => item.id === entry.id && item.asset === entry.asset))
+          throw new Error('This artwork file is no longer in the folder.');
+        const base = new URL('./assets/artwork/', import.meta.url);
+        return decodeURL(new URL(encodeURIComponent(file), base).href);
       }
       const blob = await readBlob(entry.asset);
       if (!blob) throw new Error('This picture image is stored on another device or was cleared. Reimport it here.');

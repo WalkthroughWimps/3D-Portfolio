@@ -1,5 +1,38 @@
 const DEFAULT_MUTED_REASON = "Audio muted for copyright reasons.";
 
+// This blocking head script selects the saved header layout before its markup
+// can paint. The shared settings store takes over once bootstrap mounts.
+try {
+    document.documentElement.dataset.initialHeaderLayout =
+        localStorage.getItem('site.header.useLegacy') === 'true' ? 'legacy' : 'modern';
+    document.documentElement.dataset.initialNavbarLayout =
+        localStorage.getItem('site.header.useLegacyNavbar') === 'true' ? 'legacy' : 'modern';
+} catch {
+    document.documentElement.dataset.initialHeaderLayout = 'modern';
+    document.documentElement.dataset.initialNavbarLayout = 'modern';
+}
+
+// Conditional utilities must not paint in their old positions while the shared
+// shell is loading. A genuine startup failure restores the HTML alternatives.
+function revealStartupAlternatives(event) {
+    document.documentElement.dataset.uiStartupFailed = 'true';
+    const entry = document.getElementById('portfolioEntry');
+    if (entry && (event.type === 'site:startup-failed' || !document.body.classList.contains('start-entry-ready'))) {
+        entry.hidden = false;
+        entry.inert = false;
+        document.body.classList.add('start-entry-active');
+        const scene = document.getElementById('settingsControllerScene');
+        if (scene) { scene.inert = true; scene.setAttribute('aria-hidden', 'true'); }
+    }
+}
+window.addEventListener('site:startup-failed', revealStartupAlternatives);
+window.addEventListener('error', event => {
+    if (event.target === window || event.target?.matches?.('script[type="module"]')) revealStartupAlternatives(event);
+}, true);
+
+// Site controls reserve right click for their own interactions.
+document.addEventListener('contextmenu', event => event.preventDefault(), { capture: true });
+
 function clean(value) {
     if (value === undefined || value === null) return "";
     return String(value).trim();
@@ -316,6 +349,14 @@ siteUtils.renderFullAttribution = renderFullAttribution;
 siteUtils.renderFullAttributionByKey = renderFullAttributionByKey;
 window.SiteUtils = siteUtils;
 
+// Defer the import itself: this head script runs before some route import maps.
+// Header layout selection above must stay synchronous; module loading must wait.
+const startPhoneNotice = () => import('./phone-readiness-notice.mjs')
+    .then(({ showPhoneReadinessNotice }) => showPhoneReadinessNotice())
+    .catch(error => console.warn('[site-utils] phone notice unavailable', error));
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', startPhoneNotice, { once: true });
+else startPhoneNotice();
+
 // Every site page shares the same sound choice, including pages without media controls.
 const siteRootPath = new URL('../', document.currentScript?.src || location.href).pathname;
 const siteRoute = location.pathname.startsWith(siteRootPath)
@@ -324,8 +365,8 @@ const siteRoute = location.pathname.startsWith(siteRootPath)
 if (siteRoute && siteRoute !== 'index.html') {
     const offerSoundConsent = () => {
         import('../_7-shared-scripts/audio-consent.js')
-            .then(({ isAudioAllowed, ensureAudioConsentPrompt }) => {
-                if (!isAudioAllowed()) return ensureAudioConsentPrompt();
+            .then(({ getAudioConsentState, ensureAudioConsentPrompt }) => {
+                if (getAudioConsentState().shouldPrompt) return ensureAudioConsentPrompt();
                 return undefined;
             })
             .catch(error => console.warn('[site-utils] sound consent prompt unavailable', error));

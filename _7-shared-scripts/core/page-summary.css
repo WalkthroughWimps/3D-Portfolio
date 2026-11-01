@@ -1,0 +1,78 @@
+.page-summary-trigger,
+.page-summary-panel {
+  position: fixed;
+  z-index: 2200;
+  font-family: system-ui, sans-serif;
+}
+body[data-page-summary="ready"]:not(.about-2d-fallback):not(.docs-2d-fallback):not([data-page="docs"]) .scene-alternative { display: none !important; }
+body[data-page-summary="ready"] .about-text-trigger { display: none !important; }
+.page-summary-trigger {
+  border: 1px solid #e3c78b;
+  border-radius: 999px;
+  background: var(--primary-color, #182538);
+  color: var(--hl-tertiary-color, #fff2d4);
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  box-shadow: 0 3px 12px #0008;
+}
+.page-summary-trigger:hover,
+.page-summary-trigger[aria-expanded="true"] { background: color-mix(in srgb, var(--primary-color, #182538) 75%, var(--secondary-color, #6e97cc)); }
+.page-summary-panel {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(13rem, 1fr) minmax(18rem, 1.25fr);
+  gap: 12px;
+  align-items: center;
+  width: min(680px, calc(100vw - 16px));
+  max-height: min(40vh, 300px);
+  overflow: auto;
+  border: 1px solid #d9bb80;
+  border-radius: 12px;
+  background: var(--primary-color, #142035);
+  color: #f6f4ee;
+  padding: 16px 40px 16px 16px;
+  box-shadow: 0 12px 28px #000b;
+}
+.page-summary-panel[hidden] { display: none; }
+.page-summary-copy { margin: 0; font-size: 14px; line-height: 1.4; }
+.page-summary-status { grid-column: 1 / -1; margin: 0; font-size: 13px; }
+.page-summary-status[hidden] { display: none; }
+.page-summary-points { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+@media (min-width: 780px) { .page-summary-points { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.page-summary-points :is(button, a) {
+  min-height: 35px;
+  border: 1px solid #7895b3;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary-color, #263d59) 62%, #52759a);
+  color: #fff;
+  padding: 5px 7px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  text-align: center;
+}
+.page-summary-points :is(button:hover:not(:disabled), a:hover) { background: #3d5c7e; }
+.page-summary-points button:disabled { opacity: .48; cursor: wait; }
+.page-summary-close {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 24px;
+  cursor: pointer;
+}
+.page-summary-trigger:focus-visible,
+.page-summary-panel :is(button, a):focus-visible { outline: 3px solid #ffcf76; outline-offset: 2px; }
+@media (max-width: 620px) {
+  .page-summary-panel { grid-template-columns: 1fr; gap: 10px; max-height: 55vh; }
+  .page-summary-copy { font-size: 13px; }
+}
+
+/* An open summary must remain readable above the fixed mouse hints. */
+.page-summary-panel { z-index: 10003; }

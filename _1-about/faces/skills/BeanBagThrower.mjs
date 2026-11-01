@@ -24,9 +24,9 @@ const AIM_MAX_ANGLE=THREE.MathUtils.degToRad(34),AIM_MAX_HEIGHT=.55,POWER_START=
 const offsets=[new THREE.Vector2(0,0),...[-1,0,1].flatMap(x=>[-1,0,1].filter(y=>x||y).map(y=>new THREE.Vector2(x,y)))];
 
 /** Owns the held bag, placement/throw input, complete arc plans and their recovery. */
-export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacking,getSettings=()=>({}),getContainer=()=>null,supply,visuals:providedVisuals,getRecoveryTarget=()=>null,onCatch=()=>{},onDestroy=()=>{}}){
+export function createBeanBagThrower({assembly:a,poseCube=a.model,findNode=name=>poseCube.getObjectByName(name),camera,controls,canvas,getBacking,getSettings=()=>({}),getContainer=()=>null,supply,visuals:providedVisuals,getRecoveryTarget=()=>null,onCatch=()=>{},onDestroy=()=>{}}){
   const ownsVisuals=!providedVisuals,visuals=providedVisuals||createBeanBagVisuals();
-  const m=a.motion,scene=(()=>{let n=a.model;while(n.parent)n=n.parent;return n;})(),root=new THREE.Group();
+  const m=a.motion,scene=(()=>{let n=poseCube;while(n.parent)n=n.parent;return n;})(),root=new THREE.Group();
   root.name='Skills thrown bean bags';scene.add(root);
   const slingGroup=new THREE.Group();slingGroup.name='Ground-planted beanbag slingshot';root.add(slingGroup);
   const slingMaterial=new THREE.MeshStandardMaterial({color:'#b99a5d',metalness:.55,roughness:.38,emissive:'#6a3f16',emissiveIntensity:.6});
@@ -45,7 +45,7 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
   const floorArcLine=new THREE.Line(new THREE.BufferGeometry(),floorShadowMaterial);floorArcLine.name='Beanbag arc glow shadow on floor';root.add(floorArcLine);floorArcLine.visible=false;
   // The corrected cube shell supplies the physical scale of the slingshot lane.
   // Resolve the exported source node, not the bounds of deployed cards or bags.
-  const shell=a.rawNodes.get('cube.main Export')||a.rawNodes.get('cube.main');
+  const shell=findNode('cube.main');
   if(!shell)throw new Error('Skills slingshot requires the corrected cube shell');
   a.rig.deployNode.updateWorldMatrix(true,false);shell.updateWorldMatrix(true,true);
   const shellToFace=a.rig.deployNode.matrixWorld.clone().invert(),shellPoint=new THREE.Vector3();
@@ -117,7 +117,7 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
     ray.setFromCamera(ndc,camera);return ray.ray.intersectPlane(plane,new THREE.Vector3());
   }
   function launchPlane(){
-    a.model.updateMatrixWorld(true);camera.updateMatrixWorld(true);
+    poseCube.updateMatrixWorld(true);camera.updateMatrixWorld(true);
     const matrix=a.rig.deployNode.matrixWorld,normal=new THREE.Vector3(0,0,1).transformDirection(matrix);
     const face=new THREE.Vector3(0,0,0).applyMatrix4(matrix);
     const cardDepth=[...m.panels.values()].find(panel=>panel.record.axes)?.center.z??0;
@@ -172,8 +172,8 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
   }
   function takePoseSnapshot(){
     const backing=getBacking();if(!backing)return null;
-    a.model.updateWorldMatrix(true,true);camera.updateWorldMatrix(true,false);backing.updateWorldMatrix(true,false);
-    const cameraWorld=camera.matrixWorld.clone(),cubeWorld=a.model.matrixWorld.clone(),faceWorld=backing.matrixWorld.clone();
+    poseCube.updateWorldMatrix(true,true);camera.updateWorldMatrix(true,false);backing.updateWorldMatrix(true,false);
+    const cameraWorld=camera.matrixWorld.clone(),cubeWorld=poseCube.matrixWorld.clone(),faceWorld=backing.matrixWorld.clone();
     const cameraInverse=cameraWorld.clone().invert(),faceInverse=faceWorld.clone().invert();
     const faceInCamera=new THREE.Matrix4().multiplyMatrices(cameraInverse,faceWorld);
     const cubeInCamera=new THREE.Matrix4().multiplyMatrices(cameraInverse,cubeWorld);
@@ -214,11 +214,11 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
   }
   function targetTransformFromSnapshot(snapshot){
     if(!snapshot)return null;
-    a.model.updateWorldMatrix(true,false);
+    poseCube.updateWorldMatrix(true,false);
     const savedCameraWorld=new THREE.Matrix4().compose(new THREE.Vector3(...snapshot.camera.position),new THREE.Quaternion(...snapshot.camera.quaternion),new THREE.Vector3(1,1,1));
     const targetFaceWorld=new THREE.Matrix4().multiplyMatrices(savedCameraWorld,matrixFromTransform(snapshot.face));
     const targetCubeWorld=new THREE.Matrix4().multiplyMatrices(targetFaceWorld,matrixFromTransform(snapshot.cubeToFace));
-    const parentInverse=a.model.parent?a.model.parent.matrixWorld.clone().invert():new THREE.Matrix4();
+    const parentInverse=poseCube.parent?poseCube.parent.matrixWorld.clone().invert():new THREE.Matrix4();
     const targetLocal=new THREE.Matrix4().multiplyMatrices(parentInverse,targetCubeWorld);
     const position=new THREE.Vector3(),quaternion=new THREE.Quaternion(),scale=new THREE.Vector3();targetLocal.decompose(position,quaternion,scale);
     const cameraParentInverse=camera.parent?camera.parent.matrixWorld.clone().invert():new THREE.Matrix4();
@@ -228,15 +228,15 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
   }
   function animatePose(target,kind){
     if(!target){poseAnimation=null;if(kind==='out'){a.input?.setThrowHandler(null);entryPose=null;}return;}
-    const from={position:a.model.position.clone(),quaternion:a.model.quaternion.clone(),scale:a.model.scale.clone(),cameraPosition:camera.position.clone(),cameraQuaternion:camera.quaternion.clone(),cameraTarget:controls?.target?.clone()||new THREE.Vector3()};
+    const from={position:poseCube.position.clone(),quaternion:poseCube.quaternion.clone(),scale:poseCube.scale.clone(),cameraPosition:camera.position.clone(),cameraQuaternion:camera.quaternion.clone(),cameraTarget:controls?.target?.clone()||new THREE.Vector3()};
     poseAnimation={kind,elapsed:0,duration:POSE_TIME,from,to:target,active:true};
-    if(m.reducedMotion){a.model.position.copy(target.position);a.model.quaternion.copy(target.quaternion);a.model.scale.copy(target.scale);camera.position.copy(target.cameraPosition);camera.quaternion.copy(target.cameraQuaternion);if(controls)controls.target.copy(target.cameraTarget);poseAnimation.active=false;
+    if(m.reducedMotion){poseCube.position.copy(target.position);poseCube.quaternion.copy(target.quaternion);poseCube.scale.copy(target.scale);camera.position.copy(target.cameraPosition);camera.quaternion.copy(target.cameraQuaternion);if(controls)controls.target.copy(target.cameraTarget);poseAnimation.active=false;
       if(kind==='out'){a.input?.setThrowHandler(null);entryPose=null;}}
     publishPoseDebug();refreshHint();
   }
   function beginPresentation(){
     entryAutoFocus=m.autoFocus;m.setAutoFocus(false);m.setFocused(true);
-    entryPose={position:a.model.position.clone(),quaternion:a.model.quaternion.clone(),scale:a.model.scale.clone(),cameraPosition:camera.position.clone(),cameraQuaternion:camera.quaternion.clone(),cameraTarget:controls?.target?.clone()||new THREE.Vector3()};
+    entryPose={position:poseCube.position.clone(),quaternion:poseCube.quaternion.clone(),scale:poseCube.scale.clone(),cameraPosition:camera.position.clone(),cameraQuaternion:camera.quaternion.clone(),cameraTarget:controls?.target?.clone()||new THREE.Vector3()};
     capturedPose ||= clone(gameSettings.pose);
     if(capturedPose)animatePose(targetTransformFromSnapshot(capturedPose),'in');
     else{
@@ -258,17 +258,17 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
     const t=clamp(poseAnimation.elapsed/poseAnimation.duration,0,1),ease=t*t*(3-2*t);
     const currentTarget=poseAnimation.kind==='in'?targetTransformFromSnapshot(capturedPose):poseAnimation.to;
     if(currentTarget)poseAnimation.to=currentTarget;
-    a.model.position.copy(poseAnimation.from.position).lerp(poseAnimation.to.position,ease);
-    a.model.quaternion.copy(poseAnimation.from.quaternion).slerp(poseAnimation.to.quaternion,ease);
-    a.model.scale.copy(poseAnimation.from.scale).lerp(poseAnimation.to.scale,ease);
+    poseCube.position.copy(poseAnimation.from.position).lerp(poseAnimation.to.position,ease);
+    poseCube.quaternion.copy(poseAnimation.from.quaternion).slerp(poseAnimation.to.quaternion,ease);
+    poseCube.scale.copy(poseAnimation.from.scale).lerp(poseAnimation.to.scale,ease);
     camera.position.copy(poseAnimation.from.cameraPosition).lerp(poseAnimation.to.cameraPosition,ease);
     camera.quaternion.copy(poseAnimation.from.cameraQuaternion).slerp(poseAnimation.to.cameraQuaternion,ease);
     if(controls)controls.target.copy(poseAnimation.from.cameraTarget).lerp(poseAnimation.to.cameraTarget,ease);
-    if(t>=1){a.model.position.copy(poseAnimation.to.position);a.model.quaternion.copy(poseAnimation.to.quaternion);a.model.scale.copy(poseAnimation.to.scale);camera.position.copy(poseAnimation.to.cameraPosition);camera.quaternion.copy(poseAnimation.to.cameraQuaternion);if(controls)controls.target.copy(poseAnimation.to.cameraTarget);poseAnimation.active=false;
+    if(t>=1){poseCube.position.copy(poseAnimation.to.position);poseCube.quaternion.copy(poseAnimation.to.quaternion);poseCube.scale.copy(poseAnimation.to.scale);camera.position.copy(poseAnimation.to.cameraPosition);camera.quaternion.copy(poseAnimation.to.cameraQuaternion);if(controls)controls.target.copy(poseAnimation.to.cameraTarget);poseAnimation.active=false;
       if(modeActive&&poseAnimation.kind==='in'){placementPlane();slingPosition=fixedLaunchPosition().add(new THREE.Vector3(0,-.145,0));groundGlow.position.set(slingPosition.x,floorY+.003,slingPosition.z);aimPoint=aimForAngle();
         if(heldMesh){const from=heldMesh.position.clone(),to=slingPosition.clone().add(new THREE.Vector3(0,.145,0));bagLoadAnimation={from,elapsed:0};cursorAnimation={from:project(from),to:project(to),elapsed:0};}poseSling();}
       if(!modeActive){a.input?.setThrowHandler(null);entryPose=null;}refreshHint();}
-    a.model.updateMatrixWorld(true);
+    poseCube.updateMatrixWorld(true);
   }
   function cursorAt(x,y,type='mouse'){
     pointer={x,y,type};
@@ -320,7 +320,7 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
     // The Skills bearing may still be settling after face entry. Lock its current
     // screen-upright target before a world-space aim or flight is prepared.
     a.faceCarrier?.update(0,camera,true);
-    a.model.updateWorldMatrix(true,true);
+    poseCube.updateWorldMatrix(true,true);
     if(!modeActive)beginPresentation();
     modeActive=true;canvas.dataset.skillsBagCursor='true';cursorHidden=true;
     const before=project(position);
@@ -556,7 +556,7 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
       normal,up,right,fraction,kind:fumble?'fumble':'miss',contacts:[],panelId:null,direction:null,other:null};
     if(fumble)return plan;
     const panels=[...m.panels.values()].filter(p=>a.rig.isPanelVisible(p.record.panelId)&&p.meshes.some(visible));
-    a.model.updateMatrixWorld(true);
+    poseCube.updateMatrixWorld(true);
     const owners=new Map(),meshes=[];for(const p of panels)for(const mesh of p.meshes){meshes.push(mesh);owners.set(mesh,p);}
     const backing=getBacking(),backingMeshes=[];backing?.traverse?.(node=>{if(node.isMesh)backingMeshes.push(node);});
     let previous=start.clone(),found=null;
@@ -784,10 +784,10 @@ export function createBeanBagThrower({assembly:a,camera,controls,canvas,getBacki
       previewControl:powerPlan?.control?.toArray()??null,previewEnd:powerPlan?.end?.toArray()??null,
       previewDuration:powerPlan?.duration??null,previewKind:powerPlan?.kind??null,poseAnimating:Boolean(poseAnimation?.active),capturedPose:capturedPose?JSON.parse(JSON.stringify(capturedPose)):null,
       slingPosition:slingPosition?.toArray()??null,slingRise,heldPosition:heldMesh?.position.toArray()??null,
-      cubePosition:a.model.position.toArray(),cubeQuaternion:a.model.quaternion.toArray(),supply:supply?.snapshot(),sounds:sounds.getStats()}),
-    suspend(){suspended=true;dock.hidden=true;notice.hidden=true;clear();if(entryPose){a.model.position.copy(entryPose.position);a.model.quaternion.copy(entryPose.quaternion);a.model.scale.copy(entryPose.scale);camera.position.copy(entryPose.cameraPosition);camera.quaternion.copy(entryPose.cameraQuaternion);if(controls)controls.target.copy(entryPose.cameraTarget);}poseAnimation=null;entryPose=null;a.input?.setThrowHandler(null);},resume(){suspended=false;},
+      cubePosition:poseCube.position.toArray(),cubeQuaternion:poseCube.quaternion.toArray(),supply:supply?.snapshot(),sounds:sounds.getStats()}),
+    suspend(){suspended=true;dock.hidden=true;notice.hidden=true;clear();if(entryPose){poseCube.position.copy(entryPose.position);poseCube.quaternion.copy(entryPose.quaternion);poseCube.scale.copy(entryPose.scale);camera.position.copy(entryPose.cameraPosition);camera.quaternion.copy(entryPose.cameraQuaternion);if(controls)controls.target.copy(entryPose.cameraTarget);}poseAnimation=null;entryPose=null;a.input?.setThrowHandler(null);},resume(){suspended=false;},
     dispose(){if(disposed)return;disposed=true;events.abort();unsubscribe?.();clearTimeout(noticeTimer);clearTimeout(tutorialTimer);hideHelp();notice.remove();tutorial.remove();help.remove();sling.remove();cursorBag.remove();
-      if(m.onReset===reset)m.onReset=previousReset;a.input?.setThrowHandler(null);if(entryPose){a.model.position.copy(entryPose.position);a.model.quaternion.copy(entryPose.quaternion);a.model.scale.copy(entryPose.scale);camera.position.copy(entryPose.cameraPosition);camera.quaternion.copy(entryPose.cameraQuaternion);if(controls)controls.target.copy(entryPose.cameraTarget);}poseAnimation=null;entryPose=null;clear();sounds.dispose();dock.remove();root.removeFromParent();slingRod.dispose();pouchGeometry.dispose();bandGeometry.dispose();bandMaterial.dispose();slingMaterial.dispose();slingDark.dispose();groundGlow.geometry.dispose();groundGlow.material.dispose();floorArcLine.geometry.dispose();floorShadowMaterial.dispose();glowTexture.dispose();smoke.dispose();if(ownsVisuals)visuals.dispose();}
+      if(m.onReset===reset)m.onReset=previousReset;a.input?.setThrowHandler(null);if(entryPose){poseCube.position.copy(entryPose.position);poseCube.quaternion.copy(entryPose.quaternion);poseCube.scale.copy(entryPose.scale);camera.position.copy(entryPose.cameraPosition);camera.quaternion.copy(entryPose.cameraQuaternion);if(controls)controls.target.copy(entryPose.cameraTarget);}poseAnimation=null;entryPose=null;clear();sounds.dispose();dock.remove();root.removeFromParent();slingRod.dispose();pouchGeometry.dispose();bandGeometry.dispose();bandMaterial.dispose();slingMaterial.dispose();slingDark.dispose();groundGlow.geometry.dispose();groundGlow.material.dispose();floorArcLine.geometry.dispose();floorShadowMaterial.dispose();glowTexture.dispose();smoke.dispose();if(ownsVisuals)visuals.dispose();}
   };
 }
 

@@ -11,7 +11,8 @@ export function createInteriorDrive(faces) {
   let armature = null, gimbalX = null, gimbalZ = null, gyroscope = null;
   let magnetMount = null, magnetRotor = null;
   let suspended = false, reduced = false, elapsed = 0, rotationElapsed = 0, motorPhase = 0, contrastGain = 1, signature = '', options = {};
-  let clockRoot = null, profile = [], skillsTerminal = null;
+  let profile = [], skillsTerminal = null, skillsRoot = null;
+  const helperRoots = [];
   let projector = null, faceSettings = {}, bridgeRoot = null;
   const spiralRotors = [], bridgeTracks = [], bridgeMaterials = [], skillsFeedMaterials = [];
   const resources = new Set(), pulses = [];
@@ -101,8 +102,9 @@ export function createInteriorDrive(faces) {
   }
   function surfaceProfile() {
     const samples = [], point = new THREE.Vector3();
-    host.cube.updateWorldMatrix(true, true);
-    const inverse = host.cube.matrixWorld.clone().invert();
+    skillsRoot.updateWorldMatrix(true, true);
+    faces.get('skills').backing?.updateWorldMatrix(true, true);
+    const inverse = skillsRoot.matrixWorld.clone().invert();
     faces.get('skills').backing?.traverse(node => {
       if (!node.isMesh) return;
       const transform = new THREE.Matrix4().multiplyMatrices(inverse, node.matrixWorld);
@@ -145,10 +147,10 @@ export function createInteriorDrive(faces) {
     return point;
   }
   function skillsSource() {
-    if (!skillsTerminal || !root) return new THREE.Vector3(0, 0, .43);
+    if (!skillsTerminal || !skillsRoot) return new THREE.Vector3(0, 0, .43);
     skillsTerminal.updateWorldMatrix(true, false);
-    root.updateWorldMatrix(true, false);
-    return root.worldToLocal(skillsTerminal.getWorldPosition(new THREE.Vector3()));
+    skillsRoot.updateWorldMatrix(true, false);
+    return skillsRoot.worldToLocal(skillsTerminal.getWorldPosition(new THREE.Vector3()));
   }
   function clearLattice() {
     if (!lattice) return;
@@ -167,8 +169,8 @@ export function createInteriorDrive(faces) {
   function followSpeaker(node) {
     const surface = getSpeakerSurface(faces.get('skills').backing);
     if (!surface) return;
-    surface.mesh.updateWorldMatrix(true, false); host.cube.updateWorldMatrix(true, false);
-    const toSurface = surface.mesh.matrixWorld.clone().invert().multiply(host.cube.matrixWorld);
+    surface.mesh.updateWorldMatrix(true, false); skillsRoot.updateWorldMatrix(true, false);
+    const toSurface = surface.mesh.matrixWorld.clone().invert().multiply(skillsRoot.matrixWorld);
     const normal = new THREE.Vector3().setComponent(surface.axis, 1).applyMatrix3(new THREE.Matrix3().setFromMatrix4(toSurface.clone().invert()));
     const position = node.geometry.attributes.position, weights = new Float32Array(position.count), point = new THREE.Vector3();
     for (let i = 0; i < position.count; i++) weights[i] = surface.weightAt(point.fromBufferAttribute(position, i).applyMatrix4(toSurface));
@@ -183,11 +185,11 @@ export function createInteriorDrive(faces) {
     };
   }
   function rebuildLattice() {
-    if (!root) return;
+    if (!skillsRoot) return;
     const next = JSON.stringify([options.pattern, options.strands, options.turns, options.color, options.bridgeCount, options.rearPull, options.rearPullEnabled, options.rearPullInfluence, options.rotationMode]);
     if (next === signature) return;
     signature = next; clearLattice();
-    lattice = new THREE.Group(); lattice.name = 'Skills inward spheroid energy lattice'; root.add(lattice);
+    lattice = new THREE.Group(); lattice.name = 'Skills inward spheroid energy lattice'; skillsRoot.add(lattice);
     const colors = palettes[options.color] || palettes.cyan;
     const directions = options.pattern === 'ascending' ? [1] : options.pattern === 'descending' ? [-1] : [1, -1];
     const count = Math.round(options.strands ?? 9), turns = options.turns ?? 1.35;
@@ -273,9 +275,11 @@ export function createInteriorDrive(faces) {
   function detach() {
     projector?.dispose(); projector = null;
     root?.removeFromParent();
+    for (const helper of helperRoots) helper.removeFromParent();
+    helperRoots.length = 0;
     for (const resource of resources) resource.dispose();
     resources.clear(); pulses.length = 0;
-    host = root = lattice = rotor = output = shaft = clockRoot = skillsTerminal = null;
+    host = root = lattice = rotor = output = shaft = skillsTerminal = skillsRoot = null;
     armature = gimbalX = gimbalZ = gyroscope = null;
     magnetMount = magnetRotor = null;
     profile = []; signature = ''; elapsed = rotationElapsed = 0; motorPhase = 0; skillsFeedMaterials.length = 0;
@@ -284,6 +288,10 @@ export function createInteriorDrive(faces) {
     attach(context) {
       detach(); host = context; suspended = false;
       root = new THREE.Group(); root.name = 'Cube central clockwork and power distribution'; host.cube.add(root);
+      skillsRoot = group(host.layout.space('skills'), 'Stationary Skills interior authored space');
+      const notesRoot = group(host.layout.space('notes'), 'Stationary Notes projector authored space');
+      const oddRoot = group(host.layout.space('odd'), 'Stationary Odd power authored space');
+      helperRoots.push(skillsRoot, notesRoot, oddRoot);
       const brass = metal(0xd3a75b), steel = metal(0x69818e), dark = metal(0x172b36, .35), silver = metal(0x99b9bf);
       const cyan = own(new THREE.MeshBasicMaterial({color: 0x6fdaec, toneMapped: false}));
       armature = group(root, 'Cube-fixed power armature');
@@ -341,22 +349,23 @@ export function createInteriorDrive(faces) {
         ['Refs speaker signal', [[0, 0, -.343], [.015, 0, -.375], [.01, 0, -.405], [0, 0, -.43]]]
       ]) {
         const path = points.map(point => new THREE.Vector3(...point));
-        tube(armature, path, dark, `${name} insulated conduit`, .012);
+        const parent = name === 'Skills energy feed' ? skillsRoot : armature;
+        tube(parent, path, dark, `${name} insulated conduit`, .012);
         if (name === 'Skills energy feed') {
           for (let color = 0; color < 2; color++)
-            tube(armature, path.map(point => point.clone().add(new THREE.Vector3(.015, color ? -.005 : .005, 0))), skillsFeedMaterials[color], `${name} ${color ? 'secondary' : 'primary'} spiral color`, .0035);
-        } else tube(armature, path.map(point => point.clone().add(new THREE.Vector3(0, .013, 0))), bus, name, .0035);
-        const socket = mesh(new THREE.SphereGeometry(.024, 16, 12), silver, armature, `${name} rotary socket`); socket.position.copy(path[0]);
-        const union = ring(armature, .026, .005, brass, `${name} swivel union`); union.position.copy(path[0]);
+            tube(parent, path.map(point => point.clone().add(new THREE.Vector3(.015, color ? -.005 : .005, 0))), skillsFeedMaterials[color], `${name} ${color ? 'secondary' : 'primary'} spiral color`, .0035);
+        } else tube(parent, path.map(point => point.clone().add(new THREE.Vector3(0, .013, 0))), bus, name, .0035);
+        const socket = mesh(new THREE.SphereGeometry(.024, 16, 12), silver, parent, `${name} rotary socket`); socket.position.copy(path[0]);
+        const union = ring(parent, .026, .005, brass, `${name} swivel union`); union.position.copy(path[0]);
         union.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), path[0].clone().normalize());
-        const terminal = mesh(new THREE.SphereGeometry(.022, 16, 12), brass, armature, `${name} terminal`); terminal.position.copy(path.at(-1));
+        const terminal = mesh(new THREE.SphereGeometry(.022, 16, 12), brass, parent, `${name} terminal`); terminal.position.copy(path.at(-1));
         terminal.userData.powerTerminal = true;
         if (name === 'Skills energy feed') skillsTerminal = terminal;
-        const pickup = ring(armature, .033, .0035, brass, `${name} contactless pickup`); pickup.position.copy(path.at(-1)); pickup.quaternion.copy(union.quaternion);
+        const pickup = ring(parent, .033, .0035, brass, `${name} contactless pickup`); pickup.position.copy(path.at(-1)); pickup.quaternion.copy(union.quaternion);
       }
-      rod(armature, [0, .343, 0], [0, .40, 0], .016, silver, 'Odd rotary power control arm');
-      const oddCoupling = ring(armature, .032, .007, brass, 'Odd fixed rotary coupling'); oddCoupling.rotation.x = Math.PI/2; oddCoupling.position.y = .40;
-      projector = createNotesProjector(armature, host.cube, faces.get('notes')); projector.applySettings({about:faceSettings});
+      rod(oddRoot, [0, .343, 0], [0, .40, 0], .016, silver, 'Odd rotary power control arm');
+      const oddCoupling = ring(oddRoot, .032, .007, brass, 'Odd fixed rotary coupling'); oddCoupling.rotation.x = Math.PI/2; oddCoupling.position.y = .40;
+      projector = createNotesProjector(notesRoot, faces.get('notes')); projector.applySettings({about:faceSettings});
       orientGyroscope(0, true); surfaceProfile(); rebuildLattice();
     },
     update(dt) {
@@ -381,8 +390,7 @@ export function createInteriorDrive(faces) {
       }
       updateLatticeEffects();
       const input = clock?.magneticDriveTarget;
-      if (clock?.root && input && clock.root !== clockRoot) {
-        clockRoot = clock.root;
+      if (clock?.root && input) {
         clockTip.copy(input.center);
         const start = new THREE.Vector3(0, -.355, 0), delta = clockTip.clone().sub(start);
         shaft.position.copy(start).add(clockTip).multiplyScalar(.5);
