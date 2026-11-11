@@ -681,10 +681,10 @@ let topPadUiRects = { speedButtons: [], playRect: null, stopRect: null, instrume
 const TRACK_ICON_KEYS = ['baby', 'woods', 'raisins', 'forests'];
 const TRACK_ICON_STROKES = { baby: '#f6b5c7', woods: '#a6dfff', raisins: '#f5bf56', forests: '#9bd15c' };
 const topPadIconSources = [
-  assetUrl('../Videos/music-page/baby-icon.svg'),
-  assetUrl('../Videos/music-page/woods.svg'),
-  assetUrl('../Videos/music-page/raisins-icon.svg'),
-  assetUrl('../Videos/music-page/forests-icon.svg')
+  assetUrl('../assets/images/music-track-icons/baby-icon.svg'),
+  assetUrl('../assets/images/music-track-icons/snow-thanks-icon.svg'),
+  assetUrl('../assets/images/music-track-icons/raisins-icon.svg'),
+  assetUrl('../assets/images/music-track-icons/forests-icon.svg')
 ];
 const topPadIconImages = topPadIconSources.map((src) => {
   const img = new Image();

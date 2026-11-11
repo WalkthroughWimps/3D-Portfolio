@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">No Forests Left to Give</title>
+  <defs>
+    <style>
+      .st0 {
+        fill: #f49100;
+      }
+
+      .st1 {
+        fill: #29abe2;
+      }
+
+      .st2 {
+        fill: #c275cc;
+      }
+
+      .st3 {
+        fill: #4c6837;
+      }
+
+      .st4 {
+        fill: #0071bc;
+      }
+
+      .st5 {
+        fill: #8cc63f;
+      }
+
+      .st6 {
+        fill: #fea303;
+      }
+
+      .st7 {
+        fill: #f49c00;
+      }
+
+      .st8 {
+        fill: #f4b32e;
+      }
+
+      .st9 {
+        fill: #f4aacb;
+      }
+
+      .st10 {
+        fill: none;
+        stroke: #333;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        stroke-width: 4px;
+      }
+
+      .st11 {
+        fill: #ca9460;
+      }
+
+      .st12 {
+        fill: #238039;
+      }
+
+      .st13 {
+        fill: #e47800;
+      }
+
+      .st14 {
+        fill: #ffb200;
+      }
+
+      .st15 {
+        fill: #231f20;
+      }
+
+      .st16 {
+        fill: #6183bc;
+      }
+
+      .st17 {
+        fill: #ef9a03;
+      }
+
+      .st18 {
+        fill: #c1272d;
+      }
+
+      .st19 {
+        fill: #006837;
+      }
+
+      .st20 {
+        fill: #46973b;
+      }
+
+      .st21 {
+        fill: #69af3d;
+      }
+
+      .st22 {
+        fill: #fff3df;
+      }
+
+      .st23 {
+        fill: #333;
+      }
+
+      .st24 {
+        fill: #fbd599;
+      }
+
+      .st25 {
+        fill: #e88a00;
+      }
+
+      .st26 {
+        fill: #ffc973;
+      }
+
+      .st27 {
+        fill: #616674;
+      }
+
+      .st28 {
+        fill: #a9432d;
+      }
+
+      .st29 {
+        fill: #ffe3b7;
+      }
+
+      .st30 {
+        fill: #754c24;
+      }
+    </style>
+    <radialGradient id="icon-bg" cx="38%" cy="28%" r="80%">
+      <stop stop-color="#8c6957" />
+      <stop offset="1" stop-color="#463c35" />
+    </radialGradient>
+  </defs>
+  <circle cx="256" cy="256" r="252" fill="url(#icon-bg)" stroke="#9bd15c" stroke-width="8" />
+  <g transform="translate(256 256) scale(.94) translate(888 -289.35)">
+    <polygon class="st15" points="-685.6 390.5 -768.6 339.7 -714.3 339.7 -787.3 289 -743 289 -805.3 238.2 -771.7 238.2 -822.6 187.4 -800.4 187.4 -878.2 85 -955.9 187.4 -933.7 187.4 -984.6 238.2 -951 238.2 -1013.3 289 -969 289 -1042 339.7 -987.7 339.7 -1070.8 390.5 -894.4 390.5 -894.4 512 -861.9 512 -861.9 390.5 -685.6 390.5" />
+    <g>
+      <rect class="st30" x="-904" y="370.1" width="31.9" height="141.9" />
+      <g>
+        <polygon class="st19" points="-888 262.5 -1077.3 385.3 -698.7 385.3 -888 262.5" />
+        <polygon class="st12" points="-888 213.6 -1049.1 332.4 -726.9 332.4 -888 213.6" />
+        <polygon class="st20" points="-888 164.6 -1020.8 279.4 -755.2 279.4 -888 164.6" />
+        <polygon class="st21" points="-888 115.7 -992.6 226.4 -783.4 226.4 -888 115.7" />
+        <polygon class="st5" points="-888 66.7 -964.4 173.5 -811.6 173.5 -888 66.7" />
+      </g>
+    </g>
+  </g>
+</svg>
