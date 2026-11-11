@@ -103,25 +103,25 @@ export const SETTINGS_FIELDS = Object.freeze({
     [`about.${face}.enabled`, {key: `site.about.${face}.enabled`, default: true, parse: bool}],
     [`about.${face}.showBacking`, {key: `site.about.${face}.showBacking`, default: true, parse: bool}]
   ])),
-  'about.odd.armSpeed': {key: 'site.about.odd.armSpeed', default: 1, parse: numeric(.25, 3)},
+  'about.odd.armSpeed': {key: 'site.about.odd.armSpeed', default: 1.75, parse: numeric(.25, 3)},
   'about.odd.sewingAnimations': {key:'site.about.odd.sewing-animations',default:true,parse:bool},
   'about.odd.innerRotation': {key:'site.about.odd.inner-rotation',default:'none',parse:choice('none','clockwise','counterclockwise')},
   'about.odd.innerSpeed': {key:'site.about.odd.inner-speed',default:1,parse:numeric(.2,5)},
-  ...Object.fromEntries(['mainMeterWidth','mainMeterHeight','trackMeterWidth','trackMeterHeight'].map(name=>[
-    'about.odd.'+name,{key:'site.about.odd.'+name,default:1,parse:numeric(.6,1.1)}
+  ...Object.fromEntries(Object.entries({mainMeterWidth:1,mainMeterHeight:1,trackMeterWidth:1.1,trackMeterHeight:1.1}).map(([name,value])=>[
+    'about.odd.'+name,{key:'site.about.odd.'+name,default:value,parse:numeric(.6,1.1)}
   ])),
   'about.odd.separateSpeeds': {key: 'site.about.odd.separateSpeeds', default: false, parse: bool},
-  'about.odd.foldSpeed': {key: 'site.about.odd.foldSpeed', default: 1, parse: numeric(.25, 3)},
+  'about.odd.foldSpeed': {key: 'site.about.odd.foldSpeed', default: 1.8, parse: numeric(.25, 3)},
   'about.odd.jams': {key: 'site.about.odd.jams', default: false, parse: bool},
-  'about.odd.jamFrequency': {key: 'site.about.odd.jamFrequency', default: 10, parse: numeric(0, 100)},
+  'about.odd.jamFrequency': {key: 'site.about.odd.jamFrequency', default: 100, parse: numeric(0, 100)},
   'about.odd.highlightColor': {key: 'site.about.odd.highlightColor', default: '#d9f5ff', parse: color},
-  'about.odd.trackMetersReady': {key:'site.about.odd.track-meters-ready',default:false,parse:bool},
+  'about.odd.trackMetersReady': {key:'site.about.odd.track-meters-ready',default:true,parse:bool},
   ...Object.fromEntries(['Transport','Shuttle'].flatMap(id=>[
-    [`about.odd.addon${id}FlipX`,{key:`site.about.odd.addon-${id.toLowerCase()}-flip-x`,default:false,parse:bool}],
-    [`about.odd.addon${id}FlipY`,{key:`site.about.odd.addon-${id.toLowerCase()}-flip-y`,default:false,parse:bool}],
-    [`about.odd.pod${id}Config`,{key:`site.about.odd.pod-${id.toLowerCase()}-config`,default:'',parse:podConfig}]
+    [`about.odd.addon${id}FlipX`,{key:`site.about.odd.addon-${id.toLowerCase()}-flip-x`,default:id==='Shuttle',parse:bool}],
+    [`about.odd.addon${id}FlipY`,{key:`site.about.odd.addon-${id.toLowerCase()}-flip-y`,default:id==='Transport',parse:bool}],
+    [`about.odd.pod${id}Config`,{key:`site.about.odd.pod-${id.toLowerCase()}-config`,default:id==='Shuttle'?JSON.stringify(['wind:-1','wind:1','wind:-5','wind:5'].map(action=>({action,color:'',icon:'auto',image:''}))):'',parse:podConfig}]
   ])),
-  ...Object.fromEntries(Object.entries({Meter:{side:'left',host:'upper',gap:5,y:39.5},Transport:{side:'right',host:'lower',gap:2,y:-29},Shuttle:{side:'left',host:'lower',gap:7.7,y:-27},TrackMeters:{side:'right',host:'upper',gap:1.8,y:36.5}}).flatMap(([id,value])=>[
+  ...Object.fromEntries(Object.entries({Meter:{side:'right',host:'upper',gap:2.5,y:39},Transport:{side:'right',host:'lower',gap:7,y:-27.95},Shuttle:{side:'left',host:'lower',gap:7,y:-27.95},TrackMeters:{side:'left',host:'upper',gap:2.5,y:39}}).flatMap(([id,value])=>[
     [`about.odd.addon${id}Side`,{key:`site.about.odd.addon-${id.toLowerCase()}-side`,default:value.side,parse:choice('left','right')}],
     [`about.odd.addon${id}Host`,{key:`site.about.odd.addon-${id.toLowerCase()}-host`,default:value.host,parse:choice('upper','lower')}],
     [`about.odd.addon${id}Gap`,{key:`site.about.odd.addon-${id.toLowerCase()}-gap`,default:value.gap,parse:numeric(0,30)}],
@@ -133,11 +133,11 @@ export const SETTINGS_FIELDS = Object.freeze({
   'about.odd.stackBlends': {key: 'site.about.odd.stackBlends', default: true, parse: bool},
   'about.odd.tickSpacingMs': {key: 'site.about.odd.tickSpacingMs', default: 200, parse: value => {const parsed=numeric(50,1000)(value);return parsed===undefined?undefined:Math.round(parsed);}},
   'about.odd.particles': {key: 'site.about.odd.particles', default: true, parse: bool},
-  'about.odd.particleDensity': {key: 'site.about.odd.particleDensity', default: 90, parse: numeric(0, 240)},
-  'about.odd.particleLife': {key: 'site.about.odd.particleLife', default: 1, parse: numeric(.25, 3)},
-  'about.odd.particleSize': {key: 'site.about.odd.particleSize', default: 1, parse: numeric(.25, 3)},
-  'about.odd.particleWind': {key: 'site.about.odd.particleWind', default: 1, parse: numeric(-2, 2)},
-  'about.odd.particleSpread': {key: 'site.about.odd.particleSpread', default: 1, parse: numeric(0, 3)},
+  'about.odd.particleDensity': {key: 'site.about.odd.particleDensity', default: 180, parse: numeric(0, 240)},
+  'about.odd.particleLife': {key: 'site.about.odd.particleLife', default: 1.15, parse: numeric(.25, 3)},
+  'about.odd.particleSize': {key: 'site.about.odd.particleSize', default: 2.15, parse: numeric(.25, 3)},
+  'about.odd.particleWind': {key: 'site.about.odd.particleWind', default: -2, parse: numeric(-2, 2)},
+  'about.odd.particleSpread': {key: 'site.about.odd.particleSpread', default: 3, parse: numeric(0, 3)},
   ...Object.fromEntries(['#cf542c', '#188b91', '#dfaa27', '#788b36'].map((value, i) =>
     [`about.odd.color${i + 1}`, {key: `site.about.odd.color${i + 1}`, default: value, parse: color}])),
   'about.notes.armSpeed': {key: 'site.about.notes.armSpeed', default: 1, parse: numeric(.25, 3)},
