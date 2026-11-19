@@ -3,8 +3,8 @@ const defaults = () => ({
   highContrast: false,
   textScale: 1,
   focusOutline: 'auto',
-  masterVolume: 0.25,
-  audioSyncMs: -270,
+  masterVolume: 0.3,
+  audioSyncMs: 0,
   mute: false
 });
 

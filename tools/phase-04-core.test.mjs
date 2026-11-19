@@ -59,8 +59,8 @@ test('settings migrate raw legacy values and preserve canonical zero and false',
   assert.equal(store.patch({ audio: { volume: NaN, muted: true } }).ok, false);
   assert.equal(store.get().audio.muted, false);
   store.reset(['audio.volume', 'audio.syncMs']);
-  assert.equal(store.get().audio.volume, 0.25);
-  assert.equal(store.get().audio.syncMs, -270);
+  assert.equal(store.get().audio.volume, 0.3);
+  assert.equal(store.get().audio.syncMs, 0);
   assert.equal(raw.getItem('globalAudioMidiOffsetMs'), null);
   store.dispose();
 });

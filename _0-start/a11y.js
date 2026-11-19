@@ -6,8 +6,8 @@
     highContrast: false,
     textScale: 1, // 1.0 = normal, up to ~1.25 for accessibility
     focusOutline: 'auto', // 'always' | 'auto'
-    masterVolume: 0.25,
-    audioSyncMs: -270,
+    masterVolume: 0.3,
+    audioSyncMs: 0,
     mute: false
   });
   function load(){

@@ -10,7 +10,7 @@ import { createPowerCat } from './start/power-cat.js';
 import { createStartViewMemory } from './start/view-memory.js';
 import { createModeButtonMotion, sampleMomentaryPress } from './start/button-motion.js';
 import { createControllerAccents, contrastHighlightIntensity } from './start/controller-accents.js';
-import { createSyncComparison } from './start/sync-comparison.js';
+import { createSyncComparison, SYNC_NOTES } from './start/sync-comparison.js';
 import { mountStartProjectOverlays } from './start/project-overlays.js';
 import { getSharedSettings } from '../_7-shared-scripts/core/settings.js';
 import { panelViewport } from '../_7-shared-scripts/core/panel-viewport.js';
@@ -136,7 +136,6 @@ export function mountStartPage({ scope }) {
             thumbnail: assetUrl('_0-start/alphabet-thumb.jpg')
         }
     };
-    const SYNC_GUIDE_URL = assetUrl('assets/audio/sync-guide.mp3');
 
     // Elements
     const saveBtn = document.getElementById('save_a11y');
@@ -193,8 +192,16 @@ export function mountStartPage({ scope }) {
     const accessibleContrast = document.getElementById('accessibleContrast');
     const accessibleCounts = document.getElementById('accessibleCounts');
     const accessibleAlphabet = document.getElementById('accessibleAlphabet');
-    const accessiblePlayPause = document.getElementById('accessiblePlayPause');
     const accessibleGallery = document.getElementById('accessibleGallery');
+    const accessibleSyncPreview = document.getElementById('accessibleSyncPreview');
+    const accessibleSyncStatus = document.getElementById('accessibleSyncStatus');
+    const accessibleSyncNotes = SYNC_NOTES.map(({ label, color }) => {
+        const note = document.createElement('span');
+        note.textContent = label;
+        note.style.setProperty('--note-color', color);
+        return note;
+    });
+    accessibleSyncPreview?.prepend(...accessibleSyncNotes);
     const accessibleConfirmYes = document.getElementById('accessibleConfirmYes');
     const accessibleConfirmNo = document.getElementById('accessibleConfirmNo');
     const accessiblePower = document.getElementById('accessiblePower');
@@ -226,6 +233,8 @@ export function mountStartPage({ scope }) {
         hoverHint: '',
         syncExercise: {
             active: false,
+            playing: false,
+            runId: 0,
             result: ''
         },
         hitRegions: [],
@@ -238,7 +247,8 @@ export function mountStartPage({ scope }) {
                 volumeSlider: accessibleVolume, syncSlider: accessibleSync,
                 brightnessSlider: accessibleBrightness, contrastSlider: accessibleContrast,
                 counts: accessibleCounts, alphabet: accessibleAlphabet,
-                playPause: accessiblePlayPause, gallery: accessibleGallery,
+                gallery: accessibleGallery,
+                syncPreview: accessibleSyncPreview, syncStatus: accessibleSyncStatus,
                 confirmYes: accessibleConfirmYes, confirmNo: accessibleConfirmNo },
             view: activeSettingsView, volume: storedVolume, syncMs: storedSync,
             brightness: getLuxValue(), contrast: getEmiValue(),
@@ -246,7 +256,56 @@ export function mountStartPage({ scope }) {
         });
     }
 
+    function animateSyncNotes(){
+        return controllerFlow.animationAllowed !== false && !getSharedSettings().get().accessibility.reducedMotion;
+    }
+
+    const arrowKeys = {
+        ArrowLeft: { type: 'sync', direction: -1 },
+        ArrowRight: { type: 'sync', direction: 1 },
+        ArrowDown: { type: 'vol', direction: -1 },
+        ArrowUp: { type: 'vol', direction: 1 }
+    };
+    let heldArrowKey = null;
+    function settingStep(audioSync, coarse, repeating){
+        if(repeating) return audioSync ? 120 : 2;
+        return audioSync ? (coarse ? 10 : 5) : (coarse ? 5 : 1);
+    }
+
+    function repeatSettingStep(step){
+        let interval;
+        const delay = setTimeout(() => {
+            step();
+            interval = setInterval(step, 70);
+        }, 360);
+        return () => {
+            clearTimeout(delay);
+            clearInterval(interval);
+        };
+    }
+
+    function stopHeldArrowKey(){
+        heldArrowKey?.cancel();
+        heldArrowKey = null;
+    }
+
+    function holdArrowKey(event, step){
+        event.preventDefault();
+        if(event.repeat) return;
+        stopHeldArrowKey();
+        step(false);
+        heldArrowKey = { key: event.key, cancel: repeatSettingStep(() => step(true)) };
+    }
+
+    listen(window, 'keyup', event => {
+        if(heldArrowKey?.key === event.key) stopHeldArrowKey();
+    });
+    listen(window, 'blur', stopHeldArrowKey);
+    listen(document, 'focusin', stopHeldArrowKey);
+    scope.defer(stopHeldArrowKey);
+
     function showSaveConfirmation(){
+        if(controllerFlow.syncExercise.active) clearSyncExerciseTimers();
         if(controllerFlow.stage !== 'confirm'){
             controllerFlow.returnStage = controllerFlow.stage === 'playing' ? 'playing' : 'gallery';
         }
@@ -2532,6 +2591,11 @@ export function mountStartPage({ scope }) {
             const { triggerEmissive = true, instant = false } = options;
             closeReadoutEditor({ commit: true });
             const nextMode = mode === 'audio' ? 'audio' : 'visuals';
+            const modeChanged = nextMode !== activeSettingsView;
+            if(modeChanged){
+                stopHeldArrowKey();
+                arrowPointerState?.cancelRepeat?.();
+            }
             if(nextMode !== activeSettingsView && !instant && !introActive
                 && controllerFlow.animationAllowed !== false && !getSharedSettings().get().accessibility.reducedMotion){
                 const constraints = settingsControllerBridge.knobConstraints;
@@ -2586,12 +2650,12 @@ export function mountStartPage({ scope }) {
         settingsControllerBridge.setAccessibilityView = setAccessibilityView;
         settingsControllerBridge.setAudioView = setAudioView;
         settingsControllerBridge.finishOnboarding = (allowAnimation) => {
+            const restoreView = rememberedStartView && (!isLocalReview || !allowAnimation);
             introActive = false;
             setPreIntroZoomEnabled(false);
-            settingsControllerBridge.revealController?.(rememberedStartView ? false : allowAnimation);
             controllerFlow.stage = 'gallery';
             settingsControllerBridge.renderScreen?.();
-            if(rememberedStartView){
+            if(restoreView){
                 cameraTween = null; focusAnim = null; controllerEntrance = null;
                 activeCamera.up.fromArray(rememberedStartView.up).normalize();
                 createOrbitControls(activeCamera);
@@ -2613,24 +2677,8 @@ export function mountStartPage({ scope }) {
                 captureSettledDefault();
                 return;
             }
-            startManualCameraTween();
-            if(!allowAnimation && cameraTween){
-                cameraTween.transition.sample(performance.now() + animTuning.customDurationMs + 1);
-                const finalPos = activeCamera.position.clone();
-                const finalQuat = activeCamera.quaternion.clone();
-                const target = cameraTween.transition.target.clone();
-                cameraTween = null;
-                shouldTrackControls = true;
-                usesGltfCamera = false;
-                createOrbitControls(activeCamera);
-                controls.target.copy(target);
-                activeCamera.position.copy(finalPos);
-                activeCamera.quaternion.copy(finalQuat);
-                controls.update();
-                settingsControllerBridge.controls = controls;
-                captureSettledDefault();
-                cameraViewReady = true;
-            }
+            startManualCameraTween({ instant: !allowAnimation });
+            if(!allowAnimation) stepManualCameraTween();
         };
 
         setUserCameraControlsEnabled(false);
@@ -2771,52 +2819,60 @@ export function mountStartPage({ scope }) {
                         ctx.fillText(label, (rect.x + rect.w / 2) * size, (rect.y + rect.h / 2) * height);
                         controllerFlow.hitRegions.push({ kind: 'save-confirm', value, polygon: [[rect.x,rect.y],[rect.x+rect.w,rect.y],[rect.x+rect.w,rect.y+rect.h],[rect.x,rect.y+rect.h]] });
                     });
-                }else if(controllerFlow.stage === 'gallery'){
-                    ctx.fillStyle = '#fff4ff';
-                    ctx.font = 'bold 32px "Segoe UI", sans-serif';
-                    ctx.fillText('COMPARE THE FLASH AND THE CLICK.', size * 0.5, height * 0.20);
-                    ctx.fillText('Adjust sync until they happen together.', size * 0.5, height * 0.29);
-                    if(controllerFlow.syncExercise.result){ ctx.font = 'bold 24px \"Segoe UI\", sans-serif'; ctx.fillText(controllerFlow.syncExercise.result, size * 0.5, height * 0.37); }
-                    const button = { x: 0.30, y: 0.48, w: 0.40, h: 0.30 };
-                    ctx.fillStyle = '#a94710';
-                    ctx.beginPath();
-                    ctx.roundRect(button.x * size, button.y * height, button.w * size, button.h * height, 24);
-                    ctx.fill();
-                    ctx.fillStyle = '#fff4df';
-                    ctx.font = '64px "Press Start 2P", "Segoe UI", sans-serif';
-                    ctx.fillText('SYNC', size * 0.5, height * 0.63);
-                    controllerFlow.hitRegions.push({ kind: 'sync-start', value: true, polygon: [[button.x,button.y],[button.x+button.w,button.y],[button.x+button.w,button.y+button.h],[button.x,button.y+button.h]] });
-                }else if(controllerFlow.stage === 'sync-running'){
+                }else if(syncStage){
+                    const open = controllerFlow.stage === 'sync-running';
                     const exercise = controllerFlow.syncExercise;
                     const sample = syncComparison?.sample();
+                    const motion = animateSyncNotes();
                     ctx.fillStyle = '#fff4ff';
-                    ctx.font = 'bold 36px "Segoe UI", sans-serif';
-                    ctx.fillText('Match the click to the flash', size * .5, height * .13);
-                    ctx.font = '28px "Segoe UI", sans-serif';
-                    const message = exercise.result || (sample?.guiding ? 'Listen to the guide…' : 'Turn the sync knob. No tapping needed.');
-                    ctx.fillText(message, size * .5, height * .23);
-                    ctx.fillStyle = sample?.flash ? '#fff4d1' : '#203747';
-                    ctx.beginPath(); ctx.arc(size * .5, height * .46, height * .14, 0, Math.PI * 2); ctx.fill();
-                    ctx.fillStyle = sample?.flash ? '#172532' : '#cee7f2';
-                    ctx.font = 'bold 32px "Segoe UI", sans-serif';
-                    ctx.fillText(sample?.flash ? 'FLASH' : '•', size * .5, height * .46);
-                    ctx.fillStyle = '#fff4ff';
-                    ctx.font = 'bold 30px "Segoe UI", sans-serif';
-                    ctx.fillText('Preview: ' + storedSync + ' ms — not saved', size * .5, height * .68);
-                    const buttons = exercise.active
-                        ? [{ kind: 'sync-commit', label: 'Use this offset', x: .07, w: .43, fill: '#8cd8ff' },
-                            { kind: 'sync-cancel', label: 'Cancel', x: .55, w: .38, fill: '#f5b7d9' }]
-                        : [{ kind: 'sync-start', label: 'Try again', x: .07, w: .43, fill: '#8cd8ff' },
-                            { kind: 'sync-cancel', label: 'Back', x: .55, w: .38, fill: '#f5b7d9' }];
+                    ctx.font = 'bold 42px "Segoe UI", sans-serif';
+                    ctx.fillText(motion ? 'Match each note to its bounce' : 'Match each note to its highlight', size * .5, height * .13, size * .9);
+                    ctx.font = '32px "Segoe UI", sans-serif';
+                    ctx.fillText(open ? (exercise.result || (exercise.playing ? 'Playing three C arpeggios' : 'Adjust audio sync and press Play to check.'))
+                        : 'Check the timing of sound and motion.', size * .5, height * .24, size * .92);
+                    const radius = Math.min(size * .072, height * .115);
+                    SYNC_NOTES.forEach(({ label, color }, index) => {
+                        const active = sample?.noteIndex === index;
+                        const x = size * (.16 + index * .17);
+                        const y = height * (.51 - (active && motion ? .14 * sample.bounce : 0));
+                        const shade = ctx.createRadialGradient(x - radius * .22, y - radius * .34, 0, x, y, radius);
+                        shade.addColorStop(0, '#fff9ef');
+                        shade.addColorStop(.68, color);
+                        shade.addColorStop(1, '#80648f');
+                        ctx.beginPath();
+                        ctx.arc(x, y, radius, 0, Math.PI * 2);
+                        ctx.fillStyle = shade;
+                        ctx.fill();
+                        if(active){
+                            ctx.strokeStyle = '#fff9ef';
+                            ctx.lineWidth = 5;
+                            ctx.stroke();
+                        }
+                        ctx.fillStyle = '#171322';
+                        ctx.font = 'bold 36px "Segoe UI", sans-serif';
+                        ctx.fillText(label, x, y, radius * 1.5);
+                    });
+                    if(open){
+                        ctx.fillStyle = '#fff4ff';
+                        ctx.font = 'bold 34px "Segoe UI", sans-serif';
+                        ctx.fillText('Audio sync: ' + storedSync + ' ms', size * .5, height * .70);
+                    }
+                    const buttons = open
+                        ? [{ kind: 'sync-cancel', label: 'Back', x: .08, w: .23, fill: '#f5b7d9' },
+                            { kind: 'sync-play', label: exercise.playing ? 'Stop' : 'Play', x: .69, w: .23, fill: '#ffd173' }]
+                        : [{ kind: 'sync-start', label: 'SYNC', x: .30, w: .40, fill: '#a94710' }];
                     buttons.forEach(button => {
                         ctx.fillStyle = button.fill;
-                        ctx.fillRect(size * button.x, height * .79, size * button.w, height * .15);
-                        ctx.fillStyle = '#11172a'; ctx.font = 'bold 30px "Segoe UI", sans-serif';
+                        ctx.beginPath();
+                        ctx.roundRect(button.x * size, height * .79, button.w * size, height * .15, 14);
+                        ctx.fill();
+                        ctx.fillStyle = open ? '#11172a' : '#fff4df';
+                        ctx.font = open ? 'bold 36px "Segoe UI", sans-serif' : '52px "Press Start 2P", "Segoe UI", sans-serif';
                         ctx.fillText(button.label, size * (button.x + button.w / 2), height * .865);
                         controllerFlow.hitRegions.push({ kind: button.kind, polygon: [[button.x,.79],[button.x+button.w,.79],[button.x+button.w,.94],[button.x,.94]] });
                     });
                 }
-                if(controllerFlow.hoverHint){
+                if(controllerFlow.hoverHint && !syncStage){
                     ctx.fillStyle = 'rgba(3, 8, 14, .88)';
                     ctx.fillRect(0, height * 0.90, size, height * 0.10);
                     ctx.fillStyle = '#8cd8ff';
@@ -3072,7 +3128,6 @@ enabled: ${!!cameraAction?.enabled}`;
         function renderScene(){
             if(lastWidth < 2 || lastHeight < 2) return;
             powerCat?.update();
-            if(controllerFlow.syncExercise.active) settingsControllerBridge.renderScreen?.();
             applyPanelProjection();
             stickyAdapter.update();
             renderer.setViewport(0, 0, lastWidth, lastHeight);
@@ -3100,6 +3155,8 @@ enabled: ${!!cameraAction?.enabled}`;
         listen(window, 'orientationchange', resizeScene);
         let scenePauseStartedAt = null;
         suspendScene = () => {
+            if(arrowPointerState) handlePointerCancel({ pointerId: arrowPointerState.pointerId });
+            stopHeldArrowKey();
             if(scenePauseStartedAt === null) scenePauseStartedAt = performance.now();
             cancelAnimationFrame(sceneFrameId);
             sceneFrameId = 0;
@@ -3814,53 +3871,22 @@ enabled: ${!!cameraAction?.enabled}`;
             controls.update();
         }
 
-        function applyArrowStep(action, pointerButton = 0){
+        function applyArrowStep(action, coarse = false, repeating = false, source = 'arrow-step'){
             if(!action) return;
             dismissSavedState();
-            const isRightClick = pointerButton === 2;
+            const amount = settingStep(action.type === 'sync' && activeSettingsView === 'audio', coarse, repeating);
             if(action.type === 'vol'){
-                const amount = isRightClick ? 5 : 1;
                 if(activeSettingsView === 'audio'){
                     setVolumeFromPercent(Math.round(storedVolume * 100) + action.direction * amount);
                 }else{
-                    const next = Math.max(0, Math.min(1, getLuxValue() + action.direction * amount * 0.01));
-                    applyLuxFromSource(next, 'arrow-step');
+                    const next = Math.round(getLuxValue() * 100) + action.direction * amount;
+                    applyLuxFromSource(Math.max(0, Math.min(100, next)) / 100, source);
                 }
             }else if(activeSettingsView === 'audio'){
-                const amount = isRightClick ? 10 : 5;
-                applySyncValue(Math.max(-3000, Math.min(3000, storedSync + action.direction * amount)));
+                applySyncValue(storedSync + action.direction * amount);
             }else{
-                const amount = isRightClick ? 5 : 1;
-                const next = Math.max(0, Math.min(1, getContrastValue() + action.direction * amount * 0.01));
-                applyEmiFromSource(next, 'arrow-step');
-            }
-            updateKnobTransformsFromState();
-            updateControllerReadouts();
-            syncAccessibleControllerUI();
-        }
-
-        function applyKeyboardStep(type, direction, shifted = false){
-            dismissSavedState();
-            const isContrast = type === 'sync';
-            const amount = isContrast
-                ? (shifted ? 10 : 5)
-                : (shifted ? 5 : 1);
-            if(type === 'vol'){
-                if(activeSettingsView === 'audio'){
-                    setVolumeFromPercent(Math.round(storedVolume * 100) + direction * amount);
-                }else{
-                    applyLuxFromSource(
-                        Math.max(0, Math.min(1, getLuxValue() + direction * amount * 0.01)),
-                        'keyboard-step'
-                    );
-                }
-            }else if(activeSettingsView === 'audio'){
-                applySyncValue(Math.max(-3000, Math.min(3000, storedSync + direction * amount)));
-            }else{
-                applyEmiFromSource(
-                    Math.max(0, Math.min(1, getContrastValue() + direction * amount * 0.01)),
-                    'keyboard-step'
-                );
+                const next = Math.round(getContrastValue() * 100) + action.direction * amount;
+                applyEmiFromSource(Math.max(0, Math.min(100, next)) / 100, source);
             }
             updateKnobTransformsFromState();
             updateControllerReadouts();
@@ -4030,8 +4056,8 @@ enabled: ${!!cameraAction?.enabled}`;
                         resolveSaveConfirmation(region.value);
                     }else if(region?.kind === 'sync-start'){
                         startSyncExercise();
-                    }else if(region?.kind === 'sync-commit'){
-                        commitSyncExercise();
+                    }else if(region?.kind === 'sync-play'){
+                        toggleSyncPlayback();
                     }else if(region?.kind === 'sync-cancel'){
                         resetSyncExercise();
                     }
@@ -4066,6 +4092,10 @@ enabled: ${!!cameraAction?.enabled}`;
                     moved: 0,
                     orbiting: false
                 };
+                if(event.button === 0){
+                    applyArrowStep(arrowAction);
+                    arrowPointerState.cancelRepeat = repeatSettingStep(() => applyArrowStep(arrowAction, false, true));
+                }
                 if(controls) controls.enabled = false;
                 try{ settingsControllerCanvas.setPointerCapture(event.pointerId); }catch{}
                 // Keep OrbitControls out until a right drag has actually left
@@ -4170,6 +4200,8 @@ enabled: ${!!cameraAction?.enabled}`;
                         arrowPointerState.lastX = event.clientX;
                         arrowPointerState.lastY = event.clientY;
                     }
+                }else if(arrowPointerState.moved > 7 || !(event.buttons & 1)){
+                    arrowPointerState.cancelRepeat();
                 }
                 event.preventDefault();
                 event.stopPropagation();
@@ -4202,10 +4234,11 @@ enabled: ${!!cameraAction?.enabled}`;
         function handlePointerUp(event){
             if(arrowPointerState && event.pointerId === arrowPointerState.pointerId && event.button === arrowPointerState.button){
                 const elapsed = performance.now() - arrowPointerState.downAt;
-                const shouldStep = !arrowPointerState.orbiting
+                const shouldStep = event.button === 2 && !arrowPointerState.orbiting
                     && elapsed <= 320
                     && arrowPointerState.moved <= 7;
-                if(shouldStep) applyArrowStep(arrowPointerState.action, arrowPointerState.button);
+                if(shouldStep) applyArrowStep(arrowPointerState.action, true);
+                arrowPointerState.cancelRepeat?.();
                 arrowPointerState = null;
                 try{ settingsControllerCanvas.releasePointerCapture(event.pointerId); }catch{}
                 if(controls) setUserCameraControlsEnabled(true);
@@ -4290,6 +4323,7 @@ enabled: ${!!cameraAction?.enabled}`;
             lastRightClickTime = 0;
             const capturedId = knobDragState?.pointerId ?? arrowPointerState?.pointerId;
             if(arrowPointerState?.pointerId === event.pointerId){
+                arrowPointerState?.cancelRepeat?.();
                 arrowPointerState = null;
                 if(controls) setUserCameraControlsEnabled(true);
             }
@@ -4335,12 +4369,9 @@ enabled: ${!!cameraAction?.enabled}`;
                 }else if(key === 'v'){
                     if(event.repeat) return;
                     selectMode('visuals');
-                }else if(key === 'arrowleft' || key === 'arrowright'){
-                    event.preventDefault();
-                    applyKeyboardStep('sync', key === 'arrowright' ? 1 : -1, event.shiftKey);
-                }else if(key === 'arrowup' || key === 'arrowdown'){
-                    event.preventDefault();
-                    applyKeyboardStep('vol', key === 'arrowup' ? 1 : -1, event.shiftKey);
+                }else if(!introActive && Object.hasOwn(arrowKeys, event.key)){
+                    const action = arrowKeys[event.key];
+                    holdArrowKey(event, repeating => applyArrowStep(action, event.shiftKey, repeating, 'keyboard-step'));
                 }
             });
 
@@ -4605,54 +4636,12 @@ enabled: ${!!cameraAction?.enabled}`;
         );
     });
 
-    function enableTestingAudio(signal){
-        const cleanup = () => {
-            document.removeEventListener('pointerdown', activate, true);
-            document.removeEventListener('keydown', activate, true);
-            signal.removeEventListener('abort', cleanup);
-        };
-        const activate = () => {
-            cleanup();
-            if(signal.aborted) return;
-            applyAudioPermission(true, { persist: false });
-            if(!welcomeJingle || welcomeJingle.paused) playWelcomeJingle(true);
-        };
-        // Autoplay policy may still suspend audio. Retrying on the first real
-        // gesture must never gate the model reveal or move its camera.
-        listen(document, 'pointerdown', activate, { capture: true });
-        listen(document, 'keydown', activate, { capture: true });
-        signal.addEventListener('abort', cleanup, { once: true });
-        playWelcomeJingle(true);
-    }
-
     function showPermissionIfNeeded(){
         if(onboardingPromise) return onboardingPromise;
         const flow = new AbortController();
         onboardingController = flow;
         const isCurrent = () => !scope.signal.aborted && !flow.signal.aborted && onboardingController === flow;
         onboardingPromise = (async () => {
-            // Temporary local testing defaults requested by the site owner.
-            // Keep the visitor permission flow below available for production.
-            if(isLocalHost){
-                controllerFlow.animationAllowed = true;
-                controllerFlow.soundAllowed = true;
-                storedMuted = false;
-                if(!(storedVolume > 0)) storedVolume = .25;
-                controllerFlow.stage = 'gallery';
-                permModal.classList.add('hidden');
-                permModal.style.display = 'none';
-                settingsControllerBridge.renderScreen?.();
-
-                applyAudioPermission(true);
-                enableTestingAudio(flow.signal);
-                await waitForControllerReady(flow.signal);
-                if(!isCurrent()) return null;
-                settingsControllerBridge.finishOnboarding?.(!isLocalReview);
-                if(isLocalReview && !rememberedStartView) settingsControllerBridge.selectMode?.(localReviewStartMode, { triggerEmissive: false, instant: true });
-                settingsControllerBridge.renderScreen?.();
-                return { soundAllowed: true, animationAllowed: true, testing: true, review: isLocalReview };
-            }
-
             // Reveal a static controller before either question. The GLB screen
             // owns both choices; the native dialog is only a no-WebGL fallback.
             await waitForControllerReady(flow.signal);
@@ -4664,20 +4653,18 @@ enabled: ${!!cameraAction?.enabled}`;
             controllerFlow.animationAllowed = animationAllowed;
 
             const savedConsent = getAudioConsentState();
-            const soundAllowed = savedConsent.shouldPrompt
-                ? settingsControllerBridge.model
-                    ? await askControllerScreenPermission('sound', flow.signal)
-                    : await askControllerPermission('sound', 'Allow audio on this site?', flow.signal)
+            const askForSound = isLocalReview || savedConsent.shouldPrompt;
+            const soundAllowed = askForSound
+                ? await askControllerScreenPermission('sound', flow.signal)
                 : savedConsent.allowed;
             if(!isCurrent()) return null;
             controllerFlow.soundAllowed = soundAllowed;
-            applyAudioPermission(soundAllowed, { persist: savedConsent.shouldPrompt });
-            await waitForControllerReady(flow.signal);
-            if(!isCurrent()) return null;
+            applyAudioPermission(soundAllowed, { persist: askForSound });
             controllerFlow.stage = 'gallery';
             if(soundAllowed) playWelcomeJingle();
-            settingsControllerBridge.finishOnboarding?.(animationAllowed);
-            settingsControllerBridge.renderScreen?.();
+            const animateIntro = animationAllowed && !getSharedSettings().get().accessibility.reducedMotion;
+            if(isLocalReview && !rememberedStartView) settingsControllerBridge.selectMode?.(localReviewStartMode, { triggerEmissive: false, instant: true });
+            settingsControllerBridge.finishOnboarding?.(animateIntro);
             return { soundAllowed, animationAllowed };
         })();
         return onboardingPromise;
@@ -4687,9 +4674,6 @@ enabled: ${!!cameraAction?.enabled}`;
         const persist = options.persist !== false;
         if(persist) setAudioConsentAllowed(allowed);
         if(allowed){
-            if(!Number.isFinite(storedVolume)){
-                storedVolume = 0.25;
-            }
             ensureAudioRouting();
             applyVolumeAndMuted();
             if(audioCtx){
@@ -4758,22 +4742,25 @@ enabled: ${!!cameraAction?.enabled}`;
     }
 
     function applySyncValue(ms){
-        storedSync = snapSyncMs(ms);
-        const preview = controllerFlow.syncExercise.active;
-        if(preview) syncComparison?.setOffset(storedSync);
-        else setSyncOffsetMs(storedSync);
+        const nextSync = snapSyncMs(ms);
+        const comparing = controllerFlow.syncExercise.active;
+        if(comparing && nextSync !== storedSync){
+            syncComparison?.setOffset(nextSync);
+            controllerFlow.syncExercise.result = '';
+        }
+        storedSync = nextSync;
+        setSyncOffsetMs(storedSync);
         if(syncSlider) syncSlider.value = String(storedSync);
         if(modalSync) modalSync.value = String(storedSync);
         syncAccessibleControllerUI();
-        syncDisplay.textContent = `${preview ? "Preview" : "Sync"}: ${storedSync} ms`;
+        syncDisplay.textContent = `Sync: ${storedSync} ms`;
+        if(comparing) settingsControllerBridge.renderScreen?.();
         if(typeof settingsControllerBridge.updateKnobTransformsFromState === 'function'){
             settingsControllerBridge.updateKnobTransformsFromState({ immediate: 'sync' });
         }
         if(typeof settingsControllerBridge.updateSyncPercentLabel === 'function'){
             settingsControllerBridge.updateSyncPercentLabel();
         }
-
-        if(window.siteConfig && !preview) window.siteConfig.audioSyncMs = storedSync;
 
         if(!audioCtx || !delayNode) return;
         const audioDelaySec = audioDelaySeconds(storedSync);
@@ -4831,15 +4818,13 @@ enabled: ${!!cameraAction?.enabled}`;
 
 
 
-    function playWelcomeJingle(forceUnmute = false){
-        if(!forceUnmute && storedMuted) return;
+    function playWelcomeJingle(){
+        if(storedMuted || storedVolume === 0) return;
         if(!welcomeJingle){
             welcomeJingle = new Audio(WELCOME_JINGLE_SRC);
             welcomeJingle.preload = 'auto';
         }
-        const volume = Number.isFinite(storedVolume) ? storedVolume : 0.25;
-        welcomeJingle.muted = !forceUnmute && storedMuted;
-        welcomeJingle.volume = Math.max(0, Math.min(1, volume));
+        welcomeJingle.volume = storedVolume;
         try{ welcomeJingle.currentTime = 0; }catch{}
         welcomeJingle.play().catch(()=>{});
     }
@@ -4860,7 +4845,35 @@ enabled: ${!!cameraAction?.enabled}`;
         settingsControllerBridge.updateAudioMeter?.({ level: 0, peak: 0, clipped: false, peakClipped: false });
     }
 
-    function clearSyncExerciseTimers(){ syncComparison?.stop(); }
+    function clearSyncExerciseTimers(){
+        const exercise = controllerFlow.syncExercise;
+        exercise.runId++;
+        exercise.playing = false;
+        syncComparison?.stop();
+        cancelAnimationFrame(exercise.frame);
+        paintNativeSyncNotes(null);
+    }
+
+    function paintNativeSyncNotes(sample){
+        const motion = animateSyncNotes();
+        accessibleSyncNotes.forEach((note, index) => {
+            const active = sample?.noteIndex === index;
+            note.classList.toggle('is-sounding', active);
+            note.style.setProperty('--note-lift', active && motion ? `${-sample.bounce * 50}%` : '0%');
+        });
+    }
+
+    function drawSyncPlayback(){
+        const exercise = controllerFlow.syncExercise;
+        paintNativeSyncNotes(syncComparison.sample());
+        settingsControllerBridge.renderScreen?.();
+        exercise.frame = requestAnimationFrame(drawSyncPlayback);
+    }
+
+    function updateSyncExercise(){
+        settingsControllerBridge.renderScreen?.();
+        syncAccessibleControllerUI();
+    }
 
     function resetSyncExercise(){
         if(controllerFlow.saveLatched){
@@ -4871,65 +4884,61 @@ enabled: ${!!cameraAction?.enabled}`;
         const exercise = controllerFlow.syncExercise;
         exercise.active = false;
         exercise.result = '';
-        exercise.runId = (exercise.runId || 0) + 1;
         controllerFlow.stage = 'gallery';
         applySyncValue(getSyncOffsetMs());
-        settingsControllerBridge.renderScreen?.();
-        syncAccessibleControllerUI();
+        updateSyncExercise();
     }
 
-    async function startSyncExercise(){
+    function startSyncExercise(){
         resetSyncExercise();
         const exercise = controllerFlow.syncExercise;
+        settingsControllerBridge.selectMode?.('audio');
+        exercise.active = true;
+        controllerFlow.stage = 'sync-running';
+        updateSyncExercise();
+    }
+
+    async function toggleSyncPlayback(){
+        const exercise = controllerFlow.syncExercise;
+        if(!exercise.active) return;
+        if(exercise.playing){
+            clearSyncExerciseTimers();
+            updateSyncExercise();
+            return;
+        }
         if(!controllerFlow.soundAllowed || storedMuted || storedVolume === 0){
-            exercise.result = 'Enable sound and raise the volume to compare.';
-            controllerFlow.stage = 'sync-running';
-            settingsControllerBridge.renderScreen?.();
-            syncAccessibleControllerUI();
+            exercise.result = 'Enable sound and raise the volume, then press Play.';
+            updateSyncExercise();
             return;
         }
         ensureAudioRouting();
         if(!audioCtx || !destinationGain){
             exercise.result = 'Audio comparison is unavailable in this browser.';
-            controllerFlow.stage = 'sync-running';
-            settingsControllerBridge.renderScreen?.();
-            syncAccessibleControllerUI();
+            updateSyncExercise();
             return;
         }
         resetPeakHold();
-        settingsControllerBridge.selectMode?.('audio');
-        exercise.active = true;
-        exercise.result = 'Preparing the voice guide…';
+        exercise.playing = true;
+        exercise.result = '';
         const runId = ++exercise.runId;
-        controllerFlow.stage = 'sync-running';
         syncComparison ||= createSyncComparison({ context: audioCtx, output: destinationGain,
-            guideUrl: SYNC_GUIDE_URL, signal: scope.signal,
-            onChange: () => settingsControllerBridge.renderScreen?.() });
+            signal: scope.signal, onEnd: () => {
+                clearSyncExerciseTimers();
+                updateSyncExercise();
+            } });
         settingsControllerBridge.syncComparison = syncComparison;
-        settingsControllerBridge.renderScreen?.();
-        syncAccessibleControllerUI();
+        updateSyncExercise();
         try {
             const started = await syncComparison.start(storedSync);
             if(runId !== exercise.runId || scope.signal.aborted) return;
-            if(started){ exercise.result = ''; syncComparison.setOffset(storedSync); }
-            else { exercise.active = false; exercise.result = 'Audio could not start. Try again.'; }
+            if(!started) throw new Error('Audio did not start');
+            drawSyncPlayback();
         } catch {
             if(runId !== exercise.runId || scope.signal.aborted) return;
-            exercise.active = false;
+            clearSyncExerciseTimers();
             exercise.result = 'Audio could not start. Try again.';
+            updateSyncExercise();
         }
-        settingsControllerBridge.renderScreen?.();
-        syncAccessibleControllerUI();
-    }
-
-    function commitSyncExercise(){
-        if(!controllerFlow.syncExercise.active) return;
-        const selected = storedSync;
-        resetSyncExercise();
-        applySyncValue(selected);
-        controllerFlow.syncExercise.result = 'Saved ' + selected + ' ms';
-        settingsControllerBridge.renderScreen?.();
-        syncAccessibleControllerUI();
     }
 
     function loadVideo(key){
@@ -5236,8 +5245,10 @@ enabled: ${!!cameraAction?.enabled}`;
     listen(accessibleSync, 'input', editNativeSetting('audio', applySyncValue));
     listen(accessibleBrightness, 'input', editNativeSetting('visuals', value => applyLuxFromSource(value / 100, 'accessible')));
     listen(accessibleContrast, 'input', editNativeSetting('visuals', value => applyEmiFromSource(value / 100, 'accessible')));
-    listen(accessibleCounts, 'click', startSyncExercise);
-    listen(accessiblePlayPause, 'click', commitSyncExercise);
+    listen(accessibleCounts, 'click', () => {
+        if(controllerFlow.stage === 'sync-running') toggleSyncPlayback();
+        else startSyncExercise();
+    });
     listen(accessibleGallery, 'click', resetSyncExercise);
     listen(accessibleConfirmYes, 'click', () => resolveSaveConfirmation(true));
     listen(accessibleConfirmNo, 'click', () => resolveSaveConfirmation(false));
@@ -5246,16 +5257,46 @@ enabled: ${!!cameraAction?.enabled}`;
     listen(tabNumbers, 'click', ()=>{ tabNumbers.classList.add('active'); tabAlphabet.classList.remove('active'); loadVideo('counts'); });
     listen(tabAlphabet, 'click', ()=>{ tabAlphabet.classList.add('active'); tabNumbers.classList.remove('active'); loadVideo('alphabet'); });
 
-    function bindStepButton(button, leftDelta, rightDelta, handler){
-        if(!button) return;
-        listen(button, 'pointerup', (e)=>{
-            if(e.button === 0){
-                handler(leftDelta);
-            }
+    const arrowSliders = new Map([
+        [accessibleSync, true], [syncSlider, true], [modalSync, true],
+        [accessibleVolume, false], [volumeSlider, false],
+        [accessibleBrightness, false], [accessibleContrast, false]
+    ]);
+    listen(document, 'keydown', event => {
+        const slider = event.target;
+        if(event.defaultPrevented || event.isComposing || event.ctrlKey || event.altKey || event.metaKey ||
+            !arrowSliders.has(slider) || !Object.hasOwn(arrowKeys, event.key)) return;
+        holdArrowKey(event, repeating => {
+            const step = settingStep(arrowSliders.get(slider), event.shiftKey, repeating);
+            const previous = slider.value;
+            slider.value = String(Number(previous) + arrowKeys[event.key].direction * step);
+            if(slider.value !== previous) slider.dispatchEvent(new Event('input', { bubbles: true }));
         });
+    });
+
+    function bindStepButton(button, direction, audioSync, handler){
+        if(!button) return;
+        let cancelRepeat;
+        const stop = () => {
+            cancelRepeat?.();
+            cancelRepeat = null;
+        };
+        const step = (coarse, repeating) => handler(direction * settingStep(audioSync, coarse, repeating));
+        listen(button, 'pointerdown', event => {
+            if(event.button !== 0) return;
+            stop();
+            step(false, false);
+            cancelRepeat = repeatSettingStep(() => step(false, true));
+        });
+        listen(button, 'pointerleave', stop);
+        listen(window, 'pointerup', stop);
+        listen(window, 'pointercancel', stop);
+        listen(window, 'blur', stop);
+        scope.defer(stop);
+        listen(button, 'click', event => { if(event.detail === 0) step(false, false); });
         listen(button, 'contextmenu', (e)=>{
             e.preventDefault();
-            handler(rightDelta);
+            step(true, false);
         });
     }
 
@@ -5265,16 +5306,16 @@ enabled: ${!!cameraAction?.enabled}`;
         v = Math.max(-3000, Math.min(3000, v));
         syncSlider.value = v; applySyncValue(v);
     }
-    bindStepButton(syncLeft, -5, -10, changeSyncBy);
-    bindStepButton(syncRight, 5, 10, changeSyncBy);
+    bindStepButton(syncLeft, -1, true, changeSyncBy);
+    bindStepButton(syncRight, 1, true, changeSyncBy);
 
     // Volume arrows
     function changeVolumeBy(deltaPct){
         const currentPct = Math.round(storedVolume * 100);
         setVolumeFromPercent(currentPct + deltaPct);
     }
-    bindStepButton(volDown, -1, -5, changeVolumeBy);
-    bindStepButton(volUp, 1, 5, changeVolumeBy);
+    bindStepButton(volDown, -1, false, changeVolumeBy);
+    bindStepButton(volUp, 1, false, changeVolumeBy);
 
     // Sliders input
     listen(syncSlider, 'input', (e)=>{
@@ -5287,10 +5328,6 @@ enabled: ${!!cameraAction?.enabled}`;
     });
     listen(window, 'syncOffsetChanged', (e)=>{
         const ms = parseInt(e?.detail?.offsetMs, 10) || 0;
-        storedSync = ms;
-        syncSlider.value = ms;
-        if(modalSync) modalSync.value = ms;
-        syncDisplay.textContent = `Sync: ${ms} ms`;
         applySyncValue(ms);
     });
     if(volumeSlider) listen(volumeSlider, 'input', (e)=>{
@@ -5504,7 +5541,7 @@ enabled: ${!!cameraAction?.enabled}`;
         if(scope.signal.aborted || !result || onboardingPromise !== flowPromise
             || document.body.classList.contains('start-entry-active')) return;
         storedVolume = getSharedSettings().get().audio.volume;
-        storedMuted = isLocalHost ? false : getSharedSettings().get().audio.muted;
+        storedMuted = getSharedSettings().get().audio.muted;
         storedSync = getSyncOffsetMs();
         syncSlider.value = storedSync;
         if(modalSync) modalSync.value = storedSync;

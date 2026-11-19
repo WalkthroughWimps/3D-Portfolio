@@ -4,8 +4,8 @@ window.siteConfig = window.siteConfig || {};
 // Site-wide media preferences
 window.siteConfig.autoplayApproved = true; // Jump page handles audio permission, so auto-approve here
 window.siteConfig.soundEnabled = true;     // Global sound enable/disable
-window.siteConfig.volume = 0.25;           // Shared default until settings hydrate
-window.siteConfig.audioSyncMs = -270;      // Global audio sync offset in milliseconds
+window.siteConfig.volume = 0.3;            // Shared default until settings hydrate
+window.siteConfig.audioSyncMs = 0;         // Global audio sync offset in milliseconds
 
 // Site-wide theme preferences
 window.siteConfig.colorTheme = 'default';  // Color theme identifier

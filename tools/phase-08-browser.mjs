@@ -72,7 +72,7 @@ try {
   await pages[0].reload({waitUntil:'load'});
   const reload=await pages[0].evaluate(async url=>(await import(url)).getSharedSettings().get().audio.volume,settingsModule);
   const reset=await pages[1].evaluate(()=>{window.__testStore.reset(['audio.volume']);return {volume:window.__testStore.get().audio.volume,consent:document.cookie,canonical:localStorage.getItem('site.audio.volume'),legacy:JSON.parse(localStorage.getItem('site.a11y.settings')||'{}').masterVolume};});
-  const settings={mode:'settings-browser',migration,reload,reset,passed:migration.volume===0&&migration.muted===false&&reload===0.37&&reset.volume===0.25&&reset.consent.includes('site_audio_allowed=false')&&reset.canonical===null&&reset.legacy===undefined};
+  const settings={mode:'settings-browser',migration,reload,reset,passed:migration.volume===0&&migration.muted===false&&reload===0.37&&reset.volume===0.3&&reset.consent.includes('site_audio_allowed=false')&&reset.canonical===null&&reset.legacy===undefined};
   results.push(settings); await context.close();
   await fs.writeFile(`${out}/results.json`,JSON.stringify({browser:await browser.version(),base,cache:'disposable contexts; no-store; service workers blocked',audio:'denied',scope:'bounded shell/navigation/failure/settings checks; no audible or full playback acceptance',results},null,2));
   if (results.some(result=>!result.passed)) process.exitCode=1;

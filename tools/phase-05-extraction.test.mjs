@@ -80,13 +80,13 @@ test('Start camera flow samples a late loaded clip and keeps authored endpoint i
   assert.equal(easeInOutPower(0.5, 3), 0.5);
 });
 
-test('Start accessible controls expose explicit sync preview confirmation without changing media', async () => {
+test('Start accessible controls expose sync playback without changing media', async () => {
   const { syncStartAccessibleControls } = await loadPure('_0-start/start/accessible-controls.js');
   const element = () => ({ hidden: false, value: '', textContent: '', attrs: {},
     setAttribute(name, value) { this.attrs[name] = value; } });
   const elements = Object.fromEntries(['audioMode', 'visualsMode', 'volumeSlider', 'syncSlider',
-    'brightnessSlider', 'contrastSlider', 'counts', 'alphabet', 'playPause', 'gallery',
-    'confirmYes', 'confirmNo'].map(key => [key, element()]));
+    'brightnessSlider', 'contrastSlider', 'counts', 'alphabet', 'gallery',
+    'syncPreview', 'syncStatus', 'confirmYes', 'confirmNo'].map(key => [key, element()]));
   syncStartAccessibleControls({ elements, view: 'audio', volume: 0.25, syncMs: -270,
     brightness: 0.5, contrast: 0.5,
     flow: { stage: 'sync-running', syncExercise: { active: true } } });
@@ -94,9 +94,62 @@ test('Start accessible controls expose explicit sync preview confirmation withou
   assert.equal(elements.visualsMode.attrs['aria-pressed'], 'false');
   assert.equal(elements.volumeSlider.value, '25');
   assert.equal(elements.syncSlider.value, '-270');
-  assert.equal(elements.counts.hidden, true);
-  assert.equal(elements.playPause.textContent, 'Use this offset');
-  assert.equal(elements.playPause.hidden, false);
+  assert.equal(elements.counts.hidden, false);
+  assert.equal(elements.counts.textContent, 'Play arpeggios');
+  assert.equal(elements.syncPreview.hidden, false);
+  assert.equal(elements.gallery.hidden, false);
+});
+
+test('Start sync retimes upcoming notes while the sequence and bounce continue', async t => {
+  const { createSyncComparison } = await loadPure('_0-start/start/sync-comparison.js');
+  const sources = [];
+  const context = {
+    currentTime: 0, state: 'running', sampleRate: 8000,
+    async resume() {},
+    createBuffer(_channels, length) {
+      return { getChannelData: () => new Float32Array(length) };
+    },
+    createBufferSource() {
+      return {
+        connect() {}, disconnect() {},
+        start(when) { this.when = when; sources.push(this); },
+        stop() { this.stopped = true; }
+      };
+    }
+  };
+  const output = {};
+  const onEnd = t.mock.fn();
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const comparison = createSyncComparison({ context, output, onEnd });
+  t.after(() => comparison.stop());
+  assert.equal(await comparison.start(0), true);
+  const original = sources.slice();
+  assert.equal(original.length, 15);
+  context.currentTime = .30;
+  const bounce = comparison.sample();
+  comparison.setOffset(200);
+  t.mock.timers.tick(40);
+  assert.deepEqual(comparison.sample(), bounce);
+  assert.equal(original[0].stopped, undefined);
+  assert(original.slice(1).every(source => source.stopped));
+  const remaining = sources.slice(original.length);
+  assert.equal(remaining.length, 14);
+  assert.deepEqual(remaining.map(source => source.buffer), original.slice(1).map(source => source.buffer));
+  assert(Math.abs(remaining[0].when - .80) < 1e-6);
+  assert.equal(onEnd.mock.callCount(), 0);
+
+  context.currentTime = .50;
+  comparison.setOffset(-3000);
+  t.mock.timers.tick(40);
+  const caughtUp = sources.slice(original.length + remaining.length);
+  assert.equal(caughtUp.length, 14);
+  assert(caughtUp[0].when >= .54);
+  assert(caughtUp.slice(1).every((source, i) => source.when - caughtUp[i].when >= .32));
+  assert(caughtUp[4].when - caughtUp[3].when >= .55);
+  assert.equal(onEnd.mock.callCount(), 0);
+  context.currentTime = 8;
+  t.mock.timers.tick(40);
+  assert.equal(onEnd.mock.callCount(), 1);
 });
 
 test('media controller refresh detaches replaced borrowed media and dispose leaves it playing', async () => {

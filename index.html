@@ -382,10 +382,10 @@
                     <div class="volume-label">Volume</div>
                     <div class="volume-slider-wrapper" role="group" aria-label="Master volume">
                         <button class="arrow-btn vertical" id="volUp">&#9650;</button>
-                        <input id="volumeSlider" class="volume-slider-vertical" type="range" min="0" max="100" step="1" value="25" aria-label="Volume (%)">
+                        <input id="volumeSlider" class="volume-slider-vertical" type="range" min="0" max="100" step="1" value="30" aria-label="Volume (%)">
                         <button class="arrow-btn vertical" id="volDown">&#9660;</button>
                     </div>
-                    <div class="volume-display">Volume: <span id="volumeDisplay">25%</span></div>
+                    <div class="volume-display">Volume: <span id="volumeDisplay">30%</span></div>
                 </div>
             </div>
         </div>
@@ -704,14 +704,15 @@
         <button id="accessibleVisualsMode" type="button" aria-pressed="true">VISUAL (V)</button>
         <button id="accessiblePower" type="button" aria-pressed="true" disabled>Power switch (P)</button>
         <span id="startPowerStatus" role="status" aria-live="polite">Power on.</span>
-        <label>Volume <input id="accessibleVolume" type="range" min="0" max="100" step="1" value="25"></label>
+        <label>Volume <input id="accessibleVolume" type="range" min="0" max="100" step="1" value="30"></label>
         <label>Audio sync <input id="accessibleSync" type="range" min="-3000" max="3000" step="5" value="0"></label>
         <label>Brightness <input id="accessibleBrightness" type="range" min="0" max="100" step="1" value="50"></label>
         <label>Contrast <input id="accessibleContrast" type="range" min="0" max="100" step="1" value="50"></label>
+        <div id="accessibleSyncPreview" class="start-sync-preview" aria-hidden="true" hidden></div>
+        <span id="accessibleSyncStatus" role="status"></span>
+        <button id="accessibleGallery" type="button" hidden>Back</button>
         <button id="accessibleCounts" type="button">Start audio sync comparison</button>
         <button id="accessibleAlphabet" type="button" hidden>Second video hidden</button>
-        <button id="accessiblePlayPause" type="button" hidden>Use this offset</button>
-        <button id="accessibleGallery" type="button" hidden>Cancel sync comparison</button>
         <button id="accessibleConfirmYes" type="button" hidden>Yep, proceed to the site</button>
         <button id="accessibleConfirmNo" type="button" hidden>Um, return to settings</button>
     </div>
