@@ -4,6 +4,7 @@
 // Route Map remains a browser-local sandbox; Tracker is intentionally not
 // copied here because it will receive its own public demo Pages project.
 
+const { execFileSync } = require("node:child_process");
 const fs = require("fs");
 const path = require("path");
 
@@ -14,6 +15,8 @@ const cakeSource = path.join(labs, "cake-source");
 const cakeOutput = path.join(root, "dist-labs-root", "cake");
 const output = path.join(root, "dist-labs-root");
 const routeOutput = path.join(output, "routemap");
+const topFruitSource = path.join(labs, "top-fruit-source");
+const topFruitOutput = path.join(output, "top-fruit");
 const files = ["index.html", "styles.css", "accessibility.css", "accessibility.js", "map.js", "manifest.webmanifest", "service-worker.js"];
 const directories = ["assets", "roads_package", "scripts", "trips"];
 const excluded = [
@@ -39,6 +42,11 @@ fs.copyFileSync(path.join(labs, "styles.css"), path.join(output, "styles.css"));
 fs.cpSync(path.join(cakeSource, "cake"), cakeOutput, { recursive: true });
 for (const file of ["_headers", "_redirects"]) {
   fs.copyFileSync(path.join(cakeSource, file), path.join(output, file));
+}
+execFileSync(process.execPath, [path.join(topFruitSource, "build.mjs"), topFruitOutput], { stdio: "inherit" });
+for (const file of ["_headers", "_redirects"]) {
+  const rules = fs.readFileSync(path.join(topFruitSource, file), "utf8");
+  fs.appendFileSync(path.join(output, file), `\n${rules}`, "utf8");
 }
 fs.writeFileSync(path.join(output, "404.html"), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Page not found · Matt Hall Labs</title></head>
@@ -78,7 +86,7 @@ globalThis.RV_RUNTIME_CONFIG = Object.freeze({
 `;
 fs.writeFileSync(path.join(routeOutput, "scripts", "config", "runtime-config.js"), runtimeConfig, "utf8");
 
-const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- /cake/ is a generated public snapshot of the Cake studio. Its authoritative source is https://github.com/WalkthroughWimps/cake.\n- Cake's route-scoped headers and redirects are retained. The host 404 is a generic Labs page so it does not brand unrelated missing routes as Cake pages.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The demos contain no Cloudflare admin route, GitHub credential, or server write path.\n`;
+const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- /cake/ is a generated public snapshot of the Cake studio. Its authoritative source is https://github.com/WalkthroughWimps/cake.\n- /top-fruit/ is a read-only wholesale website scaffold with no inquiry or purchase integration.\n- Cake's route-scoped headers and redirects are retained. The host 404 is a generic Labs page so it does not brand unrelated missing routes as Cake pages.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The demos contain no Cloudflare admin route, GitHub credential, or server write path.\n`;
 fs.writeFileSync(path.join(output, "README-LABS-DEPLOYMENT.md"), readme, "utf8");
 
 console.log(`Labs package ready: ${output}`);
