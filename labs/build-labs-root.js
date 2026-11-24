@@ -48,6 +48,11 @@ for (const file of ["_headers", "_redirects"]) {
   const rules = fs.readFileSync(path.join(topFruitSource, file), "utf8");
   fs.appendFileSync(path.join(output, file), `\n${rules}`, "utf8");
 }
+// TOP FRUIT is shown only behind a password. A small gatekeeper (labs/top-fruit-gate) asks for it, then forwards
+// to a private Pages project, so the client's photos are not stored in this public repository. _routes.json makes
+// it run only for /top-fruit and /top-fruit/*; every other Labs page is served exactly as before.
+fs.copyFileSync(path.join(labs, "top-fruit-gate", "_worker.js"), path.join(output, "_worker.js"));
+fs.writeFileSync(path.join(output, "_routes.json"), `${JSON.stringify({ version: 1, include: ["/top-fruit", "/top-fruit/*"], exclude: [] }, null, 2)}\n`, "utf8");
 fs.writeFileSync(path.join(output, "404.html"), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Page not found · Matt Hall Labs</title></head>
 <body><main><h1>Page not found</h1><p>This Labs preview has no page at that address.</p><a href="/">Return to Labs</a> · <a href="/cake/">Open Cake Studio</a></main></body></html>
@@ -86,7 +91,7 @@ globalThis.RV_RUNTIME_CONFIG = Object.freeze({
 `;
 fs.writeFileSync(path.join(routeOutput, "scripts", "config", "runtime-config.js"), runtimeConfig, "utf8");
 
-const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- /cake/ is a generated public snapshot of the Cake studio. Its authoritative source is https://github.com/WalkthroughWimps/cake.\n- /top-fruit/ is a read-only wholesale website scaffold with no inquiry or purchase integration.\n- Cake's route-scoped headers and redirects are retained. The host 404 is a generic Labs page so it does not brand unrelated missing routes as Cake pages.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The demos contain no Cloudflare admin route, GitHub credential, or server write path.\n`;
+const readme = `# Matt Hall Labs build\n\n- / is the Labs landing page.\n- /routemap/ is the Route Map browser-local sandbox.\n- /cake/ is a generated public snapshot of the Cake studio. Its authoritative source is https://github.com/WalkthroughWimps/cake.\n- /top-fruit/ is behind a password (labs/top-fruit-gate). With the password it shows a private preview of a wholesale candy website with no inquiry or purchase integration; without it, nothing is shown.\n- Cake's route-scoped headers and redirects are retained. The host 404 is a generic Labs page so it does not brand unrelated missing routes as Cake pages.\n- Tracker is intentionally not bundled here; its public demo deploys separately.\n- The demos contain no Cloudflare admin route, GitHub credential, or server write path.\n`;
 fs.writeFileSync(path.join(output, "README-LABS-DEPLOYMENT.md"), readme, "utf8");
 
 console.log(`Labs package ready: ${output}`);
